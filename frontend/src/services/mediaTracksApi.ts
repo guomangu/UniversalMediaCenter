@@ -4,6 +4,8 @@ export interface MediaTracksData {
   audioTracks: { index: number; language: string; label: string; codec: string }[];
   subtitleTracks: { index: number; language: string; label: string; fileName?: string }[];
   qualities: { label: string; value: string }[];
+  intro?: { start: number; end: number };
+  duration?: number;
 }
 
 export async function fetchMediaTracks(id: string): Promise<MediaTracksData> {

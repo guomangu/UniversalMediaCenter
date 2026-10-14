@@ -9,6 +9,7 @@ interface VideoPlayerViewProps {
   isPlaying: boolean;
   videoRef: React.RefObject<any>;
   showSkipIntro: boolean;
+  intro?: { start: number; end: number };
   activeSubtitle?: string;
   activeQuality?: string;
   activeAudio?: string;
@@ -20,21 +21,31 @@ interface VideoPlayerViewProps {
 }
 
 export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
-  id, streamUrl, isPlaying, videoRef, showSkipIntro,
+  id, streamUrl, isPlaying, videoRef, showSkipIntro, intro,
   activeSubtitle = 'off', activeQuality = 'auto', activeAudio = 'auto', statusMessage,
   onSkipIntro, onPlay, onPause, onLoadedMetadata,
 }) => {
-  const [currentCue, setCurrentCue] = useState<string>('');
-  const savedTimeRef = useRef<number>(0);
+  const [currentCue, setCurrentCue] = useState('');
+  const [curTime, setCurTime] = useState(0);
+  const [mouseActive, setMouseActive] = useState(true);
+  const savedTimeRef = useRef(0);
+  const mouseTimer = useRef<any>(null);
+
+  const resetMouse = () => {
+    setMouseActive(true);
+    if (mouseTimer.current) clearTimeout(mouseTimer.current);
+    mouseTimer.current = setTimeout(() => setMouseActive(false), 5000);
+  };
+
+  useEffect(() => {
+    resetMouse();
+    return () => { if (mouseTimer.current) clearTimeout(mouseTimer.current); };
+  }, []);
 
   const subtitleUrl = React.useMemo(() => {
     if (!activeSubtitle || activeSubtitle === 'off') return '';
-    if (activeSubtitle.startsWith('file:')) {
-      return `${getApiBaseUrl()}/api/media/${id}/subtitles?fileName=${encodeURIComponent(activeSubtitle.slice(5))}`;
-    }
-    if (activeSubtitle.startsWith('track:')) {
-      return `${getApiBaseUrl()}/api/media/${id}/subtitles?trackIndex=${encodeURIComponent(activeSubtitle.slice(6))}`;
-    }
+    if (activeSubtitle.startsWith('file:')) return `${getApiBaseUrl()}/api/media/${id}/subtitles?fileName=${encodeURIComponent(activeSubtitle.slice(5))}`;
+    if (activeSubtitle.startsWith('track:')) return `${getApiBaseUrl()}/api/media/${id}/subtitles?trackIndex=${encodeURIComponent(activeSubtitle.slice(6))}`;
     return `${getApiBaseUrl()}/api/media/${id}/subtitles?lang=${encodeURIComponent(activeSubtitle)}`;
   }, [id, activeSubtitle]);
 
@@ -44,51 +55,42 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       for (let i = 0; i < tracks.length; i++) {
         const tr = tracks[i];
         tr.mode = activeSubtitle !== 'off' ? 'showing' : 'disabled';
-        tr.oncuechange = () => {
-          setCurrentCue(activeSubtitle !== 'off' && tr.activeCues?.[0]?.text ? tr.activeCues[0].text : '');
-        };
+        tr.oncuechange = () => setCurrentCue(activeSubtitle !== 'off' && tr.activeCues?.[0]?.text ? tr.activeCues[0].text : '');
       }
       if (!activeSubtitle || activeSubtitle === 'off') setCurrentCue('');
     }
   }, [activeSubtitle, subtitleUrl]);
 
-  const handleTimeUpdate = () => {
-    if (videoRef.current?.currentTime) savedTimeRef.current = videoRef.current.currentTime;
-  };
-
-  const handleLoadedMeta = () => {
-    if (savedTimeRef.current > 0 && videoRef.current) {
-      videoRef.current.currentTime = savedTimeRef.current;
-    }
-    onLoadedMetadata?.();
-  };
+  const introEnd = intro?.end ?? 90.04;
+  const inIntro = curTime >= (intro?.start ?? 0) && curTime < introEnd;
+  const showBtn = showSkipIntro && inIntro && mouseActive;
 
   return (
-    <View style={styles.videoPlaceholder}>
+    <View style={styles.videoPlaceholder} onPointerMove={resetMouse}>
       {Platform.OS === 'web' ? (
         <video
           ref={videoRef} src={streamUrl} controls autoPlay playsInline crossOrigin="anonymous"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
-          onPlay={onPlay} onPause={onPause} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={handleLoadedMeta}>
-          {subtitleUrl ? (
-            <track key={subtitleUrl} src={subtitleUrl} kind="subtitles" default srcLang="fr" label="Actif" />
-          ) : null}
+          onPlay={onPlay} onPause={onPause}
+          onTimeUpdate={() => {
+            const t = videoRef.current?.currentTime || 0;
+            savedTimeRef.current = t;
+            setCurTime(t);
+          }}
+          onLoadedMetadata={() => {
+            if (savedTimeRef.current > 0 && videoRef.current) videoRef.current.currentTime = savedTimeRef.current;
+            onLoadedMetadata?.();
+          }}>
+          {subtitleUrl ? <track key={subtitleUrl} src={subtitleUrl} kind="subtitles" default srcLang="fr" label="Actif" /> : null}
         </video>
       ) : (
-        <>
-          <Text style={styles.videoText}>🎬 Flux de Lecture Active</Text>
-          <Text style={styles.subText}>{isPlaying ? 'Lecture en cours...' : 'En pause'} ({activeQuality.toUpperCase()})</Text>
-        </>
+        <Text style={styles.videoText}>🎬 Lecture ({activeQuality.toUpperCase()})</Text>
       )}
-      {currentCue && activeSubtitle !== 'off' ? (
-        <View style={styles.subtitleOverlay} pointerEvents="none"><Text style={styles.subtitleText}>{currentCue}</Text></View>
-      ) : null}
-      {statusMessage ? (
-        <View style={styles.statusToast} pointerEvents="none"><Text style={styles.statusText}>{statusMessage}</Text></View>
-      ) : null}
-      {showSkipIntro && (
-        <Pressable style={styles.skipBtn} onPress={onSkipIntro}>
-          <Text style={styles.skipText}>⏭ Passer l'introduction (+85s)</Text>
+      {currentCue && activeSubtitle !== 'off' ? <View style={styles.subtitleOverlay} pointerEvents="none"><Text style={styles.subtitleText}>{currentCue}</Text></View> : null}
+      {statusMessage ? <View style={styles.statusToast} pointerEvents="none"><Text style={styles.statusText}>{statusMessage}</Text></View> : null}
+      {showBtn && (
+        <Pressable focusable={true} style={styles.skipBtn} onPress={onSkipIntro}>
+          <Text style={styles.skipText}>⏭ Passer l'introduction ({Math.floor(introEnd)}s)</Text>
         </Pressable>
       )}
     </View>

@@ -44,9 +44,7 @@ export default function PlayerScreen() {
 
   const showToast = (msg: string) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); };
 
-  useEffect(() => {
-    if (id) fetchMediaTracks(String(id)).then(setTracks);
-  }, [id]);
+  useEffect(() => { if (id) fetchMediaTracks(String(id)).then(setTracks); }, [id]);
 
   useEffect(() => {
     registerAsReceiver(`Écran UMS (${id})`, { isPlaying, positionSeconds: 0, durationSeconds: 7200 });
@@ -60,14 +58,20 @@ export default function PlayerScreen() {
     return () => clearInterval(interval);
   }, [id, isPlaying]);
 
+  const handleSkipIntro = () => {
+    const end = tracks.intro?.end ?? 90.04;
+    if (videoRef.current) videoRef.current.currentTime = end;
+    setShowSkipIntro(false);
+    showToast(`⏭ Intro passée (${Math.floor(end)}s)`);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <VideoPlayerView
         id={String(id)} streamUrl={streamUrl} isPlaying={isPlaying} videoRef={videoRef}
-        showSkipIntro={showSkipIntro} activeSubtitle={activeSubtitle} activeQuality={activeQuality}
-        activeAudio={activeAudio} statusMessage={statusMessage}
-        onSkipIntro={() => { if (videoRef.current) videoRef.current.currentTime += 85; setShowSkipIntro(false); showToast('⏭ Intro passée (+85s)'); }}
-        onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)}
+        showSkipIntro={showSkipIntro} intro={tracks.intro} activeSubtitle={activeSubtitle}
+        activeQuality={activeQuality} activeAudio={activeAudio} statusMessage={statusMessage}
+        onSkipIntro={handleSkipIntro} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)}
       />
       <View style={styles.controlsBar}>
         <View style={styles.leftGroup}>
