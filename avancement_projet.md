@@ -38,15 +38,21 @@ Dernière mise à jour : 14 Octobre 2026
   - Limite de 5 tags par catégorie avec bouton "+10 tags".
   - Limite de 15 médias par tag avec bouton "+10 médias" basé sur `hasMore`.
 
-### 🎬 Streaming Vidéo & Barre de Progression Complète (`mediaStream.ts`, `mediaTracks.ts`, `player/[id].tsx`)
-- [x] **Barre de progression complète & Seeking instantané :**
-  - Remplacement du flux morcelé par un streaming HTTP 206 Partial Content (Byte-Range) avec `Content-Range` et `Content-Length` exacts.
-  - La durée totale de la vidéo (ex: 2h03m) est reconnue immédiatement par le lecteur HTML5 `<video>`, permettant d'aller à n'importe quel moment de la vidéo sans attendre.
-- [x] **Zéro piste inventée / Détection dynamique réelle (`/api/media/:id/tracks`) :**
-  - Inspection dynamique du fichier réel via `ffprobe` pour extraire les flux audio effectifs (langue, codec, titre).
-  - Détection dynamique des sous-titres embarqués texte réels et des fichiers `.srt` / `.vtt` existants sur disque (dossier et `Subtitles/`).
-  - Extraction à la volée via `ffmpeg` uniquement pour les sous-titres réels sans fabrication artificielle.
-  - Résolutions disponibles calculées selon la hauteur réelle de la vidéo (480p pour SD, jusqu'à 1080p pour FHD).
+### 🎬 Streaming Vidéo, Pistes Audio & Qualité Dynamique (`mediaStream.ts`, `mediaTracks.ts`, `player/[id].tsx`, `VideoPlayerView.tsx`)
+- [x] **Barre de progression complète & Direct Play :**
+  - En mode par défaut (`audio: auto`, `quality: auto`), streaming direct en HTTP 206 Partial Content (Byte-Range) avec `Content-Range` et `Content-Length`. Durée totale reconnue instantanément par `<video>`.
+- [x] **Changement de Langue Audio Dynamique & Effectif :**
+  - Sélection d'une piste audio réelle depuis le modal (`🔊 Audio`).
+  - L'URL de streaming intègre dynamiquement `?audio=<index>` (ex: `audio=2` pour le japonais sur Bleach).
+  - FFmpeg route à la volée le flux audio sélectionné (`-map 0:v:0 -map 0:<index>`) sans réencodage vidéo (`-c:v copy`), démarrage instantané.
+- [x] **Changement de Qualité / Résolution Dynamique :**
+  - Sélection de la résolution souhaitée (`1080p`, `720p`, `480p`) depuis le modal (`⚙️ Qualité`).
+  - L'URL de streaming intègre `?quality=<valeur>`.
+  - FFmpeg redimensionne le flux à la volée avec le preset `ultrafast` et diffuse le flux MP4 fragmenté.
+- [x] **Continuité Temporelle lors des Changements :**
+  - Le lecteur mémorise le curseur temporel (`savedTimeRef`) et repositionne automatiquement la lecture au même instant (`onLoadedMetadata`) lors du basculement de langue ou de résolution.
+- [x] **Sous-Titres Réels Garantis :**
+  - Extraction à la volée des sous-titres texte réels embarqués ou externes (`.srt`/`.vtt`), synchronisation WebVTT et affichage textuel instantané.
 
 ### 💬 Forum WhatsApp Universel Multimédia (`/forum/[topic]`)
 - [x] **Universal Clickable Text :** Tous les textes (titres, tags, catégories, overviews) ouvrent leur salon de forum dédié.
