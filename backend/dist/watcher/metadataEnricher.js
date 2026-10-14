@@ -1,27 +1,82 @@
 import { db } from '../db/connection.js';
-import { mediaNodes } from '../db/schema/index.js';
-import { eq } from 'drizzle-orm';
+import { mediaNodes, nodeEavLinks } from '../db/schema/index.js';
+import { eq, sql } from 'drizzle-orm';
 import { fetchExternalMetadata, cleanShowTitle } from './externalMetadata.js';
 import { linkTagToNode } from './tagExtractor.js';
 import { detectAdjacentFiles } from './mediaFileDetector.js';
-export function computeMetadataNeedScore(node) {
+/**
+ * Calcule l'indice de besoin en métadonnées d'un média.
+ * Donne une priorité absolue aux Sagas (COLLECTION) et Séries (SHOW) en carence
+ * afin d'équilibrer l'exhaustivité culturelle du site.
+ */
+export function computeMetadataNeedScore(node, tagCount = 0) {
     let score = 0;
+    // 1. Priorité structurelle de navigation
+    if (node.nodeType === 'COLLECTION') {
+        score += 250;
+    }
+    else if (node.nodeType === 'SHOW') {
+        score += 150;
+    }
+    else if (node.nodeType === 'MOVIE') {
+        score += 40;
+    }
+    else if (node.nodeType === 'SEASON') {
+        score += 15;
+    }
+    else {
+        // EPISODE : priorité minimale
+        score += 0;
+    }
+    // 2. Carence en métadonnées textuelles et visuelles de base
     if (!node.overview || node.overview.trim().length === 0)
-        score += 10;
+        score += 40;
     if (!node.posterPath)
-        score += 8;
+        score += 30;
+    if (!node.fanartPath)
+        score += 20;
     if (!node.releaseYear)
-        score += 6;
+        score += 15;
     if (node.communityRating == null)
-        score += 4;
+        score += 15;
     if (!node.tagline)
-        score += 2;
+        score += 10;
+    // 3. Carence en tags EAV (Genres, Acteurs, Réalisateurs, Studios, Sujets)
+    if (tagCount === 0) {
+        score += 100;
+    }
+    else if (tagCount < 5) {
+        score += 60;
+    }
+    else if (tagCount < 15) {
+        score += 35;
+    }
+    else if (tagCount < 30) {
+        score += 15;
+    }
     return score;
 }
-export async function enrichLibraryMetadata(batchLimit = 30) {
+export async function enrichLibraryMetadata(batchLimit = 50) {
+    // 1. Recenser le nombre de tags par média pour détecter les sagas et séries orphelines
+    const tagCountsRaw = await db
+        .select({
+        nodeId: nodeEavLinks.nodeId,
+        count: sql `count(*)::int`,
+    })
+        .from(nodeEavLinks)
+        .groupBy(nodeEavLinks.nodeId);
+    const tagCountMap = new Map();
+    for (const row of tagCountsRaw) {
+        if (row.nodeId)
+            tagCountMap.set(row.nodeId, row.count);
+    }
+    // 2. Récupérer et classer tous les médias par priorité algorithmique
     const allNodes = await db.query.mediaNodes.findMany();
     const scoredNodes = allNodes
-        .map((node) => ({ node, score: computeMetadataNeedScore(node) }))
+        .map((node) => ({
+        node,
+        score: computeMetadataNeedScore(node, tagCountMap.get(node.id) || 0),
+    }))
         .sort((a, b) => b.score - a.score);
     const targetBatch = scoredNodes.slice(0, batchLimit);
     let enrichedCount = 0;
@@ -29,6 +84,7 @@ export async function enrichLibraryMetadata(batchLimit = 30) {
         try {
             let hasUpdate = false;
             const updates = { updatedAt: new Date() };
+            // Détection de visuels adjacents locaux (.nfo, posters)
             if ((!node.posterPath || !node.fanartPath) && node.nfoFilePath) {
                 const adjacent = await detectAdjacentFiles(node.nfoFilePath);
                 if (!node.posterPath && adjacent.posterPath) {
@@ -56,7 +112,7 @@ export async function enrichLibraryMetadata(batchLimit = 30) {
             const searchTitle = cleanShowTitle(rawSearch);
             const external = await fetchExternalMetadata(searchTitle, node.nodeType);
             if (external) {
-                if (!node.overview && external.overview) {
+                if ((!node.overview || node.overview.trim().length === 0) && external.overview) {
                     updates.overview = external.overview;
                     hasUpdate = true;
                 }
@@ -111,6 +167,63 @@ export async function enrichLibraryMetadata(batchLimit = 30) {
                 }
                 for (const a of external.actors) {
                     await linkTagToNode(node.id, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {}).catch(() => null);
+                }
+            }
+            // Traitement spécial et agressif pour les Sagas (COLLECTION) : enrichir également ses films enfants
+            if (node.nodeType === 'COLLECTION') {
+                const childMovies = await db.query.mediaNodes.findMany({
+                    where: (t, { eq: eqOp }) => eqOp(t.parentId, node.id),
+                });
+                for (const child of childMovies) {
+                    const childTagCount = tagCountMap.get(child.id) || 0;
+                    // Si le film enfant manque de données fondamentales ou de tags, on l'enrichit immédiatement
+                    if (!child.overview || childTagCount < 10) {
+                        const cleanChild = cleanShowTitle(child.originalTitle || child.title);
+                        const childExt = await fetchExternalMetadata(cleanChild, 'MOVIE');
+                        if (childExt) {
+                            const childUpdates = { updatedAt: new Date() };
+                            if (!child.overview && childExt.overview)
+                                childUpdates.overview = childExt.overview;
+                            if (!child.tagline && childExt.tagline)
+                                childUpdates.tagline = childExt.tagline;
+                            if (!child.releaseYear && childExt.releaseYear)
+                                childUpdates.releaseYear = childExt.releaseYear;
+                            if (child.communityRating == null && childExt.communityRating) {
+                                childUpdates.communityRating = childExt.communityRating;
+                            }
+                            if (!child.posterPath && childExt.posterUrl)
+                                childUpdates.posterPath = childExt.posterUrl;
+                            if (!child.fanartPath && childExt.fanartUrl)
+                                childUpdates.fanartPath = childExt.fanartUrl;
+                            if (Object.keys(childUpdates).length > 1) {
+                                await db.update(mediaNodes).set(childUpdates).where(eq(mediaNodes.id, child.id));
+                            }
+                            // Lier les tags complets au film enfant (qui remonteront dans la saga)
+                            for (const g of childExt.genres)
+                                await linkTagToNode(child.id, 'genre', g).catch(() => null);
+                            for (const s of childExt.tags)
+                                await linkTagToNode(child.id, 'subject', s).catch(() => null);
+                            for (const st of childExt.studios)
+                                await linkTagToNode(child.id, 'studio', st).catch(() => null);
+                            for (const c of childExt.countries)
+                                await linkTagToNode(child.id, 'country', c).catch(() => null);
+                            if (childExt.certification) {
+                                await linkTagToNode(child.id, 'certification', childExt.certification).catch(() => null);
+                            }
+                            for (const d of childExt.directors)
+                                await linkTagToNode(child.id, 'director', d).catch(() => null);
+                            for (const w of childExt.writers)
+                                await linkTagToNode(child.id, 'writer', w).catch(() => null);
+                            for (const p of childExt.producers)
+                                await linkTagToNode(child.id, 'producer', p).catch(() => null);
+                            for (const comp of childExt.composers)
+                                await linkTagToNode(child.id, 'composer', comp).catch(() => null);
+                            for (const a of childExt.actors) {
+                                await linkTagToNode(child.id, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {}).catch(() => null);
+                            }
+                        }
+                        await new Promise((resolve) => setTimeout(resolve, 150));
+                    }
                 }
             }
             if (hasUpdate) {
