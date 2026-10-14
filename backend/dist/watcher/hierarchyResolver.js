@@ -1,0 +1,89 @@
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { db } from '../db/connection.js';
+import { mediaNodes } from '../db/schema/index.js';
+import { eq, and, or, like } from 'drizzle-orm';
+import { generateSlug } from './slugify.js';
+export function cleanShowFolderName(folder) {
+    return folder
+        .replace(/^\s*\[.*?\]/g, '')
+        .replace(/\[.*?\]/g, '')
+        .replace(/\(.*?\)/g, '')
+        .replace(/\b(1080p|720p|2160p|4k|bluray|remux|hevc|x265|x264|vff|vostfr|multi|proper|repack|web-dl|web|aac|ac3|dts|flac|intégral|integrale)\b/gi, '')
+        .replace(/[._]/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+/**
+ * Détermine le dossier racine d'une série pour n'importe quel fichier
+ */
+export async function resolveSeriesRoot(filePath) {
+    let currentDir = path.dirname(filePath);
+    const rootLimit = path.parse(currentDir).root;
+    // 1. Remonter l'arborescence pour chercher un tvshow.nfo
+    let checkDir = currentDir;
+    while (checkDir && checkDir !== rootLimit && checkDir !== path.dirname(checkDir)) {
+        const parent = path.dirname(checkDir);
+        const parentName = path.basename(parent).toLowerCase();
+        // Arrêt si on a atteint la racine de catégorie (ex: Series, Animes)
+        if (['animes', 'anime', 'series', 'séries', 'tv', 'shows'].includes(parentName)) {
+            const candidateNfo = path.join(checkDir, 'tvshow.nfo');
+            try {
+                await fs.access(candidateNfo);
+                return { showDir: checkDir, tvshowNfoPath: candidateNfo, showTitleCandidate: path.basename(checkDir) };
+            }
+            catch {
+                return { showDir: checkDir, tvshowNfoPath: null, showTitleCandidate: path.basename(checkDir) };
+            }
+        }
+        const candidateNfo = path.join(checkDir, 'tvshow.nfo');
+        try {
+            await fs.access(candidateNfo);
+            return { showDir: checkDir, tvshowNfoPath: candidateNfo, showTitleCandidate: path.basename(checkDir) };
+        }
+        catch { }
+        checkDir = parent;
+    }
+    return null;
+}
+/**
+ * Résout le SHOW parent id de manière déterministe pour n'importe quel fichier (trouve ou crée si absent)
+ */
+export async function resolveParentShowNodeId(filePath) {
+    const seriesCtx = await resolveSeriesRoot(filePath);
+    if (!seriesCtx)
+        return null;
+    const cleanedTitle = cleanShowFolderName(seriesCtx.showTitleCandidate);
+    // 1. Recherche par tvshowNfoPath exact (avec compatibilité /var/home <=> /home)
+    if (seriesCtx.tvshowNfoPath) {
+        const altPath = seriesCtx.tvshowNfoPath.startsWith('/var/home/')
+            ? seriesCtx.tvshowNfoPath.replace('/var/home/', '/home/')
+            : seriesCtx.tvshowNfoPath.replace('/home/', '/var/home/');
+        const showByNfo = await db.query.mediaNodes.findFirst({
+            where: (t, { and: aOp, eq: eOp, or: oOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(eOp(t.nfoFilePath, seriesCtx.tvshowNfoPath), eOp(t.nfoFilePath, altPath))),
+        });
+        if (showByNfo)
+            return showByNfo.id;
+    }
+    // 2. Recherche par nom de dossier ou titre nettoyé
+    const showByName = await db.query.mediaNodes.findFirst({
+        where: (t, { and: aOp, eq: eOp, or: oOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(eOp(t.title, seriesCtx.showTitleCandidate), eOp(t.sortTitle, seriesCtx.showTitleCandidate), eOp(t.title, cleanedTitle), eOp(t.sortTitle, cleanedTitle))),
+    });
+    if (showByName)
+        return showByName.id;
+    // 3. Si aucun SHOW n'existe pour cette série (ex: Lain sans tvshow.nfo), le créer proprement
+    const slug = `${generateSlug(cleanedTitle || seriesCtx.showTitleCandidate)}-show`;
+    const [createdShow] = await db
+        .insert(mediaNodes)
+        .values({
+        nodeType: 'SHOW',
+        title: cleanedTitle || seriesCtx.showTitleCandidate,
+        sortTitle: cleanedTitle || seriesCtx.showTitleCandidate,
+        slug: `${slug}-${Date.now().toString().slice(-4)}`,
+        state: 'READY',
+        confidenceScore: 0.95,
+        updatedAt: new Date(),
+    })
+        .returning();
+    return createdShow.id;
+}

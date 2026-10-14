@@ -21,7 +21,7 @@ export function parseSeasonEpisode(title, orderIndex) {
         };
     }
     // Format 1x02
-    const xPattern = /(\d+)x(\\d+)/i.exec(title);
+    const xPattern = /(\d+)x(\d+)/i.exec(title);
     if (xPattern) {
         const s = parseInt(xPattern[1], 10);
         const e = parseInt(xPattern[2], 10);

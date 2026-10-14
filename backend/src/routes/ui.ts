@@ -60,13 +60,15 @@ uiRouter.get('/layout', async (c) => {
         }));
       } else if (rail.railType === 'HERO_SPOTLIGHT') {
         items = await db.query.mediaNodes.findMany({
-          where: (t, { inArray }) => inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']),
+          where: (t, { and, inArray, eq }) =>
+            and(inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']), eq(t.isExtra, false)),
           orderBy: [desc(mediaNodes.createdAt)],
           limit: 5,
         });
       } else if (rail.railType === 'RECENTLY_ADDED') {
         items = await db.query.mediaNodes.findMany({
-          where: (t, { inArray }) => inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']),
+          where: (t, { and, inArray, eq }) =>
+            and(inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']), eq(t.isExtra, false)),
           orderBy: [desc(mediaNodes.createdAt)],
           limit,
         });
@@ -77,12 +79,14 @@ uiRouter.get('/layout', async (c) => {
         });
       } else if (rail.railType === 'COLLECTIONS_ROW') {
         items = await db.query.mediaNodes.findMany({
-          where: (t, { inArray }) => inArray(t.nodeType, ['COLLECTION', 'SHOW']),
+          where: (t, { and, inArray, eq }) =>
+            and(inArray(t.nodeType, ['COLLECTION', 'SHOW']), eq(t.isExtra, false)),
           limit,
         });
       } else {
         items = await db.query.mediaNodes.findMany({
-          where: (t, { inArray }) => inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']),
+          where: (t, { and, inArray, eq }) =>
+            and(inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']), eq(t.isExtra, false)),
           orderBy: [desc(mediaNodes.communityRating)],
           limit,
         });
@@ -101,12 +105,5 @@ uiRouter.get('/layout', async (c) => {
     })
   );
 
-  return c.json({ rails: hydratedRails });
-});
-
-uiRouter.get('/tags', async (c) => {
-  const attributes = await db.query.eavAttributes.findMany({
-    orderBy: [asc(eavAttributes.displayOrder)],
-  });
-  return c.json({ attributes });
+  return c.json(hydratedRails);
 });

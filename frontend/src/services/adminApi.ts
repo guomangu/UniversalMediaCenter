@@ -201,3 +201,93 @@ export async function deleteIptvSource(id: string): Promise<any> {
     return { success: false, error: err.message };
   }
 }
+
+export interface ScanStatusResponse {
+  isScanning: boolean;
+  totalDiscovered: number;
+  processedCount: number;
+  nfoCount: number;
+  standaloneCount: number;
+  currentFile?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  error?: string;
+  stats?: {
+    totalNodes: number;
+    moviesCount: number;
+    showsCount: number;
+    episodesCount: number;
+    extrasCount: number;
+    verifiedCount: number;
+    toVerifyCount: number;
+  };
+  chaosRoots?: string[];
+}
+
+export async function fetchScanStatus(): Promise<ScanStatusResponse | null> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/scan/status`, { headers: getAuthHeaders() });
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function triggerUniversalScan(): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/scan/trigger`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function rebuildMediaHierarchy(): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/scan/rebuild-hierarchy`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchMediaToVerify(): Promise<any[]> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/media/to-verify`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    return data.items || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function validateMedia(id: string): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/media/${id}/validate`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function matchMedia(id: string, payload: { title?: string }): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/media/${id}/match`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, jsonb, doublePrecision, index, uniqueIndex, } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, jsonb, doublePrecision, index, uniqueIndex, } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { nodeTypeEnum, nodeStateEnum } from './enums.js';
 import { geometryPoint } from './spatial.js';
@@ -29,6 +29,13 @@ export const mediaNodes = pgTable('media_nodes', {
     premieredDate: timestamp('premiered_date'),
     runtimeSeconds: integer('runtime_seconds'),
     communityRating: doublePrecision('community_rating'),
+    confidenceScore: doublePrecision('confidence_score').default(1.0).notNull(),
+    oshash: text('oshash'),
+    crc32: text('crc32'),
+    edition: text('edition'),
+    isExtra: boolean('is_extra').default(false).notNull(),
+    extraType: text('extra_type'),
+    translationsJson: jsonb('translations_json').default({}),
     chaptersJson: jsonb('chapters_json').$type().default([]),
     location: geometryPoint('location'),
     searchVectorText: text('search_vector_text').default('').notNull(),

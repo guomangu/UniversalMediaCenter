@@ -1,34 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { SiteHeader } from '@/components/SiteHeader';
 import { AccountModal } from '@/components/AccountModal';
 import { useCurrentUser } from '@/services/authStore';
-import { triggerLibraryRefresh } from '@/services/api';
 import { styles } from '@/components/AdminScreen.styles';
 import { AdminConfigTab } from '@/components/AdminConfigTab';
 import { AdminProfileTypesTab } from '@/components/AdminProfileTypesTab';
 import { AdminUsersTab } from '@/components/AdminUsersTab';
 import { AdminIptvTab } from '@/components/AdminIptvTab';
+import { AdminScanTab } from '@/components/AdminScanTab';
 
 type Tab = 'CONFIG' | 'PROFILE_TYPES' | 'USERS' | 'LIBRARY' | 'IPTV';
 
 export default function AdminScreen() {
   const router = useRouter();
   const currentUser = useCurrentUser();
-  const [tab, setTab] = useState<Tab>('PROFILE_TYPES');
-  const [statusMsg, setStatusMsg] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<Tab>('LIBRARY');
   const [showAuthModal, setShowAuthModal] = useState(false);
-
-  const handleRefreshLibrary = async () => {
-    setLoading(true);
-    setStatusMsg('Analyse et enrichissement prioritaire des métadonnées en cours...');
-    const res = await triggerLibraryRefresh(50);
-    setLoading(false);
-    setStatusMsg(res.success ? `✅ ${res.message}` : `❌ Échec : ${res.error}`);
-  };
 
   // Garde de sécurité : seuls les administrateurs authentifiés peuvent voir et utiliser ce panneau
   if (!currentUser?.isAdmin) {
@@ -69,7 +59,7 @@ export default function AdminScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.heading}>Panneau d’Administration Centralisé</Text>
         <View style={styles.tabRow}>
-          {(['PROFILE_TYPES', 'USERS', 'CONFIG', 'LIBRARY', 'IPTV'] as const).map((t) => (
+          {(['LIBRARY', 'PROFILE_TYPES', 'USERS', 'CONFIG', 'IPTV'] as const).map((t) => (
             <Pressable
               key={t}
               focusable={true}
@@ -77,40 +67,24 @@ export default function AdminScreen() {
               onPress={() => setTab(t)}
             >
               <Text style={styles.tabText}>
-                {t === 'PROFILE_TYPES'
+                {t === 'LIBRARY'
+                  ? '🚀 Scan & Médiathèque'
+                  : t === 'PROFILE_TYPES'
                   ? '🏷️ Types de Profils'
                   : t === 'USERS'
                   ? '👥 Comptes'
                   : t === 'CONFIG'
                   ? '⚙️ param.yaml'
-                  : t === 'LIBRARY'
-                  ? '🔄 Scan'
                   : '📡 Sources IPTV'}
               </Text>
             </Pressable>
           ))}
         </View>
 
+        {tab === 'LIBRARY' && <AdminScanTab />}
         {tab === 'PROFILE_TYPES' && <AdminProfileTypesTab />}
         {tab === 'USERS' && <AdminUsersTab />}
         {tab === 'CONFIG' && <AdminConfigTab />}
-
-        {tab === 'LIBRARY' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Mise à jour & Complétion Intelligente</Text>
-            <Text style={styles.cardSub}>Scanne par priorité de besoin (incomplets en premier) et met à jour champs manquants et existants.</Text>
-            <Pressable
-              focusable={true}
-              style={[styles.submitBtn, loading && styles.btnDisabled]}
-              onPress={handleRefreshLibrary}
-              disabled={loading}
-            >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>🔄 Mettre à jour la médiathèque</Text>}
-            </Pressable>
-            {statusMsg ? <Text style={styles.statusMsg}>{statusMsg}</Text> : null}
-          </View>
-        )}
-
         {tab === 'IPTV' && <AdminIptvTab />}
       </ScrollView>
     </SafeAreaView>

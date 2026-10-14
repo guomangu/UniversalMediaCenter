@@ -39,8 +39,9 @@ export default function PlayerScreen() {
   const countdownTimer = useRef<any>(null);
   const isCancelledRef = useRef<boolean>(false);
 
-  // Amélioration gestion du titre réel du média
+  // Amélioration gestion du titre réel du média et des chapitres d'intro
   const [resolvedTitle, setResolvedTitle] = useState<string>(title || '');
+  const [introChapter, setIntroChapter] = useState<{ start: number; end: number } | null>(null);
 
   // Gestion de la discussion en direct, appel vocal & mode silence
   const [viewersCount, setViewersCount] = useState<number>(1);
@@ -48,11 +49,17 @@ export default function PlayerScreen() {
   const [isMuted, setIsMuted] = useState(false);
 
   useEffect(() => {
-    if (id && (!title || title.startsWith('Média #'))) {
+    if (id) {
       fetchMediaDetail(String(id), share).then((res) => {
-        if (res?.media?.title) {
+        if (res?.media) {
           const badge = res.media.displayBadge || res.media.seasonEpisodeTag;
           setResolvedTitle(badge ? `${res.media.title} (${badge})` : res.media.title);
+
+          const chapters = res.media.chaptersJson || [];
+          const foundIntro = chapters.find((ch: any) => ch.type === 'INTRO');
+          if (foundIntro) {
+            setIntroChapter({ start: foundIntro.startSeconds, end: foundIntro.endSeconds });
+          }
         }
       });
     }
@@ -167,11 +174,17 @@ export default function PlayerScreen() {
         isPlaying={isPlaying}
         videoRef={videoRef}
         showSkipIntro={showSkipIntro}
+        intro={introChapter}
         activeSubtitle={activeSubtitle}
         activeQuality={activeQuality}
         activeAudio={activeAudio}
         statusMessage={statusMessage}
-        onSkipIntro={() => { handleSeekDelta(85); setShowSkipIntro(false); }}
+        onSkipIntro={() => {
+          const target = introChapter ? introChapter.end : (videoRef.current?.currentTime || 0) + 85;
+          if (videoRef.current) videoRef.current.currentTime = target;
+          setShowSkipIntro(false);
+          showToast('Générique passé');
+        }}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onNearEnd={handleNearEnd}

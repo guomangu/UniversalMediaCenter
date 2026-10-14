@@ -9,6 +9,7 @@ export const users = pgTable('users', {
     bio: text('bio'),
     pinHash: text('pin_hash'),
     isAdmin: boolean('is_admin').default(false).notNull(),
+    isIncognito: boolean('is_incognito').default(false).notNull(),
     profileRole: text('profile_role').default('STANDARD'),
     canDownload: boolean('can_download').default(true).notNull(),
     canTranscode: boolean('can_transcode').default(true).notNull(),

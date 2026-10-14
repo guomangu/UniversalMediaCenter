@@ -45,6 +45,7 @@ export async function createSecondaryTables() {
       created_at TIMESTAMP DEFAULT NOW() NOT NULL
     );
     ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_incognito BOOLEAN DEFAULT FALSE NOT NULL;
     CREATE TABLE IF NOT EXISTS watch_progress (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -100,7 +101,83 @@ export async function createSecondaryTables() {
       start_time TIMESTAMP NOT NULL,
       end_time TIMESTAMP NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS forum_messages (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      topic_slug TEXT NOT NULL,
+      topic_title TEXT NOT NULL,
+      author_id UUID,
+      author_name TEXT DEFAULT 'Visiteur' NOT NULL,
+      content TEXT NOT NULL,
+      media_type TEXT DEFAULT 'TEXT' NOT NULL,
+      media_url TEXT,
+      file_name TEXT,
+      reply_to_id UUID,
+      reply_to_text TEXT,
+      reply_to_author TEXT,
+      vote_count INTEGER DEFAULT 0 NOT NULL,
+      quoted_media_id UUID,
+      quoted_media_title TEXT,
+      quoted_media_poster TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+    );
+    ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS vote_count INTEGER DEFAULT 0 NOT NULL;
+    ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_id UUID;
+    ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_title TEXT;
+    ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_poster TEXT;
+    CREATE TABLE IF NOT EXISTS forum_message_votes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      message_id UUID NOT NULL REFERENCES forum_messages(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_forum_msg_user_vote UNIQUE (message_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS media_sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      topic_slug TEXT NOT NULL,
+      host_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      host_display_name TEXT NOT NULL,
+      title TEXT NOT NULL,
+      scheduled_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      status TEXT DEFAULT 'ACTIVE' NOT NULL,
+      current_position DOUBLE PRECISION DEFAULT 0 NOT NULL,
+      is_playing BOOLEAN DEFAULT TRUE NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS media_session_participants (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id UUID NOT NULL REFERENCES media_sessions(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      display_name TEXT NOT NULL,
+      is_host BOOLEAN DEFAULT FALSE NOT NULL,
+      is_muted BOOLEAN DEFAULT FALSE NOT NULL,
+      last_ping_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_session_user_unique UNIQUE (session_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS user_ratings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      target_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      rated_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      rating INTEGER NOT NULL,
+      comment TEXT,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_user_rating_unique UNIQUE (target_user_id, rated_by_user_id)
+    );
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS confidence_score DOUBLE PRECISION DEFAULT 1.0 NOT NULL;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS oshash TEXT;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS crc32 TEXT;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS edition TEXT;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS is_extra BOOLEAN DEFAULT FALSE NOT NULL;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS extra_type TEXT;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS translations_json JSONB DEFAULT '{}'::jsonb;
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_confidence ON media_nodes (confidence_score);
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_is_extra ON media_nodes (is_extra);
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_oshash ON media_nodes (oshash);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_trgm ON media_nodes USING gin (search_vector_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_eav_values_trgm ON eav_values USING gin (value_text gin_trgm_ops);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_node_val_role_coalesce ON node_eav_links (node_id, value_id, COALESCE(context_role, ''));
+    CREATE INDEX IF NOT EXISTS idx_media_sessions_node ON media_sessions (node_id);
+    CREATE INDEX IF NOT EXISTS idx_media_sessions_topic ON media_sessions (topic_slug);
   `);
 }

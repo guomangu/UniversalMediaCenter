@@ -59,7 +59,7 @@ export default function MediaDetailScreen() {
     await toggleFavorite(id, nextState);
   };
 
-  const { media, tags = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] }, children = [], relatedTags = [] } = data || ({} as any);
+  const { media, tags = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] }, children = [], extras = [], relatedTags = [] } = data || ({} as any);
 
   // Séparation du casting (acteurs) et de l'équipe technique (réalisateurs, scénaristes, compositeurs, producteurs)
   const { actors, crewMembers, technicalSpecs } = useMemo(() => {
@@ -117,6 +117,16 @@ export default function MediaDetailScreen() {
               {seasonTag ? (
                 <View style={styles.seasonTagPill}>
                   <Text style={styles.seasonTagTxt}>{seasonTag}</Text>
+                </View>
+              ) : null}
+              {media.edition ? (
+                <View style={[styles.seasonTagPill, { backgroundColor: 'rgba(99, 102, 241, 0.25)', borderColor: '#6366f1' }]}>
+                  <Text style={[styles.seasonTagTxt, { color: '#a5b4fc' }]}>✨ {media.edition}</Text>
+                </View>
+              ) : null}
+              {media.confidenceScore && media.confidenceScore < 0.90 ? (
+                <View style={[styles.seasonTagPill, { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: '#f87171' }]}>
+                  <Text style={[styles.seasonTagTxt, { color: '#fca5a5' }]}>⚠️ À vérifier ({Math.round(media.confidenceScore * 100)}%)</Text>
                 </View>
               ) : null}
               {tags.HERO_BADGE?.map((b: any, i: number) => (
@@ -187,6 +197,47 @@ export default function MediaDetailScreen() {
           parentPoster={media.posterPath}
           children={children}
         />
+
+        {/* Bonus, Coulisses et Scènes coupées (Extras) */}
+        {extras && extras.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.secTitle}>🎁 Bonus & Coulisses ({extras.length})</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 8 }}>
+              {extras.map((extra: any) => (
+                <Pressable
+                  key={extra.id}
+                  focusable={true}
+                  onPress={() => router.push({ pathname: `/player/${extra.id}`, params: { title: `${media.title} - ${extra.title}` } } as any)}
+                  style={{
+                    width: 180,
+                    backgroundColor: 'rgba(30, 41, 59, 0.75)',
+                    borderRadius: 14,
+                    padding: 10,
+                    borderWidth: 1,
+                    borderColor: 'rgba(71, 85, 105, 0.4)',
+                  }}
+                >
+                  <View style={{ height: 100, borderRadius: 10, backgroundColor: 'rgba(15, 23, 42, 0.8)', justifyContent: 'center', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 32 }}>🎬</Text>
+                    <View style={{ position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                      <Text style={{ color: '#f8fafc', fontSize: 10, fontWeight: '700' }}>
+                        {extra.extraType ? extra.extraType.toUpperCase() : 'BONUS'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: '#f8fafc', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>
+                    {extra.title}
+                  </Text>
+                  {extra.runtimeSeconds ? (
+                    <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
+                      {Math.round(extra.runtimeSeconds / 60)} min
+                    </Text>
+                  ) : null}
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Équipes artistiques et créatives (Réalisateurs, Scénaristes, Compositeurs, Producteurs) */}
         {crewMembers.length > 0 && (
@@ -318,103 +369,128 @@ export default function MediaDetailScreen() {
         mediaId={media.id}
         mediaTitle={media.title}
         onClose={() => setShowRepostModal(false)}
-        onSuccess={() => fetchMediaReposts(media.id).then(setReposts)}
       />
 
-      <CastModal
-        visible={showCast}
-        onClose={() => setShowCast(false)}
-        currentMedia={{ id: String(playId), title: media.title, positionSeconds: 0 }}
-      />
+      <CastModal visible={showCast} onClose={() => setShowCast(false)} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { paddingBottom: 60 },
   loading: { flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' },
-  backBtn: { padding: Spacing.three },
-  backTxt: { color: '#818cf8', fontWeight: '700' },
-  heroBox: { position: 'relative', minHeight: 340, justifyContent: 'flex-end', padding: Spacing.four },
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.35 },
-  heroContent: { maxWidth: MaxContentWidth, gap: 10 },
-  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  content: {
+    maxWidth: MaxContentWidth,
+    width: '100%',
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingBottom: 100,
+    paddingTop: Platform.OS === 'web' ? 70 : Spacing.two,
+  },
+  backBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    borderRadius: Radius.pill,
+    marginBottom: Spacing.two,
+  },
+  backTxt: { color: '#94a3b8', fontSize: 13, fontWeight: '600' },
+  heroBox: {
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    backgroundColor: '#1e293b',
+    marginBottom: Spacing.three,
+    borderWidth: 1,
+    borderColor: 'rgba(51, 65, 85, 0.4)',
+  },
+  backdrop: {
+    width: '100%',
+    height: 380,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    opacity: 0.25,
+  },
+  heroContent: { padding: Spacing.three, paddingTop: 60 },
+  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   seasonTagPill: {
-    backgroundColor: '#6366f1',
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.pill,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+    justifyContent: 'center',
   },
-  seasonTagTxt: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
-  title: { fontSize: 28, fontWeight: '900', color: '#f8fafc' },
-  overview: { fontSize: 14, color: '#cbd5e1', lineHeight: 22, maxWidth: 800 },
+  seasonTagTxt: { color: '#818cf8', fontSize: 12, fontWeight: '700' },
+  title: { fontSize: 24, fontWeight: '800', color: '#f8fafc', marginBottom: 8 },
+  overview: { fontSize: 14, color: '#94a3b8', lineHeight: 20, marginBottom: 16 },
   playBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: Radius.pill,
     backgroundColor: '#6366f1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: Radius.pill,
   },
-  btnText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
-  section: { padding: Spacing.four },
+  btnText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
+  section: {
+    marginTop: Spacing.three,
+    backgroundColor: 'rgba(30, 41, 59, 0.4)',
+    borderRadius: Radius.md,
+    padding: Spacing.three,
+    borderWidth: 1,
+    borderColor: 'rgba(51, 65, 85, 0.3)',
+  },
   secHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
     justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 10,
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
   },
-  secTitle: { fontSize: 18, fontWeight: '800', color: '#f8fafc' },
-  secHint: { fontSize: 11, color: '#94a3b8' },
-  actorsScroll: { gap: 14, paddingVertical: 4 },
+  secTitle: { fontSize: 15, fontWeight: '700', color: '#f1f5f9' },
+  secHint: { fontSize: 11, color: '#64748b' },
+  actorsScroll: { gap: 10, paddingVertical: 4 },
   actorCard: {
-    width: 108,
+    width: 90,
     alignItems: 'center',
-    gap: 4,
-    padding: 6,
-    borderRadius: Radius.lg,
-    backgroundColor: 'rgba(30, 41, 59, 0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    borderRadius: 12,
+    padding: 8,
     borderWidth: 1,
-    borderColor: 'transparent',
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+    borderColor: 'rgba(51, 65, 85, 0.3)',
   },
-  actorCardPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.96 }],
-    borderColor: 'rgba(99, 102, 241, 0.6)',
-  },
+  actorCardPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
   actorAvatarWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     overflow: 'hidden',
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-    borderWidth: 2,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
-    marginBottom: 4,
+    backgroundColor: '#334155',
+    marginBottom: 6,
   },
-  actorAvatar: { width: '100%', height: '100%' },
-  actorAvatarPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  actorName: { color: '#f1f5f9', fontSize: 12, fontWeight: '700', textAlign: 'center' },
-  actorRole: { color: '#94a3b8', fontSize: 10, fontWeight: '500', textAlign: 'center', lineHeight: 13 },
+  actorAvatar: { width: '100%', height: '100%', borderRadius: 27 },
+  actorAvatarPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  actorName: { color: '#f8fafc', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  actorRole: { color: '#94a3b8', fontSize: 10, textAlign: 'center', marginTop: 2 },
   actorTagBadge: {
+    marginTop: 4,
     backgroundColor: 'rgba(99, 102, 241, 0.2)',
     paddingHorizontal: 6,
     paddingVertical: 1,
-    borderRadius: Radius.pill,
-    marginTop: 2,
+    borderRadius: 4,
   },
-  actorTagBadgeTxt: { color: '#a5b4fc', fontSize: 9, fontWeight: '800' },
+  actorTagBadgeTxt: { color: '#a5b4fc', fontSize: 9, fontWeight: '700' },
   repostCard: {
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
-    borderRadius: 16,
-    padding: Spacing.three,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    padding: 12,
+    borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.3)',
+    borderColor: 'rgba(51, 65, 85, 0.4)',
   },
   repostHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  repostAuthor: { color: '#cbd5e1', fontWeight: '700', fontSize: 13 },
-  repostRating: { color: '#fbbf24', fontSize: 14 },
-  repostComment: { color: '#f8fafc', fontSize: 13, lineHeight: 18 },
+  repostAuthor: { color: '#f8fafc', fontWeight: '700', fontSize: 13 },
+  repostRating: { color: '#fbbf24', fontSize: 12 },
+  repostComment: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
 });

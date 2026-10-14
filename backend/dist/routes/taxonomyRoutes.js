@@ -25,12 +25,7 @@ taxonomyRouter.get('/', async (c) => {
     ) links JOIN eav_values v ON links.value_id = v.id JOIN eav_attributes a ON v.attribute_id = a.id WHERE a.code IN ('subject', 'studio') GROUP BY v.value_text, v.value_slug ORDER BY count DESC LIMIT 40;
   `);
     const qualitiesRes = await db.execute(sql `
-    SELECT q.label, q.slug, COUNT(DISTINCT target_id)::int AS count FROM (
-      SELECT '1080p' AS label, '1080p' AS slug, COALESCE(parent_id, id) AS target_id FROM media_nodes WHERE video_file_path ILIKE '%1080p%' OR search_vector_text ILIKE '%1080p%'
-      UNION
-      SELECT '720p' AS label, '720p' AS slug, COALESCE(parent_id, id) AS target_id FROM media_nodes WHERE video_file_path ILIKE '%720p%' OR search_vector_text ILIKE '%720p%'
-    ) q GROUP BY q.label, q.slug ORDER BY count DESC;
-  `);
+    SELECT q.label, q.slug, COUNT(DISTINCT target_id)::int AS count FROM (\n      SELECT '1080p' AS label, '1080p' AS slug, COALESCE(parent_id, id) AS target_id FROM media_nodes WHERE video_file_path ILIKE '%1080p%' OR search_vector_text ILIKE '%1080p%'\n      UNION\n      SELECT '720p' AS label, '720p' AS slug, COALESCE(parent_id, id) AS target_id FROM media_nodes WHERE video_file_path ILIKE '%720p%' OR search_vector_text ILIKE '%720p%'\n    ) q GROUP BY q.label, q.slug ORDER BY count DESC;\n  `);
     return c.json({
         categories: [
             { id: 'genres', title: '🎭 Genres', tags: Array.from(genresRes) },
@@ -45,12 +40,19 @@ taxonomyRouter.get('/medias', async (c) => {
     const tag = c.req.query('tag') || '';
     const filter = c.req.query('filter') || '';
     const q = c.req.query('q')?.toLowerCase() || '';
+    const excludeIdsParam = c.req.query('excludeIds') || '';
     const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '15', 10), 1), 100);
     let querySql = sql `
     SELECT DISTINCT n.id, n.title, n.node_type, n.release_year, n.poster_path, n.community_rating
     FROM media_nodes n LEFT JOIN node_eav_links l ON l.node_id = n.id LEFT JOIN eav_values v ON l.value_id = v.id
     WHERE (n.node_type IN ('SHOW', 'COLLECTION') OR (n.node_type = 'MOVIE' AND n.parent_id IS NULL))
   `;
+    if (excludeIdsParam) {
+        const rawIds = excludeIdsParam.split(',').map((s) => s.trim()).filter((s) => /^[0-9a-f-]{36}$/i.test(s));
+        if (rawIds.length > 0) {
+            querySql = sql `${querySql} AND n.id NOT IN (${sql.join(rawIds.map((id) => sql `${id}::uuid`), sql `, `)})`;
+        }
+    }
     if (category === 'years' && tag) {
         const yr = parseInt(tag, 10);
         if (!isNaN(yr))

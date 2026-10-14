@@ -20,6 +20,11 @@ export interface MediaNode {
   durationSeconds?: number;
   progressPercent?: number;
   isCompleted?: boolean;
+  edition?: string | null;
+  confidenceScore?: number;
+  isExtra?: boolean;
+  extraType?: string | null;
+  chaptersJson?: any[];
 }
 
 export interface UiRailItem {
@@ -40,6 +45,9 @@ export interface TagBadge {
   value_text: string;
   value_slug: string;
   context_role?: string;
+  metadata_json?: {
+    thumbUrl?: string;
+  };
 }
 
 export interface RelatedTagGroup {
@@ -58,6 +66,7 @@ export interface MediaDetailResponse {
     TECHNICAL_DRAWER: TagBadge[];
   };
   children?: MediaNode[];
+  extras?: MediaNode[];
   relatedTags?: RelatedTagGroup[];
 }
 

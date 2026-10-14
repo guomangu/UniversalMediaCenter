@@ -2,27 +2,179 @@ import { sqlClient } from './connection.js';
 
 export async function createSecondaryTables(): Promise<void> {
   await sqlClient.unsafe(`
-    CREATE TABLE IF NOT EXISTS eav_values (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      attribute_id UUID NOT NULL REFERENCES eav_attributes(id) ON DELETE CASCADE,\n      value_text TEXT NOT NULL,\n      value_slug TEXT NOT NULL,\n      metadata_json JSONB DEFAULT '{}'::jsonb,\n      CONSTRAINT idx_eav_attr_val_unique UNIQUE (attribute_id, value_slug)\n    );
-    CREATE TABLE IF NOT EXISTS node_eav_links (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,\n      value_id UUID NOT NULL REFERENCES eav_values(id) ON DELETE CASCADE,\n      context_role TEXT,\n      order_index INTEGER DEFAULT 0 NOT NULL,\n      CONSTRAINT idx_node_val_role UNIQUE (node_id, value_id, context_role)\n    );
-    CREATE TABLE IF NOT EXISTS ui_rails (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      page_target TEXT DEFAULT 'HOME' NOT NULL,\n      title TEXT NOT NULL,\n      rail_type rail_type NOT NULL,\n      card_style TEXT DEFAULT 'POSTER_VERTICAL' NOT NULL,\n      sort_order INTEGER DEFAULT 0 NOT NULL,\n      is_active BOOLEAN DEFAULT TRUE NOT NULL,\n      query_config_json JSONB DEFAULT '{}'::jsonb\n    );
-    CREATE TABLE IF NOT EXISTS users (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      email TEXT NOT NULL UNIQUE,\n      display_name TEXT NOT NULL,\n      avatar_url TEXT,\n      bio TEXT,\n      pin_hash TEXT,\n      is_admin BOOLEAN DEFAULT FALSE NOT NULL,\n      can_download BOOLEAN DEFAULT TRUE NOT NULL,\n      can_transcode BOOLEAN DEFAULT TRUE NOT NULL,\n      can_watch_iptv BOOLEAN DEFAULT TRUE NOT NULL,\n      max_concurrent_streams INTEGER DEFAULT 3 NOT NULL,\n      max_csa_age_limit INTEGER,\n      allowed_value_ids JSONB DEFAULT '[]'::jsonb,\n      blocked_value_ids JSONB DEFAULT '[]'::jsonb,\n      created_at TIMESTAMP DEFAULT NOW() NOT NULL\n    );
+    CREATE TABLE IF NOT EXISTS eav_values (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      attribute_id UUID NOT NULL REFERENCES eav_attributes(id) ON DELETE CASCADE,
+      value_text TEXT NOT NULL,
+      value_slug TEXT NOT NULL,
+      metadata_json JSONB DEFAULT '{}'::jsonb,
+      CONSTRAINT idx_eav_attr_val_unique UNIQUE (attribute_id, value_slug)
+    );
+    CREATE TABLE IF NOT EXISTS node_eav_links (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      value_id UUID NOT NULL REFERENCES eav_values(id) ON DELETE CASCADE,
+      context_role TEXT,
+      order_index INTEGER DEFAULT 0 NOT NULL,
+      CONSTRAINT idx_node_val_role UNIQUE (node_id, value_id, context_role)
+    );
+    CREATE TABLE IF NOT EXISTS ui_rails (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      page_target TEXT DEFAULT 'HOME' NOT NULL,
+      title TEXT NOT NULL,
+      rail_type rail_type NOT NULL,
+      card_style TEXT DEFAULT 'POSTER_VERTICAL' NOT NULL,
+      sort_order INTEGER DEFAULT 0 NOT NULL,
+      is_active BOOLEAN DEFAULT TRUE NOT NULL,
+      query_config_json JSONB DEFAULT '{}'::jsonb
+    );
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL,
+      avatar_url TEXT,
+      bio TEXT,
+      pin_hash TEXT,
+      is_admin BOOLEAN DEFAULT FALSE NOT NULL,
+      can_download BOOLEAN DEFAULT TRUE NOT NULL,
+      can_transcode BOOLEAN DEFAULT TRUE NOT NULL,
+      can_watch_iptv BOOLEAN DEFAULT TRUE NOT NULL,
+      max_concurrent_streams INTEGER DEFAULT 3 NOT NULL,
+      max_csa_age_limit INTEGER,
+      allowed_value_ids JSONB DEFAULT '[]'::jsonb,
+      blocked_value_ids JSONB DEFAULT '[]'::jsonb,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL
+    );
     ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS is_incognito BOOLEAN DEFAULT FALSE NOT NULL;
-    CREATE TABLE IF NOT EXISTS watch_progress (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,\n      position_seconds DOUBLE PRECISION DEFAULT 0 NOT NULL,\n      duration_seconds DOUBLE PRECISION DEFAULT 0 NOT NULL,\n      is_completed BOOLEAN DEFAULT FALSE NOT NULL,\n      updated_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      CONSTRAINT idx_progress_user_node UNIQUE (user_id, node_id)\n    );
-    CREATE TABLE IF NOT EXISTS user_favorites (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,\n      created_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      CONSTRAINT idx_favorites_user_node UNIQUE (user_id, node_id)\n    );
-    CREATE TABLE IF NOT EXISTS user_friends (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      friend_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      status TEXT DEFAULT 'PENDING' NOT NULL,\n      created_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      updated_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      CONSTRAINT idx_friends_user_friend UNIQUE (user_id, friend_id)\n    );
-    CREATE TABLE IF NOT EXISTS media_reposts (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,\n      rating INTEGER,\n      comment TEXT,\n      created_at TIMESTAMP DEFAULT NOW() NOT NULL\n    );
-    CREATE TABLE IF NOT EXISTS iptv_sources (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      name TEXT NOT NULL,\n      m3u_url TEXT NOT NULL,\n      epg_xmltv_url TEXT,\n      refresh_interval_hours INTEGER DEFAULT 6 NOT NULL,\n      is_active BOOLEAN DEFAULT TRUE NOT NULL,\n      user_agent TEXT DEFAULT 'UniversalMediaStack/3.0',\n      last_synced_at TIMESTAMP\n    );
-    CREATE TABLE IF NOT EXISTS epg_programs (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      channel_node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,\n      title TEXT NOT NULL,\n      subtitle TEXT,\n      description TEXT,\n      category TEXT,\n      icon_url TEXT,\n      start_time TIMESTAMP NOT NULL,\n      end_time TIMESTAMP NOT NULL\n    );
-    CREATE TABLE IF NOT EXISTS forum_messages (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      topic_slug TEXT NOT NULL,\n      topic_title TEXT NOT NULL,\n      author_id UUID,\n      author_name TEXT DEFAULT 'Visiteur' NOT NULL,\n      content TEXT NOT NULL,\n      media_type TEXT DEFAULT 'TEXT' NOT NULL,\n      media_url TEXT,\n      file_name TEXT,\n      reply_to_id UUID,\n      reply_to_text TEXT,\n      reply_to_author TEXT,\n      vote_count INTEGER DEFAULT 0 NOT NULL,\n      quoted_media_id UUID,\n      quoted_media_title TEXT,\n      quoted_media_poster TEXT,\n      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL\n    );
+    CREATE TABLE IF NOT EXISTS watch_progress (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      position_seconds DOUBLE PRECISION DEFAULT 0 NOT NULL,
+      duration_seconds DOUBLE PRECISION DEFAULT 0 NOT NULL,
+      is_completed BOOLEAN DEFAULT FALSE NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_progress_user_node UNIQUE (user_id, node_id)
+    );
+    CREATE TABLE IF NOT EXISTS user_favorites (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_favorites_user_node UNIQUE (user_id, node_id)
+    );
+    CREATE TABLE IF NOT EXISTS user_friends (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      friend_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT DEFAULT 'PENDING' NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_friends_user_friend UNIQUE (user_id, friend_id)
+    );
+    CREATE TABLE IF NOT EXISTS media_reposts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      rating INTEGER,
+      comment TEXT,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS iptv_sources (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL,
+      m3u_url TEXT NOT NULL,
+      epg_xmltv_url TEXT,
+      refresh_interval_hours INTEGER DEFAULT 6 NOT NULL,
+      is_active BOOLEAN DEFAULT TRUE NOT NULL,
+      user_agent TEXT DEFAULT 'UniversalMediaStack/3.0',
+      last_synced_at TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS epg_programs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      channel_node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      subtitle TEXT,
+      description TEXT,
+      category TEXT,
+      icon_url TEXT,
+      start_time TIMESTAMP NOT NULL,
+      end_time TIMESTAMP NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS forum_messages (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      topic_slug TEXT NOT NULL,
+      topic_title TEXT NOT NULL,
+      author_id UUID,
+      author_name TEXT DEFAULT 'Visiteur' NOT NULL,
+      content TEXT NOT NULL,
+      media_type TEXT DEFAULT 'TEXT' NOT NULL,
+      media_url TEXT,
+      file_name TEXT,
+      reply_to_id UUID,
+      reply_to_text TEXT,
+      reply_to_author TEXT,
+      vote_count INTEGER DEFAULT 0 NOT NULL,
+      quoted_media_id UUID,
+      quoted_media_title TEXT,
+      quoted_media_poster TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+    );
     ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS vote_count INTEGER DEFAULT 0 NOT NULL;
     ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_id UUID;
     ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_title TEXT;
     ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_poster TEXT;
-    CREATE TABLE IF NOT EXISTS forum_message_votes (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      message_id UUID NOT NULL REFERENCES forum_messages(id) ON DELETE CASCADE,\n      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      created_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      CONSTRAINT idx_forum_msg_user_vote UNIQUE (message_id, user_id)\n    );
-    CREATE TABLE IF NOT EXISTS media_sessions (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,\n      topic_slug TEXT NOT NULL,\n      host_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      host_display_name TEXT NOT NULL,\n      title TEXT NOT NULL,\n      scheduled_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      status TEXT DEFAULT 'ACTIVE' NOT NULL,\n      current_position DOUBLE PRECISION DEFAULT 0 NOT NULL,\n      is_playing BOOLEAN DEFAULT TRUE NOT NULL,\n      created_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      updated_at TIMESTAMP DEFAULT NOW() NOT NULL\n    );
-    CREATE TABLE IF NOT EXISTS media_session_participants (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      session_id UUID NOT NULL REFERENCES media_sessions(id) ON DELETE CASCADE,\n      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      display_name TEXT NOT NULL,\n      is_host BOOLEAN DEFAULT FALSE NOT NULL,\n      is_muted BOOLEAN DEFAULT FALSE NOT NULL,\n      last_ping_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      CONSTRAINT idx_session_user_unique UNIQUE (session_id, user_id)\n    );
-    CREATE TABLE IF NOT EXISTS user_ratings (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n      target_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      rated_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      rating INTEGER NOT NULL,\n      comment TEXT,\n      created_at TIMESTAMP DEFAULT NOW() NOT NULL,\n      CONSTRAINT idx_user_rating_unique UNIQUE (target_user_id, rated_by_user_id)\n    );
+    CREATE TABLE IF NOT EXISTS forum_message_votes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      message_id UUID NOT NULL REFERENCES forum_messages(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_forum_msg_user_vote UNIQUE (message_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS media_sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      topic_slug TEXT NOT NULL,
+      host_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      host_display_name TEXT NOT NULL,
+      title TEXT NOT NULL,
+      scheduled_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      status TEXT DEFAULT 'ACTIVE' NOT NULL,
+      current_position DOUBLE PRECISION DEFAULT 0 NOT NULL,
+      is_playing BOOLEAN DEFAULT TRUE NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS media_session_participants (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id UUID NOT NULL REFERENCES media_sessions(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      display_name TEXT NOT NULL,
+      is_host BOOLEAN DEFAULT FALSE NOT NULL,
+      is_muted BOOLEAN DEFAULT FALSE NOT NULL,
+      last_ping_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_session_user_unique UNIQUE (session_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS user_ratings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      target_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      rated_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      rating INTEGER NOT NULL,
+      comment TEXT,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_user_rating_unique UNIQUE (target_user_id, rated_by_user_id)
+    );
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS confidence_score DOUBLE PRECISION DEFAULT 1.0 NOT NULL;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS oshash TEXT;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS crc32 TEXT;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS edition TEXT;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS is_extra BOOLEAN DEFAULT FALSE NOT NULL;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS extra_type TEXT;
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS translations_json JSONB DEFAULT '{}'::jsonb;
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_confidence ON media_nodes (confidence_score);
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_is_extra ON media_nodes (is_extra);
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_oshash ON media_nodes (oshash);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_trgm ON media_nodes USING gin (search_vector_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_eav_values_trgm ON eav_values USING gin (value_text gin_trgm_ops);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_node_val_role_coalesce ON node_eav_links (node_id, value_id, COALESCE(context_role, ''));

@@ -42,3 +42,24 @@ artworkRouter.get('/:id/fanart', async (c) => {
         return c.notFound();
     return sendArtworkFile(media.fanartPath, c);
 });
+artworkRouter.get('/:id/thumb', async (c) => {
+    const id = c.req.param('id');
+    const media = await db.query.mediaNodes.findFirst({
+        where: (t, { or, eq }) => or(eq(t.id, id), eq(t.slug, id)),
+        columns: { thumbPath: true, posterPath: true },
+    });
+    const fileToServe = media?.thumbPath || media?.posterPath;
+    if (!fileToServe)
+        return c.notFound();
+    return sendArtworkFile(fileToServe, c);
+});
+artworkRouter.get('/:id/clearlogo', async (c) => {
+    const id = c.req.param('id');
+    const media = await db.query.mediaNodes.findFirst({
+        where: (t, { or, eq }) => or(eq(t.id, id), eq(t.slug, id)),
+        columns: { clearlogoPath: true },
+    });
+    if (!media?.clearlogoPath)
+        return c.notFound();
+    return sendArtworkFile(media.clearlogoPath, c);
+});
