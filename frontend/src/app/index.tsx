@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, ScrollView, RefreshControl, Platform, ActivityIndicator } from 'react-native';
+import { StyleSheet, ScrollView, RefreshControl, Platform, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { SiteHeader } from '@/components/SiteHeader';
@@ -9,6 +9,8 @@ import { fetchTaxonomy, TaxonomyCategory } from '@/services/taxonomyApi';
 import { Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function HomeScreen() {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
   const [categories, setCategories] = useState<TaxonomyCategory[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('Tous');
@@ -34,7 +36,7 @@ export default function HomeScreen() {
   const handleJumpToCategory = (id: string) => {
     const y = catPositions.current[id];
     if (y !== undefined) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, y - 65), animated: true });
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - (isMobile ? 90 : 65)), animated: true });
     }
   };
 
@@ -50,7 +52,10 @@ export default function HomeScreen() {
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
-          contentContainerStyle={styles.contentContainer}
+          contentContainerStyle={[
+            styles.contentContainer,
+            { paddingTop: isMobile ? 86 : 64 },
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}>
           <TagSearchBar
@@ -80,13 +85,12 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  safeArea: { flex: 1, alignItems: 'center', width: '100%' },
-  scroll: { width: '100%' },
+  safeArea: { flex: 1, width: '100%' },
+  scroll: { width: '100%', flex: 1 },
   contentContainer: {
     maxWidth: MaxContentWidth,
     width: '100%',
     alignSelf: 'center',
-    paddingTop: Platform.OS === 'web' ? 62 : 68,
     paddingBottom: 80,
     paddingHorizontal: Spacing.two,
   },

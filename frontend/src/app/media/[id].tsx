@@ -6,6 +6,7 @@ import { fetchMediaDetail, resolveImageUrl } from '@/services/api';
 import { MediaDetailResponse } from '@/services/types';
 import { TagPill } from '@/components/TagPill';
 import { ClickableTopicText } from '@/components/ClickableTopicText';
+import { MediaChildrenRow } from '@/components/MediaChildrenRow';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function MediaDetailScreen() {
@@ -23,9 +24,7 @@ export default function MediaDetailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Pressable onPress={() => router.push('/')} style={styles.backBtn}>
-          <Text style={styles.backTxt}>← Retour à l'accueil</Text>
-        </Pressable>
+        <Pressable onPress={() => router.push('/')} style={styles.backBtn}><Text style={styles.backTxt}>← Retour à l'accueil</Text></Pressable>
 
         <View style={styles.heroBox}>
           {fanartUri ? <Image source={{ uri: fanartUri }} style={styles.backdrop} /> : null}
@@ -42,19 +41,7 @@ export default function MediaDetailScreen() {
           </View>
         </View>
 
-        {children.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.secTitle}>{media.nodeType === 'SHOW' ? `Épisodes (${children.length})` : `Films de cette suite (${children.length})`}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-              {children.map((c) => (
-                <Pressable key={c.id} onPress={() => router.push(`/player/${c.id}` as any)} style={styles.childTile}>
-                  <Text style={styles.childTitle} numberOfLines={2}>{c.title}</Text>
-                  <Text style={styles.childPlay}>▶ Lancer</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
+        <MediaChildrenRow parentType={media.nodeType} parentPoster={media.posterPath} children={children} />
 
         <View style={styles.section}>
           <Text style={styles.secTitle}>Genres & Thématiques</Text>
@@ -76,7 +63,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f172a' },
   content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', paddingHorizontal: Spacing.three, paddingBottom: 80, paddingTop: Spacing.three },
-  backBtn: { marginBottom: 12, paddingVertical: 6, alignSelf: 'flex-start' },
+  backBtn: { marginBottom: 12, paddingVertical: 6, alignSelf: 'flex-start', cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
   backTxt: { color: '#818cf8', fontSize: 13, fontWeight: '700' },
   heroBox: { minHeight: 280, borderRadius: Radius.lg, overflow: 'hidden', backgroundColor: 'rgba(30, 41, 59, 0.7)', padding: Spacing.four, justifyContent: 'flex-end', marginBottom: Spacing.four, position: 'relative' },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.35 },
@@ -84,11 +71,15 @@ const styles = StyleSheet.create({
   zoneRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: Spacing.one },
   title: { fontSize: 26, fontWeight: '800', color: '#ffffff', marginBottom: Spacing.one },
   overview: { color: '#cbd5e1', fontSize: 13, lineHeight: 18, marginBottom: Spacing.three, maxWidth: 700 },
-  playBtn: { alignSelf: 'flex-start', backgroundColor: '#6366f1', paddingHorizontal: Spacing.four, paddingVertical: Spacing.two, borderRadius: Radius.pill },
+  playBtn: { alignSelf: 'flex-start', backgroundColor: '#6366f1', paddingHorizontal: Spacing.four, paddingVertical: Spacing.two, borderRadius: Radius.pill, cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
   btnText: { color: '#ffffff', fontWeight: '700' },
   section: { marginBottom: Spacing.four },
   secTitle: { fontSize: 14, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: Spacing.two },
-  childTile: { width: 130, padding: 10, borderRadius: Radius.md, backgroundColor: 'rgba(30, 41, 59, 0.8)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.4)', justifyContent: 'space-between' },
-  childTitle: { color: '#f1f5f9', fontSize: 11, fontWeight: '600', marginBottom: 6 },
-  childPlay: { color: '#818cf8', fontSize: 11, fontWeight: '700' },
+  childTile: { width: 114, marginRight: 6, cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
+  childImgWrap: { width: 114, height: 160, borderRadius: Radius.md, overflow: 'hidden', backgroundColor: 'rgba(30, 41, 59, 0.85)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.4)', position: 'relative', marginBottom: 5 },
+  childImg: { width: '100%', height: '100%' },
+  childEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  childPlayBadge: { position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(99, 102, 241, 0.9)', width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  childPlayTxt: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
+  childTitle: { color: '#f1f5f9', fontSize: 11, fontWeight: '600', lineHeight: 14, textAlign: 'center' },
 });

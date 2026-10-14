@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { fetchPublicConfig } from '@/services/adminApi';
 import { QuickProfileModal } from './QuickProfileModal';
@@ -15,6 +15,8 @@ interface Props {
 
 export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory, onScrollToTop }: Props) {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
   const [siteName, setSiteName] = useState('Universal Media Stack');
   const [modalVisible, setModalVisible] = useState(false);
   const [currentProfile, setCurrentProfile] = useState<any>(null);
@@ -23,41 +25,40 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
     fetchPublicConfig().then((cfg) => { if (cfg?.siteName) setSiteName(cfg.siteName); });
   }, []);
 
+  const shortcuts = categories.length > 0 && onSelectCategory ? (
+    <View style={[styles.shortcutsWrap, isMobile && styles.shortcutsMobile]}>
+      {onScrollToTop ? (
+        <Pressable onPress={onScrollToTop} style={styles.homeBtn}><Text style={styles.homeTxt}>🏠 Haut</Text></Pressable>
+      ) : null}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        {categories.map((cat) => (
+          <Pressable key={cat.id} onPress={() => onSelectCategory(cat.id)} style={[styles.chip, activeCategoryId === cat.id && styles.actChip]}>
+            <Text style={[styles.chipTxt, activeCategoryId === cat.id && styles.actTxt]}>{cat.title}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  ) : null;
+
   return (
-    <View style={styles.fixedWrap}>
-      <View style={styles.header}>
-        <Pressable onPress={onScrollToTop || (() => router.push('/'))} style={styles.logoBtn}>
-          <Text style={styles.logoText}>🎬 {siteName}</Text>
-        </Pressable>
-
-        {categories.length > 0 && onSelectCategory ? (
-          <View style={styles.shortcutsWrap}>
-            {onScrollToTop ? (
-              <Pressable onPress={onScrollToTop} style={styles.homeBtn}>
-                <Text style={styles.homeTxt}>🏠 Haut</Text>
-              </Pressable>
-            ) : null}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-              {categories.map((cat) => (
-                <Pressable key={cat.id} onPress={() => onSelectCategory(cat.id)} style={[styles.chip, activeCategoryId === cat.id && styles.actChip]}>
-                  <Text style={[styles.chipTxt, activeCategoryId === cat.id && styles.actTxt]}>{cat.title}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
+    <View style={[styles.fixedWrap, isMobile && { paddingVertical: 6 }]}>
+      <View style={[styles.header, isMobile && styles.headerMobile]}>
+        <View style={styles.topRow}>
+          <Pressable onPress={onScrollToTop || (() => router.push('/'))} style={styles.logoBtn}>
+            <Text style={styles.logoText}>🎬 {isMobile ? 'UMS' : siteName}</Text>
+          </Pressable>
+          <View style={styles.actions}>
+            <Pressable style={styles.profileBtn} onPress={() => setModalVisible(true)}>
+              <Text style={styles.profileBtnText}>{currentProfile ? `👤 ${currentProfile.displayName}` : '+ Profil'}</Text>
+            </Pressable>
+            <Pressable style={styles.adminBtn} onPress={() => router.push('/admin' as any)}>
+              <Text style={styles.adminBtnText}>⚙️ Admin</Text>
+            </Pressable>
           </View>
-        ) : null}
-
-        <View style={styles.actions}>
-          <Pressable style={styles.profileBtn} onPress={() => setModalVisible(true)}>
-            <Text style={styles.profileBtnText}>{currentProfile ? `👤 ${currentProfile.displayName}` : '+ Profil'}</Text>
-          </Pressable>
-          <Pressable style={styles.adminBtn} onPress={() => router.push('/admin' as any)}>
-            <Text style={styles.adminBtnText}>⚙️ Admin</Text>
-          </Pressable>
         </View>
-
-        <QuickProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} onProfileCreated={(u) => setCurrentProfile(u)} />
+        {shortcuts}
       </View>
+      <QuickProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} onProfileCreated={(u) => setCurrentProfile(u)} />
     </View>
   );
 }
@@ -70,9 +71,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center',
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', maxWidth: MaxContentWidth, width: '100%', gap: 8 },
+  headerMobile: { flexDirection: 'column', alignItems: 'stretch', gap: 6 },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
   logoBtn: { cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
   logoText: { fontSize: 16, fontWeight: '800', color: '#f8fafc', letterSpacing: -0.5 },
   shortcutsWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, minWidth: 120 },
+  shortcutsMobile: { marginHorizontal: 0, width: '100%' },
   homeBtn: { backgroundColor: 'rgba(99, 102, 241, 0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.pill, marginRight: 6 },
   homeTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '800' },
   scroll: { gap: 6, alignItems: 'center' },

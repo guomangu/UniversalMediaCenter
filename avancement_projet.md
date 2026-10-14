@@ -14,21 +14,32 @@ Dernière mise à jour : 14 Octobre 2026
 - [x] Interface d'administration modulaire `/admin` avec gestion des utilisateurs et des paramètres du site.
 
 ### 🗂️ Taxonomie, Cartes & Navigation Hiérarchique
-- [x] **Structure d'accueil catégorisée :** Catégories verticales > Tags verticaux (Cards) > Médias en grille compacte.
+- [x] **Structure d'accueil catégorisée :** Catégories verticales > Tags verticaux (Cards) > Médias en défilement horizontal.
+- [x] **Transmission des tags aux groupes de médias :**
+  - Les tags (genres, années, résolutions, thèmes, casting) des médias liés sont transmis au groupe parent (`SHOW`, `COLLECTION`).
+  - Aucun tag n'est vide sur la page d'accueil : les groupes apparaissent sous chaque tag partagé par leurs épisodes ou films liés.
+- [x] **Tri prioritaire des tags par quantité (`count DESC`) :**
+  - Toutes les catégories ordonnent leurs tags par volume de médias liés décroissant pour mettre en avant les tags les plus riches.
+- [x] **Mode Responsive Smartphone Robuste :**
+  - Menu d'en-tête adaptatif (`SiteHeader.tsx`) : sur smartphone (< 768px), passage en 2 rangées propres (Logo + Actions en haut, raccourcis de catégories déroulants en bas).
+  - Élimination des débordements et masquages avec `paddingTop: 86` dynamique et pleine largeur (`width: 100%`).
+  - Pleine expansion viewport (`html, body, #root: 100%`) dans `global.css`.
+- [x] **Films de cette suite avec affiches & fallbacks (`MediaChildrenRow.tsx`) :**
+  - Sur `/media/[id]`, chaque film d'une saga ou épisode d'une série affiche sa vignette/affiche dédiée.
+  - Image de repli automatique (affiche de la saga ou icône `🎬`) en cas d'absence de poster individuel.
+  - Badge interactif de lecture rapide `▶` et titre soigné.
 - [x] **Pagination dynamique & à la volée :**
   - Limite de 5 tags par catégorie avec bouton de chargement dynamique "+10 tags".
   - Limite de 15 médias par tag avec bouton de chargement dynamique "+10 médias".
 - [x] **Regroupement intelligent (Loi Groupe vs Fichier Unique) :**
-  - Les séries (`SHOW`) et sagas/collections (`COLLECTION`) s'affichent comme des groupes parents sans polluer la vue d'accueil avec leurs centaines d'épisodes/films enfants.
+  - Les séries (`SHOW`) et sagas/collections (`COLLECTION`) s'affichent comme des groupes parents sans polluer la vue d'accueil.
   - Les films autonomes s'affichent individuellement (`MOVIE`).
 - [x] **Menu Flottant Unifié (`SiteHeader.tsx`) :**
   - En-tête fixe en haut de page (`position: fixed`, glassmorphism, blur).
   - Intégration des raccourcis de catégories cliquables directement **dans** le menu flottant avec bouton `🏠 Haut`.
-  - Accès direct au profil et à l'administration.
 - [x] **Navigation Stack & Réactivité des Clics (`_layout.tsx`, `MediaTile.tsx`) :**
-  - Architecture Expo Router basée sur `<Stack screenOptions={{ headerShown: false }}>` permettant d'ouvrir `/media/[id]`, `/forum/[topic]`, `/admin`, `/player/[id]`.
-  - Clic complet (affiche + titre) sur les cartes médias pour ouvrir la fiche détaillée avec lecture, groupe d'épisodes et forum WhatsApp.
-  - Correction de l'erreur 500 sur le filtre de qualité via transtypage explicite `node_type::text ILIKE`.
+  - Architecture Expo Router basée sur `<Stack screenOptions={{ headerShown: false }}>`.
+  - Clic complet (affiche + titre) sur les cartes médias pour ouvrir `/media/[id]`.
 
 ### 💬 Forum WhatsApp Universel Multimédia (`/forum/[topic]`)
 - [x] **Universal Clickable Text :** Tous les textes (titres, tags, catégories, overviews) sont cliquables pour ouvrir leur salon de forum dédié.
