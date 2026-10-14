@@ -3,10 +3,25 @@ import { db } from '../db/connection.js';
 import { mediaNodes, watchProgress } from '../db/schema/index.js';
 import { sql } from 'drizzle-orm';
 import { artworkRouter } from './mediaArtworks.js';
+import { streamRouter } from './mediaStream.js';
+import { statsRouter } from './mediaStats.js';
+import { processNfoFile } from '../watcher/index.js';
 
 export const mediaRouter = new Hono();
 
 mediaRouter.route('/', artworkRouter);
+mediaRouter.route('/', streamRouter);
+mediaRouter.route('/', statsRouter);
+
+mediaRouter.post('/webhook/tmm', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const filePath = body.path || body.filePath;
+  if (filePath && typeof filePath === 'string' && filePath.endsWith('.nfo')) {
+    await processNfoFile(filePath);
+    return c.json({ success: true, reindexed: filePath });
+  }
+  return c.json({ success: true, message: 'TMM webhook reçu' });
+});
 
 mediaRouter.get('/:id', async (c) => {
   const id = c.req.param('id');

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, Image, useWindowDimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { MediaNode } from '@/services/types';
 import { resolveImageUrl } from '@/services/api';
 import { TagPill } from './TagPill';
@@ -29,7 +29,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({ item }) => {
           ) : null}
           <TagPill label="4K HDR" theme="indigo" />
         </View>
-        <Text style={[styles.title, isMobile && styles.titleMobile]} numberOfLines={2}>
+        <Text style={[styles.title, isMobile && styles.titleMobile]} numberOfLines={3}>
           {item.title}
         </Text>
         {item.tagline && !isMobile ? <Text style={styles.tagline}>{item.tagline}</Text> : null}
@@ -39,16 +39,20 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({ item }) => {
           </Text>
         ) : null}
         <View style={styles.actionRow}>
-          <Pressable
-            style={({ pressed }) => [styles.playBtn, pressed && styles.btnPressed]}
-            onPress={() => router.push(`/player/${item.id}` as any)}>
-            <Text style={styles.playText}>▶ Regarder</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.detailBtn, pressed && styles.btnPressed]}
-            onPress={() => router.push(`/media/${item.id}` as any)}>
-            <Text style={styles.detailText}>ℹ Détails</Text>
-          </Pressable>
+          <Link href={`/player/${item.id}` as any} asChild>
+            <Pressable
+              onPress={() => router.push(`/player/${item.id}` as any)}
+              style={({ pressed }) => [styles.playBtn, pressed && styles.btnPressed]}>
+              <Text style={styles.playText}>▶ Regarder</Text>
+            </Pressable>
+          </Link>
+          <Link href={`/media/${item.id}` as any} asChild>
+            <Pressable
+              onPress={() => router.push(`/media/${item.id}` as any)}
+              style={({ pressed }) => [styles.detailBtn, pressed && styles.btnPressed]}>
+              <Text style={styles.detailText}>ℹ Détails</Text>
+            </Pressable>
+          </Link>
         </View>
       </View>
     </View>

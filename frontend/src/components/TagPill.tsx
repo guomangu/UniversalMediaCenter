@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Text, StyleSheet, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Radius, Spacing } from '@/constants/theme';
 
 interface TagPillProps {
@@ -19,11 +20,18 @@ const themeColors: Record<string, { bg: string; text: string; border: string }> 
 };
 
 export const TagPill: React.FC<TagPillProps> = ({ label, theme = 'slate', onPress, subtext }) => {
+  const router = useRouter();
   const activeColor = themeColors[theme] || themeColors.slate;
+
+  const handlePress = () => {
+    if (onPress) return onPress();
+    const slug = label.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+    router.push({ pathname: '/forum/[topic]', params: { topic: slug, title: label } } as any);
+  };
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       style={({ pressed }) => [
         styles.pill,
         { backgroundColor: activeColor.bg, borderColor: activeColor.border },
@@ -46,18 +54,7 @@ const styles = StyleSheet.create({
     marginRight: Spacing.one + 2,
     marginBottom: Spacing.one + 2,
   },
-  text: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  subtext: {
-    fontSize: 11,
-    color: '#94a3b8',
-    marginLeft: 2,
-  },
-  pressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.98 }],
-  },
+  text: { fontSize: 12, fontWeight: '600', letterSpacing: 0.3 },
+  subtext: { fontSize: 11, color: '#94a3b8', marginLeft: 2 },
+  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
 });

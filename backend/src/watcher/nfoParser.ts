@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import type { ParsedNfo, ParsedActor } from './types.js';
+import { cleanMediaTitle } from './titleCleaner.js';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -7,11 +8,17 @@ const parser = new XMLParser({
   isArray: (name) => ['genre', 'tag', 'studio', 'country', 'director', 'writer', 'actor'].includes(name),
 });
 
-export function parseNfoXml(xmlContent: string): ParsedNfo {
+export function parseNfoXml(xmlContent: string): ParsedNfo | null {
   const parsed = parser.parse(xmlContent);
-  const root = parsed.movie || parsed.tvshow || parsed.episodedetails || {};
+  if (!parsed || typeof parsed !== 'object') return null;
+
   const isShow = Boolean(parsed.tvshow);
   const isEpisode = Boolean(parsed.episodedetails);
+  const isSeason = Boolean(parsed.season);
+  const isSet = Boolean(parsed.set || parsed.collection);
+
+  const root = parsed.movie || parsed.tvshow || parsed.episodedetails || parsed.season || parsed.set || parsed.collection;
+  if (!root || (typeof root !== 'string' && Object.keys(root).length === 0)) return null;
 
   const actors: ParsedActor[] = (root.actor || []).map((a: any) => ({
     name: typeof a === 'string' ? a : a.name || 'Inconnu',
@@ -22,7 +29,8 @@ export function parseNfoXml(xmlContent: string): ParsedNfo {
   const standardKeys = new Set([
     'title', 'originaltitle', 'sorttitle', 'tagline', 'plot', 'outline',
     'year', 'premiered', 'runtime', 'rating', 'genre', 'tag', 'studio',
-    'country', 'director', 'credits', 'writer', 'actor', 'fileinfo', 'set'
+    'country', 'director', 'credits', 'writer', 'actor', 'fileinfo', 'set',
+    'season', 'episode', 'showtitle', 'seasonnumber'
   ]);
 
   const customFields: Record<string, string> = {};
@@ -32,11 +40,23 @@ export function parseNfoXml(xmlContent: string): ParsedNfo {
     }
   }
 
+  const rawTitle = root.title || '';
+  const originalTitle = root.originaltitle;
+  const showTitle = root.showtitle;
+  const season = root.season ?? root.seasonnumber ? parseInt(root.season ?? root.seasonnumber, 10) : undefined;
+  const episode = root.episode ? parseInt(root.episode, 10) : undefined;
+  const cleanedTitle = cleanMediaTitle(rawTitle, originalTitle, showTitle, season, episode);
+
+  const nodeType = isShow ? 'SHOW' : isEpisode ? 'EPISODE' : isSeason ? 'SEASON' : isSet ? 'COLLECTION' : 'MOVIE';
+
   return {
-    type: isShow ? 'SHOW' : isEpisode ? 'EPISODE' : 'MOVIE',
-    title: root.title || 'Média sans titre',
-    originalTitle: root.originaltitle,
-    sortTitle: root.sorttitle,
+    type: nodeType,
+    title: cleanedTitle || rawTitle || 'Média sans titre',
+    originalTitle,
+    sortTitle: root.sorttitle || cleanedTitle,
+    showTitle,
+    seasonNumber: season,
+    episodeNumber: episode,
     tagline: root.tagline,
     plot: root.plot || root.outline,
     year: root.year ? parseInt(root.year, 10) : undefined,

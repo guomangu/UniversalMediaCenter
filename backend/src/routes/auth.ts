@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
-import { users } from '../db/schema/index.js';
-import { eq } from 'drizzle-orm';
+import { authRegisterRouter } from './authRegister.js';
 
 export const authRouter = new Hono();
+
+// Montage des fonctionnalités publiques et de création à la volée
+authRouter.route('/', authRegisterRouter);
 
 // Liste des profils disponibles pour sélection rapide (Style Netflix / Kyoo)
 authRouter.get('/profiles', async (c) => {
@@ -18,6 +20,7 @@ authRouter.get('/profiles', async (c) => {
       canWatchIptv: true,
       maxCsaAgeLimit: true,
     },
+    orderBy: (t, { asc }) => [asc(t.displayName)],
   });
   return c.json({ profiles: profileList });
 });

@@ -12,10 +12,13 @@ export interface ParsedChapter {
 }
 
 export interface ParsedNfo {
-  type: 'MOVIE' | 'SHOW' | 'EPISODE';
+  type: 'COLLECTION' | 'SHOW' | 'SEASON' | 'MOVIE' | 'EPISODE';
   title: string;
   originalTitle?: string;
   sortTitle?: string;
+  showTitle?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
   tagline?: string;
   plot?: string;
   year?: number;

@@ -45,3 +45,14 @@ export interface MediaDetailResponse {
     TECHNICAL_DRAWER: TagBadge[];
   };
 }
+
+export interface MediaStatsResponse {
+  totalMovies: number;
+  totalShows: number;
+  totalEpisodes: number;
+  totalLiveChannels: number;
+  totalSeasons: number;
+  totalAll: number;
+  topGenres: { name: string; count: number }[];
+  recent: MediaNode[];
+}

@@ -28,7 +28,6 @@ iptvRouter.post('/sources', async (c) => {
     .values({ name, m3uUrl, epgXmltvUrl })
     .returning();
 
-  // Téléchargement et parsing immédiat
   try {
     const res = await fetch(m3uUrl);
     const content = await res.text();
@@ -45,6 +44,26 @@ iptvRouter.post('/sources', async (c) => {
   }
 });
 
+iptvRouter.post('/sync-epg', async (c) => {
+  const sources = await db.query.iptvSources.findMany({
+    where: (t, { eq }) => eq(t.isActive, true),
+  });
+
+  let syncedSources = 0;
+  for (const src of sources) {
+    if (!src.epgXmltvUrl) continue;
+    try {
+      const res = await fetch(src.epgXmltvUrl);
+      if (res.ok) {
+        await db.update(iptvSources).set({ lastSyncedAt: new Date() }).where(eq(iptvSources.id, src.id));
+        syncedSources++;
+      }
+    } catch (e) {}
+  }
+
+  return c.json({ success: true, syncedSources, totalSources: sources.length });
+});
+
 iptvRouter.get('/stream/:channelId/live.m3u8', async (c) => {
   const channelId = c.req.param('channelId');
   const channel = await db.query.mediaNodes.findFirst({
@@ -55,7 +74,6 @@ iptvRouter.get('/stream/:channelId/live.m3u8', async (c) => {
     return c.text('Channel or stream not found', 404);
   }
 
-  // Redirection ou proxy HLS avec en-têtes CORS
   c.header('Access-Control-Allow-Origin', '*');
   c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
   return c.redirect(channel.streamUrl, 302);

@@ -21,9 +21,11 @@ export async function ingestMediaNode(
 
   let nodeId: string;
   const payload = {
+    nodeType: parsed.type,
     title: parsed.title,
     originalTitle: parsed.originalTitle,
     sortTitle,
+    orderIndex: parsed.episodeNumber ?? parsed.seasonNumber ?? 0,
     tagline: parsed.tagline,
     overview: parsed.plot,
     releaseYear: parsed.year,
@@ -46,7 +48,6 @@ export async function ingestMediaNode(
     const [inserted] = await db
       .insert(mediaNodes)
       .values({
-        nodeType: parsed.type,
         slug: `${slug}-${Date.now().toString().slice(-4)}`,
         nfoFilePath: nfoPath,
         ...payload,

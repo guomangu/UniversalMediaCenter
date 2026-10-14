@@ -14,6 +14,7 @@ import { searchRouter } from './routes/search.js';
 import { iptvRouter } from './routes/iptv.js';
 import { adminRouter } from './routes/admin.js';
 import { castRouter } from './routes/cast.js';
+import { forumRouter } from './routes/forumRoutes.js';
 
 const app = new Hono();
 
@@ -28,6 +29,7 @@ app.route('/api/search', searchRouter);
 app.route('/api/iptv', iptvRouter);
 app.route('/api/admin', adminRouter);
 app.route('/api/cast', castRouter);
+app.route('/api/forum', forumRouter);
 
 async function startServer() {
   const port = parseInt(process.env.API_PORT || '3000', 10);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, Image, useWindowDimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { MediaNode } from '@/services/types';
 import { resolveImageUrl } from '@/services/api';
 import { styles } from './MediaCard.styles';
@@ -22,41 +22,36 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
 
   const rawUri = item.posterPath || item.thumbPath || item.clearlogoPath || item.fanartPath;
   const imageUri = resolveImageUrl(rawUri);
-
-  const handlePress = () => {
-    if (item.nodeType === 'LIVE_CHANNEL') {
-      router.push(`/player/${item.id}` as any);
-    } else {
-      router.push(`/media/${item.id}` as any);
-    }
-  };
+  const targetHref = item.nodeType === 'LIVE_CHANNEL' ? `/player/${item.id}` : `/media/${item.id}`;
 
   return (
-    <Pressable
-      onPress={handlePress}
-      style={({ pressed }) => [
-        styles.cardContainer,
-        { width: cardWidth },
-        pressed && styles.pressed,
-      ]}>
-      <View style={[styles.imageWrapper, { width: cardWidth, height: cardHeight }]}>
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
-        ) : (
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>{item.title.slice(0, 2).toUpperCase()}</Text>
-          </View>
-        )}
-        {item.communityRating ? (
-          <View style={styles.ratingBadge}>
-            <Text style={styles.ratingText}>★ {item.communityRating.toFixed(1)}</Text>
-          </View>
-        ) : null}
-      </View>
-      <Text numberOfLines={1} style={styles.title}>
-        {item.title}
-      </Text>
-      {item.releaseYear ? <Text style={styles.subtext}>{item.releaseYear}</Text> : null}
-    </Pressable>
+    <Link href={targetHref as any} asChild>
+      <Pressable
+        onPress={() => router.push(targetHref as any)}
+        style={({ pressed }) => [
+          styles.cardContainer,
+          { width: cardWidth },
+          pressed && styles.pressed,
+        ]}>
+        <View style={[styles.imageWrapper, { width: cardWidth, height: cardHeight }]}>
+          {imageUri ? (
+            <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+          ) : (
+            <View style={styles.placeholder}>
+              <Text style={styles.placeholderText}>{item.title.slice(0, 2).toUpperCase()}</Text>
+            </View>
+          )}
+          {item.communityRating ? (
+            <View style={styles.ratingBadge}>
+              <Text style={styles.ratingText}>★ {item.communityRating.toFixed(1)}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Text numberOfLines={2} style={styles.title}>
+          {item.title}
+        </Text>
+        {item.releaseYear ? <Text style={styles.subtext}>{item.releaseYear}</Text> : null}
+      </Pressable>
+    </Link>
   );
 };

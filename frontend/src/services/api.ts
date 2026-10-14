@@ -1,4 +1,4 @@
-import { UiRailItem, MediaDetailResponse } from './types';
+import { UiRailItem, MediaDetailResponse, MediaStatsResponse } from './types';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -9,6 +9,10 @@ export function resolveImageUrl(uri?: string): string | undefined {
   return uri;
 }
 
+export function getVideoStreamUrl(id: string): string {
+  return `${API_BASE}/api/media/${id}/stream`;
+}
+
 export async function fetchHomeLayout(): Promise<UiRailItem[]> {
   try {
     const res = await fetch(`${API_BASE}/api/ui/layout?page=HOME`);
@@ -16,7 +20,6 @@ export async function fetchHomeLayout(): Promise<UiRailItem[]> {
     const data = await res.json();
     return data.rails || [];
   } catch (err) {
-    console.warn('API fetchHomeLayout fallback:', err);
     return [];
   }
 }
@@ -27,8 +30,30 @@ export async function fetchMediaDetail(id: string): Promise<MediaDetailResponse 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
-    console.warn('API fetchMediaDetail fallback:', err);
     return null;
+  }
+}
+
+export async function fetchMediaStats(): Promise<MediaStatsResponse | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/media/stats`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
+export async function triggerLibraryRefresh(limit = 40): Promise<any> {
+  try {
+    const res = await fetch(`${API_BASE}/api/admin/library/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }
 
@@ -38,7 +63,6 @@ export async function searchCatalog(query: string): Promise<any> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
-    console.warn('API searchCatalog fallback:', err);
     return { nodes: [], tags: [], people: [] };
   }
 }
@@ -50,7 +74,6 @@ export async function fetchLiveChannels(): Promise<any[]> {
     const data = await res.json();
     return data.channels || [];
   } catch (err) {
-    console.warn('API fetchLiveChannels fallback:', err);
     return [];
   }
 }
@@ -67,7 +90,5 @@ export async function saveWatchProgress(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, positionSeconds, durationSeconds }),
     });
-  } catch (err) {
-    console.warn('Failed to save progress:', err);
-  }
+  } catch (err) {}
 }

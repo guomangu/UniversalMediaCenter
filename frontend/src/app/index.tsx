@@ -1,26 +1,30 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { StyleSheet, ScrollView, RefreshControl, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
-import { SearchBar } from '@/components/SearchBar';
-import { HeroSpotlight } from '@/components/HeroSpotlight';
-import { MediaRail } from '@/components/MediaRail';
-import { fetchHomeLayout } from '@/services/api';
-import { UiRailItem } from '@/services/types';
+import { SiteHeader } from '@/components/SiteHeader';
+import { TagSearchBar } from '@/components/TagSearchBar';
+import { FloatingCategoryBar } from '@/components/FloatingCategoryBar';
+import { CategorySection } from '@/components/CategorySection';
+import { fetchTaxonomy, TaxonomyCategory } from '@/services/taxonomyApi';
 import { Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function HomeScreen() {
-  const [rails, setRails] = useState<UiRailItem[]>([]);
+  const [categories, setCategories] = useState<TaxonomyCategory[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('Tous');
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const scrollRef = useRef<ScrollView>(null);
+  const catPositions = useRef<Record<string, number>>({});
 
   const loadData = async () => {
-    const layoutRails = await fetchHomeLayout();
-    setRails(layoutRails);
+    const list = await fetchTaxonomy();
+    setCategories(list);
+    setLoading(false);
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -28,25 +32,46 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const heroRail = rails.find((r) => r.railType === 'HERO_SPOTLIGHT');
-  const heroItem = heroRail?.items?.[0];
-  const otherRails = rails.filter((r) => r.railType !== 'HERO_SPOTLIGHT');
+  const handleJumpToCategory = (id: string) => {
+    const y = catPositions.current[id];
+    if (y !== undefined) {
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - 70), animated: true });
+    }
+  };
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
+          ref={scrollRef}
           style={styles.scroll}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
-          }>
-          <SearchBar />
-          {heroItem && <HeroSpotlight item={heroItem} />}
-          {otherRails.map((rail) => (
-            <MediaRail key={rail.id} rail={rail} />
-          ))}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}>
+          <SiteHeader />
+          <FloatingCategoryBar
+            categories={categories}
+            onSelectCategory={handleJumpToCategory}
+          />
+          <TagSearchBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            activeFilter={activeFilter}
+            onFilterChange={setActiveFilter}
+          />
+          {loading ? (
+            <ActivityIndicator color="#6366f1" style={{ marginVertical: 40 }} />
+          ) : (
+            categories.map((cat) => (
+              <CategorySection
+                key={cat.id}
+                category={cat}
+                activeFilter={activeFilter}
+                searchQuery={searchQuery}
+                onLayoutPos={(id, y) => { catPositions.current[id] = y; }}
+              />
+            ))
+          )}
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -54,17 +79,9 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  safeArea: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  scroll: {
-    width: '100%',
-  },
+  container: { flex: 1, backgroundColor: '#0f172a' },
+  safeArea: { flex: 1, alignItems: 'center' },
+  scroll: { width: '100%' },
   contentContainer: {
     maxWidth: MaxContentWidth,
     width: '100%',

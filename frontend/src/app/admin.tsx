@@ -1,67 +1,75 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Platform } from 'react-native';
+import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
+import { triggerLibraryRefresh } from '@/services/api';
+import { styles } from '@/components/AdminScreen.styles';
+import { AdminConfigTab } from '@/components/AdminConfigTab';
+import { AdminUsersTab } from '@/components/AdminUsersTab';
+
+type Tab = 'CONFIG' | 'USERS' | 'LIBRARY' | 'IPTV';
 
 export default function AdminScreen() {
-  const [activeTab, setActiveTab] = useState<'LAYOUT' | 'IPTV'>('LAYOUT');
+  const [tab, setTab] = useState<Tab>('CONFIG');
   const [sourceName, setSourceName] = useState('');
   const [m3uUrl, setM3uUrl] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleRefreshLibrary = async () => {
+    setLoading(true);
+    setStatusMsg('Analyse et enrichissement prioritaire des métadonnées en cours...');
+    const res = await triggerLibraryRefresh(50);
+    setLoading(false);
+    setStatusMsg(res.success ? `✅ ${res.message}` : `❌ Échec : ${res.error}`);
+  };
 
   const handleAddIptv = async () => {
-    if (!sourceName || !m3uUrl) {
-      setStatusMsg('Veuillez remplir les 2 champs.');
-      return;
-    }
+    if (!sourceName || !m3uUrl) { setStatusMsg('Veuillez remplir les 2 champs.'); return; }
     try {
       const res = await fetch('http://localhost:3000/api/iptv/sources', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: sourceName, m3uUrl }),
       });
       const data = await res.json();
       setStatusMsg(data.success ? `✅ ${data.importedCount} chaînes synchronisées !` : `❌ ${data.error}`);
-      setSourceName('');
-      setM3uUrl('');
-    } catch (err: any) {
-      setStatusMsg(`Erreur : ${err.message}`);
-    }
+      setSourceName(''); setM3uUrl('');
+    } catch (err: any) { setStatusMsg(`Erreur : ${err.message}`); }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.heading}>Studio d'Administration (Server-Driven UI)</Text>
+        <Text style={styles.heading}>Panneau d’Administration Centralisé</Text>
         <View style={styles.tabRow}>
-          <Pressable style={[styles.tabBtn, activeTab === 'LAYOUT' && styles.activeTab]} onPress={() => setActiveTab('LAYOUT')}>
-            <Text style={styles.tabText}>📐 Disposition des Rails</Text>
-          </Pressable>
-          <Pressable style={[styles.tabBtn, activeTab === 'IPTV' && styles.activeTab]} onPress={() => setActiveTab('IPTV')}>
-            <Text style={styles.tabText}>📡 Sources IPTV & EPG</Text>
-          </Pressable>
+          {(['CONFIG', 'USERS', 'LIBRARY', 'IPTV'] as const).map((t) => (
+            <Pressable key={t} style={[styles.tabBtn, tab === t && styles.activeTab]} onPress={() => setTab(t)}>
+              <Text style={styles.tabText}>
+                {t === 'CONFIG' ? '⚙️ param.yaml' : t === 'USERS' ? '👥 Comptes' : t === 'LIBRARY' ? '🔄 Scan' : '📡 IPTV'}
+              </Text>
+            </Pressable>
+          ))}
         </View>
 
-        {activeTab === 'LAYOUT' ? (
+        {tab === 'CONFIG' && <AdminConfigTab />}
+        {tab === 'USERS' && <AdminUsersTab />}
+
+        {tab === 'LIBRARY' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Rails d'Accueil Actifs</Text>
-            <Text style={styles.cardSub}>Chaque rail est piloté à chaud depuis PostgreSQL.</Text>
-            {['1. À l\'Affiche (Hero Spotlight)', '2. Reprendre la Lecture', '3. Derniers Ajouts', '4. Chaînes TV en Direct', '5. Sagas & Franchises', '6. Cinéma 4K HDR'].map((r, i) => (
-              <View key={i} style={styles.railRow}>
-                <Text style={styles.railText}>{r}</Text>
-                <View style={styles.statusPill}><Text style={styles.statusText}>Actif</Text></View>
-              </View>
-            ))}
+            <Text style={styles.cardTitle}>Mise à jour & Complétion Intelligente</Text>
+            <Text style={styles.cardSub}>Scanne par priorité de besoin (incomplets en premier) et met à jour champs manquants et existants.</Text>
+            <Pressable style={[styles.submitBtn, loading && styles.btnDisabled]} onPress={handleRefreshLibrary} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>🔄 Mettre à jour la médiathèque</Text>}
+            </Pressable>
+            {statusMsg ? <Text style={styles.statusMsg}>{statusMsg}</Text> : null}
           </View>
-        ) : (
+        )}
+
+        {tab === 'IPTV' && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Ajouter une Liste IPTV (.m3u)</Text>
-            <Text style={styles.cardSub}>Formulaire contextuel (2 champs max).</Text>
-            <TextInput style={styles.input} placeholder="Nom (ex: Freebox TV)" placeholderTextColor="#64748b" value={sourceName} onChangeText={setSourceName} />
-            <TextInput style={styles.input} placeholder="URL M3U8 (https://...)" placeholderTextColor="#64748b" value={m3uUrl} onChangeText={setM3uUrl} />
-            <Pressable style={styles.submitBtn} onPress={handleAddIptv}>
-              <Text style={styles.submitText}>+ Importer & Synchroniser</Text>
-            </Pressable>
+            <TextInput style={styles.input} placeholder="Nom" placeholderTextColor="#64748b" value={sourceName} onChangeText={setSourceName} />
+            <TextInput style={styles.input} placeholder="URL M3U8" placeholderTextColor="#64748b" value={m3uUrl} onChangeText={setM3uUrl} />
+            <Pressable style={styles.submitBtn} onPress={handleAddIptv}><Text style={styles.submitText}>+ Importer & Synchroniser</Text></Pressable>
             {statusMsg ? <Text style={styles.statusMsg}>{statusMsg}</Text> : null}
           </View>
         )}
@@ -69,24 +77,3 @@ export default function AdminScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', paddingHorizontal: Spacing.three, paddingBottom: 80, paddingTop: Platform.OS === 'web' ? 70 : Spacing.four },
-  heading: { fontSize: 22, fontWeight: '800', color: '#f8fafc', marginBottom: Spacing.three },
-  tabRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.four },
-  tabBtn: { paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, borderRadius: Radius.pill, backgroundColor: 'rgba(51, 65, 85, 0.5)' },
-  activeTab: { backgroundColor: '#6366f1' },
-  tabText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
-  card: { backgroundColor: 'rgba(30, 41, 59, 0.75)', borderRadius: Radius.md, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.4)' },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#f8fafc', marginBottom: 4 },
-  cardSub: { fontSize: 13, color: '#94a3b8', marginBottom: Spacing.three },
-  railRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.two, borderBottomWidth: 1, borderBottomColor: 'rgba(51, 65, 85, 0.3)' },
-  railText: { color: '#f1f5f9', fontSize: 14 },
-  statusPill: { backgroundColor: 'rgba(16, 185, 129, 0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 9999 },
-  statusText: { color: '#34d399', fontSize: 12, fontWeight: '600' },
-  input: { backgroundColor: 'rgba(15, 23, 42, 0.6)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.5)', borderRadius: Radius.md, padding: Spacing.two + 2, color: '#f8fafc', marginBottom: Spacing.two },
-  submitBtn: { backgroundColor: '#6366f1', paddingVertical: Spacing.two + 2, borderRadius: Radius.pill, alignItems: 'center', marginTop: Spacing.one },
-  submitText: { color: '#ffffff', fontWeight: '700' },
-  statusMsg: { marginTop: Spacing.two, color: '#a5b4fc', fontSize: 13, textAlign: 'center' },
-});

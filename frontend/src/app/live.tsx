@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { fetchLiveChannels } from '@/services/api';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function LiveTvScreen() {
-  const router = useRouter();
   const [channels, setChannels] = useState<any[]>([]);
 
   useEffect(() => {
@@ -22,22 +21,21 @@ export default function LiveTvScreen() {
         </View>
         <View style={styles.grid}>
           {channels.map((ch) => (
-            <Pressable
-              key={ch.id}
-              style={({ pressed }) => [styles.channelCard, pressed && styles.pressed]}
-              onPress={() => router.push(`/player/${ch.id}` as any)}>
-              <View style={styles.logoWrap}>
-                {ch.clearlogoPath ? (
-                  <Image source={{ uri: ch.clearlogoPath }} style={styles.logo} resizeMode="contain" />
-                ) : (
-                  <Text style={styles.logoText}>TV</Text>
-                )}
-              </View>
-              <View style={styles.channelInfo}>
-                <Text style={styles.channelName} numberOfLines={1}>{ch.title}</Text>
-                <Text style={styles.programNow} numberOfLines={1}>🔴 En direct</Text>
-              </View>
-            </Pressable>
+            <Link key={ch.id} href={`/player/${ch.id}` as any} asChild>
+              <Pressable style={({ pressed }) => [styles.channelCard, pressed && styles.pressed]}>
+                <View style={styles.logoWrap}>
+                  {ch.clearlogoPath ? (
+                    <Image source={{ uri: ch.clearlogoPath }} style={styles.logo} resizeMode="contain" />
+                  ) : (
+                    <Text style={styles.logoText}>TV</Text>
+                  )}
+                </View>
+                <View style={styles.channelInfo}>
+                  <Text style={styles.channelName} numberOfLines={1}>{ch.title}</Text>
+                  <Text style={styles.programNow} numberOfLines={1}>🔴 En direct</Text>
+                </View>
+              </Pressable>
+            </Link>
           ))}
         </View>
       </ScrollView>

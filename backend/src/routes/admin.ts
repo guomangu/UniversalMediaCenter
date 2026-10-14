@@ -1,13 +1,30 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
-import { uiRails, eavAttributes, users } from '../db/schema/index.js';
+import { uiRails, eavAttributes } from '../db/schema/index.js';
 import { eq, asc } from 'drizzle-orm';
 import { requireAdmin } from '../middleware/access.js';
+import { enrichLibraryMetadata } from '../watcher/metadataEnricher.js';
+import { configRouter } from './configRoutes.js';
+import { userAdminRouter } from './userAdminRoutes.js';
 
 export const adminRouter = new Hono();
 adminRouter.use('*', requireAdmin);
 
-// Gestion des Rails d'accueil (Drag & Drop)
+// Sous-routeurs modulaires pour la configuration param.yaml et la gestion des utilisateurs
+adminRouter.route('/config', configRouter);
+adminRouter.route('/users', userAdminRouter);
+
+adminRouter.post('/library/refresh', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const limit = Math.min(parseInt(body.limit || '50', 10), 100);
+  const result = await enrichLibraryMetadata(limit);
+  return c.json({
+    success: true,
+    message: `Enrichissement terminé : ${result.enrichedCount}/${result.processedCount} médias enrichis`,
+    ...result,
+  });
+});
+
 adminRouter.get('/rails', async (c) => {
   const rails = await db.query.uiRails.findMany({
     orderBy: [asc(uiRails.sortOrder)],
@@ -16,7 +33,7 @@ adminRouter.get('/rails', async (c) => {
 });
 
 adminRouter.post('/rails/reorder', async (c) => {
-  const { railOrders } = await c.req.json(); // Array of { id, sortOrder }
+  const { railOrders } = await c.req.json();
   for (const item of railOrders || []) {
     await db
       .update(uiRails)
@@ -26,7 +43,6 @@ adminRouter.post('/rails/reorder', async (c) => {
   return c.json({ success: true });
 });
 
-// Gestion des Groupes de Tags
 adminRouter.get('/tags', async (c) => {
   const tags = await db.query.eavAttributes.findMany({
     orderBy: [asc(eavAttributes.displayOrder)],
@@ -45,10 +61,4 @@ adminRouter.patch('/tags/:id', async (c) => {
     .where(eq(eavAttributes.id, id));
 
   return c.json({ success: true });
-});
-
-// Gestion des Utilisateurs & Contrôle Parental
-adminRouter.get('/users', async (c) => {
-  const userList = await db.query.users.findMany();
-  return c.json({ users: userList });
 });

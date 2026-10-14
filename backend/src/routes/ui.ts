@@ -2,8 +2,12 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { uiRails, mediaNodes, eavAttributes } from '../db/schema/index.js';
 import { desc, asc } from 'drizzle-orm';
+import { taxonomyRouter } from './taxonomyRoutes.js';
 
 export const uiRouter = new Hono();
+
+// Taxonomie hiérarchique Catégories < Tags < Médias
+uiRouter.route('/taxonomy', taxonomyRouter);
 
 function formatMediaItem(item: any) {
   return {

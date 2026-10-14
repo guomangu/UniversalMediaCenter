@@ -46,10 +46,13 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#f1f5f9',
+    lineHeight: 18,
+    minHeight: 36,
   },
   subtext: {
     fontSize: 12,
     color: '#94a3b8',
+    marginTop: 2,
   },
   pressed: {
     opacity: 0.8,

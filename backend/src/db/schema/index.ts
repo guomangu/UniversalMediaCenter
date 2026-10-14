@@ -5,3 +5,4 @@ export * from './eav.js';
 export * from './rails.js';
 export * from './users.js';
 export * from './iptv.js';
+export * from './forum.js';
