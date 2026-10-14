@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { mediaNodes, watchProgress } from '../db/schema/index.js';
-import { sql, eq } from 'drizzle-orm';
+import { sql, eq, and, desc, inArray } from 'drizzle-orm';
 import { artworkRouter } from './mediaArtworks.js';
 import { streamRouter } from './mediaStream.js';
 import { statsRouter } from './mediaStats.js';
@@ -17,6 +17,7 @@ import { createShareToken } from '../auth/shareToken.js';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
 import { requireAuth } from '../middleware/access.js';
 import { recordActivePlayback, removeActivePlayback } from '../watcher/presenceStore.js';
+import { removeUserFromMediaSessions } from './sessionRoutes.js';
 export const mediaRouter = new Hono();
 mediaRouter.route('/', artworkRouter);
 mediaRouter.route('/', streamRouter);
@@ -44,9 +45,17 @@ mediaRouter.post('/webhook/tmm', async (c) => {
         await processNfoFile(filePath);
         return c.json({ success: true, reindexed: filePath });
     }
-    return c.json({ success: true, message: 'TMM webhook reçu' });
+    return c.json({ error: 'Chemin de fichier .nfo invalide' }, 400);
 });
-// Enregistrement de progression de lecture & présence active de séance
+mediaRouter.post('/:id/reindex', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const media = await findMediaByIdOrSlug(id);
+    if (!media || !media.nfoFilePath) {
+        return c.json({ error: 'Fichier NFO introuvable pour ce média' }, 404);
+    }
+    const updatedNode = await processNfoFile(media.nfoFilePath);
+    return c.json({ success: true, node: updatedNode });
+});
 mediaRouter.post('/:id/progress', async (c) => {
     const id = c.req.param('id');
     const user = c.get('user');
@@ -85,6 +94,25 @@ mediaRouter.post('/:id/progress', async (c) => {
     recordActivePlayback(media.id, media.parentId, userId, user?.displayName || 'Spectateur', media.title, isPlaying);
     return c.json({ success: true });
 });
+mediaRouter.get('/:id/progress', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const user = c.get('user');
+    const media = await findMediaByIdOrSlug(id);
+    if (!media)
+        return c.json({ error: 'Média introuvable' }, 404);
+    const prog = await db.query.watchProgress.findFirst({
+        where: (t, { and, eq }) => and(eq(t.userId, user.id), eq(t.nodeId, media.id)),
+    });
+    const pos = prog?.positionSeconds ?? 0;
+    const dur = prog?.durationSeconds || media.runtimeSeconds || 0;
+    const progressPercent = dur > 0 ? Math.round((pos / dur) * 100) : (prog?.isCompleted ? 100 : 0);
+    return c.json({
+        positionSeconds: pos,
+        durationSeconds: dur,
+        isCompleted: prog?.isCompleted ?? false,
+        progressPercent,
+    });
+});
 mediaRouter.delete('/:id/playback', async (c) => {
     const id = c.req.param('id');
     const user = c.get('user');
@@ -94,6 +122,7 @@ mediaRouter.delete('/:id/playback', async (c) => {
         const media = await findMediaByIdOrSlug(id);
         if (media) {
             removeActivePlayback(media.id, userId);
+            await removeUserFromMediaSessions(media.id, userId);
         }
     }
     return c.json({ success: true });
@@ -185,25 +214,51 @@ mediaRouter.get('/:id', async (c) => {
     ORDER BY a.display_order ASC, l.order_index ASC
   `);
     const tagsByZone = {
+        HERO_BADGE: [],
+        PRIMARY_PILL: [],
+        PERSON_CAROUSEL: [],
+        TECHNICAL_DRAWER: [],
+        HIDDEN_SEARCHABLE: [],
+        // Short aliases for cross-compatibility
         HERO: [],
         PILLS: [],
         ACCORDION: [],
         BADGES: [],
     };
-    for (const row of linkedTags.rows || []) {
-        const zone = row.ui_zone || 'PILLS';
+    const rows = (Array.isArray(linkedTags) ? linkedTags : linkedTags.rows || []);
+    for (const row of rows) {
+        const zone = row.ui_zone || 'PRIMARY_PILL';
         if (!tagsByZone[zone])
             tagsByZone[zone] = [];
-        tagsByZone[zone].push({
+        const item = {
+            attr_code: row.attr_code,
             attributeCode: row.attr_code,
+            display_name: row.display_name,
             displayName: row.display_name,
-            value: row.value_text,
-            slug: row.value_slug,
-            iconName: row.icon_name,
+            ui_zone: row.ui_zone,
+            uiZone: row.ui_zone,
+            color_theme: row.color_theme,
             colorTheme: row.color_theme,
+            icon_name: row.icon_name,
+            iconName: row.icon_name,
+            value_text: row.value_text,
+            value: row.value_text,
+            value_slug: row.value_slug,
+            slug: row.value_slug,
+            context_role: row.context_role,
             contextRole: row.context_role,
-            metadata: row.metadata_json,
-        });
+            metadata_json: row.metadata_json || {},
+            metadata: row.metadata_json || {},
+            order_index: row.order_index,
+            orderIndex: row.order_index,
+        };
+        tagsByZone[zone].push(item);
+        if (zone === 'HERO_BADGE')
+            tagsByZone.HERO.push(item);
+        if (zone === 'PRIMARY_PILL')
+            tagsByZone.PILLS.push(item);
+        if (zone === 'TECHNICAL_DRAWER')
+            tagsByZone.ACCORDION.push(item);
     }
     const childNodes = await db.query.mediaNodes.findMany({
         where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, false)),
@@ -212,6 +267,55 @@ mediaRouter.get('/:id', async (c) => {
         where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, true)),
     });
     const info = parseSeasonEpisode(media.title, media.orderIndex);
+    // Récupération de la progression de lecture (watchProgress) pour l'utilisateur
+    const progressMap = new Map();
+    if (user?.id) {
+        const allIds = [media.id, ...childNodes.map((c) => c.id)];
+        const progresses = await db.query.watchProgress.findMany({
+            where: (t, { and, eq, inArray }) => and(eq(t.userId, user.id), inArray(t.nodeId, allIds)),
+        });
+        for (const p of progresses) {
+            const dur = p.durationSeconds || 0;
+            const pos = p.positionSeconds || 0;
+            const progressPercent = dur > 0 ? Math.round((pos / dur) * 100) : (p.isCompleted ? 100 : 0);
+            progressMap.set(p.nodeId, {
+                positionSeconds: pos,
+                durationSeconds: dur,
+                isCompleted: p.isCompleted,
+                progressPercent,
+            });
+        }
+    }
+    // Détection du point de reprise intelligent pour les séries/saisons
+    let resumeEpisodeId = null;
+    let resumeTitle = null;
+    let resumePositionSeconds = 0;
+    if (childNodes.length > 0) {
+        // 1. Chercher un épisode en cours de lecture non terminé
+        const inProgressEpisode = childNodes.find((ch) => {
+            const p = progressMap.get(ch.id);
+            return p && p.progressPercent > 0 && !p.isCompleted;
+        });
+        if (inProgressEpisode) {
+            const p = progressMap.get(inProgressEpisode.id);
+            resumeEpisodeId = inProgressEpisode.id;
+            resumeTitle = inProgressEpisode.title;
+            resumePositionSeconds = p.positionSeconds;
+        }
+        else {
+            // 2. Chercher le premier épisode non terminé
+            const nextUnfinished = childNodes.find((ch) => {
+                const p = progressMap.get(ch.id);
+                return !p || !p.isCompleted;
+            });
+            if (nextUnfinished) {
+                resumeEpisodeId = nextUnfinished.id;
+                resumeTitle = nextUnfinished.title;
+                resumePositionSeconds = 0;
+            }
+        }
+    }
+    const mediaProgress = progressMap.get(media.id);
     const formattedMedia = {
         ...media,
         posterPath: media.posterPath ? `/api/media/${media.id}/poster` : undefined,
@@ -220,6 +324,13 @@ mediaRouter.get('/:id', async (c) => {
         thumbPath: media.thumbPath ? `/api/media/${media.id}/thumb` : undefined,
         seasonEpisodeTag: info?.seasonEpisodeTag ?? null,
         displayBadge: info?.displayBadge ?? null,
+        positionSeconds: mediaProgress?.positionSeconds ?? 0,
+        durationSeconds: mediaProgress?.durationSeconds ?? (media.runtimeSeconds || 0),
+        progressPercent: mediaProgress?.progressPercent ?? 0,
+        isCompleted: mediaProgress?.isCompleted ?? false,
+        resumeEpisodeId: resumeEpisodeId || (childNodes.length > 0 ? childNodes[0].id : null),
+        resumeTitle,
+        resumePositionSeconds,
     };
     const children = childNodes.map((ch) => {
         const chInfo = parseSeasonEpisode(ch.title, ch.orderIndex);
@@ -249,12 +360,17 @@ mediaRouter.get('/:id', async (c) => {
             displayBadge = `EP ${String(ch.orderIndex).padStart(2, '0')}`;
             seasonEpisodeTag = `E${String(ch.orderIndex).padStart(2, '0')}`;
         }
+        const chProg = progressMap.get(ch.id);
         return {
             ...ch,
             posterPath: ch.posterPath ? `/api/media/${ch.id}/poster` : formattedMedia.posterPath,
             thumbPath: ch.thumbPath ? `/api/media/${ch.id}/thumb` : (ch.posterPath ? `/api/media/${ch.id}/poster` : undefined),
             seasonEpisodeTag,
             displayBadge,
+            positionSeconds: chProg?.positionSeconds ?? 0,
+            durationSeconds: chProg?.durationSeconds ?? (ch.runtimeSeconds || 0),
+            progressPercent: chProg?.progressPercent ?? 0,
+            isCompleted: chProg?.isCompleted ?? false,
         };
     });
     const extras = extraNodes.map((ex) => ({

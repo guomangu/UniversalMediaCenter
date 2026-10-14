@@ -13,7 +13,14 @@ import { usePlayerControls } from '@/hooks/usePlayerControls';
 import { useActiveCastTarget } from '@/services/castState';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
 import { getVideoStreamUrl, fetchNextMedia, fetchMediaDetail } from '@/services/api';
-import { fetchMediaSessions, pingSession, reportPlaybackProgress, leavePlayback, MediaSession } from '@/services/sessionApi';
+import {
+  fetchMediaSessions,
+  pingSession,
+  leaveSession,
+  reportPlaybackProgress,
+  leavePlayback,
+  MediaSession,
+} from '@/services/sessionApi';
 import { styles } from '@/components/PlayerScreen.styles';
 
 export default function PlayerScreen() {
@@ -47,6 +54,7 @@ export default function PlayerScreen() {
   // Gestion de la discussion en direct, appel vocal & mode silence
   const [viewersCount, setViewersCount] = useState<number>(1);
   const [activeSession, setActiveSession] = useState<MediaSession | null>(null);
+  const activeSessionRef = useRef<MediaSession | null>(null);
   const [isMuted, setIsMuted] = useState(false);
 
   useEffect(() => {
@@ -108,8 +116,12 @@ export default function PlayerScreen() {
       setViewersCount(Math.max(1, res.totalViewers));
       if (res.sessions.length > 0) {
         setActiveSession(res.sessions[0]);
+        activeSessionRef.current = res.sessions[0];
         // Ping l'état vocal si une séance existe
         pingSession(res.sessions[0].id, { isMuted });
+      } else {
+        setActiveSession(null);
+        activeSessionRef.current = null;
       }
     };
     updatePresence();
@@ -117,8 +129,28 @@ export default function PlayerScreen() {
     return () => {
       clearInterval(timer);
       leavePlayback(String(id));
+      if (activeSessionRef.current) {
+        leaveSession(activeSessionRef.current.id);
+      }
     };
   }, [id, isMuted]);
+
+  // Nettoyage immédiat si l'utilisateur quitte l'onglet ou ferme la fenêtre
+  useEffect(() => {
+    if (typeof window === 'undefined' || !id) return;
+    const handleUnload = () => {
+      leavePlayback(String(id));
+      if (activeSessionRef.current) {
+        leaveSession(activeSessionRef.current.id);
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+    };
+  }, [id]);
 
   // Compte à rebours automatique Netflix
   useEffect(() => {

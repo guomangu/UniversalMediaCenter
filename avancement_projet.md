@@ -1,3 +1,25 @@
+### ⚡ UX & Nettoyage Réactif des Séances, Vidéos In-Place & Lightbox Popup Forum, Liens Intelligents sans Doublon
+- [x] **Clôture Déterministe et Nettoyage en Temps Réel des Séances et Badges "En Séance" ([sessionRoutes.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/sessionRoutes.ts), [presenceStore.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/presenceStore.ts), [player/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/player/[id].tsx)) :**
+  - Fin définitive des séances fantômes qui restaient affichées indéfiniment (ex: `🔴 EN COURS Initié par : TeleAdmin Pro Séance Soirée Popcorn 👥 1 spectateur`).
+  - Déploiement d un garbage collector automatique serveur (`cleanupExpiredSessions`) supprimant les participants inactifs (> 25s sans ping) et clôturant en `status = "ENDED"` toute séance abandonnée ou sans hôte.
+  - Exécution systématique du nettoyage en préambule des routes `GET /api/sessions/active` et `GET /api/sessions/media/:nodeId`, ainsi qu en boucle de fond autonome (toutes les 10s).
+  - Élimination des faux positifs de présence sur l accueil (`🍿 1 en séance`) : `getUserLastLocation` vérifie désormais la présence d un ping de lecture actif en mémoire avant de déclarer un utilisateur `isLive`, basculant instantanément en statut inactif dès qu il quitte le lecteur.
+  - Décrochage instantané lors de la fermeture d onglet (`beforeunload` / `pagehide`) envoyant les requêtes `leavePlayback` et `leaveSession` avec `keepalive: true`.
+
+- [x] **Lecture Automatique In-Place des Vidéos du Forum & Modale Popup Grand Format avec Son ([InlineVideoPlayer.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/InlineVideoPlayer.tsx), [ForumMediaModal.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMediaModal.tsx), [ForumMessageBubble.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMessageBubble.tsx)) :**
+  - Les vidéos partagées dans les discussions du forum sont désormais lues automatiquement et en boucle (mode muet doux) dès qu elles sont affichées dans la bulle de message, sans rupture de contexte.
+  - Pastille interactive élégante sur la vidéo : `🔊 Cliquer pour agrandir avec le son`.
+  - Clic sur la vidéo ouvrant une modale popup responsive en grand format (`ForumMediaModal`), déverrouillant le son et offrant les contrôles complets de lecture (lecture/pause, timeline, volume, plein écran, fermeture `✕` ou touche `Échap`).
+  - Prise en charge identique pour les images / GIFs et documents : prévisualisation in-place et ouverture plein écran haute résolution dans la même modale harmonieuse.
+
+- [x] **Élimination des Doublons de Cartes Médias au Profit du Bouton Intelligent "Rejoindre ➔" ([ForumMessageBubble.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMessageBubble.tsx), [ForumInputBar.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumInputBar.tsx)) :**
+  - Détection automatique et suppression des cartes redondantes "🍿 Œuvre citée pour séance" lorsque l en-tête de l auteur affiche déjà sa position ou sa séance active (`📍 [Titre]` ou `🔴 En séance : [Titre]`).
+  - Priorité absolue donnée au lien le plus intelligent et concis : le bouton d action directe "Rejoindre ➔" sous le nom de l auteur.
+  - Allègement du libellé de l input bar en `🍿 Média lié : [Titre]`.
+
+- [x] **Suppression Définitive de la Section "🔗 Liens Externes & Fiches Officielles" ([media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx)) :**
+  - Retrait complet du bloc de liens externes superflus de la fiche détaillée du média, purgeant l interface et concentrant l attention sur l expérience de lecture, les artistes, la fiche technique et le forum de discussion.
+
 ### 🌟 Hub Exhaustif de Métadonnées, Reprise Automatique Universelle, Fiabilisation des Appels Vocaux & Raccourcis Utilisateurs
 - [x] **Rétablissement & Affichage Intégral des Métadonnées sous le Forum ([media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx) & [media.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts)) :**
   - Correction de l'extraction Drizzle avec postgres.js (Array.isArray(linkedTags)) permettant le chargement sans perte des 101+ tags et attributs EAV.

@@ -157,7 +157,7 @@ export function ForumInputBar({
 
       {quotedMedia && (
         <View style={styles.quoteBar}>
-          <Text style={styles.quoteTxt} numberOfLines={1}>🍿 Œuvre citée pour la séance : {quotedMedia.title}</Text>
+          <Text style={styles.quoteTxt} numberOfLines={1}>🍿 Média lié : {quotedMedia.title}</Text>
           <Pressable focusable={true} onPress={onCancelQuote}><Text style={styles.cancelTxt}>✕</Text></Pressable>
         </View>
       )}

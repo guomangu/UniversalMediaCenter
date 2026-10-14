@@ -104,7 +104,8 @@ export async function leaveSession(sessionId: string): Promise<boolean> {
     const res = await fetch(`${getApiBaseUrl()}/api/sessions/${sessionId}/leave`, {
       method: 'POST',
       headers: getAuthHeaders(),
-    });
+      keepalive: true,
+    } as any);
     return res.ok;
   } catch {
     return false;
@@ -157,7 +158,8 @@ export async function leavePlayback(nodeId: string): Promise<void> {
       method: 'DELETE',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: user?.id }),
-    });
+      keepalive: true,
+    } as any);
   } catch {}
 }
 
@@ -188,7 +190,8 @@ export async function leaveVoiceCall(topicSlug: string): Promise<boolean> {
     const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/call/leave`, {
       method: 'POST',
       headers: getAuthHeaders(),
-    });
+      keepalive: true,
+    } as any);
     return res.ok;
   } catch {
     return false;

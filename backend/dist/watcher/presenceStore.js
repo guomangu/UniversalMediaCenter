@@ -12,12 +12,12 @@ const voiceCallAudioChunks = new Map();
 const PING_TIMEOUT_MS = 25000; // 25s avant expiration de la présence
 export function recordActivePlayback(nodeId, parentId, userId, displayName, mediaTitle, isPlaying = true) {
     const now = Date.now();
-    let nodeWatchers = activeWatchersMap.get(nodeId);
-    if (!nodeWatchers) {
-        nodeWatchers = new Map();
-        activeWatchersMap.set(nodeId, nodeWatchers);
+    let watchers = activeWatchersMap.get(nodeId);
+    if (!watchers) {
+        watchers = new Map();
+        activeWatchersMap.set(nodeId, watchers);
     }
-    nodeWatchers.set(userId, {
+    watchers.set(userId, {
         userId,
         displayName,
         nodeId,
@@ -26,7 +26,7 @@ export function recordActivePlayback(nodeId, parentId, userId, displayName, medi
         isPlaying,
         lastPing: now,
     });
-    // Mettre à jour l'emplacement de l'utilisateur (dernière page connue)
+    // Mettre à jour la dernière page connue de l'utilisateur
     userLocationMap.set(userId, {
         userId,
         mediaId: nodeId,
@@ -36,88 +36,105 @@ export function recordActivePlayback(nodeId, parentId, userId, displayName, medi
         updatedAt: now,
     });
 }
-export function recordUserPagePresence(userId, displayName, pageTitle, pagePath, mediaId) {
+export function removeActivePlayback(nodeId, userId) {
+    const watchers = activeWatchersMap.get(nodeId);
+    if (watchers) {
+        watchers.delete(userId);
+        if (watchers.size === 0) {
+            activeWatchersMap.delete(nodeId);
+        }
+    }
+    const loc = userLocationMap.get(userId);
+    if (loc && loc.mediaId === nodeId) {
+        loc.isLive = false;
+        loc.updatedAt = Date.now();
+    }
+}
+export function recordUserPagePresence(userId, arg2, arg3, arg4, arg5) {
     const now = Date.now();
+    let title = arg2;
+    let path = arg3;
+    let mediaId = arg4;
+    if (arg5 !== undefined || (arg4 && arg4.startsWith("/"))) {
+        // 5 arguments: userId, displayName, pageTitle, pagePath, mediaId
+        title = arg3;
+        path = arg4;
+        mediaId = arg5;
+    }
     userLocationMap.set(userId, {
         userId,
         mediaId,
-        title: pageTitle,
-        path: pagePath,
+        title,
+        path,
         isLive: false,
         updatedAt: now,
     });
 }
-export function removeActivePlayback(nodeId, userId) {
-    const nodeWatchers = activeWatchersMap.get(nodeId);
-    if (nodeWatchers) {
-        nodeWatchers.delete(userId);
-        if (nodeWatchers.size === 0)
-            activeWatchersMap.delete(nodeId);
-    }
-}
 export function getActiveMediaCounts() {
     const now = Date.now();
-    const result = {};
-    const parentCounts = {};
-    // Nettoyer les timeouts et agréger
+    const counts = {};
     for (const [nodeId, watchers] of activeWatchersMap.entries()) {
+        // Nettoyer les pings expirés
         for (const [uid, info] of watchers.entries()) {
-            if (now - info.lastPing > PING_TIMEOUT_MS) {
+            if (now - info.lastPing > PING_TIMEOUT_MS || !info.isPlaying) {
                 watchers.delete(uid);
             }
         }
-        if (watchers.size === 0) {
-            activeWatchersMap.delete(nodeId);
-            continue;
-        }
-        // Le média lui-même a des spectateurs
-        const activeList = Array.from(watchers.values());
-        const count = activeList.length;
-        if (count > 0) {
-            const first = activeList[0];
-            result[nodeId] = {
-                count,
+        if (watchers.size > 0) {
+            const first = Array.from(watchers.values())[0];
+            counts[nodeId] = {
+                count: watchers.size,
                 title: first.mediaTitle,
-                isPlaying: activeList.some((w) => w.isPlaying),
             };
-            // Si le média a un parent (ex: épisode d'une série), agréger sur le parent !
+            // Si le média a un parentId (ex: épisode -> série), propager le comptage au parent
             if (first.parentId) {
-                if (!parentCounts[first.parentId]) {
-                    parentCounts[first.parentId] = { count: 0 };
+                const parentKey = first.parentId;
+                if (!counts[parentKey]) {
+                    counts[parentKey] = {
+                        count: watchers.size,
+                        title: first.mediaTitle,
+                    };
                 }
-                parentCounts[first.parentId].count += count;
+                else {
+                    counts[parentKey].count += watchers.size;
+                }
             }
         }
-    }
-    // Ajouter les parents qui ont des spectateurs sur leurs épisodes
-    for (const [parentId, info] of Object.entries(parentCounts)) {
-        if (info.count > 0) {
-            if (!result[parentId]) {
-                result[parentId] = {
-                    count: info.count,
-                    title: info.title || 'Série en cours',
-                    isPlaying: true,
-                };
-            }
-            else {
-                result[parentId].count = Math.max(result[parentId].count, info.count);
-            }
+        else {
+            activeWatchersMap.delete(nodeId);
         }
     }
-    return result;
+    return counts;
 }
 export async function getUserLastLocation(userId) {
     const now = Date.now();
+    // 1. Vérifier si l'utilisateur est ACTIVEMENT en train de visionner un média en temps réel
+    for (const [nodeId, watchers] of activeWatchersMap.entries()) {
+        const w = watchers.get(userId);
+        if (w && w.isPlaying && now - w.lastPing < PING_TIMEOUT_MS) {
+            const liveInfo = {
+                userId,
+                mediaId: nodeId,
+                title: w.mediaTitle,
+                path: `/player/${nodeId}`,
+                isLive: true,
+                updatedAt: now,
+            };
+            userLocationMap.set(userId, liveInfo);
+            return liveInfo;
+        }
+    }
+    // 2. Si pas en direct, vérifier la dernière page mémorisée (avec isLive = false)
     const cached = userLocationMap.get(userId);
-    if (cached && now - cached.updatedAt < PING_TIMEOUT_MS) {
-        return { ...cached, isLive: true };
+    if (cached && now - cached.updatedAt < 5 * 60 * 1000) {
+        return {
+            ...cached,
+            isLive: false,
+        };
     }
-    if (cached) {
-        return { ...cached, isLive: false };
-    }
-    // Fallback vers la base de données (dernier watch_progress)
+    // 3. Fallback en base de données : dernière progression connue (toujours isLive: false)
     try {
-        const lastWatch = await db
+        const lastProgress = await db
             .select({
             nodeId: watchProgress.nodeId,
             title: mediaNodes.title,
@@ -128,19 +145,18 @@ export async function getUserLastLocation(userId) {
             .where(eq(watchProgress.userId, userId))
             .orderBy(desc(watchProgress.updatedAt))
             .limit(1);
-        if (lastWatch.length > 0) {
-            const item = lastWatch[0];
-            const isRecent = item.updatedAt ? now - new Date(item.updatedAt).getTime() < 60000 : false;
-            const loc = {
+        if (lastProgress.length > 0) {
+            const p = lastProgress[0];
+            const info = {
                 userId,
-                mediaId: item.nodeId,
-                title: item.title,
-                path: `/player/${item.nodeId}`,
-                isLive: isRecent,
-                updatedAt: item.updatedAt ? new Date(item.updatedAt).getTime() : now,
+                mediaId: p.nodeId,
+                title: p.title,
+                path: `/player/${p.nodeId}`,
+                isLive: false,
+                updatedAt: p.updatedAt.getTime(),
             };
-            userLocationMap.set(userId, loc);
-            return loc;
+            userLocationMap.set(userId, info);
+            return info;
         }
     }
     catch (err) {
@@ -214,19 +230,22 @@ export function pushVoiceAudioChunk(topicSlug, senderId, senderName, audioBase64
         chunks = [];
         voiceCallAudioChunks.set(slug, chunks);
     }
+    const now = Date.now();
     const chunk = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
         senderId,
         senderName,
         audioBase64,
         mimeType,
-        timestamp: Date.now(),
+        timestamp: now,
     };
     chunks.push(chunk);
-    // Garder au maximum les 30 derniers chunks récents (dernières ~30 secondes)
-    if (chunks.length > 30) {
-        chunks.splice(0, chunks.length - 30);
+    const cutoff = now - 90000;
+    const filtered = chunks.filter((c) => c.timestamp > cutoff);
+    if (filtered.length > 60) {
+        filtered.splice(0, filtered.length - 60);
     }
+    voiceCallAudioChunks.set(slug, filtered);
     return chunk;
 }
 export function getVoiceAudioChunks(topicSlug, sinceTimestamp, excludeUserId) {
@@ -234,3 +253,5 @@ export function getVoiceAudioChunks(topicSlug, sinceTimestamp, excludeUserId) {
     const chunks = voiceCallAudioChunks.get(slug) || [];
     return chunks.filter((c) => c.timestamp > sinceTimestamp && (!excludeUserId || c.senderId !== excludeUserId));
 }
+export const pushAudioChunk = pushVoiceAudioChunk;
+export const pullAudioChunks = getVoiceAudioChunks;

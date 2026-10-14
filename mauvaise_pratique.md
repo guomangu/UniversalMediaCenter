@@ -109,3 +109,27 @@
 * **Bonnes Pratiques de Remédiation :**
   - **Génération Déterministe de Fragments Autonomes :** Démarrer l'enregistreur sans paramètre de découpage, et appeler explicitement `recorder.stop()` à la fin de chaque intervalle (2.5s) avant de réinstancier le fragment suivant. La fermeture du recorder garantit que chaque fragment produit est un fichier WebM/Opus complet, valide et autonome doté de son propre en-tête.
   - **Queue de Lecture Audio Séquentielle (`audioQueueRef`) :** Enfiler les fragments reçus dans une file d'attente jouée séquentiellement via l'événement `onended`, garantissant une restitution vocale fluide, continue et ininterrompue.
+
+---
+
+## 🛑 47. Sérialisation Brute d'Instances JavaScript `Date` dans les Fragments SQL Postgres.js (`ERR_INVALID_ARG_TYPE`)
+
+* **Problème / Symptôme :** Crash silencieux ou rejet de requête lors des nettoyages de sessions avec l'erreur `TypeError [ERR_INVALID_ARG_TYPE]: The "string" argument must be of type string or an instance of Buffer or ArrayBuffer. Received an instance of Date`.
+* **Conséquences :** Les requêtes de suppression périodique échouent, bloquant le cycle de vie des séances actives qui restent bloquées indéfiniment en base de données.
+* **Causes Racines :**
+  - **Interpolation Directe d'Objet `new Date()` dans `sql` :** Utiliser `sql\`... < \${cutoff}\`` où `cutoff` est un objet JavaScript `new Date()`. Le pilote `postgres.js` ne sérialise pas automatiquement les objets `Date` passés comme paramètres scalaires de template tag SQL brut et attend une chaîne ou un type natif PostgreSQL.
+* **Bonnes Pratiques de Remédiation :**
+  - **Délégation Temporelle Native à PostgreSQL :** Exprimer les intervalles d'expiration directement en SQL standard : `sql\`... < NOW() - INTERVAL '25 seconds'\``. Cela élimine tout décalage d'horloge entre l'application et la base de données, évite toute allocation d'objet intermédiaire et prévient 100% des erreurs de typage.
+
+---
+
+## 🛑 48. Séances et Spectateurs Zombie Persistant Indéfiniment par Absence de Garbage Collection de Présence
+
+* **Problème / Symptôme :** Une carte de séance créée par un utilisateur (ex: `🔴 EN COURS Initié par : TeleAdmin Pro Séance Soirée Popcorn 👥 1 spectateur`) reste affichée indéfiniment sur la fiche du média, et le badge `🍿 1 en séance` subsiste sur la page d'accueil des heures après que tous les participants ont quitté la page ou fermé leur navigateur.
+* **Conséquences :** Sentiment de bug majeur pour les utilisateurs, fausse indication de présence et encombrement de l'interface par des séances fantômes abandonnées.
+* **Causes Racines :**
+  - **Absence de Clôture Automatique :** Le statut de la séance restait `ACTIVE` même avec 0 spectateur, aucune tâche de fond ne purgeant les participants dont le ping a expiré.
+  - **Absence de Décrochage sur Fermeture d'Onglet :** Fermer le navigateur ou changer d'URL sans cliquer explicitement sur "Quitter" laissait la ligne dans la table `media_session_participants`.
+* **Bonnes Pratiques de Remédiation :**
+  - **Nettoyage Déterministe Côté Serveur (`cleanupExpiredSessions`) :** Purger automatiquement les spectateurs inactifs (`last_ping_at < NOW() - INTERVAL '25 seconds'`), basculer automatiquement en `status = 'ENDED'` toute séance sans participants ou dont l'hôte a quitté, et exécuter cette routine à la fois périodiquement (`setInterval`) et en préambule de chaque requête de liste (`GET /api/sessions/active`).
+  - **Décrochage Navigateur Réactif (`keepalive: true` & `beforeunload`) :** Brancher un listener `beforeunload` et `pagehide` dans le lecteur vidéo envoyant `DELETE /playback` et `POST /leave` avec `keepalive: true` pour avertir instantanément le serveur lors d'une fermeture d'onglet.

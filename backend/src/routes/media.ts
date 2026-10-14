@@ -18,6 +18,7 @@ import { checkMediaAccess } from '../auth/mediaAccess.js';
 import { requireAuth } from '../middleware/access.js';
 import type { UserSession } from '../middleware/access.js';
 import { recordActivePlayback, removeActivePlayback } from '../watcher/presenceStore.js';
+import { removeUserFromMediaSessions } from './sessionRoutes.js';
 
 export const mediaRouter = new Hono();
 
@@ -145,6 +146,7 @@ mediaRouter.delete('/:id/playback', async (c) => {
     const media = await findMediaByIdOrSlug(id);
     if (media) {
       removeActivePlayback(media.id, userId);
+      await removeUserFromMediaSessions(media.id, userId);
     }
   }
   return c.json({ success: true });

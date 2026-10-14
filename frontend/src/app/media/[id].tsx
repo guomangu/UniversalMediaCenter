@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchMediaDetail, resolveImageUrl } from '@/services/api';
@@ -78,7 +78,6 @@ export default function MediaDetailScreen() {
     studios,
     countries,
     technicalSpecs,
-    externalLinks,
     ratings,
   } = useMemo(() => {
     const persons = (tags.PERSON_CAROUSEL || tags.PERSONS || []) as any[];
@@ -101,62 +100,6 @@ export default function MediaDetailScreen() {
         !t.attr_code.startsWith('custom_') ||
         ['custom_aspectratio', 'custom_videocodec', 'custom_audiocodec'].includes(t.attr_code)
     );
-
-    // Liens et identifiants externes (IMDb, TMDb, TVmaze, AniDB, Wikipedia, etc.)
-    const extList: { title: string; value: string; url: string; icon: string }[] = [];
-    const allCustom = [...tech, ...pills].filter(
-      (t: any) => t.attr_code.startsWith('custom_') || t.attr_code === 'external_id'
-    );
-
-    for (const item of allCustom) {
-      const code = item.attr_code.toLowerCase();
-      const val = String(item.value_text || item.value || '').trim();
-      if (!val) continue;
-
-      if (code.includes('imdb') || val.startsWith('tt')) {
-        extList.push({
-          title: 'IMDb',
-          value: val,
-          url: `https://www.imdb.com/title/${val}`,
-          icon: '⭐',
-        });
-      } else if (code.includes('tmdb')) {
-        extList.push({
-          title: 'TheMovieDB',
-          value: val,
-          url: `https://www.themoviedb.org/search?query=${encodeURIComponent(val)}`,
-          icon: '🎬',
-        });
-      } else if (code.includes('tvmaze')) {
-        extList.push({
-          title: 'TVmaze',
-          value: val,
-          url: `https://www.tvmaze.com/search?q=${encodeURIComponent(val)}`,
-          icon: '📺',
-        });
-      } else if (code.includes('anidb')) {
-        extList.push({
-          title: 'AniDB',
-          value: val,
-          url: `https://anidb.net/anime/${val}`,
-          icon: '🍙',
-        });
-      } else if (code.includes('wikipedia')) {
-        extList.push({
-          title: 'Wikipédia',
-          value: val,
-          url: val.startsWith('http') ? val : `https://fr.wikipedia.org/wiki/${encodeURIComponent(val)}`,
-          icon: '📖',
-        });
-      } else if (val.startsWith('http://') || val.startsWith('https://')) {
-        extList.push({
-          title: item.display_name || 'Lien Externe',
-          value: val,
-          url: val,
-          icon: '🔗',
-        });
-      }
-    }
 
     // Notes et Classifications
     const ratingList: { label: string; value: string; theme: string }[] = [];
@@ -185,7 +128,6 @@ export default function MediaDetailScreen() {
       studios: studiosList,
       countries: countriesList,
       technicalSpecs: techList,
-      externalLinks: extList,
       ratings: ratingList,
     };
   }, [tags, media]);
@@ -230,10 +172,6 @@ export default function MediaDetailScreen() {
         category: 'actor',
       },
     } as any);
-  };
-
-  const handleOpenExternal = (url: string) => {
-    Linking.openURL(url).catch(() => {});
   };
 
   return (
@@ -396,16 +334,11 @@ export default function MediaDetailScreen() {
           </View>
         )}
 
-        {/* Module Forum & Salle d'attente de Séance de Visionnage en Groupe */}
+        {/* Section Forum / Salle d'attente / Appel vocal continu */}
         <MediaForumSection
           topicSlug={media.slug || media.id}
           topicTitle={media.title}
           mediaId={media.id}
-          externalQuotedMedia={{
-            id: media.id,
-            title: media.title,
-            poster: media.posterPath,
-          }}
         />
 
         {/* ======================================================== */}
@@ -536,30 +469,6 @@ export default function MediaDetailScreen() {
               </View>
             </View>
           )}
-
-          {/* 7. Liens & Identifiants Externes Directs */}
-          {externalLinks.length > 0 && (
-            <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>🔗 Liens Externes & Fiches Officielles</Text>
-              <View style={styles.zoneRow}>
-                {externalLinks.map((link, i) => (
-                  <Pressable
-                    key={`ext-${i}`}
-                    focusable={true}
-                    onPress={() => handleOpenExternal(link.url)}
-                    style={styles.extLinkBtn}
-                  >
-                    <Text style={styles.extLinkIcon}>{link.icon}</Text>
-                    <View>
-                      <Text style={styles.extLinkTitle}>{link.title}</Text>
-                      <Text style={styles.extLinkVal}>{link.value}</Text>
-                    </View>
-                    <Text style={styles.extLinkArrow}>↗</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          )}
         </View>
 
         {/* Genres & Thèmes exploratoires */}
@@ -603,20 +512,13 @@ export default function MediaDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  loading: { flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' },
-  content: {
-    maxWidth: MaxContentWidth,
-    width: '100%',
-    alignSelf: 'center',
-    paddingHorizontal: Spacing.three,
-    paddingBottom: 100,
-    paddingTop: Platform.OS === 'web' ? 70 : Spacing.two,
-  },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' },
+  content: { padding: Spacing.four, gap: Spacing.four },
   backBtn: {
     alignSelf: 'flex-start',
-    paddingVertical: 8,
+    backgroundColor: 'rgba(30, 41, 59, 0.8)',
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    paddingVertical: 6,
     borderRadius: Radius.pill,
     marginBottom: Spacing.two,
     marginTop: 6,
@@ -739,21 +641,6 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   metaSubSection: { gap: 10 },
-  extLinkBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.35)',
-    gap: 8,
-  },
-  extLinkIcon: { fontSize: 16 },
-  extLinkTitle: { color: '#a5b4fc', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  extLinkVal: { color: '#f8fafc', fontSize: 12, fontWeight: '700' },
-  extLinkArrow: { color: '#94a3b8', fontSize: 14, marginLeft: 4 },
   repostCard: {
     backgroundColor: 'rgba(30, 41, 59, 0.7)',
     borderRadius: 16,

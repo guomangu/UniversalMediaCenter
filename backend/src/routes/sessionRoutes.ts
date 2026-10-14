@@ -7,6 +7,77 @@ import { getActiveMediaCounts } from '../watcher/presenceStore.js';
 
 export const sessionRouter = new Hono();
 
+// Nettoyage régulier et déterministe des séances et participants inactifs (> 25 secondes sans ping)
+export async function cleanupExpiredSessions() {
+  try {
+    // 1. Supprimer les spectateurs dont le ping a expiré (> 25s)
+    await db
+      .delete(mediaSessionParticipants)
+      .where(sql`${mediaSessionParticipants.lastPingAt} < NOW() - INTERVAL '25 seconds'`);
+
+    // 2. Clôturer immédiatement toute séance ACTIVE sans aucun participant
+    await db
+      .update(mediaSessions)
+      .set({ status: 'ENDED', updatedAt: new Date() })
+      .where(
+        and(
+          eq(mediaSessions.status, 'ACTIVE'),
+          sql`${mediaSessions.id} NOT IN (SELECT session_id FROM ${mediaSessionParticipants})`
+        )
+      );
+
+    // 3. Clôturer toute séance ACTIVE dont l'hôte n'est plus présent
+    await db
+      .update(mediaSessions)
+      .set({ status: 'ENDED', updatedAt: new Date() })
+      .where(
+        and(
+          eq(mediaSessions.status, 'ACTIVE'),
+          sql`${mediaSessions.hostUserId} NOT IN (
+            SELECT user_id FROM ${mediaSessionParticipants} WHERE session_id = ${mediaSessions.id}
+          )`
+        )
+      );
+  } catch (err) {
+    console.warn('Erreur lors du nettoyage des séances expirées:', err);
+  }
+}
+
+// Boucle périodique de nettoyage en arrière-plan (toutes les 10 secondes)
+setInterval(cleanupExpiredSessions, 10000);
+
+// Retirer un utilisateur de toutes les séances actives associées à un média
+export async function removeUserFromMediaSessions(mediaId: string, userId: string) {
+  try {
+    const userSessions = await db
+      .select({ sessionId: mediaSessionParticipants.sessionId })
+      .from(mediaSessionParticipants)
+      .innerJoin(mediaSessions, eq(mediaSessionParticipants.sessionId, mediaSessions.id))
+      .where(
+        and(
+          eq(mediaSessionParticipants.userId, userId),
+          eq(mediaSessions.status, 'ACTIVE'),
+          eq(mediaSessions.nodeId, mediaId)
+        )
+      );
+
+    if (userSessions.length > 0) {
+      const sIds = userSessions.map((s) => s.sessionId);
+      await db
+        .delete(mediaSessionParticipants)
+        .where(
+          and(
+            eq(mediaSessionParticipants.userId, userId),
+            inArray(mediaSessionParticipants.sessionId, sIds)
+          )
+        );
+      await cleanupExpiredSessions();
+    }
+  } catch (err) {
+    console.warn('Erreur retrait utilisateur des séances:', err);
+  }
+}
+
 // Proposer une nouvelle séance
 sessionRouter.post('/', requireAuth, async (c) => {
   const user = (c as any).get('user');
@@ -16,6 +87,18 @@ sessionRouter.post('/', requireAuth, async (c) => {
   if (!nodeId || !title) {
     return c.json({ error: 'nodeId et title sont requis' }, 400);
   }
+
+  // Clôturer les anciennes séances orphelines éventuelles pour ce média et cet utilisateur
+  await db
+    .update(mediaSessions)
+    .set({ status: 'ENDED', updatedAt: new Date() })
+    .where(
+      and(
+        eq(mediaSessions.nodeId, nodeId),
+        eq(mediaSessions.hostUserId, user.id),
+        eq(mediaSessions.status, 'ACTIVE')
+      )
+    );
 
   const [session] = await db
     .insert(mediaSessions)
@@ -30,13 +113,14 @@ sessionRouter.post('/', requireAuth, async (c) => {
     })
     .returning();
 
-  // Inscrire l'hôte comme participant initial
+  // Inscrire l'hôte comme participant initial avec ping frais
   await db.insert(mediaSessionParticipants).values({
     sessionId: session.id,
     userId: user.id,
     displayName: user.displayName || 'Hôte',
     isHost: true,
     isMuted: false,
+    lastPingAt: new Date(),
   });
 
   return c.json({ success: true, session });
@@ -44,6 +128,8 @@ sessionRouter.post('/', requireAuth, async (c) => {
 
 // Liste des séances actives et compteurs de visionnage par média (accessible publiquement)
 sessionRouter.get('/active', async (c) => {
+  await cleanupExpiredSessions();
+
   const sessions = await db.query.mediaSessions.findMany({
     where: (t, { eq }) => eq(t.status, 'ACTIVE'),
     orderBy: [desc(mediaSessions.createdAt)],
@@ -66,15 +152,17 @@ sessionRouter.get('/active', async (c) => {
         .where(inArray(mediaSessionParticipants.sessionId, sessionIds))
     : [];
 
-  const grouped = sessions.map((s) => {
-    // Filtrer les spectateurs discrets pour la visibilité publique
-    const parts = participants.filter((p) => p.sessionId === s.id && !p.isIncognito);
-    return {
-      ...s,
-      participants: parts,
-      participantCount: parts.length,
-    };
-  });
+  const grouped = sessions
+    .map((s) => {
+      // Filtrer les spectateurs discrets pour la visibilité publique
+      const parts = participants.filter((p) => p.sessionId === s.id && !p.isIncognito);
+      return {
+        ...s,
+        participants: parts,
+        participantCount: parts.length,
+      };
+    })
+    .filter((s) => s.participantCount > 0); // Exclure strictement les séances vides
 
   const liveMediaCounts = getActiveMediaCounts();
 
@@ -88,8 +176,9 @@ sessionRouter.get('/active', async (c) => {
 // Séances actives pour un média particulier (ou ses enfants)
 sessionRouter.get('/media/:nodeId', async (c) => {
   const nodeId = c.req.param('nodeId');
+  await cleanupExpiredSessions();
   
-  // Chercher les séances sur ce média ou ayant ce média en parent
+  // Chercher les séances actives sur ce média ou ayant ce média en parent
   const sessions = await db
     .select({ session: mediaSessions })
     .from(mediaSessions)
@@ -114,16 +203,19 @@ sessionRouter.get('/media/:nodeId', async (c) => {
     totalViewers = Number(counts[0]?.count ?? 0);
   }
 
-  // Agréger aussi les spectateurs solo ou groupe actifs
+  // Agréger aussi les spectateurs solo ou groupe actifs via presenceStore
   const liveMediaCounts = getActiveMediaCounts();
   const liveSoloCount = liveMediaCounts[nodeId]?.count || 0;
   totalViewers = Math.max(totalViewers, liveSoloCount);
 
+  // Filtrer les séances qui n'ont plus de spectateurs
+  const activeOnlySessions = flatSessions.filter(() => totalViewers > 0);
+
   return c.json({
     success: true,
-    sessions: flatSessions,
+    sessions: activeOnlySessions,
     totalViewers,
-    hasActiveSession: flatSessions.length > 0 || totalViewers > 0,
+    hasActiveSession: activeOnlySessions.length > 0 || totalViewers > 0,
   });
 });
 
@@ -140,8 +232,12 @@ sessionRouter.post('/:id/join', requireAuth, async (c) => {
       displayName: user.displayName || 'Participant',
       isHost: false,
       isMuted: false,
+      lastPingAt: new Date(),
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: [mediaSessionParticipants.sessionId, mediaSessionParticipants.userId],
+      set: { lastPingAt: new Date() },
+    });
 
   return c.json({ success: true });
 });
@@ -153,7 +249,31 @@ sessionRouter.post('/:id/leave', requireAuth, async (c) => {
 
   await db
     .delete(mediaSessionParticipants)
-    .where(and(eq(mediaSessionParticipants.sessionId as any, sessionId as any), eq(mediaSessionParticipants.userId as any, user.id as any)));
+    .where(
+      and(
+        eq(mediaSessionParticipants.sessionId as any, sessionId as any),
+        eq(mediaSessionParticipants.userId as any, user.id as any)
+      )
+    );
+
+  // Si l'hôte est parti ou plus aucun participant, terminer immédiatement la séance
+  const remaining = await db
+    .select({
+      count: sql`count(*)::int`,
+      hasHost: sql`bool_or(${mediaSessionParticipants.isHost})`,
+    })
+    .from(mediaSessionParticipants)
+    .where(eq(mediaSessionParticipants.sessionId as any, sessionId as any));
+
+  const count = Number(remaining[0]?.count ?? 0);
+  const hasHost = Boolean(remaining[0]?.hasHost);
+
+  if (count === 0 || !hasHost) {
+    await db
+      .update(mediaSessions)
+      .set({ status: 'ENDED', updatedAt: new Date() })
+      .where(eq(mediaSessions.id as any, sessionId as any));
+  }
 
   return c.json({ success: true });
 });
@@ -168,16 +288,23 @@ sessionRouter.post('/:id/ping', requireAuth, async (c) => {
   const session = await db.query.mediaSessions.findFirst({
     where: (t: any, { eq }: any) => eq(t.id, sessionId),
   });
-  if (!session) return c.json({ error: 'Séance introuvable' }, 404);
+  if (!session || session.status !== 'ACTIVE') {
+    return c.json({ error: 'Séance introuvable ou terminée' }, 404);
+  }
 
-  // Mettre à jour le participant
+  // Mettre à jour le participant et son horodatage de ping
   await db
     .update(mediaSessionParticipants)
     .set({
       lastPingAt: new Date(),
       ...(typeof isMuted === 'boolean' ? { isMuted } : {}),
     })
-    .where(and(eq(mediaSessionParticipants.sessionId as any, sessionId as any), eq(mediaSessionParticipants.userId as any, user.id as any)));
+    .where(
+      and(
+        eq(mediaSessionParticipants.sessionId as any, sessionId as any),
+        eq(mediaSessionParticipants.userId as any, user.id as any)
+      )
+    );
 
   // Si l'utilisateur est l'hôte et fournit une position, synchroniser
   if (session.hostUserId === user.id && typeof currentPosition === 'number') {

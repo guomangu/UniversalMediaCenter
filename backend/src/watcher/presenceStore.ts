@@ -171,12 +171,34 @@ export function getActiveMediaCounts(): Record<string, { count: number; title: s
 
 export async function getUserLastLocation(userId: string): Promise<UserLocationInfo | null> {
   const now = Date.now();
-  const cached = userLocationMap.get(userId);
 
-  if (cached && now - cached.updatedAt < 5 * 60 * 1000) {
-    return cached;
+  // 1. Vérifier si l'utilisateur est ACTIVEMENT en train de visionner un média en temps réel
+  for (const [nodeId, watchers] of activeWatchersMap.entries()) {
+    const w = watchers.get(userId);
+    if (w && w.isPlaying && now - w.lastPing < PING_TIMEOUT_MS) {
+      const liveInfo: UserLocationInfo = {
+        userId,
+        mediaId: nodeId,
+        title: w.mediaTitle,
+        path: `/player/${nodeId}`,
+        isLive: true,
+        updatedAt: now,
+      };
+      userLocationMap.set(userId, liveInfo);
+      return liveInfo;
+    }
   }
 
+  // 2. Si pas en direct, vérifier la dernière page mémorisée (avec isLive = false)
+  const cached = userLocationMap.get(userId);
+  if (cached && now - cached.updatedAt < 5 * 60 * 1000) {
+    return {
+      ...cached,
+      isLive: false,
+    };
+  }
+
+  // 3. Fallback en base de données : dernière progression connue (toujours isLive: false)
   try {
     const lastProgress = await db
       .select({
@@ -192,13 +214,12 @@ export async function getUserLastLocation(userId: string): Promise<UserLocationI
 
     if (lastProgress.length > 0) {
       const p = lastProgress[0];
-      const isRecent = now - p.updatedAt.getTime() < 10 * 60 * 1000;
       const info: UserLocationInfo = {
         userId,
         mediaId: p.nodeId,
         title: p.title,
         path: `/player/${p.nodeId}`,
-        isLive: isRecent,
+        isLive: false,
         updatedAt: p.updatedAt.getTime(),
       };
       userLocationMap.set(userId, info);
@@ -303,7 +324,6 @@ export function pushVoiceAudioChunk(
 
   chunks.push(chunk);
 
-  // Nettoyer les fragments de plus de 90 secondes et garder au maximum 60 fragments
   const cutoff = now - 90000;
   const filtered = chunks.filter((c) => c.timestamp > cutoff);
   if (filtered.length > 60) {
@@ -319,3 +339,6 @@ export function getVoiceAudioChunks(topicSlug: string, sinceTimestamp: number, e
   const chunks = voiceCallAudioChunks.get(slug) || [];
   return chunks.filter((c) => c.timestamp > sinceTimestamp && (!excludeUserId || c.senderId !== excludeUserId));
 }
+
+export const pushAudioChunk = pushVoiceAudioChunk;
+export const pullAudioChunks = getVoiceAudioChunks;

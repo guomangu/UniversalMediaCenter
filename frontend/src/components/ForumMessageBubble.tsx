@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Image, Pressable, Linking, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ForumMessage } from '@/services/forumApi';
 import { getApiBaseUrl } from '@/services/apiConfig';
 import { resolveImageUrl } from '@/services/api';
 import { InlineAudioPlayer } from './InlineAudioPlayer';
+import { InlineVideoPlayer } from './InlineVideoPlayer';
+import { ForumMediaModal } from './ForumMediaModal';
 import { Radius } from '@/constants/theme';
 
 interface Props {
@@ -16,6 +18,9 @@ interface Props {
 
 export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
   const router = useRouter();
+  const [mediaModalVisible, setMediaModalVisible] = useState(false);
+  const [modalType, setModalType] = useState<'VIDEO' | 'IMAGE' | 'GIF' | 'DOCUMENT'>('IMAGE');
+
   const time = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const fullUrl = msg.mediaUrl
     ? msg.mediaUrl.startsWith('http')
@@ -25,6 +30,26 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
 
   const quotedPosterUri = msg.quotedMediaPoster ? resolveImageUrl(msg.quotedMediaPoster) : null;
 
+  // Détection des doublons : si l'auteur a déjà un badge de localisation/séance avec le bouton intelligent "Rejoindre ➔",
+  // ou si la citation d'œuvre pointe vers la même œuvre, on évite le doublon et on garde le lien intelligent !
+  const isDuplicateOfAuthorLocation = Boolean(
+    msg.authorLocation &&
+    msg.quotedMediaId &&
+    (
+      msg.authorLocation.mediaId === msg.quotedMediaId ||
+      msg.authorLocation.path?.includes(msg.quotedMediaId) ||
+      (msg.quotedMediaTitle && msg.authorLocation.title?.toLowerCase().includes(msg.quotedMediaTitle.toLowerCase())) ||
+      (msg.authorLocation.title && msg.quotedMediaTitle?.toLowerCase().includes(msg.authorLocation.title.toLowerCase()))
+    )
+  );
+
+  const shouldShowQuotedMedia = Boolean(msg.quotedMediaId && !isDuplicateOfAuthorLocation);
+
+  const openModal = (type: 'VIDEO' | 'IMAGE' | 'GIF' | 'DOCUMENT') => {
+    setModalType(type);
+    setMediaModalVisible(true);
+  };
+
   return (
     <View style={[styles.wrap, isMe ? styles.wrapRight : styles.wrapLeft]}>
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther]}>
@@ -32,7 +57,7 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
         <View style={styles.authorHeader}>
           <Text style={styles.author}>{msg.authorName}</Text>
 
-          {/* Dernière page connue ou média actuellement regardé */}
+          {/* Lien média le plus intelligent avec bouton d'action "Rejoindre ➔" */}
           {msg.authorLocation ? (
             <Pressable
               focusable={true}
@@ -59,8 +84,8 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
           </View>
         ) : null}
 
-        {/* Citation d'une œuvre / média pour séance */}
-        {msg.quotedMediaId ? (
+        {/* Citation d'une œuvre (affichée uniquement si non dupliquée avec la localisation/séance de l'auteur) */}
+        {shouldShowQuotedMedia ? (
           <Pressable
             focusable={true}
             onPress={() => router.push(`/media/${msg.quotedMediaId}` as any)}
@@ -74,33 +99,50 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.quotedMediaLabel}>🍿 Œuvre citée pour séance</Text>
               <Text style={styles.quotedMediaTitle} numberOfLines={1}>
                 {msg.quotedMediaTitle || 'Média'}
               </Text>
             </View>
-            <Text style={styles.quotedMediaArrow}>▶</Text>
+            <Text style={styles.quotedMediaJoin}>Rejoindre ➔</Text>
           </Pressable>
         ) : null}
 
+        {/* Images et GIFs : clic ouvre la modale d'affichage en grand */}
         {fullUrl && (msg.mediaType === 'IMAGE' || msg.mediaType === 'GIF') ? (
-          <Image source={{ uri: fullUrl }} style={styles.mediaImg} resizeMode="cover" />
-        ) : null}
-
-        {fullUrl && msg.mediaType === 'VIDEO' ? (
-          <Pressable focusable={true} onPress={() => Linking.openURL(fullUrl)} style={styles.mediaPill}>
-            <Text style={styles.pillText}>▶️ Vidéo : {msg.fileName || 'Ouvrir la vidéo'}</Text>
+          <Pressable
+            focusable={true}
+            onPress={() => openModal(msg.mediaType as any)}
+            style={styles.mediaImgPressable}
+          >
+            <Image source={{ uri: fullUrl }} style={styles.mediaImg} resizeMode="cover" />
+            <View style={styles.mediaZoomBadge}>
+              <Text style={styles.mediaZoomTxt}>🔍 Agrandir</Text>
+            </View>
           </Pressable>
         ) : null}
 
-        {/* Lecture des vocaux DIRECTEMENT sur la page du forum (aucun nouvel onglet !) */}
+        {/* Vidéos : lecture automatique en boucle (muet) + clic ouvre en grand avec le son dans une popup */}
+        {fullUrl && msg.mediaType === 'VIDEO' ? (
+          <InlineVideoPlayer
+            videoUrl={fullUrl}
+            fileName={msg.fileName}
+            onOpenModal={() => openModal('VIDEO')}
+          />
+        ) : null}
+
+        {/* Lecture des messages vocaux in-place sans rupture de navigation */}
         {fullUrl && msg.mediaType === 'AUDIO' ? (
           <InlineAudioPlayer audioUrl={fullUrl} fileName={msg.fileName} />
         ) : null}
 
+        {/* Documents et fichiers : clic ouvre la popup avec détails et actions propres */}
         {fullUrl && msg.mediaType === 'DOCUMENT' ? (
-          <Pressable focusable={true} onPress={() => Linking.openURL(fullUrl)} style={styles.mediaPill}>
-            <Text style={styles.pillText}>📄 Document : {msg.fileName || 'Télécharger le fichier'}</Text>
+          <Pressable
+            focusable={true}
+            onPress={() => openModal('DOCUMENT')}
+            style={styles.mediaPill}
+          >
+            <Text style={styles.pillText}>📄 Fichier : {msg.fileName || 'Voir le document'}</Text>
           </Pressable>
         ) : null}
 
@@ -131,6 +173,17 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
           </Pressable>
         </View>
       </View>
+
+      {/* Popup de prévisualisation grand format avec son et contrôles */}
+      {fullUrl && (
+        <ForumMediaModal
+          visible={mediaModalVisible}
+          onClose={() => setMediaModalVisible(false)}
+          mediaType={modalType}
+          mediaUrl={fullUrl}
+          fileName={msg.fileName}
+        />
+      )}
     </View>
   );
 }
@@ -215,11 +268,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quotedMediaLabel: { color: '#fbbf24', fontSize: 10, fontWeight: '800' },
   quotedMediaTitle: { color: '#f8fafc', fontSize: 12, fontWeight: '700' },
-  quotedMediaArrow: { color: '#818cf8', fontSize: 12, marginRight: 4 },
-  mediaImg: { width: '100%', height: 180, borderRadius: Radius.sm, marginBottom: 6 },
-  mediaPill: { backgroundColor: 'rgba(0,0,0,0.3)', padding: 8, borderRadius: Radius.sm, marginBottom: 6 },
+  quotedMediaJoin: { color: '#818cf8', fontSize: 11, fontWeight: '800', marginRight: 4 },
+  mediaImgPressable: {
+    position: 'relative',
+    marginBottom: 6,
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  mediaImg: { width: '100%', height: 180, borderRadius: Radius.sm },
+  mediaZoomBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  mediaZoomTxt: {
+    color: '#f8fafc',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  mediaPill: {
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    padding: 8,
+    borderRadius: Radius.sm,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
   pillText: { color: '#e2e8f0', fontSize: 12, fontWeight: '600' },
   content: { color: '#ffffff', fontSize: 13, lineHeight: 18, marginTop: 2 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 },
