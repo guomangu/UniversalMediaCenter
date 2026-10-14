@@ -12,25 +12,30 @@ interface Props {
 
 export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
   const [name, setName] = useState('');
-  const [pin, setPin] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
   const handleCreate = async () => {
     if (!name.trim()) return setErr('Le nom d’affichage est requis');
+    if (!email.trim() || !email.includes('@')) return setErr('Une adresse email valide est requise');
+    if (password && password.length < 6) return setErr('Le mot de passe doit faire au moins 6 caractères');
+
     setLoading(true);
     setErr('');
 
     const res = await createAdminUser({
       displayName: name.trim(),
-      pin: pin.trim() || undefined,
+      email: email.trim().toLowerCase(),
+      password: password.trim() || undefined,
       isAdmin,
     });
     setLoading(false);
 
     if (res.success) {
-      setName(''); setPin(''); setIsAdmin(false);
+      setName(''); setEmail(''); setPassword(''); setIsAdmin(false);
       onCreated();
       onClose();
     } else {
@@ -43,12 +48,13 @@ export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
       <View style={styles.overlay}>
         <View style={[styles.modalCard, { maxWidth: 420 }]}>
           <View style={styles.headerRow}>
-            <Text style={styles.title}>👥 Nouveau Compte Utilisateur</Text>
+            <Text style={styles.title}>👤 Nouveau Compte Utilisateur</Text>
             <Pressable focusable={true} style={styles.closeBtn} onPress={onClose}><Text style={styles.closeText}>✕</Text></Pressable>
           </View>
 
           <TextInput style={styles.input} placeholder="Nom d’affichage (ex: Lucas)" placeholderTextColor="#64748b" value={name} onChangeText={setName} />
-          <TextInput style={styles.input} placeholder="Code PIN (facultatif)" placeholderTextColor="#64748b" secureTextEntry keyboardType="numeric" maxLength={6} value={pin} onChangeText={setPin} />
+          <TextInput style={styles.input} placeholder="Email (ex: lucas@domaine.com)" placeholderTextColor="#64748b" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+          <TextInput style={styles.input} placeholder="Mot de passe (au moins 6 car.)" placeholderTextColor="#64748b" secureTextEntry value={password} onChangeText={setPassword} />
 
           <Pressable
             focusable={true}
@@ -68,7 +74,7 @@ export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
               <Text style={styles.submitText}>Annuler</Text>
             </Pressable>
             <Pressable focusable={true} style={[styles.submitBtn, { flex: 2 }]} onPress={handleCreate} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.submitText}>Créer l'utilisateur</Text>}
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Créer le compte</Text>}
             </Pressable>
           </View>
         </View>

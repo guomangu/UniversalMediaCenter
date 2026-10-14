@@ -4,7 +4,7 @@ import { getAuthHeaders } from './authStore';
 export function resolveImageUrl(uri?: string | null): string {
   if (!uri) return '';
   if (uri.startsWith('http://') || uri.startsWith('https://')) return uri;
-  if (uri.startsWith('/')) return `${getApiBaseUrl()}${uri}` rationale;
+  if (uri.startsWith('/')) return `${getApiBaseUrl()}${uri}`;
   return `${getApiBaseUrl()}/${uri}`;
 }
 

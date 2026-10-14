@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
+import type { UserSession } from '../middleware/access.js';
 
 const execFileAsync = promisify(execFile);
 export const streamRouter = new Hono();
@@ -18,18 +19,27 @@ const MIME_MAP: Record<string, string> = {
 
 const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
+async function findMediaByIdOrSlug(idOrSlug?: string) {
+  if (!idOrSlug) return null;
+  if (isUuid(idOrSlug)) {
+    return await db.query.mediaNodes.findFirst({
+      where: (t, { eq }) => eq(t.id, idOrSlug),
+    });
+  }
+  return await db.query.mediaNodes.findFirst({
+    where: (t, { eq }) => eq(t.slug, idOrSlug),
+  });
+}
+
 streamRouter.get('/:id/stream', async (c) => {
   const id = c.req.param('id');
-  const user = c.get('user');
+  const user = (c as any).get('user') as UserSession | null;
   const shareToken = c.req.query('share');
 
-  const media = await db.query.mediaNodes.findFirst({
-    where: (t, { or, eq }) => isUuid(id) ? or(eq(t.id, id), eq(t.slug, id)) : eq(t.slug, id),
-  });
+  const media = await findMediaByIdOrSlug(id);
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
-  // Vérification d'accès : compte connecté requis, ou lien de partage valide pour ce média
   const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId);
   if (!isAuthorized) {
     return c.json({

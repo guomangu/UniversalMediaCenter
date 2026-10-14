@@ -63,8 +63,12 @@ export default function AdminScreen() {
               <Pressable focusable={true} style={[styles.submitBtn, { flex: 1, backgroundColor: '#475569' }]} onPress={() => router.push('/')}>
                 <Text style={styles.submitText}>🏠 Accueil</Text>
               </Pressable>
-              <Pressable focusable={true} style={[styles.submitBtn, { flex: 1 }]} onPress={() => setShowAuthModal(true)}>
-                <Text style={styles.submitText}>👤 Changer de profil</Text>
+              <Pressable
+                focusable={true}
+                style={[styles.submitBtn, { flex: 1 }]}
+                onPress={() => router.push({ pathname: '/login', params: { returnUrl: '/admin', error: 'Accès réservé aux administrateurs' } } as any)}
+              >
+                <Text style={styles.submitText}>🔑 Se connecter</Text>
               </Pressable>
             </View>
           </View>
@@ -105,10 +109,13 @@ export default function AdminScreen() {
 
         {tab === 'IPTV' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Ajouter une Liste IPTV (.m3u)</Text>
-            <TextInput style={styles.input} placeholder="Nom" placeholderTextColor="#64748b" value={sourceName} onChangeText={setSourceName} />
-            <TextInput style={styles.input} placeholder="URL M3U8" placeholderTextColor="#64748b" value={m3uUrl} onChangeText={setM3uUrl} />
-            <Pressable style={styles.submitBtn} onPress={handleAddIptv}><Text style={styles.submitText}>+ Importer & Synchroniser</Text></Pressable>
+            <Text style={styles.cardTitle}>Ajouter un Fournisseur IPTV (.m3u)</Text>
+            <Text style={styles.cardSub}>Importation automatique des flux et des guides EPG XMLTV.</Text>
+            <TextInput style={styles.input} placeholder="Nom (ex: Freebox TV)" placeholderTextColor="#64748b" value={sourceName} onChangeText={setSourceName} />
+            <TextInput style={styles.input} placeholder="URL Playlist .m3u" placeholderTextColor="#64748b" value={m3uUrl} onChangeText={setM3uUrl} />
+            <Pressable style={styles.submitBtn} onPress={handleAddIptv}>
+              <Text style={styles.submitText}>📡 Synchroniser les Chaînes</Text>
+            </Pressable>
             {statusMsg ? <Text style={styles.statusMsg}>{statusMsg}</Text> : null}
           </View>
         )}

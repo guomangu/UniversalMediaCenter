@@ -1,7 +1,7 @@
 import { db } from '../db/connection.js';
 import { uiRails } from '../db/schema/index.js';
 import { sql } from 'drizzle-orm';
-import { KYOO_DEFAULT_RAILS } from './kyooRailsData.js';
+import { KYOO_DEFAULT_RAILS } from './railsData.js';
 
 export async function seedKyooPreset(): Promise<void> {
   console.log('🌱 Checking Kyoo Native Preset in PostgreSQL...');

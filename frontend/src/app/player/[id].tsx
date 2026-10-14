@@ -16,7 +16,7 @@ import { getVideoStreamUrl } from '@/services/api';
 import { styles } from '@/components/PlayerScreen.styles';
 
 export default function PlayerScreen() {
-  const { id, title } = useLocalSearchParams<{ id: string; title?: string }>();
+  const { id, title, share } = useLocalSearchParams<{ id: string; title?: string; share?: string }>();
   const router = useRouter();
   const videoRef = useRef<any>(null);
   const savedPosRef = useRef<number>(0);
@@ -39,13 +39,14 @@ export default function PlayerScreen() {
 
   const streamUrl = useMemo(() => {
     if (!id) return '';
-    const base = getVideoStreamUrl(id);
+    const base = getVideoStreamUrl(id, share);
     const p = new URLSearchParams();
     if (activeAudio && activeAudio !== 'auto') p.set('audio', activeAudio);
     if (activeQuality && activeQuality !== 'auto') p.set('quality', activeQuality);
+    if (share) p.set('share', share);
     const qs = p.toString();
-    return qs ? `${base}?${qs}` : base;
-  }, [id, activeAudio, activeQuality]);
+    return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
+  }, [id, activeAudio, activeQuality, share]);
 
   useEffect(() => { if (id) fetchMediaTracks(String(id)).then(setTracks); }, [id]);
 
@@ -58,37 +59,92 @@ export default function PlayerScreen() {
   const isModalOpen = showQuality || showAudio || showSubtitles || showShare || showCast;
   usePlayerControls({ videoRef, isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast });
 
-  const selectQuality = (q: string) => { savedPosRef.current = videoRef.current?.currentTime || 0; setActiveQuality(q); showToast(`⚙️ Qualité : ${q.toUpperCase()}`); };
-  const selectAudio = (a: string) => { savedPosRef.current = videoRef.current?.currentTime || 0; setActiveAudio(a); showToast(`🔊 Piste audio : ${a}`); };
+  const handleSeekDelta = (deltaSeconds: number) => {
+    if (!videoRef.current) return;
+    const current = (videoRef.current.currentTime || savedPosRef.current || 0) + deltaSeconds;
+    const clamped = Math.max(0, current);
+    videoRef.current.currentTime = clamped;
+    savedPosRef.current = clamped;
+    showToast(`${deltaSeconds > 0 ? '+' : ''}${deltaSeconds}s`);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <VideoPlayerView
-        id={String(id)} streamUrl={streamUrl} isPlaying={isPlaying} videoRef={videoRef}
-        showSkipIntro={showSkipIntro} intro={tracks.intro} activeSubtitle={activeSubtitle}
-        activeQuality={activeQuality} activeAudio={activeAudio} statusMessage={statusMessage}
-        initialTime={savedPosRef.current} onSkipIntro={() => { const end = tracks.intro?.end ?? 90.04; if (videoRef.current) videoRef.current.currentTime = end; setShowSkipIntro(false); }}
-        onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)}
+        id={String(id)}
+        streamUrl={streamUrl}
+        isPlaying={isPlaying}
+        videoRef={videoRef}
+        showSkipIntro={showSkipIntro}
+        activeSubtitle={activeSubtitle}
+        activeQuality={activeQuality}
+        activeAudio={activeAudio}
+        statusMessage={statusMessage}
+        onSkipIntro={() => { handleSeekDelta(85); setShowSkipIntro(false); }}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
       />
-      <View style={styles.controlsBar}>
-        <View style={styles.leftGroup}>
-          <Pressable focusable={true} onPress={() => { if (router.canGoBack()) router.back(); else router.push('/'); }} style={styles.btn}><Text style={styles.btnText}>✕ Fermer</Text></Pressable>
-          <Pressable focusable={true} onPress={() => { if (videoRef.current) { isPlaying ? videoRef.current.pause?.() : videoRef.current.play?.(); } setIsPlaying(!isPlaying); }} style={[styles.btn, styles.primaryBtn]}><Text style={styles.primaryText}>{isPlaying ? '⏸ Pause' : '▶ Lecture'}</Text></Pressable>
-        </View>
-        <View style={styles.rightGroup}>
-          <Pressable focusable={true} onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: `tv-${id}`, title: mediaTitle } } as any)} style={styles.btn}><Text style={styles.btnText}>💬 Forum</Text></Pressable>
-          <Pressable focusable={true} onPress={() => setShowQuality(true)} style={styles.btn}><Text style={styles.btnText}>⚙️ {activeQuality.toUpperCase()}</Text></Pressable>
-          <Pressable focusable={true} onPress={() => setShowAudio(true)} style={styles.btn}><Text style={styles.btnText}>🔊 Audio ({tracks.audioTracks.length})</Text></Pressable>
-          <Pressable focusable={true} onPress={() => setShowSubtitles(true)} style={styles.btn}><Text style={styles.btnText}>💬 {activeSubtitle === 'off' ? 'ST: Off' : 'ST: Actif'}</Text></Pressable>
-          <Pressable focusable={true} onPress={() => setShowShare(true)} style={styles.btn}><Text style={styles.btnText}>🔗 Partager</Text></Pressable>
-          <Pressable focusable={true} onPress={() => setShowCast(true)} style={[styles.btn, styles.castBtn]}><Text style={styles.castText}>📡 Caster</Text></Pressable>
+
+      <View style={styles.topBar}>
+        <Pressable focusable={true} onPress={() => { if (router.canGoBack()) router.back(); else router.push('/'); }} style={styles.topBtn}>
+          <Text style={styles.topBtnText}>← Retour</Text>
+        </Pressable>
+        <Text numberOfLines={1} style={styles.headerTitle}>{mediaTitle}</Text>
+        <View style={styles.rightActions}>
+          <Pressable focusable={true} onPress={() => setShowShare(true)} style={styles.topBtn}>
+            <Text style={styles.topBtnText}>🔗 Partager</Text>
+          </Pressable>
+          <Pressable focusable={true} onPress={() => setShowCast(true)} style={[styles.topBtn, activeCastTarget && styles.castActiveBtn]}>
+            <Text style={styles.topBtnText}>{activeCastTarget ? `📡 ${activeCastTarget.name}` : '📡 Cast'}</Text>
+          </Pressable>
+          <Pressable focusable={true} onPress={() => setShowAudio(true)} style={styles.topBtn}>
+            <Text style={styles.topBtnText}>🔊 Audio</Text>
+          </Pressable>
+          <Pressable focusable={true} onPress={() => setShowSubtitles(true)} style={styles.topBtn}>
+            <Text style={styles.topBtnText}>💬 ST</Text>
+          </Pressable>
+          <Pressable focusable={true} onPress={() => setShowQuality(true)} style={styles.topBtn}>
+            <Text style={styles.topBtnText}>⚙️ Qualité</Text>
+          </Pressable>
         </View>
       </View>
-      <PlayerQualityModal visible={showQuality} activeQuality={activeQuality} qualities={tracks.qualities} onSelect={selectQuality} onClose={() => setShowQuality(false)} />
-      <PlayerAudioModal visible={showAudio} activeAudio={activeAudio} tracks={tracks.audioTracks} onSelect={selectAudio} onClose={() => setShowAudio(false)} />
-      <PlayerSubtitleModal visible={showSubtitles} activeSubtitle={activeSubtitle} tracks={tracks.subtitleTracks} onSelect={(s) => { setActiveSubtitle(s); showToast(s === 'off' ? '💬 ST désactivés' : '💬 ST activés'); }} onClose={() => setShowSubtitles(false)} />
-      <PlayerShareModal visible={showShare} mediaId={String(id)} onClose={() => setShowShare(false)} />
-      <CastModal visible={showCast} onClose={() => setShowCast(false)} currentMedia={{ id: String(id), title: mediaTitle, positionSeconds: videoRef.current?.currentTime || 0 }} onTargetSelected={() => { videoRef.current?.pause?.(); setIsPlaying(false); }} />
+
+      <PlayerAudioModal
+        visible={showAudio}
+        tracks={tracks.audioTracks}
+        activeAudio={activeAudio}
+        onSelect={(val) => { setActiveAudio(val); setShowAudio(false); }}
+        onClose={() => setShowAudio(false)}
+      />
+
+      <PlayerSubtitleModal
+        visible={showSubtitles}
+        tracks={tracks.subtitleTracks}
+        activeSubtitle={activeSubtitle}
+        onSelect={(val) => { setActiveSubtitle(val); setShowSubtitles(false); }}
+        onClose={() => setShowSubtitles(false)}
+      />
+
+      <PlayerQualityModal
+        visible={showQuality}
+        qualities={tracks.qualities}
+        activeQuality={activeQuality}
+        onSelect={(val) => { setActiveQuality(val); setShowQuality(false); }}
+        onClose={() => setShowQuality(false)}
+      />
+
+      <PlayerShareModal
+        visible={showShare}
+        mediaId={String(id)}
+        mediaTitle={mediaTitle}
+        onClose={() => setShowShare(false)}
+      />
+
+      <CastModal
+        visible={showCast}
+        onClose={() => setShowCast(false)}
+        currentMedia={{ id: String(id), title: mediaTitle, positionSeconds: savedPosRef.current }}
+      />
     </SafeAreaView>
   );
 }

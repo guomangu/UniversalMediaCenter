@@ -1,3 +1,24 @@
+### 🔐 Système de Comptes Robuste, Mots de Passe & Protection Globale du Contenu
+- [x] **Comptes Uniques avec Mot de Passe (Scrypt) :**
+  - Fin du faux sélecteur multi-profils par instance : chaque session est associée à un utilisateur unique avec adresse e-mail et mot de passe chiffré via `scrypt` (sel aléatoire 16 octets, vérification en temps constant anti-timing attack).
+  - Suppression intégrale de la fonctionnalité "Changer de profil" (fichiers `AccountProfilesView.tsx`, `AccountProfileCard.tsx`, `AccountCreateView.tsx` et `QuickProfileModal.tsx` retirés).
+  - Modal "Mon Compte" dédié (`AccountModal.tsx`) affichant l'identité, le statut (Administrateur/Membre), les permissions et le bouton de déconnexion.
+- [x] **Initialisation "Zéro Compte" & Premier Administrateur :**
+  - Reset complet de la base (`users` vide).
+  - Détection automatique (`GET /api/auth/status`) : si aucun compte n'existe (`hasUsers: false`), la page `/login` bascule automatiquement en mode initialisation où le premier compte créé devient automatiquement l'Administrateur du serveur avec tous les droits.
+- [x] **Formulaires Conformes pour Google Chrome & Navigateurs :**
+  - Implémentation de balises `<form method="post">` avec `<input name="username" autoComplete="username">` et `<input name="password">`.
+  - Attribut `autoComplete="new-password"` à l'inscription pour déclencher la suggestion de mot de passe fort sécurisé par Google Chrome / gestionnaires de mots de passe.
+  - Attribut `autoComplete="current-password"` à la connexion pour activer le remplissage automatique et l'enregistrement de trousseau.
+- [x] **Protection Globale du Contenu & Redirections :**
+  - Toutes les routes de données (`/api/ui/*`, `/api/search/*`, `/api/iptv/*`, `/api/forum/*`, `/api/media/*`) exigent une authentification active (`requireAuth`).
+  - Composant de garde frontend (`AuthGuard.tsx`) : toute tentative d'accès anonyme aux catalogues, listes, streaming ou recherche redirige instantanément vers `/login?returnUrl=...&error=...`.
+  - Protection de la console d'administration (`/admin`) : redirection avec message d'erreur si l'utilisateur connecté n'est pas administrateur.
+- [x] **Exception de Partage Sécurisé Spécifique (`shareToken`) :**
+  - Un membre connecté peut générer un lien de partage signé (`POST /api/media/:id/share-token`).
+  - Le lien généré (`/player/:id?share=<token>` ou `/media/:id?share=<token>`) permet à un destinataire externe d'accéder **uniquement et strictement** à cette œuvre spécifique sans exiger de compte.
+  - Toute tentative d'accéder à une autre œuvre ou de naviguer sur l'accueil ou le catalogue avec ce token reste strictement bloquée et redirige vers `/login`.
+
 ### 📺 Page Dédiée Télévision en Direct (IPTV), Recherche & Forums de Chaînes (`/tv`, `TvChannelCard.tsx`, `TvSearchBar.tsx`)
 - [x] **Écran Dédié "TV" (`/tv`) :**
   - Page accessible directement depuis le bouton `📺 TV` de la barre de navigation `SiteHeader`.
@@ -16,13 +37,3 @@
 - [x] **Messagerie style WhatsApp :** Bulles de messages, citations/réponses (`replyTo`), images, vidéos, audios, documents et liens.
 - [x] **Auteur Dynamique :** Utilisation automatique du nom du profil connecté (`currentUser.displayName`) pour les messages postés.
 - [x] Persistance PostgreSQL avec indexation optimisée sur `topic_slug`.
-
----
-
-## 🟡 2. Diagnostic & Bonnes Pratiques Réseau / Accès Local
-
-1. **Accès Local :**
-   - Accès privilégié et testé sur `localhost:8080` (Gateway Caddy) ou `localhost:3000` (API Backend).
-2. **Accès via IP Locale (`http://192.168.1.93:8080/`) :**
-   - Toujours spécifier le port de la passerelle (:8080).
-   - En présence de tunnels VPN ou proxies applicatifs (ex: NekoBox), ajouter `192.168.1.0/24` dans la liste de contournement/bypass du proxy.

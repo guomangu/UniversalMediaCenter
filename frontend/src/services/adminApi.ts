@@ -10,24 +10,6 @@ export async function fetchPublicConfig(): Promise<any> {
   }
 }
 
-export async function registerOnTheFly(payload: {
-  displayName: string;
-  email?: string;
-  pin?: string;
-  invitationCode?: string;
-}): Promise<any> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/auth/register-on-the-fly`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    return await res.json();
-  } catch (err: any) {
-    return { error: err.message };
-  }
-}
-
 export async function fetchSiteConfig(): Promise<any> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/admin/config`, { headers: getAuthHeaders() });
@@ -64,6 +46,7 @@ export async function fetchAdminUsers(): Promise<any[]> {
 export async function createAdminUser(payload: {
   displayName: string;
   email?: string;
+  password?: string;
   pin?: string;
   isAdmin?: boolean;
   canDownload?: boolean;

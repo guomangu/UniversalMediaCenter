@@ -3,6 +3,7 @@ import { db } from '../db/connection.js';
 import { users } from '../db/schema/index.js';
 import { eq, count } from 'drizzle-orm';
 import { requireAdmin } from '../middleware/access.js';
+import { hashPassword } from '../auth/password.js';
 
 export const userAdminRouter = new Hono();
 userAdminRouter.use('*', requireAdmin);
@@ -22,7 +23,7 @@ userAdminRouter.get('/', async (c) => {
     canTranscode: u.canTranscode,
     canWatchIptv: u.canWatchIptv,
     maxCsaAgeLimit: u.maxCsaAgeLimit,
-    hasPin: !!(u.pinHash && u.pinHash.trim().length > 0),
+    hasPassword: !!(u.passwordHash && u.passwordHash.length > 0),
     createdAt: u.createdAt,
   }));
 
@@ -34,7 +35,7 @@ userAdminRouter.post('/', async (c) => {
   const {
     displayName,
     email,
-    pin,
+    password,
     isAdmin = false,
     canDownload = true,
     canTranscode = true,
@@ -52,17 +53,29 @@ userAdminRouter.post('/', async (c) => {
     ? email.trim().toLowerCase()
     : `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${randomSuffix}@ums.local`;
 
+  // Vérifier unicité email
+  const existing = await db.query.users.findFirst({
+    where: (t, { eq }) => eq(t.email, userEmail),
+  });
+  if (existing) {
+    return c.json({ error: 'Cette adresse email est déjà utilisée' }, 400);
+  }
+
+  const passwordHash = password && typeof password === 'string' && password.length >= 4
+    ? hashPassword(password)
+    : hashPassword('ums2026'); // Mot de passe initial par défaut si omis
+
   const [newUser] = await db
     .insert(users)
     .values({
       email: userEmail,
       displayName: cleanName,
+      passwordHash,
       isAdmin: Boolean(isAdmin),
       canDownload: Boolean(canDownload),
       canTranscode: Boolean(canTranscode),
       canWatchIptv: Boolean(canWatchIptv),
       maxCsaAgeLimit: maxCsaAgeLimit !== null && maxCsaAgeLimit !== undefined && maxCsaAgeLimit !== '' ? Number(maxCsaAgeLimit) : null,
-      pinHash: pin ? String(pin).trim() : null,
     })
     .returning();
 
@@ -78,7 +91,7 @@ userAdminRouter.post('/', async (c) => {
       canTranscode: newUser.canTranscode,
       canWatchIptv: newUser.canWatchIptv,
       maxCsaAgeLimit: newUser.maxCsaAgeLimit,
-      hasPin: !!(newUser.pinHash && newUser.pinHash.trim().length > 0),
+      hasPassword: true,
       createdAt: newUser.createdAt,
     },
   });
@@ -89,12 +102,13 @@ userAdminRouter.patch('/:id', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const {
     displayName,
+    email,
+    password,
     isAdmin,
     canDownload,
     canTranscode,
     canWatchIptv,
     maxCsaAgeLimit,
-    pin,
   } = body;
 
   const targetUser = await db.query.users.findFirst({
@@ -112,15 +126,16 @@ userAdminRouter.patch('/:id', async (c) => {
 
   const updatePayload: Record<string, any> = {};
   if (displayName !== undefined) updatePayload.displayName = displayName;
+  if (email !== undefined) updatePayload.email = email.trim().toLowerCase();
+  if (password && typeof password === 'string' && password.length >= 4) {
+    updatePayload.passwordHash = hashPassword(password);
+  }
   if (isAdmin !== undefined) updatePayload.isAdmin = Boolean(isAdmin);
   if (canDownload !== undefined) updatePayload.canDownload = Boolean(canDownload);
   if (canTranscode !== undefined) updatePayload.canTranscode = Boolean(canTranscode);
   if (canWatchIptv !== undefined) updatePayload.canWatchIptv = Boolean(canWatchIptv);
   if (maxCsaAgeLimit !== undefined) {
     updatePayload.maxCsaAgeLimit = maxCsaAgeLimit === '' || maxCsaAgeLimit === null ? null : Number(maxCsaAgeLimit);
-  }
-  if (pin !== undefined) {
-    updatePayload.pinHash = pin === null || pin === '' ? null : String(pin).trim();
   }
 
   const updated = await db
@@ -142,7 +157,7 @@ userAdminRouter.patch('/:id', async (c) => {
       canTranscode: u.canTranscode,
       canWatchIptv: u.canWatchIptv,
       maxCsaAgeLimit: u.maxCsaAgeLimit,
-      hasPin: !!(u.pinHash && u.pinHash.trim().length > 0),
+      hasPassword: !!(u.passwordHash && u.passwordHash.length > 0),
       createdAt: u.createdAt,
     },
   });
@@ -153,12 +168,13 @@ userAdminRouter.delete('/:id', async (c) => {
   const targetUser = await db.query.users.findFirst({
     where: (t, { eq }) => eq(t.id, id),
   });
+
   if (!targetUser) return c.json({ error: 'Utilisateur introuvable' }, 404);
 
   if (targetUser.isAdmin) {
     const adminCount = await db.select({ val: count() }).from(users).where(eq(users.isAdmin, true));
     if ((adminCount[0]?.val ?? 0) <= 1) {
-      return c.json({ error: 'Impossible de supprimer le seul administrateur actif' }, 400);
+      return c.json({ error: 'Impossible de supprimer le dernier administrateur' }, 400);
     }
   }
 

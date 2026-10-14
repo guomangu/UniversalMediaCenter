@@ -23,7 +23,7 @@ forumRouter.get('/topics/:slug/messages', async (c) => {
 forumRouter.post('/topics/:slug/messages', async (c) => {
   const slug = c.req.param('slug').toLowerCase();
   const body = await c.req.json().catch(() => ({}));
-  const user = c.get('user');
+  const user = (c as any).get('user') as any;
   const {
     topicTitle,
     content,
