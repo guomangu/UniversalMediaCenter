@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { SiteHeader } from '@/components/SiteHeader';
 import { AccountModal } from '@/components/AccountModal';
 import { useCurrentUser } from '@/services/authStore';
@@ -70,7 +70,12 @@ export default function AdminScreen() {
         <Text style={styles.heading}>Panneau d’Administration Centralisé</Text>
         <View style={styles.tabRow}>
           {(['PROFILE_TYPES', 'USERS', 'CONFIG', 'LIBRARY', 'IPTV'] as const).map((t) => (
-            <Pressable key={t} style={[styles.tabBtn, tab === t && styles.activeTab]} onPress={() => setTab(t)}>
+            <Pressable
+              key={t}
+              focusable={true}
+              style={[styles.tabBtn, tab === t && styles.activeTab]}
+              onPress={() => setTab(t)}
+            >
               <Text style={styles.tabText}>
                 {t === 'PROFILE_TYPES'
                   ? '🏷️ Types de Profils'
@@ -94,7 +99,12 @@ export default function AdminScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Mise à jour & Complétion Intelligente</Text>
             <Text style={styles.cardSub}>Scanne par priorité de besoin (incomplets en premier) et met à jour champs manquants et existants.</Text>
-            <Pressable style={[styles.submitBtn, loading && styles.btnDisabled]} onPress={handleRefreshLibrary} disabled={loading}>
+            <Pressable
+              focusable={true}
+              style={[styles.submitBtn, loading && styles.btnDisabled]}
+              onPress={handleRefreshLibrary}
+              disabled={loading}
+            >
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>🔄 Mettre à jour la médiathèque</Text>}
             </Pressable>
             {statusMsg ? <Text style={styles.statusMsg}>{statusMsg}</Text> : null}

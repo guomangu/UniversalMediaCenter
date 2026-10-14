@@ -38,6 +38,7 @@ export function UserForumsTab() {
         {forums.map((f) => (
           <Pressable
             key={f.topicSlug}
+            focusable={true}
             onPress={() =>
               router.push({
                 pathname: '/forum/[topic]',
@@ -79,22 +80,23 @@ const styles = StyleSheet.create({
   emptyDesc: { color: '#94a3b8', fontSize: 13, textAlign: 'center', lineHeight: 18, maxWidth: 400 },
   forumCard: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: 'rgba(30, 41, 59, 0.75)',
-    borderRadius: Radius.md,
-    padding: 12,
+    padding: 14,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(71, 85, 105, 0.4)',
   },
-  topicTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 14 },
-  topicSlug: { color: '#64748b', fontSize: 11, marginTop: 2 },
+  topicTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 14, marginBottom: 2 },
+  topicSlug: { color: '#818cf8', fontSize: 11, fontWeight: '600' },
   badge: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.5)',
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
   },
-  badgeTxt: { color: '#818cf8', fontSize: 11, fontWeight: '700' },
+  badgeTxt: { color: '#818cf8', fontWeight: '800', fontSize: 11 },
 });

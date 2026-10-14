@@ -1,70 +1,79 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Modal, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Modal, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Radius, Spacing } from '@/constants/theme';
-import { getApiBaseUrl } from '@/services/apiConfig';
-import { getAuthHeaders } from '@/services/authStore';
 
-interface Props {
+interface PlayerShareModalProps {
   visible: boolean;
-  mediaId: string;
-  mediaTitle?: string;
   onClose: () => void;
+  mediaId: string;
+  mediaTitle: string;
 }
 
-export function PlayerShareModal({ visible, mediaId, mediaTitle, onClose }: Props) {
+export function PlayerShareModal({
+  visible,
+  onClose,
+  mediaId,
+  mediaTitle,
+}: PlayerShareModalProps) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
-  const [shareToken, setShareToken] = useState<string | null>(null);
   const firstBtnRef = useRef<any>(null);
 
   useEffect(() => {
-    if (visible && mediaId) {
+    if (visible) {
       setTimeout(() => firstBtnRef.current?.focus?.(), 60);
-      fetch(`${getApiBaseUrl()}/api/media/${mediaId}/share-token`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success && data.shareToken) setShareToken(data.shareToken);
-        })
-        .catch(() => {});
     }
-  }, [visible, mediaId]);
+  }, [visible]);
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081';
-  const queryParam = shareToken ? `?share=${shareToken}` : '';
-  const shareUrl = `${origin}/player/${mediaId}${queryParam}`;
+  const shareUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/player/${mediaId}`
+    : `http://localhost:8081/player/${mediaId}`;
 
-  const handleCopyLink = () => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+  const handleCopyLink = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }
+    } catch {
+      // Fallback
     }
   };
 
   const handleNativeShare = async () => {
-    if (typeof navigator !== 'undefined' && (navigator as any).share) {
-      try {
-        await (navigator as any).share({ title: mediaTitle || 'Regarder sur UMS', url: shareUrl });
+    try {
+      if (typeof navigator !== 'undefined' && (navigator as any).share) {
+        await (navigator as any).share({
+          title: mediaTitle,
+          text: `Regarde ${mediaTitle} sur Universal Media Stack !`,
+          url: shareUrl,
+        });
         onClose();
-      } catch {}
-    } else {
-      handleCopyLink();
+      } else {
+        handleCopyLink();
+      }
+    } catch {
+      // Annulé
     }
   };
 
-  const handleGoToForum = () => {
+  const handleOpenForum = () => {
     onClose();
     router.push({ pathname: '/forum/[topic]', params: { topic: mediaId, title: mediaTitle || 'Lecture' } } as any);
   };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        focusable={false}
+        style={styles.backdrop}
+        onPress={onClose}
+        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+      >
         <Pressable
+          focusable={false}
           style={styles.content}
           onPress={(e) => e.stopPropagation()}
           {...({ dataSet: { modalContainer: 'true' } } as any)}
@@ -95,15 +104,17 @@ export function PlayerShareModal({ visible, mediaId, mediaTitle, onClose }: Prop
             <Pressable focusable={true} onPress={handleCopyLink} style={styles.item}>
               <Text style={styles.itemIcon}>📋</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.itemTitle}>{copied ? '✓ Lien copié !' : 'Copier le lien direct'}</Text>
-                <Text numberOfLines={1} style={styles.itemSub}>{shareUrl}</Text>
+                <Text style={styles.itemTitle}>
+                  {copied ? '✅ Lien copié dans le presse-papier !' : 'Copier le lien du média'}
+                </Text>
+                <Text style={styles.itemSub} numberOfLines={1}>{shareUrl}</Text>
               </View>
             </Pressable>
-            <Pressable focusable={true} onPress={handleGoToForum} style={[styles.item, styles.forumItem]}>
+            <Pressable focusable={true} onPress={handleOpenForum} style={styles.item}>
               <Text style={styles.itemIcon}>💬</Text>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.itemTitle, { color: '#a5b4fc' }]}>Ouvrir le Forum WhatsApp du média</Text>
-                <Text style={styles.itemSub}>Échanger avis, vocaux et captures d'écran</Text>
+                <Text style={styles.itemTitle}>Discussion / Forum du média</Text>
+                <Text style={styles.itemSub}>Échanger avec les autres membres en direct</Text>
               </View>
             </Pressable>
           </View>
@@ -120,9 +131,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '800', color: '#f8fafc' },
   close: { color: '#94a3b8', fontSize: 16, fontWeight: '700', padding: 4 },
   list: { gap: 10 },
-  item: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: Radius.md, backgroundColor: 'rgba(51, 65, 85, 0.4)', cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
-  forumItem: { backgroundColor: 'rgba(99, 102, 241, 0.15)', borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.35)' },
-  itemIcon: { fontSize: 20 },
-  itemTitle: { color: '#f8fafc', fontSize: 13, fontWeight: '700' },
-  itemSub: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
+  item: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: Radius.md, backgroundColor: 'rgba(51, 65, 85, 0.4)', cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
+  itemIcon: { fontSize: 24 },
+  itemTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '700' },
+  itemSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
 });

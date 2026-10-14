@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
 import { requireAuth } from '../middleware/access.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
+import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 
 export const searchRouter = new Hono();
 
@@ -10,6 +11,8 @@ searchRouter.use('*', requireAuth);
 
 searchRouter.get('/', async (c) => {
   const query = c.req.query('q')?.trim();
+  const user = (c as any).get('user') as any;
+
   if (!query || query.length < 2) {
     return c.json({ query: '', nodes: [], people: [], tags: [] });
   }
@@ -19,16 +22,26 @@ searchRouter.get('/', async (c) => {
   // 1. Recherche floue sur media_nodes via pg_trgm et similarity
   const nodes = await db.execute(sql`
     SELECT id, node_type, title, original_title, slug, release_year, poster_path, order_index,
+           search_vector_text, video_file_path, nfo_file_path,
            similarity(unaccent(search_vector_text), unaccent(${cleanQuery})) AS score
     FROM media_nodes
     WHERE search_vector_text % ${cleanQuery}
        OR word_similarity(unaccent(${cleanQuery}), unaccent(search_vector_text)) > 0.25
        OR title ILIKE ${'%' + cleanQuery + '%'}
     ORDER BY score DESC, release_year DESC NULLS LAST
-    LIMIT 20;
+    LIMIT 30;
   `);
 
-  const formattedNodes = (Array.from(nodes) as any[]).map((n) => {
+  const allowedNodes = (Array.from(nodes) as any[]).filter((n) =>
+    isMediaAllowedForUser(user, {
+      nodeType: n.node_type,
+      searchVectorText: n.search_vector_text,
+      videoFilePath: n.video_file_path,
+      nfoFilePath: n.nfo_file_path,
+    })
+  ).slice(0, 20);
+
+  const formattedNodes = allowedNodes.map((n) => {
     const info = parseSeasonEpisode(n.title, n.order_index);
     return {
       id: n.id,

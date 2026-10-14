@@ -88,6 +88,7 @@ export default function UserScreen() {
             {/* Onglets */}
             <View style={styles.tabRow}>
               <Pressable
+                focusable={true}
                 onPress={() => setActiveTab('CONTINUE')}
                 style={[styles.tabBtn, activeTab === 'CONTINUE' && styles.tabBtnActive]}>
                 <Text style={[styles.tabTxt, activeTab === 'CONTINUE' && styles.tabTxtActive]}>
@@ -96,6 +97,7 @@ export default function UserScreen() {
               </Pressable>
 
               <Pressable
+                focusable={true}
                 onPress={() => setActiveTab('FAVORITES')}
                 style={[styles.tabBtn, activeTab === 'FAVORITES' && styles.tabBtnActive]}>
                 <Text style={[styles.tabTxt, activeTab === 'FAVORITES' && styles.tabTxtActive]}>
@@ -104,6 +106,7 @@ export default function UserScreen() {
               </Pressable>
 
               <Pressable
+                focusable={true}
                 onPress={() => setActiveTab('FRIENDS')}
                 style={[styles.tabBtn, activeTab === 'FRIENDS' && styles.tabBtnActive]}>
                 <Text style={[styles.tabTxt, activeTab === 'FRIENDS' && styles.tabTxtActive]}>
@@ -112,6 +115,7 @@ export default function UserScreen() {
               </Pressable>
 
               <Pressable
+                focusable={true}
                 onPress={() => setActiveTab('FORUMS')}
                 style={[styles.tabBtn, activeTab === 'FORUMS' && styles.tabBtnActive]}>
                 <Text style={[styles.tabTxt, activeTab === 'FORUMS' && styles.tabTxtActive]}>
@@ -120,6 +124,7 @@ export default function UserScreen() {
               </Pressable>
 
               <Pressable
+                focusable={true}
                 onPress={() => setActiveTab('FEED')}
                 style={[styles.tabBtn, activeTab === 'FEED' && styles.tabBtnActive]}>
                 <Text style={[styles.tabTxt, activeTab === 'FEED' && styles.tabTxtActive]}>
@@ -154,6 +159,7 @@ export default function UserScreen() {
                     {historyList.map((h) => (
                       <Pressable
                         key={h.id}
+                        focusable={true}
                         onPress={() => router.push(`/player/${h.id}` as any)}
                         style={styles.historyRow}>
                         <View style={{ flex: 1 }}>
@@ -179,7 +185,7 @@ export default function UserScreen() {
                 {favoritesList.length === 0 ? (
                   <View style={styles.emptyBox}>
                     <Text style={styles.emptyTxt}>Vous n'avez pas encore ajouté de favoris.</Text>
-                    <Pressable onPress={() => router.push('/')} style={styles.actionBtn}>
+                    <Pressable focusable={true} onPress={() => router.push('/')} style={styles.actionBtn}>
                       <Text style={styles.actionBtnTxt}>Découvrir le catalogue</Text>
                     </Pressable>
                   </View>
@@ -248,30 +254,35 @@ const styles = StyleSheet.create({
   tabTxtActive: { color: '#ffffff', fontWeight: '800' },
   tabBody: { gap: 12 },
   subSecTitle: { fontSize: 15, fontWeight: '800', color: '#818cf8', textTransform: 'uppercase', marginBottom: 8 },
-  horizontalRow: { gap: 12, paddingVertical: 4 },
+  horizontalRow: { gap: 12, paddingVertical: 8 },
   emptyBox: {
     backgroundColor: 'rgba(30, 41, 59, 0.5)',
-    borderRadius: 16,
-    padding: Spacing.four,
+    borderRadius: Radius.lg,
+    padding: 24,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.3)',
-    gap: 10,
+    gap: 12,
   },
-  emptyTxt: { color: '#94a3b8', fontSize: 13, textAlign: 'center' },
-  actionBtn: { backgroundColor: '#6366f1', paddingHorizontal: 16, paddingVertical: 8, borderRadius: Radius.pill },
-  actionBtnTxt: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
+  emptyTxt: { color: '#94a3b8', fontSize: 14, textAlign: 'center' },
+  actionBtn: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: Radius.md,
+  },
+  actionBtnTxt: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
   historyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
-    borderRadius: Radius.md,
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
     padding: 12,
+    borderRadius: Radius.md,
     gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.3)',
   },
-  historyTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 13 },
-  historyBadge: { color: '#818cf8', fontSize: 11, fontWeight: '800', marginTop: 2 },
-  historyProgress: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
-  replayTxt: { color: '#6366f1', fontWeight: '800', fontSize: 12 },
+  historyTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 14 },
+  historyBadge: { color: '#818cf8', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  historyProgress: { color: '#94a3b8', fontSize: 12, fontWeight: '700' },
+  replayTxt: { color: '#6366f1', fontWeight: '800', fontSize: 13 },
   mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
 });

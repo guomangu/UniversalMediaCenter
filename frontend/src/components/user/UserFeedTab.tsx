@@ -41,6 +41,7 @@ export function UserFeedTab() {
           return (
             <Pressable
               key={item.id}
+              focusable={true}
               onPress={() => router.push(`/media/${item.media?.id}` as any)}
               style={styles.card}>
               <View style={styles.header}>
@@ -98,18 +99,18 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(71, 85, 105, 0.4)',
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  author: { color: '#818cf8', fontWeight: '800', fontSize: 13 },
-  stars: { color: '#fbbf24', fontSize: 14 },
-  comment: { color: '#e2e8f0', fontSize: 13, lineHeight: 18, marginBottom: 10 },
+  author: { color: '#38bdf8', fontWeight: '800', fontSize: 13 },
+  stars: { color: '#fbbf24', fontSize: 14, letterSpacing: 2 },
+  comment: { color: '#cbd5e1', fontSize: 13, marginBottom: 10, lineHeight: 18 },
   mediaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 10,
+    alignItems: 'center',
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    borderRadius: Radius.md,
     padding: 8,
+    borderRadius: 10,
   },
-  mediaPoster: { width: 36, height: 50, borderRadius: Radius.sm },
-  mediaTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 12 },
-  badgeTxt: { color: '#818cf8', fontSize: 10, fontWeight: '800', marginTop: 2 },
+  mediaPoster: { width: 36, height: 50, borderRadius: 6, backgroundColor: '#334155' },
+  mediaTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 13 },
+  badgeTxt: { color: '#818cf8', fontSize: 11, fontWeight: '700', marginTop: 2 },
 });

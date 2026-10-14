@@ -115,7 +115,8 @@ export function AdminProfileTypesTab() {
       </Text>
 
       {/* Liste des Packs Existants */}
-      {loading ? <ActivityIndicator color="#6366f1" style={{ marginVertical: 16 }} /> : null}\n      <View style={{ gap: 10, marginBottom: 20 }}>
+      {loading ? <ActivityIndicator color="#6366f1" style={{ marginVertical: 16 }} /> : null}
+      <View style={{ gap: 10, marginBottom: 20 }}>
         {types.map((pt) => {
           const isPtAdmin = pt.id === 'ADMINISTRATEUR' || pt.isAdmin;
           return (

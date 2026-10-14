@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
-import { Radius, Colors } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
 
 interface ConfirmModalProps {
   visible: boolean;
@@ -25,21 +25,34 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const cancelBtnRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (visible) {
+      const timer = setTimeout(() => {
+        cancelBtnRef.current?.focus?.();
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [visible]);
+
   if (!visible) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.overlay}>
-        <View style={styles.card}>
+        <View style={styles.card} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.message}>{message}</Text>
 
           <View style={styles.actions}>
             <Pressable
+              ref={cancelBtnRef}
               focusable={true}
               style={[styles.btn, styles.cancelBtn]}
               onPress={onCancel}
               disabled={loading}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
             >
               <Text style={styles.cancelText}>{cancelText}</Text>
             </Pressable>

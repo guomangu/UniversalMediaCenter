@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Modal, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Text, Modal, Pressable, StyleSheet, Platform, ScrollView } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
 export interface AudioTrackItem {
@@ -28,8 +28,14 @@ export function PlayerAudioModal({ visible, activeAudio, tracks = [], onSelect, 
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        focusable={false}
+        style={styles.backdrop}
+        onPress={onClose}
+        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+      >
         <Pressable
+          focusable={false}
           style={styles.content}
           onPress={(e) => e.stopPropagation()}
           {...({ dataSet: { modalContainer: 'true' } } as any)}
@@ -62,22 +68,26 @@ export function PlayerAudioModal({ visible, activeAudio, tracks = [], onSelect, 
                 </Text>
               </View>
             ) : (
-              tracks.map((t) => {
-                const val = String(t.index);
-                const isSelected = activeAudio === val;
-                return (
-                  <Pressable
-                    ref={isSelected ? activeBtnRef : undefined}
-                    key={val}
-                    focusable={true}
-                    onPress={() => { onSelect(val); onClose(); }}
-                    style={[styles.item, isSelected && styles.activeItem]}
-                  >
-                    <Text style={[styles.itemText, isSelected && styles.activeText]}>{t.label}</Text>
-                    {isSelected ? <Text style={styles.check}>✓</Text> : null}
-                  </Pressable>
-                );
-              })
+              <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
+                <View style={{ gap: 8 }}>
+                  {tracks.map((t) => {
+                    const val = String(t.index);
+                    const isSelected = activeAudio === val;
+                    return (
+                      <Pressable
+                        ref={isSelected ? activeBtnRef : undefined}
+                        key={val}
+                        focusable={true}
+                        onPress={() => { onSelect(val); onClose(); }}
+                        style={[styles.item, isSelected && styles.activeItem]}
+                      >
+                        <Text style={[styles.itemText, isSelected && styles.activeText]}>{t.label}</Text>
+                        {isSelected ? <Text style={styles.check}>✓</Text> : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
             )}
           </View>
         </Pressable>

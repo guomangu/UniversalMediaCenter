@@ -2,25 +2,26 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, Platform } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
-export interface QualityItem {
+export interface QualityOption {
   label: string;
   value: string;
 }
 
+const DEFAULT_QUALITIES: QualityOption[] = [
+  { label: 'Auto (Adaptative)', value: 'auto' },
+  { label: '1080p (FHD 6000 kbps)', value: '1080p' },
+  { label: '720p (HD 3000 kbps)', value: '720p' },
+  { label: '480p (SD 1500 kbps)', value: '480p' },
+  { label: '360p (Mobile 800 kbps)', value: '360p' },
+];
+
 interface Props {
   visible: boolean;
+  qualities?: QualityOption[];
   activeQuality: string;
-  qualities?: QualityItem[];
-  onSelect: (q: string) => void;
+  onSelect: (val: string) => void;
   onClose: () => void;
 }
-
-const DEFAULT_QUALITIES: QualityItem[] = [
-  { label: 'Auto (Direct Play)', value: 'auto' },
-  { label: '1080p FHD', value: '1080p' },
-  { label: '720p HD', value: '720p' },
-  { label: '480p SD', value: '480p' },
-];
 
 export function PlayerQualityModal({
   visible,
@@ -29,8 +30,8 @@ export function PlayerQualityModal({
   onSelect,
   onClose,
 }: Props) {
-  const list = qualities.length > 0 ? qualities : DEFAULT_QUALITIES;
   const activeBtnRef = useRef<any>(null);
+  const list = qualities.length > 0 ? qualities : DEFAULT_QUALITIES;
 
   useEffect(() => {
     if (visible) {
@@ -40,8 +41,14 @@ export function PlayerQualityModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        focusable={false}
+        style={styles.backdrop}
+        onPress={onClose}
+        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+      >
         <Pressable
+          focusable={false}
           style={styles.content}
           onPress={(e) => e.stopPropagation()}
           {...({ dataSet: { modalContainer: 'true' } } as any)}

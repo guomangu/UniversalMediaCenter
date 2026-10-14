@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useCurrentUser, logout } from '@/services/authStore';
@@ -12,6 +12,16 @@ interface Props {
 export function AccountModal({ visible, onClose }: Props) {
   const router = useRouter();
   const currentUser = useCurrentUser();
+  const closeBtnRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (visible) {
+      const timer = setTimeout(() => {
+        closeBtnRef.current?.focus?.();
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [visible]);
 
   const handleLogout = () => {
     logout();
@@ -31,11 +41,17 @@ export function AccountModal({ visible, onClose }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+      <Pressable focusable={false} style={styles.overlay} onPress={onClose} {...({ dataSet: { modalBackdrop: 'true' } } as any)}>
+        <View style={styles.modalCard} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <View style={styles.headerRow}>
             <Text style={styles.title}>👤 Mon Compte</Text>
-            <Pressable focusable={true} style={styles.closeBtn} onPress={onClose}>
+            <Pressable
+              ref={closeBtnRef}
+              focusable={true}
+              style={styles.closeBtn}
+              onPress={onClose}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
+            >
               <Text style={styles.closeText}>✕</Text>
             </Pressable>
           </View>
@@ -46,7 +62,7 @@ export function AccountModal({ visible, onClose }: Props) {
                 <View style={styles.userRow}>
                   <View style={[styles.avatar, { backgroundColor: currentUser.isAdmin ? '#4338ca' : '#334155' }]}>
                     <Text style={styles.avatarTxt}>
-                      {currentUser.displayName ? currentUser.displayName.slice(0, 1).toUpperCase() : 'U'}\
+                      {currentUser.displayName ? currentUser.displayName.slice(0, 1).toUpperCase() : 'U'}
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
@@ -100,7 +116,7 @@ export function AccountModal({ visible, onClose }: Props) {
               </Pressable>
             </View>
           )}
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );
@@ -148,13 +164,12 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     marginBottom: Spacing.three,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
+    borderColor: 'rgba(71, 85, 105, 0.35)',
   },
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 10,
+    gap: Spacing.two,
   },
   avatar: {
     width: 44,
@@ -171,98 +186,94 @@ const styles = StyleSheet.create({
   nameBadges: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     flexWrap: 'wrap',
   },
   userName: {
-    color: '#f8fafc',
-    fontWeight: '800',
     fontSize: 16,
+    fontWeight: '800',
+    color: '#f8fafc',
   },
   adminBadge: {
-    color: '#818cf8',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    color: '#fef08a',
+    backgroundColor: 'rgba(234, 179, 8, 0.25)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: Radius.pill,
   },
   memberBadge: {
-    color: '#94a3b8',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    backgroundColor: 'rgba(51, 65, 85, 0.5)',
+    color: '#93c5fd',
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: Radius.pill,
   },
   userEmail: {
-    color: '#94a3b8',
     fontSize: 12,
+    color: '#94a3b8',
     marginTop: 2,
   },
   permsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 6,
+    gap: 12,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(71, 85, 105, 0.25)',
   },
   permPill: {
     fontSize: 11,
     fontWeight: '700',
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.pill,
   },
   userSpaceBtn: {
-    backgroundColor: '#6366f1',
-    borderRadius: Radius.md,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    borderWidth: 1,
+    borderColor: '#6366f1',
+    borderRadius: Radius.pill,
+    paddingVertical: 10,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   userSpaceBtnText: {
-    color: '#ffffff',
+    color: '#c7d2fe',
+    fontSize: 12,
     fontWeight: '800',
-    fontSize: 13,
-    textAlign: 'center',
   },
   logoutBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.45)',
-    borderRadius: Radius.md,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderRadius: Radius.pill,
     paddingVertical: 10,
     alignItems: 'center',
   },
   logoutBtnText: {
-    color: '#f87171',
+    color: '#fca5a5',
+    fontSize: 12,
     fontWeight: '700',
-    fontSize: 14,
   },
   notLoggedView: {
     alignItems: 'center',
-    paddingVertical: Spacing.two,
-    gap: 12,
+    paddingVertical: Spacing.three,
   },
   notLoggedTxt: {
     color: '#94a3b8',
-    fontSize: 14,
+    marginBottom: 12,
+    fontSize: 13,
   },
   loginBtn: {
     backgroundColor: '#6366f1',
-    borderRadius: Radius.md,
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    width: '100%',
+    paddingHorizontal: 20,
+    borderRadius: Radius.pill,
   },
   loginBtnText: {
     color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 14,
+    fontWeight: '800',
+    fontSize: 13,
   },
 });

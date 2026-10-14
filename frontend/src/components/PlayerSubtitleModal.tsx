@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Modal, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Text, Modal, Pressable, StyleSheet, Platform, ScrollView } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
 export interface SubtitleTrackItem {
@@ -28,8 +28,14 @@ export function PlayerSubtitleModal({ visible, activeSubtitle, tracks = [], onSe
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        focusable={false}
+        style={styles.backdrop}
+        onPress={onClose}
+        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+      >
         <Pressable
+          focusable={false}
           style={styles.content}
           onPress={(e) => e.stopPropagation()}
           {...({ dataSet: { modalContainer: 'true' } } as any)}
@@ -60,22 +66,26 @@ export function PlayerSubtitleModal({ visible, activeSubtitle, tracks = [], onSe
                 <Text style={styles.emptyText}>Aucun sous-titre compatible détecté pour ce fichier vidéo.</Text>
               </View>
             ) : (
-              tracks.map((s, idx) => {
-                const val = s.fileName ? `file:${s.fileName}` : `track:${s.index}`;
-                const isSelected = activeSubtitle === val;
-                return (
-                  <Pressable
-                    ref={isSelected ? activeBtnRef : undefined}
-                    key={`${val}-${idx}`}
-                    focusable={true}
-                    onPress={() => { onSelect(val); onClose(); }}
-                    style={[styles.item, isSelected && styles.activeItem]}
-                  >
-                    <Text style={[styles.itemText, isSelected && styles.activeText]}>{s.label}</Text>
-                    {isSelected ? <Text style={styles.check}>✓</Text> : null}
-                  </Pressable>
-                );
-              })
+              <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
+                <View style={{ gap: 8 }}>
+                  {tracks.map((s, idx) => {
+                    const val = s.fileName ? `file:${s.fileName}` : `track:${s.index}`;
+                    const isSelected = activeSubtitle === val;
+                    return (
+                      <Pressable
+                        ref={isSelected ? activeBtnRef : undefined}
+                        key={`${val}-${idx}`}
+                        focusable={true}
+                        onPress={() => { onSelect(val); onClose(); }}
+                        style={[styles.item, isSelected && styles.activeItem]}
+                      >
+                        <Text style={[styles.itemText, isSelected && styles.activeText]}>{s.label}</Text>
+                        {isSelected ? <Text style={styles.check}>✓</Text> : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
             )}
           </View>
         </Pressable>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Modal, Pressable, TextInput, StyleSheet, ScrollView } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 import { updateUserProfile } from '@/services/userApi';
@@ -24,6 +24,16 @@ export function ProfileEditModal({ visible, currentUser, onClose, onSuccess }: P
   const [avatar, setAvatar] = useState(currentUser.avatarUrl || '🍿');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const firstInputRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (visible) {
+      const timer = setTimeout(() => {
+        firstInputRef.current?.focus?.();
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [visible]);
 
   const handleSave = async () => {
     setLoading(true);
@@ -44,11 +54,21 @@ export function ProfileEditModal({ visible, currentUser, onClose, onSuccess }: P
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
+      <Pressable
+        focusable={false}
+        style={styles.backdrop}
+        onPress={onClose}
+        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+      >
+        <View style={styles.card} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <View style={styles.header}>
             <Text style={styles.title}>✏️ Personnaliser mon profil</Text>
-            <Pressable onPress={onClose} style={styles.closeBtn}>
+            <Pressable
+              focusable={true}
+              onPress={onClose}
+              style={styles.closeBtn}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
+            >
               <Text style={styles.closeTxt}>✕</Text>
             </Pressable>
           </View>
@@ -59,6 +79,7 @@ export function ProfileEditModal({ visible, currentUser, onClose, onSuccess }: P
             {AVATAR_PRESETS.map((emoji) => (
               <Pressable
                 key={emoji}
+                focusable={true}
                 onPress={() => setAvatar(emoji)}
                 style={[styles.avatarBtn, avatar === emoji && styles.avatarBtnActive]}>
                 <Text style={styles.avatarEmoji}>{emoji}</Text>
@@ -69,6 +90,7 @@ export function ProfileEditModal({ visible, currentUser, onClose, onSuccess }: P
           {/* Pseudo */}
           <Text style={styles.label}>Nom d'affichage ou Pseudo :</Text>
           <TextInput
+            ref={firstInputRef}
             value={displayName}
             onChangeText={setDisplayName}
             placeholder="Ex: Alex"
@@ -91,14 +113,19 @@ export function ProfileEditModal({ visible, currentUser, onClose, onSuccess }: P
           {error ? <Text style={styles.errorTxt}>{error}</Text> : null}
 
           <View style={styles.actions}>
-            <Pressable onPress={onClose} style={styles.cancelBtn}>
+            <Pressable
+              focusable={true}
+              onPress={onClose}
+              style={styles.cancelBtn}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
+            >
               <Text style={styles.cancelTxt}>Annuler</Text>
             </Pressable>
-            <Pressable onPress={handleSave} disabled={loading} style={styles.saveBtn}>
+            <Pressable focusable={true} onPress={handleSave} disabled={loading} style={styles.saveBtn}>
               <Text style={styles.saveTxt}>{loading ? 'Enregistrement...' : 'Enregistrer'}</Text>
             </Pressable>
           </View>
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );

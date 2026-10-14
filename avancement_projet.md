@@ -73,3 +73,22 @@
 - [x] **Résolution du Conflit `Blocked aria-hidden on focused element` :**
   - Analyse et formalisation dans [`mauvaise_pratique.md`](file:///var/home/tele/Documents/theuniversalmediastack/mauvaise_pratique.md) de la rétention de focus lors de la mise en sommeil d'écrans par React Navigation / Expo Router.
   - Défocalisation explicite et transfert de focus vers le lecteur vidéo actif lors des transitions.
+- [x] **Échappatoire Universelle des Formulaires Textuels (`Escape` / `Retour` / `Gamepad`) :**
+  - Interception en phase de capture (`{ capture: true }`) dans [`useTvNavigation.ts`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/hooks/useTvNavigation.ts) des touches `Escape`, `Backspace` (quand le champ est vide ou avec modificateur), des touches retour télécommandes (Samsung 10009, WebOS 461, Android 4) et du bouton B/Cercle sur manette gamepad.
+  - Transfert intelligent du focus vers l'élément interactif adjacent le plus proche (`exitInputFocus`), restaurant la navigation spatiale sans souris.
+  - Préservation du déplacement de curseur textuel au sein du champ via `ArrowLeft` / `ArrowRight`.
+
+---
+
+### 🎮 Sélection Télécommande des Modales/Popups & Navigation Admin / Mon Espace
+- [x] **Élimination Définitive de l'Erreur de Text Node React Native Web :**
+  - Détection et suppression des sauts de ligne échappés accidentels `\n` insérés entre balises JSX dans [`AdminProfileTypesTab.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/AdminProfileTypesTab.tsx) et [`AccountModal.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/AccountModal.tsx).
+  - Suppression totale de l'erreur `Unexpected text node: \n . A text node cannot be a child of a <View>` qui se produisait en double à l'entrée dans l'interface admin.
+- [x] **Confinement de Focus & Navigation Télécommande dans les Popups / Modales :**
+  - Confinement de la navigation spatiale (`getActiveModal`) à l'intérieur du conteneur de modale actif (`[data-modal-container="true"]`).
+  - Exclusion stricte des fonds d'arrière-plan (`[data-modal-backdrop="true"]`, `focusable={false}`) pour empêcher la télécommande de cibler le backdrop au lieu des boutons d'action.
+  - Auto-focus automatique du premier bouton ou champ lors de l'ouverture d'une modale (`ConfirmModal`, `AccountModal`, `AdminCreateUserModal`, `MediaRepostModal`, `ProfileEditModal`, `PlayerAudioModal`, `PlayerSubtitleModal`, `PlayerQualityModal`, `PlayerShareModal`).
+  - Touche Retour télécommande / Échap mappée sur la fermeture de modale (`[data-modal-close="true"]`) sans déclencher de navigation d'historique web intempestive.
+- [x] **Navigabilité Complète au Clavier / Télécommande sur `/admin` et `/user` :**
+  - Attributs `focusable={true}` ajoutés sur tous les onglets du panneau d'administration (`AdminProfileTypesTab`, `AdminUsersTab`, `AdminConfigTab`, `AdminIptvTab`, scan médiathèque) et sur les chips de configuration (codes d'invitation, dossiers exclus).
+  - Attributs `focusable={true}` ajoutés sur tous les onglets de l'espace personnel ([`user.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/user.tsx) : `Reprendre`, `Favoris`, `Amis`, `Mes Salons`, `Fil d'avis`), les lignes d'historique, les cartes de salons de discussion ([`UserForumsTab.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/user/UserForumsTab.tsx)), les publications du fil social ([`UserFeedTab.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/user/UserFeedTab.tsx)) et la gestion d'amis ([`UserFriendsTab.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/user/UserFriendsTab.tsx)).

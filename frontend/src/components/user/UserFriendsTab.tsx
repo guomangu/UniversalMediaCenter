@@ -75,10 +75,18 @@ export function UserFriendsTab() {
                   <Text style={styles.name}>{req.displayName}</Text>
                   <Text style={styles.sub}>{req.email}</Text>
                 </View>
-                <Pressable onPress={() => handleAccept(req.friendshipId)} style={styles.acceptBtn}>
+                <Pressable
+                  focusable={true}
+                  onPress={() => handleAccept(req.friendshipId)}
+                  style={styles.acceptBtn}
+                >
                   <Text style={styles.btnTxt}>✓ Accepter</Text>
                 </Pressable>
-                <Pressable onPress={() => handleReject(req.friendshipId)} style={styles.rejectBtn}>
+                <Pressable
+                  focusable={true}
+                  onPress={() => handleReject(req.friendshipId)}
+                  style={styles.rejectBtn}
+                >
                   <Text style={styles.btnTxt}>✕ Refuser</Text>
                 </Pressable>
               </View>
@@ -107,7 +115,11 @@ export function UserFriendsTab() {
                   <Text style={styles.name}>{u.displayName}</Text>
                   <Text style={styles.sub}>{u.email}</Text>
                 </View>
-                <Pressable onPress={() => handleSendReq(u.id)} style={styles.acceptBtn}>
+                <Pressable
+                  focusable={true}
+                  onPress={() => handleSendReq(u.id)}
+                  style={styles.acceptBtn}
+                >
                   <Text style={styles.btnTxt}>+ Demander en ami</Text>
                 </Pressable>
               </View>
@@ -131,6 +143,7 @@ export function UserFriendsTab() {
                   {f.bio ? <Text style={styles.bio} numberOfLines={1}>{f.bio}</Text> : null}
                 </View>
                 <Pressable
+                  focusable={true}
                   onPress={() =>
                     router.push({
                       pathname: '/forum/[topic]',
@@ -140,10 +153,15 @@ export function UserFriendsTab() {
                       },
                     } as any)
                   }
-                  style={styles.forumBtn}>
+                  style={styles.forumBtn}
+                >
                   <Text style={styles.btnTxt}>🔒 Salon Privé</Text>
                 </Pressable>
-                <Pressable onPress={() => handleReject(f.friendshipId)} style={styles.rejectBtn}>
+                <Pressable
+                  focusable={true}
+                  onPress={() => handleReject(f.friendshipId)}
+                  style={styles.rejectBtn}
+                >
                   <Text style={styles.btnTxt}>Retirer</Text>
                 </Pressable>
               </View>

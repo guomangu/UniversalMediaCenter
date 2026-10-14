@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, Modal, Pressable, TextInput, StyleSheet, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, Modal, Pressable, TextInput, StyleSheet } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 import { createRepost } from '@/services/repostApi';
 
@@ -16,6 +16,16 @@ export function MediaRepostModal({ visible, mediaId, mediaTitle, onClose, onSucc
   const [comment, setComment] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState('');
+  const firstBtnRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (visible) {
+      const timer = setTimeout(() => {
+        firstBtnRef.current?.focus?.();
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [visible]);
 
   const handlePost = async () => {
     setSubmitting(true);
@@ -37,11 +47,21 @@ export function MediaRepostModal({ visible, mediaId, mediaTitle, onClose, onSucc
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+      <Pressable
+        focusable={false}
+        style={styles.backdrop}
+        onPress={onClose}
+        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+      >
+        <View style={styles.modalCard} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <View style={styles.header}>
             <Text style={styles.title}>🔄 Reposter & Noter</Text>
-            <Pressable onPress={onClose} style={styles.closeBtn}>
+            <Pressable
+              focusable={true}
+              onPress={onClose}
+              style={styles.closeBtn}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
+            >
               <Text style={styles.closeTxt}>✕</Text>
             </Pressable>
           </View>
@@ -53,8 +73,14 @@ export function MediaRepostModal({ visible, mediaId, mediaTitle, onClose, onSucc
           <View style={styles.ratingRow}>
             <Text style={styles.label}>Votre note :</Text>
             <View style={styles.stars}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <Pressable key={star} onPress={() => setRating(star)} style={styles.starBtn}>
+              {[1, 2, 3, 4, 5].map((star, idx) => (
+                <Pressable
+                  ref={idx === 0 ? firstBtnRef : undefined}
+                  key={star}
+                  focusable={true}
+                  onPress={() => setRating(star)}
+                  style={styles.starBtn}
+                >
                   <Text style={[styles.starTxt, rating >= star && styles.starActive]}>★</Text>
                 </Pressable>
               ))}
@@ -76,14 +102,24 @@ export function MediaRepostModal({ visible, mediaId, mediaTitle, onClose, onSucc
           {msg ? <Text style={styles.statusMsg}>{msg}</Text> : null}
 
           <View style={styles.actions}>
-            <Pressable onPress={onClose} style={styles.cancelBtn}>
+            <Pressable
+              focusable={true}
+              onPress={onClose}
+              style={styles.cancelBtn}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
+            >
               <Text style={styles.cancelTxt}>Annuler</Text>
             </Pressable>
-            <Pressable onPress={handlePost} disabled={submitting} style={styles.submitBtn}>
+            <Pressable
+              focusable={true}
+              onPress={handlePost}
+              disabled={submitting}
+              style={styles.submitBtn}
+            >
               <Text style={styles.submitTxt}>{submitting ? 'Publication...' : 'Publier mon avis'}</Text>
             </Pressable>
           </View>
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );
@@ -110,33 +146,101 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 20,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  title: { fontSize: 18, fontWeight: '800', color: '#f8fafc' },
-  closeBtn: { padding: 4 },
-  closeTxt: { color: '#94a3b8', fontSize: 16, fontWeight: '700' },
-  mediaName: { fontSize: 14, color: '#818cf8', fontWeight: '600', marginBottom: 16 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  label: { fontSize: 12, fontWeight: '700', color: '#cbd5e1', marginBottom: 6 },
-  stars: { flexDirection: 'row', gap: 4 },
-  starBtn: { padding: 4 },
-  starTxt: { fontSize: 24, color: '#475569' },
-  starActive: { color: '#fbbf24' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#f8fafc',
+  },
+  closeBtn: {
+    padding: 6,
+  },
+  closeTxt: {
+    color: '#94a3b8',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  mediaName: {
+    fontSize: 14,
+    color: '#818cf8',
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#cbd5e1',
+    marginBottom: 6,
+  },
+  stars: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  starBtn: {
+    padding: 6,
+  },
+  starTxt: {
+    fontSize: 24,
+    color: '#475569',
+  },
+  starActive: {
+    color: '#fbbf24',
+  },
   input: {
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
     borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.5)',
     padding: 12,
     color: '#f8fafc',
     fontSize: 13,
-    minHeight: 70,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
     textAlignVertical: 'top',
-    marginBottom: 16,
+    minHeight: 80,
+    marginBottom: 14,
   },
-  statusMsg: { color: '#34d399', fontSize: 12, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
-  actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
-  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: Radius.pill, backgroundColor: '#334155' },
-  cancelTxt: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
-  submitBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: Radius.pill, backgroundColor: '#6366f1' },
-  submitTxt: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  statusMsg: {
+    color: '#34d399',
+    fontWeight: '700',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'flex-end',
+  },
+  cancelBtn: {
+    backgroundColor: '#334155',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: Radius.pill,
+  },
+  cancelTxt: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  submitBtn: {
+    backgroundColor: '#6366f1',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: Radius.pill,
+  },
+  submitTxt: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 13,
+  },
 });

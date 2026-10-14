@@ -85,7 +85,12 @@ export function AdminConfigTab() {
       <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 8, marginBottom: 4 }}>Codes d’invitation actifs</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
         {(config.security?.invitationCodes || []).map((code: string) => (
-          <Pressable key={code} onPress={() => removeCode(code)} style={styles.statusPill}>
+          <Pressable
+            key={code}
+            focusable={true}
+            onPress={() => removeCode(code)}
+            style={styles.statusPill}
+          >
             <Text style={styles.statusText}>{code} ✕</Text>
           </Pressable>
         ))}
@@ -98,7 +103,11 @@ export function AdminConfigTab() {
           value={newCode}
           onChangeText={setNewCode}
         />
-        <Pressable style={[styles.submitBtn, { paddingHorizontal: 16 }]} onPress={addCode}>
+        <Pressable
+          focusable={true}
+          style={[styles.submitBtn, { paddingHorizontal: 16 }]}
+          onPress={addCode}
+        >
           <Text style={styles.submitText}>+ Code</Text>
         </Pressable>
       </View>
@@ -109,7 +118,12 @@ export function AdminConfigTab() {
       </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
         {(config.media?.globalExcludedFolders || []).map((folder: string) => (
-          <Pressable key={folder} onPress={() => removeFolder(folder)} style={[styles.statusPill, { backgroundColor: 'rgba(245, 158, 11, 0.2)' }]}>
+          <Pressable
+            key={folder}
+            focusable={true}
+            onPress={() => removeFolder(folder)}
+            style={[styles.statusPill, { backgroundColor: 'rgba(245, 158, 11, 0.2)' }]}
+          >
             <Text style={[styles.statusText, { color: '#fbbf24' }]}>📁 {folder} ✕</Text>
           </Pressable>
         ))}
@@ -122,7 +136,11 @@ export function AdminConfigTab() {
           value={newExcludedFolder}
           onChangeText={setNewExcludedFolder}
         />
-        <Pressable style={[styles.submitBtn, { paddingHorizontal: 16, backgroundColor: '#f59e0b' }]} onPress={addFolder}>
+        <Pressable
+          focusable={true}
+          style={[styles.submitBtn, { paddingHorizontal: 16, backgroundColor: '#f59e0b' }]}
+          onPress={addFolder}
+        >
           <Text style={styles.submitText}>+ Exclure</Text>
         </Pressable>
       </View>
@@ -153,7 +171,12 @@ export function AdminConfigTab() {
         </View>
       </View>
 
-      <Pressable style={[styles.submitBtn, loading && styles.btnDisabled]} onPress={handleSave} disabled={loading}>
+      <Pressable
+        focusable={true}
+        style={[styles.submitBtn, loading && styles.btnDisabled]}
+        onPress={handleSave}
+        disabled={loading}
+      >
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>💾 Enregistrer dans param.yaml</Text>}
       </Pressable>
       {status ? <Text style={styles.statusMsg}>{status}</Text> : null}
