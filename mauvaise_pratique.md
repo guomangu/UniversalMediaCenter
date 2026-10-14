@@ -1,17 +1,3 @@
-  - Pour les nœuds `EPISODE` et `SEASON`, remonter d'abord chercher le titre propre du parent `SHOW` dans la base de données locale avant d'interroger le web.
-  - Définir des timeouts stricts (`AbortSignal.timeout(6000)`) et un délai inter-requêtes (200ms) pour respecter les quotas.
-
----
-
-## 🛑 24. Découverte Cast Limitée aux Seuls Clients Internes (Smart TV Invisibles)
-
-* **Problème / Symptôme :** La fonctionnalité de Cast reposait uniquement sur un registre en mémoire et un polling interne HTTP/WebSocket UMS, ne découvrant que les fenêtres de navigateur actives exécutant l'application. La Smart TV connectée au réseau (Google TV, Chromecast, Android TV, Smart TV Samsung/LG) n'apparaissait pas dans la modale de Cast.
-* **Conséquences :** Impossibilité de diffuser directement sur sa télévision comme le fait l'application YouTube.
-* **Mauvaise Pratique :** Tenter de réimplémenter entièrement la découverte mDNS / SSDP / DIAL en pur code applicatif web sans exploiter les APIs de projection matérielles du navigateur.
-* **Bonne Pratique :**
-  - Intégrer l'API W3C Remote Playback (`video.remote.prompt()`) et le Google Cast SDK standard (`cast_sender.js`).
-  - Proposer un bouton pro "Caster sur ma Télévision" qui réveille le dialogue natif du navigateur, offrant la parité parfaite avec YouTube pour la détection et la diffusion fluide vers toutes les Smart TVs du réseau local.
-
 ---
 
 ## 🛑 25. Appels de Fonctions Asynchrones Non-Défensives dans les Timers Périodiques (`setInterval` & HMR)
@@ -34,3 +20,15 @@
   - Autoriser `ArrowDown` pour descendre immédiatement du champ de recherche vers les résultats/filtres, `ArrowUp` pour remonter vers l'en-tête, et `Escape / Back` pour désactiver le focus (`blur()`).
   - Marquer les boutons de modales avec `focusable={true}` et cantonner automatiquement la navigation spatiale à l'intérieur de la modale active (`[data-modal-container="true"]`).
   - Associer la touche Retour de la télécommande à la fermeture de la modale ouverte (`[data-modal-close="true"]`) au lieu de déclencher un retour arrière d'historique web.
+
+---
+
+## 🛑 27. Blocage 401 sur les Flux TV en Direct (IPTV) & Route `/api/auth/config` Manquante
+
+* **Problème / Symptôme :** Le lancement d'une chaîne TV en direct (`node_type = 'LIVE_CHANNEL'`) renvoyait `HTTP 401 Unauthorized` sur `/api/media/:id/stream` en l'absence de session utilisateur complète, et la console affichait une erreur `404 Not Found` sur `/api/auth/config`.
+* **Conséquences :** Écran noir lors du zapping TV en direct et échec de récupération de la configuration publique du serveur lors du chargement initial de l'espace admin.
+* **Mauvaise Pratique :** Appliquer les contrôles de sécurité des fichiers médias confidentiels (`checkMediaAccess`) aux flux IPTV publics externes (`streamUrl`), et définir une route d'API dans un routeur secondaire non monté sur le serveur principal.
+* **Bonne Pratique :**
+  - Autoriser immédiatement la diffusion des chaînes TV en direct (`LIVE_CHANNEL`) avec en-têtes CORS (`Access-Control-Allow-Origin: *`) et redirection 302 sans exiger de jeton de fichier privé.
+  - Monter systématiquement les routes de configuration publique (`/api/auth/config`) directement dans le routeur principal `authRouter`.
+  - Synchroniser automatiquement l'état de session client (`syncSessionWithServer`) avec le serveur PostgreSQL (`/api/auth/me`) pour actualiser instantanément le rôle `isAdmin: true` sans obliger l'utilisateur à se déconnecter manuellement.

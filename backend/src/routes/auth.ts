@@ -21,6 +21,19 @@ authRouter.get('/status', async (c) => {
   });
 });
 
+// Configuration publique d'authentification
+authRouter.get('/config', (c) => {
+  const params = getSiteParams();
+  return c.json({
+    siteName: params.server.siteName,
+    siteTagline: params.server.siteTagline,
+    invitationOnly: params.security.invitationOnly,
+    allowOnTheFlyCreation: params.security.allowOnTheFlyCreation,
+    defaultPinRequired: params.security.defaultPinRequired,
+    defaultMaxCsaAge: params.security.defaultMaxCsaAge,
+  });
+});
+
 // Récupération de la session courante (/me)
 authRouter.get('/me', async (c) => {
   const user = (c.get as any)('user') as UserSession | null;

@@ -40,7 +40,14 @@ streamRouter.get('/:id/stream', async (c) => {
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
-  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId);
+  // 1. Chaînes TV en direct ou flux externes : accès universel garanti sans blocage 401
+  if (media.nodeType === 'LIVE_CHANNEL' && media.streamUrl) {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    return c.redirect(media.streamUrl, 302);
+  }
+
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType);
   if (!isAuthorized) {
     return c.json({
       error: 'Connexion requise pour visionner cette vidéo ou lien expiré',
@@ -48,7 +55,12 @@ streamRouter.get('/:id/stream', async (c) => {
     }, 401);
   }
 
-  if (media.streamUrl) return c.redirect(media.streamUrl);
+  if (media.streamUrl) {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    return c.redirect(media.streamUrl, 302);
+  }
+
   if (!media.videoFilePath) return c.json({ error: 'Fichier vidéo absent' }, 404);
 
   const audio = c.req.query('audio');

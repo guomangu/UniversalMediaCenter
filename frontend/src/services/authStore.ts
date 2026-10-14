@@ -62,6 +62,33 @@ export function logout(): void {
   notify();
 }
 
+/**
+ * Synchronise immédiatement la session locale avec le serveur PostgreSQL (/api/auth/me)
+ * Garantit que les privilèges (notamment isAdmin) sont à jour sans forcer une reconnexion
+ */
+export async function syncSessionWithServer(): Promise<UserProfile | null> {
+  if (!memoryToken) return null;
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${memoryToken}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.authenticated && data.user) {
+        memoryUser = data.user;
+        notify();
+        return memoryUser;
+      }
+    }
+  } catch {}
+  return memoryUser;
+}
+
+// Déclenche la synchronisation en arrière-plan dès le chargement du bundle client
+if (typeof window !== 'undefined' && memoryToken) {
+  syncSessionWithServer().catch(() => {});
+}
+
 export async function fetchAuthStatus(): Promise<AuthStatus> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/auth/status`);
@@ -72,7 +99,10 @@ export async function fetchAuthStatus(): Promise<AuthStatus> {
   }
 }
 
-export async function loginWithPassword(email: string, password: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+export async function loginWithPassword(
+  email: string,
+  password: string
+): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
       method: 'POST',

@@ -1,26 +1,41 @@
 import { Stack, DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, Platform } from 'react-native';
+import { useEffect } from 'react';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { useTvNavigation } from '@/hooks/useTvNavigation';
 import { CastControlBar } from '@/components/CastControlBar';
 import { useActiveCastTarget, setActiveCastTarget } from '@/services/castState';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { syncSessionWithServer } from '@/services/authStore';
 
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
-} else if (typeof document !== 'undefined' && !document.getElementById('google-cast-sender-script')) {
-  const script = document.createElement('script');
-  script.id = 'google-cast-sender-script';
-  script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
-  script.async = true;
-  document.head.appendChild(script);
+} else if (typeof document !== 'undefined') {
+  if (!document.getElementById('google-cast-sender-script')) {
+    const script = document.createElement('script');
+    script.id = 'google-cast-sender-script';
+    script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+    script.async = true;
+    document.head.appendChild(script);
+  }
+  if (!document.getElementById('hls-player-script')) {
+    const hlsScript = document.createElement('script');
+    hlsScript.id = 'hls-player-script';
+    hlsScript.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';
+    hlsScript.async = true;
+    document.head.appendChild(hlsScript);
+  }
 }
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const activeCastTarget = useActiveCastTarget();
   useTvNavigation();
+
+  useEffect(() => {
+    syncSessionWithServer().catch(() => {});
+  }, []);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

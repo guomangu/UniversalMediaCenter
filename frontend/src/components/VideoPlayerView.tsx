@@ -53,6 +53,22 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
     };
   }, []);
 
+  // Support HLS Live IPTV universel sur tous les navigateurs (Chrome, Firefox, Safari, Edge)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !videoRef.current || !streamUrl) return;
+    const v = videoRef.current;
+    const Hls = (window as any).Hls;
+
+    if (Hls && Hls.isSupported() && !v.canPlayType('application/vnd.apple.mpegurl')) {
+      const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+      hls.loadSource(streamUrl);
+      hls.attachMedia(v);
+      return () => {
+        hls.destroy();
+      };
+    }
+  }, [streamUrl]);
+
   const subtitleUrl = React.useMemo(() => {
     if (!activeSubtitle || activeSubtitle === 'off') return '';
     if (activeSubtitle.startsWith('file:')) return `${getApiBaseUrl()}/api/media/${id}/subtitles?fileName=${encodeURIComponent(activeSubtitle.slice(5))}`;
