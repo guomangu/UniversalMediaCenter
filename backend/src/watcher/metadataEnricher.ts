@@ -42,6 +42,10 @@ export async function enrichLibraryMetadata(batchLimit = 30): Promise<{
           updates.fanartPath = adjacent.fanartPath;
           hasUpdate = true;
         }
+        if (!node.thumbPath && adjacent.thumbPath) {
+          updates.thumbPath = adjacent.thumbPath;
+          hasUpdate = true;
+        }
       }
 
       let rawSearch = node.originalTitle || node.title;
@@ -65,8 +69,43 @@ export async function enrichLibraryMetadata(batchLimit = 30): Promise<{
           updates.posterPath = external.posterUrl;
           hasUpdate = true;
         }
+        if (!node.fanartPath && external.fanartUrl) {
+          updates.fanartPath = external.fanartUrl;
+          hasUpdate = true;
+        }
+
+        // Tags thématiques & descriptifs
         for (const g of external.genres) {
           await linkTagToNode(node.id, 'genre', g).catch(() => null);
+        }
+        for (const s of external.tags) {
+          await linkTagToNode(node.id, 'subject', s).catch(() => null);
+        }
+        for (const st of external.studios) {
+          await linkTagToNode(node.id, 'studio', st).catch(() => null);
+        }
+        for (const c of external.countries) {
+          await linkTagToNode(node.id, 'country', c).catch(() => null);
+        }
+        if (external.certification) {
+          await linkTagToNode(node.id, 'certification', external.certification).catch(() => null);
+        }
+
+        // Équipes artistiques et humaines
+        for (const d of external.directors) {
+          await linkTagToNode(node.id, 'director', d).catch(() => null);
+        }
+        for (const w of external.writers) {
+          await linkTagToNode(node.id, 'writer', w).catch(() => null);
+        }
+        for (const p of external.producers) {
+          await linkTagToNode(node.id, 'producer', p).catch(() => null);
+        }
+        for (const comp of external.composers) {
+          await linkTagToNode(node.id, 'composer', comp).catch(() => null);
+        }
+        for (const a of external.actors) {
+          await linkTagToNode(node.id, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {}).catch(() => null);
         }
       }
 

@@ -14,7 +14,7 @@ async function calculateFileSha256(filePath: string): Promise<string> {
 export async function processNfoFile(filePath: string): Promise<void> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = parseNfoXml(content);
+    const parsed = parseNfoXml(content, filePath);
     if (!parsed) return;
     const sha256 = await calculateFileSha256(filePath);
     await ingestMediaNode(filePath, parsed, sha256);

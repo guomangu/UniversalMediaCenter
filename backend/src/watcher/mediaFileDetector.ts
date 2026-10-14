@@ -10,6 +10,7 @@ export interface AdjacentMediaFiles {
   posterPath?: string;
   fanartPath?: string;
   clearlogoPath?: string;
+  thumbPath?: string;
 }
 
 export async function detectAdjacentFiles(nfoPath: string): Promise<AdjacentMediaFiles> {
@@ -41,6 +42,8 @@ export async function detectAdjacentFiles(nfoPath: string): Promise<AdjacentMedi
           result.fanartPath = fullPath;
         } else if (base === 'clearlogo' || base === 'logo') {
           result.clearlogoPath = fullPath;
+        } else if (base === 'thumb' || base === `${nfoBase}-thumb`) {
+          result.thumbPath = fullPath;
         }
       }
     }

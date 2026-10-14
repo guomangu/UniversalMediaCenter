@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,6 +58,19 @@ export default function MediaDetailScreen() {
     await toggleFavorite(id, nextState);
   };
 
+  const { media, tags = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] }, children = [], relatedTags = [] } = data || ({} as any);
+
+  // Séparation du casting (acteurs) et de l'équipe technique (réalisateurs, scénaristes, compositeurs, producteurs)
+  const { actors, crewMembers, technicalSpecs } = useMemo(() => {
+    const persons = tags.PERSON_CAROUSEL || [];
+    const actorsList = persons.filter((p: any) => p.attr_code === 'actor');
+    const crewList = persons.filter((p: any) => p.attr_code !== 'actor');
+    const techList = (tags.TECHNICAL_DRAWER || []).filter(
+      (t: any) => !t.attr_code.startsWith('custom_')
+    );
+    return { actors: actorsList, crewMembers: crewList, technicalSpecs: techList };
+  }, [tags]);
+
   if (loading || !data) {
     return (
       <View style={styles.loading}>
@@ -66,7 +79,6 @@ export default function MediaDetailScreen() {
     );
   }
 
-  const { media, tags = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] }, children = [], relatedTags = [] } = data;
   const fanartUri = resolveImageUrl(media.fanartPath || media.posterPath);
   const playId = children.length > 0 ? children[0].id : media.id;
   const seasonTag = media.displayBadge || media.seasonEpisodeTag;
@@ -81,7 +93,10 @@ export default function MediaDetailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Pressable onPress={() => router.push('/')} style={styles.backBtn}><Text style={styles.backTxt}>← Retour à l'accueil</Text></Pressable>
+        <Pressable focusable={true} onPress={() => router.push('/')} style={styles.backBtn}>
+          <Text style={styles.backTxt}>← Retour à l'accueil</Text>
+        </Pressable>
+
         <View style={styles.heroBox}>
           {fanartUri ? <Image source={{ uri: fanartUri }} style={styles.backdrop} /> : null}
           <View style={styles.heroContent}>
@@ -91,27 +106,159 @@ export default function MediaDetailScreen() {
                   <Text style={styles.seasonTagTxt}>{seasonTag}</Text>
                 </View>
               ) : null}
-              {tags.HERO_BADGE?.map((b, i) => <TagPill key={i} label={b.value_text} theme={b.color_theme || 'amber'} />)}
+              {tags.HERO_BADGE?.map((b: any, i: number) => (
+                <TagPill key={i} label={b.value_text} theme={b.color_theme || 'amber'} />
+              ))}
             </View>
-            <ClickableTopicText text={media.title} topicSlug={media.slug || media.id} topicTitle={media.title} style={styles.title} />
-            {media.overview ? <ClickableTopicText text={media.overview} topicSlug={media.slug || media.id} topicTitle={media.title} style={styles.overview} /> : null}
+
+            <ClickableTopicText
+              text={media.title}
+              topicSlug={media.slug || media.id}
+              topicTitle={media.title}
+              style={styles.title}
+            />
+
+            {media.overview ? (
+              <ClickableTopicText
+                text={media.overview}
+                topicSlug={media.slug || media.id}
+                topicTitle={media.title}
+                style={styles.overview}
+              />
+            ) : null}
+
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 }}>
-              <Pressable onPress={handlePlay} style={styles.playBtn}><Text style={styles.btnText}>▶ Regarder</Text></Pressable>
-              <Pressable onPress={handleToggleFav} style={[styles.playBtn, isFav ? { backgroundColor: '#dc2626' } : { backgroundColor: '#334155' }]}>
+              <Pressable focusable={true} onPress={handlePlay} style={styles.playBtn}>
+                <Text style={styles.btnText}>▶ Regarder</Text>
+              </Pressable>
+              <Pressable
+                focusable={true}
+                onPress={handleToggleFav}
+                style={[
+                  styles.playBtn,
+                  isFav ? { backgroundColor: '#dc2626' } : { backgroundColor: '#334155' },
+                ]}
+              >
                 <Text style={styles.btnText}>{isFav ? '❤️ Favori' : '🤍 Ajouter aux favoris'}</Text>
               </Pressable>
-              <Pressable onPress={() => setShowRepostModal(true)} style={[styles.playBtn, { backgroundColor: '#0284c7' }]}>
+              <Pressable
+                focusable={true}
+                onPress={() => setShowRepostModal(true)}
+                style={[styles.playBtn, { backgroundColor: '#0284c7' }]}
+              >
                 <Text style={styles.btnText}>🔄 Avis & Repost</Text>
               </Pressable>
-              <Pressable onPress={() => setShowCast(true)} style={[styles.playBtn, { backgroundColor: '#4338ca' }]}><Text style={styles.btnText}>📡 Diffuser</Text></Pressable>
-              <Pressable onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: media.slug || media.id, title: media.title } } as any)} style={[styles.playBtn, { backgroundColor: '#334155' }]}>
+              <Pressable
+                focusable={true}
+                onPress={() => setShowCast(true)}
+                style={[styles.playBtn, { backgroundColor: '#4338ca' }]}
+              >
+                <Text style={styles.btnText}>📡 Diffuser</Text>
+              </Pressable>
+              <Pressable
+                focusable={true}
+                onPress={() =>
+                  router.push({
+                    pathname: '/forum/[topic]',
+                    params: { topic: media.slug || media.id, title: media.title },
+                  } as any)
+                }
+                style={[styles.playBtn, { backgroundColor: '#334155' }]}
+              >
                 <Text style={styles.btnText}>💬 Forum WhatsApp</Text>
               </Pressable>
             </View>
           </View>
         </View>
 
-        <MediaChildrenRow parentType={media.nodeType} parentPoster={media.posterPath} children={children} />
+        {/* Épisodes & Saisons structurés avec onglets interactifs */}
+        <MediaChildrenRow
+          parentType={media.nodeType}
+          parentPoster={media.posterPath}
+          children={children}
+        />
+
+        {/* Équipes artistiques et créatives (Réalisateurs, Scénaristes, Compositeurs, Producteurs) */}
+        {crewMembers.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.secTitle}>Réalisation & Création</Text>
+            <View style={styles.zoneRow}>
+              {crewMembers.map((c: any, i: number) => {
+                const roleTheme =
+                  c.attr_code === 'director'
+                    ? 'amber'
+                    : c.attr_code === 'writer'
+                    ? 'emerald'
+                    : c.attr_code === 'composer'
+                    ? 'rose'
+                    : 'indigo';
+                return (
+                  <TagPill
+                    key={i}
+                    label={c.value_text}
+                    subtext={c.display_name}
+                    theme={roleTheme}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Casting des Acteurs avec Photos de profil et Rôles */}
+        {actors.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.secTitle}>Casting ({actors.length})</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.actorsScroll}
+            >
+              {actors.map((actor: any, idx: number) => {
+                const thumb = actor.metadata_json?.thumbUrl;
+                return (
+                  <View key={idx} style={styles.actorCard}>
+                    <View style={styles.actorAvatarWrap}>
+                      {thumb ? (
+                        <Image source={{ uri: thumb }} style={styles.actorAvatar} />
+                      ) : (
+                        <View style={styles.actorAvatarPlaceholder}>
+                          <Text style={{ fontSize: 24 }}>👤</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.actorName} numberOfLines={1}>
+                      {actor.value_text}
+                    </Text>
+                    {actor.context_role ? (
+                      <Text style={styles.actorRole} numberOfLines={2}>
+                        {actor.context_role}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Caractéristiques Techniques & Pistes de Flux */}
+        {technicalSpecs.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.secTitle}>Détails Techniques & Flux</Text>
+            <View style={styles.zoneRow}>
+              {technicalSpecs.map((t: any, i: number) => (
+                <TagPill
+                  key={i}
+                  label={t.value_text}
+                  subtext={t.display_name}
+                  theme="slate"
+                />
+              ))}
+            </View>
+          </View>
+        )}
+
         <MediaGenreSection relatedTags={relatedTags} fallbackTags={tags.PRIMARY_PILL} />
 
         {/* Section Avis & Reposts communautaires */}
@@ -131,13 +278,6 @@ export default function MediaDetailScreen() {
             </View>
           </View>
         )}
-
-        {tags.PERSON_CAROUSEL?.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.secTitle}>Casting & Équipe</Text>
-            <View style={styles.zoneRow}>{tags.PERSON_CAROUSEL.map((c, i) => <TagPill key={i} label={c.value_text} subtext={c.context_role} theme="emerald" />)}</View>
-          </View>
-        ) : null}
       </ScrollView>
 
       <MediaRepostModal
@@ -148,7 +288,11 @@ export default function MediaDetailScreen() {
         onSuccess={() => fetchMediaReposts(media.id).then(setReposts)}
       />
 
-      <CastModal visible={showCast} onClose={() => setShowCast(false)} currentMedia={{ id: String(playId), title: media.title, positionSeconds: 0 }} />
+      <CastModal
+        visible={showCast}
+        onClose={() => setShowCast(false)}
+        currentMedia={{ id: String(playId), title: media.title, positionSeconds: 0 }}
+      />
     </SafeAreaView>
   );
 }
@@ -162,7 +306,7 @@ const styles = StyleSheet.create({
   heroBox: { position: 'relative', minHeight: 340, justifyContent: 'flex-end', padding: Spacing.four },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.35 },
   heroContent: { maxWidth: MaxContentWidth, gap: 10 },
-  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
+  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   seasonTagPill: {
     backgroundColor: '#6366f1',
     paddingHorizontal: 10,
@@ -172,10 +316,35 @@ const styles = StyleSheet.create({
   seasonTagTxt: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
   title: { fontSize: 28, fontWeight: '900', color: '#f8fafc' },
   overview: { fontSize: 14, color: '#cbd5e1', lineHeight: 22, maxWidth: 800 },
-  playBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: Radius.pill, backgroundColor: '#6366f1' },
+  playBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: Radius.pill,
+    backgroundColor: '#6366f1',
+  },
   btnText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
   section: { padding: Spacing.four },
   secTitle: { fontSize: 18, fontWeight: '800', color: '#f8fafc', marginBottom: 12 },
+  actorsScroll: { gap: 14, paddingVertical: 4 },
+  actorCard: {
+    width: 105,
+    alignItems: 'center',
+    gap: 4,
+  },
+  actorAvatarWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    borderWidth: 2,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    marginBottom: 4,
+  },
+  actorAvatar: { width: '100%', height: '100%' },
+  actorAvatarPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  actorName: { color: '#f1f5f9', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  actorRole: { color: '#94a3b8', fontSize: 10, fontWeight: '500', textAlign: 'center', lineHeight: 13 },
   repostCard: {
     backgroundColor: 'rgba(30, 41, 59, 0.7)',
     borderRadius: 16,

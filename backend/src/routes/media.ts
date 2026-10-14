@@ -73,17 +73,24 @@ mediaRouter.get('/:id', async (c) => {
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
-  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, { videoFilePath: media.videoFilePath, nfoFilePath: media.nfoFilePath, searchVectorText: media.searchVectorText });
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
+    videoFilePath: media.videoFilePath,
+    nfoFilePath: media.nfoFilePath,
+    searchVectorText: media.searchVectorText,
+  });
   if (!isAuthorized) {
-    return c.json({
-      error: 'Connexion requise pour accéder à ce contenu ou lien de partage expiré',
-      code: 'UNAUTHORIZED',
-    }, 401);
+    return c.json(
+      {
+        error: 'Connexion requise pour accéder à ce contenu ou lien de partage expiré',
+        code: 'UNAUTHORIZED',
+      },
+      401
+    );
   }
 
   const linkedTags = await db.execute(sql`
-    SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme,
-           v.value_text, v.value_slug, l.context_role, l.order_index
+    SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme, a.icon_name,
+           v.value_text, v.value_slug, v.metadata_json, l.context_role, l.order_index
     FROM node_eav_links l
     JOIN eav_values v ON l.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
@@ -91,35 +98,52 @@ mediaRouter.get('/:id', async (c) => {
     ORDER BY a.display_order ASC, l.order_index ASC;
   `);
 
-  const tagsByZone: Record<string, any[]> = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] };
+  const tagsByZone: Record<string, any[]> = {
+    HERO_BADGE: [],
+    PRIMARY_PILL: [],
+    PERSON_CAROUSEL: [],
+    TECHNICAL_DRAWER: [],
+  };
   for (const row of Array.from(linkedTags) as any[]) {
     const zone = row.ui_zone || 'PRIMARY_PILL';
     if (!tagsByZone[zone]) tagsByZone[zone] = [];
     tagsByZone[zone].push(row);
   }
 
+  // Chargement exhaustif des enfants sans troncature artificielle (parité avec Kyoo pour les animes longs comme Bleach)
   const childNodes = await db.query.mediaNodes.findMany({
     where: (t, { eq }) => eq(t.parentId, media.id),
-    orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.title)],
-    limit: 150,
+    orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.sortTitle)],
+    limit: 2000,
   });
 
-  const parsedInfo = parseSeasonEpisode(media.title, media.orderIndex);
+  const parsedInfo = parseSeasonEpisode(media.title, media.absoluteOrderIndex ?? media.orderIndex);
   const formattedMedia = {
     ...media,
     posterPath: media.posterPath ? `/api/media/${media.id}/poster` : undefined,
     fanartPath: media.fanartPath ? `/api/media/${media.id}/fanart` : undefined,
+    clearlogoPath: media.clearlogoPath ? `/api/media/${media.id}/clearlogo` : undefined,
+    thumbPath: media.thumbPath ? `/api/media/${media.id}/thumb` : undefined,
     seasonEpisodeTag: parsedInfo?.seasonEpisodeTag ?? null,
     displayBadge: parsedInfo?.displayBadge ?? null,
   };
 
   const children = childNodes.map((ch) => {
-    const chInfo = parseSeasonEpisode(ch.title, ch.orderIndex);
+    const effIndex = ch.absoluteOrderIndex ?? ch.orderIndex;
+    const chInfo = parseSeasonEpisode(ch.title, effIndex);
+    const displayBadge =
+      ch.nodeType === 'MOVIE'
+        ? `FILM ${ch.orderIndex || ''}`.trim()
+        : ch.absoluteOrderIndex && ch.absoluteOrderIndex > 0
+        ? `EP ${String(ch.absoluteOrderIndex).padStart(2, '0')}`
+        : chInfo?.displayBadge ?? (effIndex > 0 ? `EP ${String(effIndex).padStart(2, '0')}` : null);
+
     return {
       ...ch,
       posterPath: ch.posterPath ? `/api/media/${ch.id}/poster` : formattedMedia.posterPath,
-      seasonEpisodeTag: chInfo?.seasonEpisodeTag ?? null,
-      displayBadge: chInfo?.displayBadge ?? null,
+      thumbPath: ch.thumbPath ? `/api/media/${ch.id}/thumb` : (ch.posterPath ? `/api/media/${ch.id}/poster` : undefined),
+      seasonEpisodeTag: chInfo?.seasonEpisodeTag ?? (effIndex > 0 ? `E${String(effIndex).padStart(2, '0')}` : null),
+      displayBadge,
     };
   });
 
@@ -139,16 +163,19 @@ mediaRouter.post('/:id/progress', requireAuth, async (c) => {
   const user = (c as any).get('user') as any;
   const { positionSeconds = 0, durationSeconds = 0, isCompleted = false } = await c.req.json();
 
-  await db.insert(watchProgress).values({
-    userId: user.id,
-    nodeId,
-    positionSeconds,
-    durationSeconds,
-    isCompleted,
-  } as any).onConflictDoUpdate({
-    target: [watchProgress.userId, watchProgress.nodeId],
-    set: { positionSeconds, durationSeconds, isCompleted, updatedAt: new Date() },
-  });
+  await db
+    .insert(watchProgress)
+    .values({
+      userId: user.id,
+      nodeId,
+      positionSeconds,
+      durationSeconds,
+      isCompleted,
+    } as any)
+    .onConflictDoUpdate({
+      target: [watchProgress.userId, watchProgress.nodeId],
+      set: { positionSeconds, durationSeconds, isCompleted, updatedAt: new Date() },
+    });
 
   return c.json({ success: true });
 });

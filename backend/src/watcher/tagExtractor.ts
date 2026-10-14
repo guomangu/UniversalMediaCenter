@@ -1,6 +1,35 @@
 import { db } from '../db/connection.js';
 import { eavAttributes, eavValues, nodeEavLinks } from '../db/schema/index.js';
 import { generateSlug } from './slugify.js';
+import { eq } from 'drizzle-orm';
+
+const ATTRIBUTE_DEFAULTS: Record<string, {
+  displayName: string;
+  uiZone: 'HERO_BADGE' | 'PRIMARY_PILL' | 'PERSON_CAROUSEL' | 'TECHNICAL_DRAWER' | 'HIDDEN_SEARCHABLE';
+  iconName: string;
+  colorTheme: string;
+  displayOrder: number;
+}> = {
+  certification: { displayName: 'Classification', uiZone: 'HERO_BADGE', iconName: 'ShieldAlert', colorTheme: 'orange', displayOrder: 5 },
+  genre: { displayName: 'Genre', uiZone: 'PRIMARY_PILL', iconName: 'Film', colorTheme: 'indigo', displayOrder: 10 },
+  arc: { displayName: 'Arc narratif', uiZone: 'PRIMARY_PILL', iconName: 'Layers', colorTheme: 'purple', displayOrder: 15 },
+  subject: { displayName: 'Tag', uiZone: 'PRIMARY_PILL', iconName: 'Hash', colorTheme: 'blue', displayOrder: 20 },
+  actor: { displayName: 'Acteurs', uiZone: 'PERSON_CAROUSEL', iconName: 'Users', colorTheme: 'violet', displayOrder: 30 },
+  director: { displayName: 'Réalisateur', uiZone: 'PERSON_CAROUSEL', iconName: 'Clapperboard', colorTheme: 'amber', displayOrder: 40 },
+  writer: { displayName: 'Scénariste / Auteur', uiZone: 'PERSON_CAROUSEL', iconName: 'FileEdit', colorTheme: 'emerald', displayOrder: 50 },
+  producer: { displayName: 'Producteur', uiZone: 'PERSON_CAROUSEL', iconName: 'Briefcase', colorTheme: 'cyan', displayOrder: 55 },
+  composer: { displayName: 'Musique', uiZone: 'PERSON_CAROUSEL', iconName: 'Music', colorTheme: 'rose', displayOrder: 60 },
+  studio: { displayName: 'Studio', uiZone: 'PRIMARY_PILL', iconName: 'Building2', colorTheme: 'sky', displayOrder: 70 },
+  country: { displayName: 'Pays', uiZone: 'PRIMARY_PILL', iconName: 'Globe', colorTheme: 'slate', displayOrder: 80 },
+  video_quality: { displayName: 'Qualité', uiZone: 'TECHNICAL_DRAWER', iconName: 'Tv', colorTheme: 'teal', displayOrder: 90 },
+  video_codec: { displayName: 'Codec Vidéo', uiZone: 'TECHNICAL_DRAWER', iconName: 'Cpu', colorTheme: 'slate', displayOrder: 91 },
+  aspect_ratio: { displayName: 'Format', uiZone: 'TECHNICAL_DRAWER', iconName: 'Maximize', colorTheme: 'slate', displayOrder: 92 },
+  audio_codec: { displayName: 'Codec Audio', uiZone: 'TECHNICAL_DRAWER', iconName: 'Volume2', colorTheme: 'slate', displayOrder: 93 },
+  audio_channels: { displayName: 'Canaux Audio', uiZone: 'TECHNICAL_DRAWER', iconName: 'Headphones', colorTheme: 'slate', displayOrder: 94 },
+  audio_language: { displayName: 'Langue Audio', uiZone: 'TECHNICAL_DRAWER', iconName: 'Languages', colorTheme: 'slate', displayOrder: 95 },
+  subtitle_language: { displayName: 'Sous-titres', uiZone: 'TECHNICAL_DRAWER', iconName: 'Subtitles', colorTheme: 'slate', displayOrder: 96 },
+  subtitle_codec: { displayName: 'Format ST', uiZone: 'TECHNICAL_DRAWER', iconName: 'FileText', colorTheme: 'slate', displayOrder: 97 },
+};
 
 export async function linkTagToNode(
   nodeId: string,
@@ -18,17 +47,34 @@ export async function linkTagToNode(
     where: (t, { eq }) => eq(t.code, attributeCode),
   });
 
+  const defaults = ATTRIBUTE_DEFAULTS[attributeCode];
   let attributeId: string;
   if (attrQuery) {
     attributeId = attrQuery.id;
+    // Mise à jour de la zone d'affichage si nécessaire
+    if (defaults && attrQuery.uiZone !== defaults.uiZone) {
+      await db
+        .update(eavAttributes)
+        .set({
+          uiZone: defaults.uiZone,
+          displayName: defaults.displayName,
+          iconName: defaults.iconName,
+          colorTheme: defaults.colorTheme,
+          displayOrder: defaults.displayOrder,
+        })
+        .where(eq(eavAttributes.id, attributeId));
+    }
   } else {
     const isCustom = attributeCode.startsWith('custom_');
     const [newAttr] = await db
       .insert(eavAttributes)
       .values({
         code: attributeCode,
-        displayName: isCustom ? attributeCode.replace('custom_', 'Tag: ') : attributeCode,
-        uiZone: isCustom ? 'TECHNICAL_DRAWER' : 'PRIMARY_PILL',
+        displayName: defaults?.displayName || (isCustom ? attributeCode.replace('custom_', 'Tag: ') : attributeCode),
+        uiZone: defaults?.uiZone || (isCustom ? 'TECHNICAL_DRAWER' : 'PRIMARY_PILL'),
+        iconName: defaults?.iconName || 'Tag',
+        colorTheme: defaults?.colorTheme || 'slate',
+        displayOrder: defaults?.displayOrder ?? (isCustom ? 200 : 100),
         isDynamicCatchAll: isCustom,
       })
       .returning();
@@ -36,13 +82,21 @@ export async function linkTagToNode(
   }
 
   // 2. Trouver ou créer la valeur EAV
-  let valQuery = await db.query.eavValues.findFirst({
+  const valQuery = await db.query.eavValues.findFirst({
     where: (t, { and, eq }) => and(eq(t.attributeId, attributeId), eq(t.valueSlug, valueSlug)),
   });
 
   let valueId: string;
   if (valQuery) {
     valueId = valQuery.id;
+    // Si la nouvelle métadonnée apporte une information précieuse (ex: URL photo acteur), on enrichit
+    if (metadata && Object.keys(metadata).length > 0) {
+      const currentMeta = (valQuery.metadataJson as Record<string, any>) || {};
+      const merged = { ...currentMeta, ...metadata };
+      if (JSON.stringify(merged) !== JSON.stringify(currentMeta)) {
+        await db.update(eavValues).set({ metadataJson: merged }).where(eq(eavValues.id, valueId));
+      }
+    }
   } else {
     const [newVal] = await db
       .insert(eavValues)
@@ -56,13 +110,17 @@ export async function linkTagToNode(
     valueId = newVal.id;
   }
 
-  // 3. Lier la valeur au Media Node (Idempotent)
-  await db
-    .insert(nodeEavLinks)
-    .values({
-      nodeId,
-      valueId,
-      contextRole: contextRole || null,
-    })
-    .onConflictDoNothing();
+  // 3. Lier la valeur au Media Node (Idempotent et protégé contre les doublons)
+  try {
+    await db
+      .insert(nodeEavLinks)
+      .values({
+        nodeId,
+        valueId,
+        contextRole: contextRole || null,
+      })
+      .onConflictDoNothing();
+  } catch {
+    // Protégé par l'index unique idx_node_val_role_coalesce
+  }
 }

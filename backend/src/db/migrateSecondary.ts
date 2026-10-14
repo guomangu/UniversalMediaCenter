@@ -103,5 +103,6 @@ export async function createSecondaryTables(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_media_nodes_trgm ON media_nodes USING gin (search_vector_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_eav_values_trgm ON eav_values USING gin (value_text gin_trgm_ops);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_node_val_role_coalesce ON node_eav_links (node_id, value_id, COALESCE(context_role, ''));
   `);
 }
