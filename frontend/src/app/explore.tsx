@@ -6,6 +6,7 @@ import { MediaStatsResponse } from '@/services/types';
 import { MediaCard } from '@/components/MediaCard';
 import { TagPill } from '@/components/TagPill';
 import { ExploreStats } from '@/components/ExploreStats';
+import { SiteHeader } from '@/components/SiteHeader';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function ExploreScreen() {
@@ -32,6 +33,7 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <SiteHeader />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.heading}>Exploration du Catalogue</Text>
         <TextInput

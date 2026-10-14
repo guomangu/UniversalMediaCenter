@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
-import { getAuthHeaders } from './authStore';
+import { getAuthHeaders, getCurrentUser } from './authStore';
 
 export interface SessionParticipant {
   userId: string;
@@ -25,16 +25,24 @@ export interface MediaSession {
   participantCount?: number;
 }
 
-export async function fetchActiveSessions(): Promise<MediaSession[]> {
+export interface ActiveSessionsResponse {
+  sessions: MediaSession[];
+  activeMediaCounts: Record<string, { count: number; title: string; isPlaying: boolean }>;
+}
+
+export async function fetchActiveSessions(): Promise<ActiveSessionsResponse> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/sessions/active`, {
       headers: getAuthHeaders(),
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { sessions: [], activeMediaCounts: {} };
     const data = await res.json();
-    return data.sessions || [];
+    return {
+      sessions: data.sessions || [],
+      activeMediaCounts: data.activeMediaCounts || {},
+    };
   } catch {
-    return [];
+    return { sessions: [], activeMediaCounts: {} };
   }
 }
 
@@ -118,5 +126,141 @@ export async function pingSession(
     return data.session || null;
   } catch {
     return null;
+  }
+}
+
+export async function reportPlaybackProgress(
+  nodeId: string,
+  positionSeconds: number,
+  durationSeconds: number,
+  isPlaying = true
+): Promise<void> {
+  try {
+    const user = getCurrentUser();
+    await fetch(`${getApiBaseUrl()}/api/media/${nodeId}/progress`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user?.id,
+        positionSeconds,
+        durationSeconds,
+        isPlaying,
+      }),
+    });
+  } catch {}
+}
+
+export async function leavePlayback(nodeId: string): Promise<void> {
+  try {
+    const user = getCurrentUser();
+    await fetch(`${getApiBaseUrl()}/api/media/${nodeId}/playback`, {
+      method: 'DELETE',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user?.id }),
+    });
+  } catch {}
+}
+
+// --- APPELS VOCAUX EN DIRECT (VOICE CALL ROOMS) ---
+
+export async function joinVoiceCall(
+  topicSlug: string,
+  isMuted = false
+): Promise<{ success: boolean; participants: SessionParticipant[] }> {
+  try {
+    const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/call/join`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isMuted }),
+    });
+    if (!res.ok) return { success: false, participants: [] };
+    const data = await res.json();
+    return { success: true, participants: data.participants || [] };
+  } catch {
+    return { success: false, participants: [] };
+  }
+}
+
+export async function leaveVoiceCall(topicSlug: string): Promise<boolean> {
+  try {
+    const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/call/leave`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function pingVoiceCall(
+  topicSlug: string,
+  isMuted?: boolean
+): Promise<{ success: boolean; participants: SessionParticipant[] }> {
+  try {
+    const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/call/ping`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isMuted }),
+    });
+    if (!res.ok) return { success: false, participants: [] };
+    const data = await res.json();
+    return { success: true, participants: data.participants || [] };
+  } catch {
+    return { success: false, participants: [] };
+  }
+}
+
+export async function getVoiceCallStatus(
+  topicSlug: string
+): Promise<{ activeCount: number; participants: SessionParticipant[] }> {
+  try {
+    const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/call/status`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return { activeCount: 0, participants: [] };
+    const data = await res.json();
+    return { activeCount: data.activeCount || 0, participants: data.participants || [] };
+  } catch {
+    return { activeCount: 0, participants: [] };
+  }
+}
+
+export async function sendVoiceAudioChunk(
+  topicSlug: string,
+  audioBase64: string,
+  mimeType = 'audio/webm'
+): Promise<boolean> {
+  try {
+    const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/call/chunk`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioBase64, mimeType }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function getVoiceAudioChunks(
+  topicSlug: string,
+  since: number
+): Promise<Array<{ id: string; senderId: string; senderName: string; audioBase64: string; mimeType: string; timestamp: number }>> {
+  try {
+    const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/call/chunks?since=${since}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.chunks || [];
+  } catch {
+    return [];
   }
 }

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { uiRails, mediaNodes, eavAttributes, watchProgress } from '../db/schema/index.js';
-import { desc, asc, eq, and } from 'drizzle-orm';
+import { desc, asc, eq, and, inArray } from 'drizzle-orm';
 import { taxonomyRouter } from './taxonomyRoutes.js';
 import { requireAuth } from '../middleware/access.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
@@ -45,6 +45,7 @@ uiRouter.get('/layout', async (c) => {
             node: mediaNodes,
             pos: watchProgress.positionSeconds,
             dur: watchProgress.durationSeconds,
+            isCompleted: watchProgress.isCompleted,
           })
           .from(watchProgress)
           .innerJoin(mediaNodes, eq(watchProgress.nodeId, mediaNodes.id))
@@ -57,6 +58,7 @@ uiRouter.get('/layout', async (c) => {
           positionSeconds: p.pos,
           durationSeconds: p.dur,
           progressPercent: p.dur > 0 ? Math.round((p.pos / p.dur) * 100) : 0,
+          isCompleted: p.isCompleted,
         }));
       } else if (rail.railType === 'HERO_SPOTLIGHT') {
         items = await db.query.mediaNodes.findMany({
@@ -92,7 +94,66 @@ uiRouter.get('/layout', async (c) => {
         });
       }
 
-      const filteredItems = items.filter((item) => isMediaAllowedForUser(user, item));
+      let filteredItems = items.filter((item) => isMediaAllowedForUser(user, item));
+
+      // Hydratation de la progression de lecture de l'utilisateur pour tous les rails
+      if (user?.id && filteredItems.length > 0) {
+        const itemIds = filteredItems.map((it) => it.id);
+        const progresses = await db.query.watchProgress.findMany({
+          where: (t, { and, eq, inArray }) => and(eq(t.userId, user.id), inArray(t.nodeId, itemIds)),
+        });
+        const pMap = new Map(progresses.map((p) => [p.nodeId, p]));
+
+        // Pour les séries/saisons, vérifier également si des épisodes enfants ont une progression
+        const showIds = filteredItems
+          .filter((it) => it.nodeType === 'SHOW' || it.nodeType === 'SEASON')
+          .map((it) => it.id);
+
+        if (showIds.length > 0) {
+          const childProgresses = await db
+            .select({
+              parentId: mediaNodes.parentId,
+              pos: watchProgress.positionSeconds,
+              dur: watchProgress.durationSeconds,
+              isCompleted: watchProgress.isCompleted,
+            })
+            .from(watchProgress)
+            .innerJoin(mediaNodes, eq(watchProgress.nodeId, mediaNodes.id))
+            .where(
+              and(
+                eq(watchProgress.userId, user.id),
+                inArray(mediaNodes.parentId, showIds),
+                eq(watchProgress.isCompleted, false)
+              )
+            )
+            .orderBy(desc(watchProgress.updatedAt));
+
+          for (const cp of childProgresses) {
+            if (cp.parentId && !pMap.has(cp.parentId) && cp.dur > 0 && cp.pos > 0) {
+              pMap.set(cp.parentId, {
+                nodeId: cp.parentId,
+                positionSeconds: cp.pos,
+                durationSeconds: cp.dur,
+                isCompleted: cp.isCompleted,
+              } as any);
+            }
+          }
+        }
+
+        filteredItems = filteredItems.map((it) => {
+          const p = pMap.get(it.id);
+          const dur = p?.durationSeconds || it.durationSeconds || it.runtimeSeconds || 0;
+          const pos = p?.positionSeconds || it.positionSeconds || 0;
+          const progressPercent = dur > 0 ? Math.round((pos / dur) * 100) : (p?.isCompleted ? 100 : (it.progressPercent || 0));
+          return {
+            ...it,
+            positionSeconds: pos,
+            durationSeconds: dur,
+            progressPercent,
+            isCompleted: p?.isCompleted ?? it.isCompleted ?? false,
+          };
+        });
+      }
 
       return {
         id: rail.id,

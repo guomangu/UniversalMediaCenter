@@ -11,6 +11,9 @@ import {
   fetchMediaSessions,
   joinSession,
   leaveSession,
+  joinVoiceCall,
+  leaveVoiceCall,
+  getVoiceCallStatus,
   MediaSession,
 } from '@/services/sessionApi';
 import { useCurrentUser } from '@/services/authStore';
@@ -18,14 +21,12 @@ import { ForumMessageBubble } from './ForumMessageBubble';
 import { ForumInputBar } from './ForumInputBar';
 import { LiveVoiceRoomBar } from './LiveVoiceRoomBar';
 import { ProposeSessionModal } from './ProposeSessionModal';
-import { UserRatingModal } from './UserRatingModal';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
 interface Props {
   topicSlug: string;
   topicTitle: string;
   mediaId?: string;
-  childItems?: Array<{ id: string; title: string; posterPath?: string }>;
   externalQuotedMedia?: { id: string; title: string; poster?: string } | null;
   onClearExternalQuote?: () => void;
 }
@@ -34,7 +35,6 @@ export function MediaForumSection({
   topicSlug,
   topicTitle,
   mediaId,
-  childItems = [],
   externalQuotedMedia,
   onClearExternalQuote,
 }: Props) {
@@ -44,19 +44,14 @@ export function MediaForumSection({
   const [loading, setLoading] = useState(true);
   const [replyMsg, setReplyMsg] = useState<ForumMessage | null>(null);
   const [quotedMedia, setQuotedMedia] = useState<{ id: string; title: string; poster?: string } | null>(null);
-  
-  // Séances & Live Voice
+
+  // Séances & Live Voice Call
   const [sessions, setSessions] = useState<MediaSession[]>([]);
-  const [activeSession, setActiveSession] = useState<MediaSession | null>(null);
   const [showProposeModal, setShowProposeModal] = useState(false);
   const [proposeTarget, setProposeTarget] = useState<{ id: string; title: string } | null>(null);
+  const [inCall, setInCall] = useState(false);
+  const [callActiveCount, setCallActiveCount] = useState(0);
 
-  // Évaluation du gérant / utilisateur
-  const [rateModalTarget, setRateModalTarget] = useState<{ id: string; name: string } | null>(null);
-
-  // Visibilité pour chargement asynchrone toutes les 3 secondes
-  const [isVisible, setIsVisible] = useState(true);
-  const containerRef = useRef<any>(null);
   const scrollRef = useRef<ScrollView>(null);
   const pollTimerRef = useRef<any>(null);
 
@@ -70,53 +65,33 @@ export function MediaForumSection({
   const loadData = useCallback(async () => {
     if (!topicSlug) return;
     try {
-      const msgs = await fetchTopicMessages(topicSlug);
+      const [msgs, callStatus] = await Promise.all([
+        fetchTopicMessages(topicSlug),
+        getVoiceCallStatus(topicSlug),
+      ]);
       setMessages(msgs);
+      setCallActiveCount(callStatus.activeCount || 0);
+
       if (mediaId) {
         const sRes = await fetchMediaSessions(mediaId);
         setSessions(sRes.sessions);
-        if (sRes.sessions.length > 0 && !activeSession) {
-          setActiveSession(sRes.sessions[0]);
-        }
       }
+    } catch (err) {
+      console.warn('Erreur chargement forum:', err);
     } finally {
       setLoading(false);
     }
-  }, [topicSlug, mediaId, activeSession]);
+  }, [topicSlug, mediaId]);
 
-  // Observer de visibilité (IntersectionObserver pour rafraîchissement 3s quand l'utilisateur regarde à proximité)
+  // Polling synchronisé / asynchrone toutes les 2.5 secondes
   useEffect(() => {
     loadData();
-
-    if (Platform.OS === 'web' && typeof IntersectionObserver !== 'undefined' && containerRef.current) {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            setIsVisible(entry.isIntersecting);
-          });
-        },
-        { rootMargin: '200px' }
-      );
-      observer.observe(containerRef.current);
-      return () => observer.disconnect();
-    }
-  }, [topicSlug, mediaId, loadData]);
-
-  // Polling asynchrone toutes les 3 secondes si à proximité
-  useEffect(() => {
-    if (!isVisible) {
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-      return;
-    }
-
-    pollTimerRef.current = setInterval(() => {
-      loadData();
-    }, 3000);
+    pollTimerRef.current = setInterval(loadData, 2500);
 
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
-  }, [isVisible, loadData]);
+  }, [loadData]);
 
   const handleSendMessage = async (payload: {
     content: string;
@@ -129,11 +104,16 @@ export function MediaForumSection({
   }) => {
     if (!topicSlug) return;
     const myName = currentUser?.displayName || 'Visiteur';
-    await postTopicMessage(topicSlug, {
+
+    // Ajout optimiste immédiat dans la discussion
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg: ForumMessage = {
+      id: tempId,
+      topicSlug,
       topicTitle,
-      content: payload.content,
+      authorId: currentUser?.id,
       authorName: myName,
-      authorId: currentUser?.id || undefined,
+      content: payload.content,
       mediaType: payload.mediaType,
       mediaUrl: payload.mediaUrl,
       fileName: payload.fileName,
@@ -143,12 +123,33 @@ export function MediaForumSection({
       quotedMediaId: payload.quotedMediaId,
       quotedMediaTitle: payload.quotedMediaTitle,
       quotedMediaPoster: payload.quotedMediaPoster,
-    });
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimisticMsg]);
     setReplyMsg(null);
     setQuotedMedia(null);
     onClearExternalQuote?.();
-    await loadData();
-    scrollRef.current?.scrollToEnd({ animated: true });
+
+    try {
+      await postTopicMessage(topicSlug, {
+        topicTitle,
+        content: payload.content,
+        authorName: myName,
+        authorId: currentUser?.id || undefined,
+        mediaType: payload.mediaType,
+        mediaUrl: payload.mediaUrl,
+        fileName: payload.fileName,
+        replyToId: replyMsg?.id,
+        replyToText: replyMsg?.content,
+        replyToAuthor: replyMsg?.authorName,
+        quotedMediaId: payload.quotedMediaId,
+        quotedMediaTitle: payload.quotedMediaTitle,
+        quotedMediaPoster: payload.quotedMediaPoster,
+      });
+      await loadData();
+    } catch (err) {
+      console.error('Erreur publication message:', err);
+    }
   };
 
   const handleVote = async (msgId: string) => {
@@ -162,22 +163,30 @@ export function MediaForumSection({
 
   const handleJoinSession = async (sess: MediaSession) => {
     await joinSession(sess.id);
-    setActiveSession(sess);
     await loadData();
-    // Naviguer vers le lecteur
     router.push(`/player/${sess.nodeId}` as any);
   };
 
   const handleLeaveSession = async (sess: MediaSession) => {
     await leaveSession(sess.id);
-    if (activeSession?.id === sess.id) setActiveSession(null);
     await loadData();
+  };
+
+  const handleToggleCall = async () => {
+    if (inCall) {
+      await leaveVoiceCall(topicSlug);
+      setInCall(false);
+    } else {
+      await joinVoiceCall(topicSlug);
+      setInCall(true);
+    }
+    loadData();
   };
 
   const myName = currentUser?.displayName || 'Moi';
 
   return (
-    <View ref={containerRef} style={styles.container}>
+    <View style={styles.container}>
       {/* En-tête Salle d'Attente & Forum */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -185,32 +194,50 @@ export function MediaForumSection({
           <View>
             <Text style={styles.headerTitle}>Salle d'attente & Forum #{topicTitle}</Text>
             <Text style={styles.headerSub}>
-              Proposez une séance, votez, discutez en direct ou en vocal différé
+              Proposez une séance, discutez en direct ou lancez un appel vocal continu
             </Text>
           </View>
         </View>
 
-        <Pressable
-          focusable={true}
-          onPress={() => {
-            setProposeTarget({ id: mediaId || topicSlug, title: topicTitle });
-            setShowProposeModal(true);
-          }}
-          style={styles.proposeBtn}
-        >
-          <Text style={styles.proposeBtnTxt}>🍿 Proposer une séance</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          {/* Bouton d'Appel Vocal Direct (vocaux continus) */}
+          <Pressable
+            focusable={true}
+            onPress={handleToggleCall}
+            style={[styles.callBtn, inCall && styles.callBtnActive]}
+          >
+            <Text style={styles.callBtnTxt}>
+              {inCall
+                ? '🔴 Quitter l\'appel'
+                : callActiveCount > 0
+                ? `📞 Rejoindre l'appel (${callActiveCount})`
+                : '📞 Appel direct'}
+            </Text>
+          </Pressable>
+
+          {/* Bouton Proposer une séance */}
+          <Pressable
+            focusable={true}
+            onPress={() => {
+              setProposeTarget({ id: mediaId || topicSlug, title: topicTitle });
+              setShowProposeModal(true);
+            }}
+            style={styles.proposeBtn}
+          >
+            <Text style={styles.proposeBtnTxt}>🍿 Proposer une séance</Text>
+          </Pressable>
+        </View>
       </View>
 
-      {/* Barre d'appel vocal en direct si une séance active existe */}
-      {activeSession ? (
+      {/* Barre d'appel vocal en direct si l'utilisateur est en appel ou si l'appel est actif */}
+      {inCall ? (
         <LiveVoiceRoomBar
-          sessionId={activeSession.id}
-          sessionTitle={activeSession.title}
-          hostUserId={activeSession.hostUserId}
-          hostDisplayName={activeSession.hostDisplayName}
-          isHost={currentUser?.id === activeSession.hostUserId}
-          onRateHost={(hId, hName) => setRateModalTarget({ id: hId, name: hName })}
+          topicSlug={topicSlug}
+          topicTitle={topicTitle}
+          onLeaveCall={() => {
+            setInCall(false);
+            loadData();
+          }}
         />
       ) : null}
 
@@ -228,7 +255,7 @@ export function MediaForumSection({
                   <View style={{ flex: 1 }}>
                     <View style={styles.sessionCardTop}>
                       <Text style={styles.sessionBadgeTxt}>🔴 EN COURS</Text>
-                      <Text style={styles.sessionHostTxt}>Gérant : {s.hostDisplayName}</Text>
+                      <Text style={styles.sessionHostTxt}>Initié par : {s.hostDisplayName}</Text>
                     </View>
                     <Text style={styles.sessionCardTitle} numberOfLines={1}>{s.title}</Text>
                     <Text style={styles.sessionParticipantsCount}>👥 {pCount} spectateur{pCount > 1 ? 's' : ''}</Text>
@@ -260,25 +287,6 @@ export function MediaForumSection({
         </View>
       ) : null}
 
-      {/* Sélecteur de citation d'enfants de la page (ex: Épisodes / Saisons) */}
-      {childItems.length > 0 ? (
-        <View style={styles.childQuoteRow}>
-          <Text style={styles.childQuoteLabel}>Citer un épisode pour la séance :</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            {childItems.slice(0, 8).map((child) => (
-              <Pressable
-                key={child.id}
-                focusable={true}
-                onPress={() => setQuotedMedia({ id: child.id, title: child.title, poster: child.posterPath })}
-                style={styles.childQuoteBtn}
-              >
-                <Text style={styles.childQuoteTxt} numberOfLines={1}>+ {child.title}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      ) : null}
-
       {/* Messages du Forum */}
       <View style={styles.messagesContainer}>
         {loading && messages.length === 0 ? (
@@ -299,7 +307,6 @@ export function MediaForumSection({
               }
               onReply={(msg) => setReplyMsg(msg)}
               onVote={handleVote}
-              onRateAuthor={(aId, aName) => setRateModalTarget({ id: aId, name: aName })}
             />
           ))
         )}
@@ -329,20 +336,8 @@ export function MediaForumSection({
             setProposeTarget(null);
           }}
           onCreated={(sess) => {
-            setActiveSession(sess);
             loadData();
           }}
-        />
-      ) : null}
-
-      {/* Modale de notation du gérant / utilisateur */}
-      {rateModalTarget ? (
-        <UserRatingModal
-          visible={true}
-          targetUserId={rateModalTarget.id}
-          targetUserName={rateModalTarget.name}
-          onClose={() => setRateModalTarget(null)}
-          onRated={loadData}
         />
       ) : null}
     </View>
@@ -373,6 +368,22 @@ const styles = StyleSheet.create({
   headerIcon: { fontSize: 26 },
   headerTitle: { color: '#f8fafc', fontSize: 17, fontWeight: '800' },
   headerSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  callBtn: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: Radius.pill,
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  callBtnActive: {
+    backgroundColor: '#dc2626',
+  },
+  callBtnTxt: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
   proposeBtn: {
     backgroundColor: '#6366f1',
     paddingHorizontal: 16,
@@ -421,28 +432,15 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
   },
   leaveBtnTxt: { color: '#cbd5e1', fontSize: 11, fontWeight: '700' },
-  childQuoteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: Spacing.three,
-    paddingVertical: 4,
-  },
-  childQuoteLabel: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },
-  childQuoteBtn: {
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: Radius.pill,
-  },
-  childQuoteTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '600' },
   messagesContainer: {
-    maxHeight: 380,
     minHeight: 120,
-    paddingVertical: 6,
-    marginBottom: 8,
+    marginBottom: Spacing.three,
   },
-  emptyTxt: { color: '#64748b', textAlign: 'center', marginVertical: 30, fontStyle: 'italic', fontSize: 13 },
+  emptyTxt: {
+    color: '#64748b',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginVertical: 20,
+    fontSize: 13,
+  },
 });

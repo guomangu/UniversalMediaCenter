@@ -16,6 +16,7 @@ import { linkTagToNode } from '../watcher/tagExtractor.js';
 import { createShareToken } from '../auth/shareToken.js';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
 import { requireAuth } from '../middleware/access.js';
+import { recordActivePlayback, removeActivePlayback } from '../watcher/presenceStore.js';
 export const mediaRouter = new Hono();
 mediaRouter.route('/', artworkRouter);
 mediaRouter.route('/', streamRouter);
@@ -44,6 +45,58 @@ mediaRouter.post('/webhook/tmm', async (c) => {
         return c.json({ success: true, reindexed: filePath });
     }
     return c.json({ success: true, message: 'TMM webhook reçu' });
+});
+// Enregistrement de progression de lecture & présence active de séance
+mediaRouter.post('/:id/progress', async (c) => {
+    const id = c.req.param('id');
+    const user = c.get('user');
+    const body = await c.req.json().catch(() => ({}));
+    const userId = user?.id || body.userId;
+    const positionSeconds = Number(body.positionSeconds || 0);
+    const durationSeconds = Number(body.durationSeconds || 0);
+    const isPlaying = body.isPlaying !== false;
+    if (!userId)
+        return c.json({ error: 'User ID requis' }, 400);
+    const media = await findMediaByIdOrSlug(id);
+    if (!media)
+        return c.json({ error: 'Média introuvable' }, 404);
+    const isCompleted = durationSeconds > 0 && positionSeconds / durationSeconds > 0.9;
+    // Persister dans la table PostgreSQL watch_progress
+    await db
+        .insert(watchProgress)
+        .values({
+        userId,
+        nodeId: media.id,
+        positionSeconds,
+        durationSeconds,
+        isCompleted,
+        updatedAt: new Date(),
+    })
+        .onConflictDoUpdate({
+        target: [watchProgress.userId, watchProgress.nodeId],
+        set: {
+            positionSeconds,
+            durationSeconds,
+            isCompleted,
+            updatedAt: new Date(),
+        },
+    });
+    // Enregistrer le spectateur actif dans le registre de présence (solo ou groupe)
+    recordActivePlayback(media.id, media.parentId, userId, user?.displayName || 'Spectateur', media.title, isPlaying);
+    return c.json({ success: true });
+});
+mediaRouter.delete('/:id/playback', async (c) => {
+    const id = c.req.param('id');
+    const user = c.get('user');
+    const body = await c.req.json().catch(() => ({}));
+    const userId = user?.id || body.userId;
+    if (userId) {
+        const media = await findMediaByIdOrSlug(id);
+        if (media) {
+            removeActivePlayback(media.id, userId);
+        }
+    }
+    return c.json({ success: true });
 });
 mediaRouter.post('/:id/share-token', requireAuth, async (c) => {
     const id = c.req.param('id');
@@ -128,46 +181,49 @@ mediaRouter.get('/:id', async (c) => {
     FROM node_eav_links l
     JOIN eav_values v ON l.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
-    WHERE l.node_id = ${media.id}
-    ORDER BY a.display_order ASC, l.order_index ASC;
+    WHERE l.node_id = ${media.id}::uuid
+    ORDER BY a.display_order ASC, l.order_index ASC
   `);
     const tagsByZone = {
-        HERO_BADGE: [],
-        PRIMARY_PILL: [],
-        PERSON_CAROUSEL: [],
-        TECHNICAL_DRAWER: [],
+        HERO: [],
+        PILLS: [],
+        ACCORDION: [],
+        BADGES: [],
     };
-    for (const row of Array.from(linkedTags)) {
-        const zone = row.ui_zone || 'PRIMARY_PILL';
+    for (const row of linkedTags.rows || []) {
+        const zone = row.ui_zone || 'PILLS';
         if (!tagsByZone[zone])
             tagsByZone[zone] = [];
-        tagsByZone[zone].push(row);
+        tagsByZone[zone].push({
+            attributeCode: row.attr_code,
+            displayName: row.display_name,
+            value: row.value_text,
+            slug: row.value_slug,
+            iconName: row.icon_name,
+            colorTheme: row.color_theme,
+            contextRole: row.context_role,
+            metadata: row.metadata_json,
+        });
     }
     const childNodes = await db.query.mediaNodes.findMany({
-        where: (t, { eq }) => eq(t.parentId, media.id),
-        orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.sortTitle)],
-        limit: 2000,
+        where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, false)),
     });
-    const parsedInfo = parseSeasonEpisode(media.title, media.absoluteOrderIndex ?? media.orderIndex);
+    const extraNodes = await db.query.mediaNodes.findMany({
+        where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, true)),
+    });
+    const info = parseSeasonEpisode(media.title, media.orderIndex);
     const formattedMedia = {
         ...media,
         posterPath: media.posterPath ? `/api/media/${media.id}/poster` : undefined,
         fanartPath: media.fanartPath ? `/api/media/${media.id}/fanart` : undefined,
         clearlogoPath: media.clearlogoPath ? `/api/media/${media.id}/clearlogo` : undefined,
         thumbPath: media.thumbPath ? `/api/media/${media.id}/thumb` : undefined,
-        seasonEpisodeTag: parsedInfo?.seasonEpisodeTag ?? null,
-        displayBadge: parsedInfo?.displayBadge ?? null,
-        edition: media.edition || null,
-        confidenceScore: media.confidenceScore ?? 1.0,
-        isExtra: media.isExtra,
-        extraType: media.extraType,
-        chaptersJson: media.chaptersJson || [],
+        seasonEpisodeTag: info?.seasonEpisodeTag ?? null,
+        displayBadge: info?.displayBadge ?? null,
     };
-    const regularChildren = childNodes.filter((ch) => !ch.isExtra);
-    const extraNodes = childNodes.filter((ch) => ch.isExtra);
-    const children = regularChildren.map((ch) => {
+    const children = childNodes.map((ch) => {
         const chInfo = parseSeasonEpisode(ch.title, ch.orderIndex);
-        let displayBadge = null;
+        let displayBadge = ch.title;
         let seasonEpisodeTag = null;
         if (ch.nodeType === 'MOVIE') {
             displayBadge = ch.orderIndex > 0 ? `FILM ${ch.orderIndex}` : 'FILM';

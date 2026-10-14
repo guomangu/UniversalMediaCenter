@@ -1,6 +1,14 @@
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders } from './authStore';
 
+export interface AuthorLocation {
+  title: string;
+  path: string;
+  mediaId?: string;
+  isLive?: boolean;
+  label?: string;
+}
+
 export interface ForumMessage {
   id: string;
   topicSlug: string;
@@ -19,6 +27,7 @@ export interface ForumMessage {
   quotedMediaId?: string | null;
   quotedMediaTitle?: string | null;
   quotedMediaPoster?: string | null;
+  authorLocation?: AuthorLocation | null;
   createdAt: string;
 }
 
@@ -57,7 +66,7 @@ export async function postTopicMessage(
     const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
     const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/messages`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
@@ -98,23 +107,7 @@ export async function uploadForumMedia(
       headers,
       body: formData,
     });
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message };
-  }
-}
-
-export async function uploadForumMediaBase64(
-  base64Data: string,
-  fileName: string,
-  mediaType: string
-): Promise<{ success: boolean; url?: string; fileName?: string; mediaType?: string; error?: string }> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/forum/upload`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ fileData: base64Data, fileName, mediaType }),
-    });
+    if (!res.ok) return { success: false, error: `Erreur serveur HTTP ${res.status}` };
     return await res.json();
   } catch (err: any) {
     return { success: false, error: err.message };

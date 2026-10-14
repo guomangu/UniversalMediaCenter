@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchMediaDetail, resolveImageUrl } from '@/services/api';
@@ -12,6 +12,7 @@ import { MediaChildrenRow } from '@/components/MediaChildrenRow';
 import { MediaGenreSection } from '@/components/MediaGenreSection';
 import { MediaRepostModal } from '@/components/MediaRepostModal';
 import { MediaForumSection } from '@/components/MediaForumSection';
+import { SiteHeader } from '@/components/SiteHeader';
 import { CastModal } from '@/components/CastModal';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
@@ -59,18 +60,135 @@ export default function MediaDetailScreen() {
     await toggleFavorite(id, nextState);
   };
 
-  const { media, tags = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] }, children = [], extras = [], relatedTags = [] } = data || ({} as any);
+  const {
+    media,
+    tags = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] },
+    children = [],
+    extras = [],
+    relatedTags = [],
+  } = data || ({} as any);
 
-  // Séparation du casting (acteurs) et de l'équipe technique (réalisateurs, scénaristes, compositeurs, producteurs)
-  const { actors, crewMembers, technicalSpecs } = useMemo(() => {
-    const persons = tags.PERSON_CAROUSEL || [];
+  // Extraction et classification exhaustive de toutes les métadonnées (Loi n°1 : Zéro perte de données)
+  const {
+    actors,
+    directors,
+    writers,
+    producers,
+    composers,
+    studios,
+    countries,
+    technicalSpecs,
+    externalLinks,
+    ratings,
+  } = useMemo(() => {
+    const persons = (tags.PERSON_CAROUSEL || tags.PERSONS || []) as any[];
+    const pills = (tags.PRIMARY_PILL || tags.PILLS || []) as any[];
+    const tech = (tags.TECHNICAL_DRAWER || tags.ACCORDION || []) as any[];
+    const heroes = (tags.HERO_BADGE || tags.HERO || []) as any[];
+
     const actorsList = persons.filter((p: any) => p.attr_code === 'actor');
-    const crewList = persons.filter((p: any) => p.attr_code !== 'actor');
-    const techList = (tags.TECHNICAL_DRAWER || []).filter(
-      (t: any) => !t.attr_code.startsWith('custom_')
+    const directorsList = persons.filter((p: any) => p.attr_code === 'director');
+    const writersList = persons.filter((p: any) => p.attr_code === 'writer' || p.attr_code === 'credits');
+    const producersList = persons.filter((p: any) => p.attr_code === 'producer');
+    const composersList = persons.filter((p: any) => p.attr_code === 'composer' || p.attr_code === 'music');
+
+    const studiosList = pills.filter((p: any) => p.attr_code === 'studio');
+    const countriesList = pills.filter((p: any) => p.attr_code === 'country' || p.attr_code === 'location');
+
+    // Spécifications techniques
+    const techList = tech.filter(
+      (t: any) =>
+        !t.attr_code.startsWith('custom_') ||
+        ['custom_aspectratio', 'custom_videocodec', 'custom_audiocodec'].includes(t.attr_code)
     );
-    return { actors: actorsList, crewMembers: crewList, technicalSpecs: techList };
-  }, [tags]);
+
+    // Liens et identifiants externes (IMDb, TMDb, TVmaze, AniDB, Wikipedia, etc.)
+    const extList: { title: string; value: string; url: string; icon: string }[] = [];
+    const allCustom = [...tech, ...pills].filter(
+      (t: any) => t.attr_code.startsWith('custom_') || t.attr_code === 'external_id'
+    );
+
+    for (const item of allCustom) {
+      const code = item.attr_code.toLowerCase();
+      const val = String(item.value_text || item.value || '').trim();
+      if (!val) continue;
+
+      if (code.includes('imdb') || val.startsWith('tt')) {
+        extList.push({
+          title: 'IMDb',
+          value: val,
+          url: `https://www.imdb.com/title/${val}`,
+          icon: '⭐',
+        });
+      } else if (code.includes('tmdb')) {
+        extList.push({
+          title: 'TheMovieDB',
+          value: val,
+          url: `https://www.themoviedb.org/search?query=${encodeURIComponent(val)}`,
+          icon: '🎬',
+        });
+      } else if (code.includes('tvmaze')) {
+        extList.push({
+          title: 'TVmaze',
+          value: val,
+          url: `https://www.tvmaze.com/search?q=${encodeURIComponent(val)}`,
+          icon: '📺',
+        });
+      } else if (code.includes('anidb')) {
+        extList.push({
+          title: 'AniDB',
+          value: val,
+          url: `https://anidb.net/anime/${val}`,
+          icon: '🍙',
+        });
+      } else if (code.includes('wikipedia')) {
+        extList.push({
+          title: 'Wikipédia',
+          value: val,
+          url: val.startsWith('http') ? val : `https://fr.wikipedia.org/wiki/${encodeURIComponent(val)}`,
+          icon: '📖',
+        });
+      } else if (val.startsWith('http://') || val.startsWith('https://')) {
+        extList.push({
+          title: item.display_name || 'Lien Externe',
+          value: val,
+          url: val,
+          icon: '🔗',
+        });
+      }
+    }
+
+    // Notes et Classifications
+    const ratingList: { label: string; value: string; theme: string }[] = [];
+    if (media?.communityRating) {
+      ratingList.push({
+        label: 'Note Spectateurs',
+        value: `★ ${Number(media.communityRating).toFixed(1)} / 10`,
+        theme: 'amber',
+      });
+    }
+    const cert = heroes.find((h: any) => h.attr_code === 'certification');
+    if (cert) {
+      ratingList.push({
+        label: 'Classification',
+        value: cert.value_text || cert.value,
+        theme: 'orange',
+      });
+    }
+
+    return {
+      actors: actorsList,
+      directors: directorsList,
+      writers: writersList,
+      producers: producersList,
+      composers: composersList,
+      studios: studiosList,
+      countries: countriesList,
+      technicalSpecs: techList,
+      externalLinks: extList,
+      ratings: ratingList,
+    };
+  }, [tags, media]);
 
   if (loading || !data) {
     return (
@@ -81,8 +199,14 @@ export default function MediaDetailScreen() {
   }
 
   const fanartUri = resolveImageUrl(media.fanartPath || media.posterPath);
-  const playId = children.length > 0 ? children[0].id : media.id;
+  const playId = media.resumeEpisodeId || (children.length > 0 ? children[0].id : media.id);
   const seasonTag = media.displayBadge || media.seasonEpisodeTag;
+
+  // Libellé de reprise automatique de lecture
+  const playLabel =
+    media.resumePositionSeconds && media.resumePositionSeconds > 0
+      ? `▶ Reprendre (${Math.floor(media.resumePositionSeconds / 60)} min)`
+      : `▶ Regarder`;
 
   const handlePlay = () => {
     router.push({
@@ -92,7 +216,12 @@ export default function MediaDetailScreen() {
   };
 
   const handleActorPress = (actor: any) => {
-    const actorSlug = (actor.value_slug || actor.value_text.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-'));
+    const actorSlug =
+      actor.value_slug ||
+      actor.value_text
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '-')
+        .replace(/-+/g, '-');
     router.push({
       pathname: '/forum/[topic]',
       params: {
@@ -103,13 +232,20 @@ export default function MediaDetailScreen() {
     } as any);
   };
 
+  const handleOpenExternal = (url: string) => {
+    Linking.openURL(url).catch(() => {});
+  };
+
   return (
     <SafeAreaView style={styles.container}>
+      <SiteHeader />
+
       <ScrollView contentContainerStyle={styles.content}>
         <Pressable focusable={true} onPress={() => router.push('/')} style={styles.backBtn}>
           <Text style={styles.backTxt}>← Retour à l'accueil</Text>
         </Pressable>
 
+        {/* Hero Spotlight Header */}
         <View style={styles.heroBox}>
           {fanartUri ? <Image source={{ uri: fanartUri }} style={styles.backdrop} /> : null}
           <View style={styles.heroContent}>
@@ -120,13 +256,25 @@ export default function MediaDetailScreen() {
                 </View>
               ) : null}
               {media.edition ? (
-                <View style={[styles.seasonTagPill, { backgroundColor: 'rgba(99, 102, 241, 0.25)', borderColor: '#6366f1' }]}>
+                <View
+                  style={[
+                    styles.seasonTagPill,
+                    { backgroundColor: 'rgba(99, 102, 241, 0.25)', borderColor: '#6366f1' },
+                  ]}
+                >
                   <Text style={[styles.seasonTagTxt, { color: '#a5b4fc' }]}>✨ {media.edition}</Text>
                 </View>
               ) : null}
-              {media.confidenceScore && media.confidenceScore < 0.90 ? (
-                <View style={[styles.seasonTagPill, { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: '#f87171' }]}>
-                  <Text style={[styles.seasonTagTxt, { color: '#fca5a5' }]}>⚠️ À vérifier ({Math.round(media.confidenceScore * 100)}%)</Text>
+              {media.confidenceScore && media.confidenceScore < 0.9 ? (
+                <View
+                  style={[
+                    styles.seasonTagPill,
+                    { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: '#f87171' },
+                  ]}
+                >
+                  <Text style={[styles.seasonTagTxt, { color: '#fca5a5' }]}>
+                    ⚠️ À vérifier ({Math.round(media.confidenceScore * 100)}%)
+                  </Text>
                 </View>
               ) : null}
               {tags.HERO_BADGE?.map((b: any, i: number) => (
@@ -141,6 +289,10 @@ export default function MediaDetailScreen() {
               style={styles.title}
             />
 
+            {media.tagline ? (
+              <Text style={styles.taglineTxt}>« {media.tagline} »</Text>
+            ) : null}
+
             {media.overview ? (
               <ClickableTopicText
                 text={media.overview}
@@ -152,7 +304,7 @@ export default function MediaDetailScreen() {
 
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 }}>
               <Pressable focusable={true} onPress={handlePlay} style={styles.playBtn}>
-                <Text style={styles.btnText}>▶ Regarder</Text>
+                <Text style={styles.btnText}>{playLabel}</Text>
               </Pressable>
               <Pressable
                 focusable={true}
@@ -167,13 +319,15 @@ export default function MediaDetailScreen() {
               <Pressable
                 focusable={true}
                 onPress={() => setShowRepostModal(true)}
-                style={[styles.playBtn, { backgroundColor: '#0284c7' }]}>
+                style={[styles.playBtn, { backgroundColor: '#0284c7' }]}
+              >
                 <Text style={styles.btnText}>🔄 Avis & Repost</Text>
               </Pressable>
               <Pressable
                 focusable={true}
                 onPress={() => setShowCast(true)}
-                style={[styles.playBtn, { backgroundColor: '#4338ca' }]}>
+                style={[styles.playBtn, { backgroundColor: '#4338ca' }]}
+              >
                 <Text style={styles.btnText}>📡 Diffuser</Text>
               </Pressable>
               <Pressable
@@ -184,7 +338,8 @@ export default function MediaDetailScreen() {
                     params: { topic: media.slug || media.id, title: media.title },
                   } as any)
                 }
-                style={[styles.playBtn, { backgroundColor: '#334155' }]}>
+                style={[styles.playBtn, { backgroundColor: '#334155' }]}
+              >
                 <Text style={styles.btnText}>💬 Forum WhatsApp</Text>
               </Pressable>
             </View>
@@ -202,34 +357,36 @@ export default function MediaDetailScreen() {
         {extras && extras.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.secTitle}>🎁 Bonus & Coulisses ({extras.length})</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 8 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingVertical: 8 }}
+            >
               {extras.map((extra: any) => (
                 <Pressable
                   key={extra.id}
                   focusable={true}
-                  onPress={() => router.push({ pathname: `/player/${extra.id}`, params: { title: `${media.title} - ${extra.title}` } } as any)}
-                  style={{
-                    width: 180,
-                    backgroundColor: 'rgba(30, 41, 59, 0.75)',
-                    borderRadius: 14,
-                    padding: 10,
-                    borderWidth: 1,
-                    borderColor: 'rgba(71, 85, 105, 0.4)',
-                  }}
+                  onPress={() =>
+                    router.push({
+                      pathname: `/player/${extra.id}`,
+                      params: { title: `${media.title} - ${extra.title}` },
+                    } as any)
+                  }
+                  style={styles.extraCard}
                 >
-                  <View style={{ height: 100, borderRadius: 10, backgroundColor: 'rgba(15, 23, 42, 0.8)', justifyContent: 'center', alignItems: 'center', marginBottom: 8 }}>
+                  <View style={styles.extraThumbWrap}>
                     <Text style={{ fontSize: 32 }}>🎬</Text>
-                    <View style={{ position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                      <Text style={{ color: '#f8fafc', fontSize: 10, fontWeight: '700' }}>
+                    <View style={styles.extraTypeBadge}>
+                      <Text style={styles.extraTypeBadgeTxt}>
                         {extra.extraType ? extra.extraType.toUpperCase() : 'BONUS'}
                       </Text>
                     </View>
                   </View>
-                  <Text style={{ color: '#f8fafc', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>
+                  <Text style={styles.extraTitle} numberOfLines={1}>
                     {extra.title}
                   </Text>
                   {extra.runtimeSeconds ? (
-                    <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
+                    <Text style={styles.extraRuntime}>
                       {Math.round(extra.runtimeSeconds / 60)} min
                     </Text>
                   ) : null}
@@ -239,116 +396,179 @@ export default function MediaDetailScreen() {
           </View>
         )}
 
-        {/* Équipes artistiques et créatives (Réalisateurs, Scénaristes, Compositeurs, Producteurs) */}
-        {crewMembers.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.secTitle}>Réalisation & Création</Text>
-            <View style={styles.zoneRow}>
-              {crewMembers.map((c: any, i: number) => {
-                const roleTheme =
-                  c.attr_code === 'director'
-                    ? 'amber'
-                    : c.attr_code === 'writer'
-                    ? 'emerald'
-                    : c.attr_code === 'composer'
-                    ? 'rose'
-                    : 'indigo';
-                return (
-                  <TagPill
-                    key={i}
-                    label={c.value_text}
-                    subtext={c.display_name}
-                    theme={roleTheme}
-                  />
-                );
-              })}
-            </View>
-          </View>
-        )}
-
-        {/* Casting des Acteurs avec Photos de profil et Rôles - Cliquables comme des tags */}
-        {actors.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.secHeaderRow}>
-              <Text style={styles.secTitle}>Casting ({actors.length})</Text>
-              <Text style={styles.secHint}>Cliquez sur un acteur pour ouvrir son espace forum & œuvres</Text>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.actorsScroll}
-            >
-              {actors.map((actor: any, idx: number) => {
-                const thumb = actor.metadata_json?.thumbUrl;
-                return (
-                  <Pressable
-                    key={idx}
-                    focusable={true}
-                    onPress={() => handleActorPress(actor)}
-                    style={({ pressed }) => [styles.actorCard, pressed && styles.actorCardPressed]}
-                  >
-                    <View style={styles.actorAvatarWrap}>
-                      {thumb ? (
-                        <Image source={{ uri: thumb }} style={styles.actorAvatar} />
-                      ) : (
-                        <View style={styles.actorAvatarPlaceholder}>
-                          <Text style={{ fontSize: 24 }}>👤</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.actorName} numberOfLines={1}>
-                      {actor.value_text}
-                    </Text>
-                    {actor.context_role ? (
-                      <Text style={styles.actorRole} numberOfLines={2}>
-                        {actor.context_role}
-                      </Text>
-                    ) : null}
-                    <View style={styles.actorTagBadge}>
-                      <Text style={styles.actorTagBadgeTxt}>Tag</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Module Forum & Salle d'attente de Séance de Visionnage en Groupe (Sous Casting) */}
+        {/* Module Forum & Salle d'attente de Séance de Visionnage en Groupe */}
         <MediaForumSection
           topicSlug={media.slug || media.id}
           topicTitle={media.title}
           mediaId={media.id}
-          childItems={children.map((c: any) => ({
-            id: c.id,
-            title: c.title,
-            posterPath: c.posterPath || media.posterPath,
-          }))}
+          externalQuotedMedia={{
+            id: media.id,
+            title: media.title,
+            poster: media.posterPath,
+          }}
         />
 
-        {/* Caractéristiques Techniques & Pistes de Flux */}
-        {technicalSpecs.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.secTitle}>Détails Techniques & Flux</Text>
-            <View style={styles.zoneRow}>
-              {technicalSpecs.map((t: any, i: number) => (
-                <TagPill
-                  key={i}
-                  label={t.value_text}
-                  subtext={t.display_name}
-                  theme="slate"
-                />
-              ))}
-            </View>
-          </View>
-        )}
+        {/* ======================================================== */}
+        {/* ESPACE MÉTADONNÉES EN TOUS GENRES (SOUS L'ESPACE FORUM) */}
+        {/* ======================================================== */}
 
+        <View style={styles.metaHubContainer}>
+          <Text style={styles.metaHubMainTitle}>📋 Fiche Complète & Métadonnées de l'Œuvre</Text>
+
+          {/* 1. Casting des Acteurs avec Photos et Rôles */}
+          {actors.length > 0 && (
+            <View style={styles.metaSubSection}>
+              <View style={styles.secHeaderRow}>
+                <Text style={styles.secTitle}>🎭 Casting & Artistes ({actors.length})</Text>
+                <Text style={styles.secHint}>Cliquez sur un artiste pour voir ses œuvres et son forum</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.actorsScroll}
+              >
+                {actors.map((actor: any, idx: number) => {
+                  const thumb = actor.metadata_json?.thumbUrl;
+                  return (
+                    <Pressable
+                      key={idx}
+                      focusable={true}
+                      onPress={() => handleActorPress(actor)}
+                      style={({ pressed }) => [styles.actorCard, pressed && styles.actorCardPressed]}
+                    >
+                      <View style={styles.actorAvatarWrap}>
+                        {thumb ? (
+                          <Image source={{ uri: thumb }} style={styles.actorAvatar} />
+                        ) : (
+                          <View style={styles.actorAvatarPlaceholder}>
+                            <Text style={{ fontSize: 24 }}>👤</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.actorName} numberOfLines={1}>
+                        {actor.value_text}
+                      </Text>
+                      {actor.context_role ? (
+                        <Text style={styles.actorRole} numberOfLines={2}>
+                          {actor.context_role}
+                        </Text>
+                      ) : null}
+                      <View style={styles.actorTagBadge}>
+                        <Text style={styles.actorTagBadgeTxt}>Artiste</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* 2. Équipes Créatives (Réalisateurs, Scénaristes, Producteurs, Musique) */}
+          {(directors.length > 0 || writers.length > 0 || producers.length > 0 || composers.length > 0) && (
+            <View style={styles.metaSubSection}>
+              <Text style={styles.secTitle}>🎬 Réalisation & Équipe Créative</Text>
+              <View style={styles.zoneRow}>
+                {directors.map((d: any, i: number) => (
+                  <TagPill key={`dir-${i}`} label={d.value_text} subtext="Réalisateur" theme="amber" />
+                ))}
+                {writers.map((w: any, i: number) => (
+                  <TagPill key={`wri-${i}`} label={w.value_text} subtext="Scénariste / Auteur" theme="emerald" />
+                ))}
+                {producers.map((p: any, i: number) => (
+                  <TagPill key={`prod-${i}`} label={p.value_text} subtext="Producteur" theme="indigo" />
+                ))}
+                {composers.map((m: any, i: number) => (
+                  <TagPill key={`comp-${i}`} label={m.value_text} subtext="Musique / Compositeur" theme="rose" />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* 3. Studios & Production */}
+          {studios.length > 0 && (
+            <View style={styles.metaSubSection}>
+              <Text style={styles.secTitle}>🏢 Studios & Sociétés de Production</Text>
+              <View style={styles.zoneRow}>
+                {studios.map((s: any, i: number) => (
+                  <TagPill key={`std-${i}`} label={s.value_text} subtext="Studio" theme="sky" />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* 4. Pays d'Origine & Lieux */}
+          {countries.length > 0 && (
+            <View style={styles.metaSubSection}>
+              <Text style={styles.secTitle}>🌍 Origine & Lieux de Tournage</Text>
+              <View style={styles.zoneRow}>
+                {countries.map((c: any, i: number) => (
+                  <TagPill key={`cnt-${i}`} label={c.value_text} subtext="Pays / Lieu" theme="teal" />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* 5. Notes & Classifications */}
+          {ratings.length > 0 && (
+            <View style={styles.metaSubSection}>
+              <Text style={styles.secTitle}>⭐ Notes & Classification d'Âge</Text>
+              <View style={styles.zoneRow}>
+                {ratings.map((r, i) => (
+                  <TagPill key={`rat-${i}`} label={r.value} subtext={r.label} theme={r.theme as any} />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* 6. Caractéristiques Techniques & Pistes de Flux */}
+          {technicalSpecs.length > 0 && (
+            <View style={styles.metaSubSection}>
+              <Text style={styles.secTitle}>🛠️ Fiche Technique, Codecs & Flux Audio/Vidéo</Text>
+              <View style={styles.zoneRow}>
+                {technicalSpecs.map((t: any, i: number) => (
+                  <TagPill
+                    key={`tech-${i}`}
+                    label={t.value_text}
+                    subtext={t.display_name}
+                    theme="slate"
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* 7. Liens & Identifiants Externes Directs */}
+          {externalLinks.length > 0 && (
+            <View style={styles.metaSubSection}>
+              <Text style={styles.secTitle}>🔗 Liens Externes & Fiches Officielles</Text>
+              <View style={styles.zoneRow}>
+                {externalLinks.map((link, i) => (
+                  <Pressable
+                    key={`ext-${i}`}
+                    focusable={true}
+                    onPress={() => handleOpenExternal(link.url)}
+                    style={styles.extLinkBtn}
+                  >
+                    <Text style={styles.extLinkIcon}>{link.icon}</Text>
+                    <View>
+                      <Text style={styles.extLinkTitle}>{link.title}</Text>
+                      <Text style={styles.extLinkVal}>{link.value}</Text>
+                    </View>
+                    <Text style={styles.extLinkArrow}>↗</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Genres & Thèmes exploratoires */}
         <MediaGenreSection relatedTags={relatedTags} fallbackTags={tags.PRIMARY_PILL} />
 
         {/* Section Avis & Reposts communautaires */}
         {reposts.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.secTitle}>Avis & Reposts de la Communauté ({reposts.length})</Text>
+            <Text style={styles.secTitle}>💬 Avis & Reposts de la Communauté ({reposts.length})</Text>
             <View style={{ gap: 10 }}>
               {reposts.map((r) => (
                 <View key={r.id} style={styles.repostCard}>
@@ -369,9 +589,14 @@ export default function MediaDetailScreen() {
         mediaId={media.id}
         mediaTitle={media.title}
         onClose={() => setShowRepostModal(false)}
+        onSuccess={() => fetchMediaReposts(media.id).then(setReposts)}
       />
 
-      <CastModal visible={showCast} onClose={() => setShowCast(false)} />
+      <CastModal
+        visible={showCast}
+        onClose={() => setShowCast(false)}
+        currentMedia={{ id: String(playId), title: media.title, positionSeconds: 0 }}
+      />
     </SafeAreaView>
   );
 }
@@ -394,9 +619,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(30, 41, 59, 0.7)',
     borderRadius: Radius.pill,
     marginBottom: Spacing.two,
+    marginTop: 6,
   },
   backTxt: { color: '#94a3b8', fontSize: 13, fontWeight: '600' },
   heroBox: {
+    position: 'relative',
+    minHeight: 340,
+    justifyContent: 'flex-end',
+    padding: Spacing.four,
     borderRadius: Radius.lg,
     overflow: 'hidden',
     backgroundColor: '#1e293b',
@@ -404,93 +634,135 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(51, 65, 85, 0.4)',
   },
-  backdrop: {
-    width: '100%',
-    height: 380,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    opacity: 0.25,
-  },
-  heroContent: { padding: Spacing.three, paddingTop: 60 },
-  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.35 },
+  heroContent: { maxWidth: MaxContentWidth, gap: 10 },
+  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   seasonTagPill: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-    justifyContent: 'center',
-  },
-  seasonTagTxt: { color: '#818cf8', fontSize: 12, fontWeight: '700' },
-  title: { fontSize: 24, fontWeight: '800', color: '#f8fafc', marginBottom: 8 },
-  overview: { fontSize: 14, color: '#94a3b8', lineHeight: 20, marginBottom: 16 },
-  playBtn: {
     backgroundColor: '#6366f1',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: Radius.pill,
-  },
-  btnText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
-  section: {
-    marginTop: Spacing.three,
-    backgroundColor: 'rgba(30, 41, 59, 0.4)',
-    borderRadius: Radius.md,
-    padding: Spacing.three,
     borderWidth: 1,
-    borderColor: 'rgba(51, 65, 85, 0.3)',
+    borderColor: '#818cf8',
   },
-  secHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 10,
-    flexWrap: 'wrap',
-    gap: 6,
+  seasonTagTxt: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  title: { fontSize: 28, fontWeight: '900', color: '#f8fafc' },
+  taglineTxt: { fontSize: 15, fontStyle: 'italic', color: '#a5b4fc', lineHeight: 22 },
+  overview: { fontSize: 14, color: '#cbd5e1', lineHeight: 22, maxWidth: 800 },
+  playBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: Radius.pill,
+    backgroundColor: '#6366f1',
   },
-  secTitle: { fontSize: 15, fontWeight: '700', color: '#f1f5f9' },
-  secHint: { fontSize: 11, color: '#64748b' },
-  actorsScroll: { gap: 10, paddingVertical: 4 },
+  btnText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  section: { padding: Spacing.four },
+  secTitle: { fontSize: 18, fontWeight: '800', color: '#f8fafc', marginBottom: 12 },
+  secHeaderRow: { marginBottom: 12 },
+  secHint: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  actorsScroll: { gap: 14, paddingVertical: 4 },
   actorCard: {
-    width: 90,
+    width: 105,
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-    borderRadius: 12,
-    padding: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(51, 65, 85, 0.3)',
+    gap: 4,
   },
-  actorCardPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
+  actorCardPressed: { opacity: 0.8 },
   actorAvatarWrap: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     overflow: 'hidden',
-    backgroundColor: '#334155',
-    marginBottom: 6,
+    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    borderWidth: 2,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    marginBottom: 4,
   },
-  actorAvatar: { width: '100%', height: '100%', borderRadius: 27 },
-  actorAvatarPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  actorName: { color: '#f8fafc', fontSize: 11, fontWeight: '700', textAlign: 'center' },
-  actorRole: { color: '#94a3b8', fontSize: 10, textAlign: 'center', marginTop: 2 },
+  actorAvatar: { width: '100%', height: '100%' },
+  actorAvatarPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  actorName: { color: '#f1f5f9', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  actorRole: { color: '#94a3b8', fontSize: 10, fontWeight: '500', textAlign: 'center', lineHeight: 13 },
   actorTagBadge: {
-    marginTop: 4,
     backgroundColor: 'rgba(99, 102, 241, 0.2)',
     paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    marginTop: 2,
   },
   actorTagBadgeTxt: { color: '#a5b4fc', fontSize: 9, fontWeight: '700' },
-  repostCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-    padding: 12,
+  extraCard: {
+    width: 180,
+    backgroundColor: 'rgba(30, 41, 59, 0.75)',
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
+  },
+  extraThumbWrap: {
+    height: 100,
+    borderRadius: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  extraTypeBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  extraTypeBadgeTxt: { color: '#f8fafc', fontSize: 10, fontWeight: '700' },
+  extraTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 13 },
+  extraRuntime: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
+  metaHubContainer: {
+    backgroundColor: 'rgba(30, 41, 59, 0.65)',
+    borderRadius: Radius.xl,
+    padding: Spacing.four,
+    marginTop: Spacing.four,
+    marginBottom: Spacing.four,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+    gap: 20,
+  },
+  metaHubMainTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: '#c7d2fe',
+    letterSpacing: -0.3,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(99, 102, 241, 0.2)',
+    paddingBottom: 10,
+  },
+  metaSubSection: { gap: 10 },
+  extLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(51, 65, 85, 0.4)',
+    borderColor: 'rgba(99, 102, 241, 0.35)',
+    gap: 8,
+  },
+  extLinkIcon: { fontSize: 16 },
+  extLinkTitle: { color: '#a5b4fc', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  extLinkVal: { color: '#f8fafc', fontSize: 12, fontWeight: '700' },
+  extLinkArrow: { color: '#94a3b8', fontSize: 14, marginLeft: 4 },
+  repostCard: {
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
   },
   repostHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   repostAuthor: { color: '#f8fafc', fontWeight: '700', fontSize: 13 },
   repostRating: { color: '#fbbf24', fontSize: 12 },
-  repostComment: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
+  repostComment: { color: '#cbd5e1', fontSize: 13, lineHeight: 18 },
 });

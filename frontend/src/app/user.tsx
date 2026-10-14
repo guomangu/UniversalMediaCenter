@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { useCurrentUser, logout } from '@/services/authStore';
@@ -17,6 +17,8 @@ import { UserFriendsTab } from '@/components/user/UserFriendsTab';
 import { UserForumsTab } from '@/components/user/UserForumsTab';
 import { UserFeedTab } from '@/components/user/UserFeedTab';
 import { MediaCard } from '@/components/MediaCard';
+import { SiteHeader } from '@/components/SiteHeader';
+import { Platform } from 'react-native';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
 type UserTab = 'CONTINUE' | 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED';
@@ -25,7 +27,14 @@ export default function UserScreen() {
   const router = useRouter();
   const authUser = useCurrentUser();
   const [profile, setProfile] = useState<any>(authUser);
+  const { tab } = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<UserTab>('CONTINUE');
+
+  useEffect(() => {
+    if (tab && ['CONTINUE', 'FAVORITES', 'FRIENDS', 'FORUMS', 'FEED'].includes(tab.toUpperCase())) {
+      setActiveTab(tab.toUpperCase() as UserTab);
+    }
+  }, [tab]);
   const [stats, setStats] = useState<any>(null);
   const [continueList, setContinueList] = useState<any[]>([]);
   const [historyList, setHistoryList] = useState<any[]>([]);
@@ -61,8 +70,9 @@ export default function UserScreen() {
   return (
     <AuthGuard>
       <SafeAreaView style={styles.container}>
+        <SiteHeader />
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingTop: Platform.OS === 'web' ? 70 : 0 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadAll} />}>
           {/* Header Bar */}
           <View style={styles.topNav}>

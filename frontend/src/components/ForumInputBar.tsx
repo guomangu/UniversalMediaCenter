@@ -90,7 +90,7 @@ export function ForumInputBar({
     }
 
     if (isRecording) {
-      // Arrêter l'enregistrement et téléverser
+      // Arrêter l'enregistrement
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
@@ -113,8 +113,19 @@ export function ForumInputBar({
           setUploading(true);
           const res = await uploadForumMedia(audioBlob, `vocal-${Date.now()}.webm`, 'AUDIO');
           setUploading(false);
+
           if (res.success && res.url) {
-            setActiveMedia({ type: 'AUDIO', url: res.url, name: 'Message vocal 🎙️' });
+            // Publication immédiate du message vocal dans la discussion
+            onSend({
+              content: '',
+              mediaType: 'AUDIO',
+              mediaUrl: res.url,
+              fileName: 'Message vocal 🎙️',
+              quotedMediaId: quotedMedia?.id,
+              quotedMediaTitle: quotedMedia?.title,
+              quotedMediaPoster: quotedMedia?.poster,
+            });
+            onCancelQuote?.();
           }
         };
 
@@ -172,7 +183,7 @@ export function ForumInputBar({
           style={[styles.mediaBtn, isRecording && styles.recordingBtn]}
         >
           <Text style={[styles.mediaEmoji, isRecording && styles.recordingTxt]}>
-            {isRecording ? '⏹️ Terminer Vocal' : '🎙️ Vocal différé'}
+            {isRecording ? '⏹️ Terminer Vocal & Envoyer' : '🎙️ Vocal différé'}
           </Text>
         </Pressable>
         <Pressable focusable={true} onPress={() => triggerPicker('IMAGE', 'image/*')} style={styles.mediaBtn}>
@@ -196,10 +207,12 @@ export function ForumInputBar({
         <TextInput
           ref={inputRef}
           style={styles.input}
-          placeholder="Écrire un message... (Entrée = Clavier virtuel, Flèches = Naviguer)"
+          placeholder="Écrire un message... (Entrée pour envoyer)"
           placeholderTextColor="#64748b"
           value={text}
           onChangeText={setText}
+          onSubmitEditing={handleSend}
+          returnKeyType="send"
         />
         <Pressable
           focusable={true}
@@ -209,12 +222,7 @@ export function ForumInputBar({
         >
           <Text style={styles.stopTxt}>⏹</Text>
         </Pressable>
-        <Pressable
-          focusable={true}
-          style={[styles.btn, styles.sendBtn]}
-          onPress={handleSend}
-          accessibilityLabel="Envoyer le message"
-        >
+        <Pressable focusable={true} style={[styles.btn, styles.sendBtn]} onPress={handleSend}>
           <Text style={styles.sendTxt}>➤</Text>
         </Pressable>
       </View>
@@ -223,26 +231,97 @@ export function ForumInputBar({
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#1e293b', padding: 8, borderTopWidth: 1, borderTopColor: 'rgba(71, 85, 105, 0.4)' },
-  replyBar: { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: Radius.sm, marginBottom: 6 },
-  replyTxt: { color: '#a5b4fc', fontSize: 11, flex: 1 },
-  quoteBar: { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: 'rgba(245, 158, 11, 0.2)', borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.5)', borderRadius: Radius.sm, marginBottom: 6 },
-  quoteTxt: { color: '#fbbf24', fontSize: 11, fontWeight: '700', flex: 1 },
-  cancelTxt: { color: '#f87171', fontWeight: 'bold', paddingHorizontal: 6 },
-  mediaTag: { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: 'rgba(79, 70, 229, 0.25)', borderRadius: Radius.sm, marginBottom: 6, borderWidth: 1, borderColor: '#6366f1' },
-  mediaTagTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '700' },
-  uploadingBar: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 6, marginBottom: 6 },
-  uploadingTxt: { color: '#818cf8', fontSize: 12 },
-  actionRow: { flexDirection: 'row', gap: 6, marginBottom: 6, flexWrap: 'wrap' },
-  mediaBtn: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: Radius.sm, backgroundColor: 'rgba(51, 65, 85, 0.7)' },
-  recordingBtn: { backgroundColor: '#dc2626' },
-  mediaEmoji: { fontSize: 11, color: '#e2e8f0', fontWeight: '600' },
+  container: {
+    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    borderRadius: Radius.lg,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
+  },
+  replyBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    padding: 6,
+    borderRadius: Radius.sm,
+    marginBottom: 6,
+  },
+  replyTxt: { color: '#c7d2fe', fontSize: 11, flex: 1 },
+  quoteBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    padding: 6,
+    borderRadius: Radius.sm,
+    marginBottom: 6,
+  },
+  quoteTxt: { color: '#fcd34d', fontSize: 11, flex: 1 },
+  cancelTxt: { color: '#94a3b8', fontSize: 13, fontWeight: 'bold', paddingHorizontal: 6 },
+  mediaTag: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    padding: 6,
+    borderRadius: Radius.sm,
+    marginBottom: 6,
+  },
+  mediaTagTxt: { color: '#6ee7b7', fontSize: 11, flex: 1 },
+  uploadingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 6,
+    marginBottom: 6,
+  },
+  uploadingTxt: { color: '#a5b4fc', fontSize: 11 },
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  mediaBtn: {
+    backgroundColor: 'rgba(51, 65, 85, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  recordingBtn: {
+    backgroundColor: '#dc2626',
+  },
+  mediaEmoji: { color: '#e2e8f0', fontSize: 11, fontWeight: '600' },
   recordingTxt: { color: '#ffffff', fontWeight: '800' },
-  inputRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  input: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.8)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.5)', borderRadius: Radius.pill, paddingHorizontal: 14, paddingVertical: 8, color: '#f8fafc', fontSize: 13 },
-  btn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  input: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderRadius: Radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    color: '#ffffff',
+    fontSize: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.5)',
+  },
+  btn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
   stopBtn: { backgroundColor: '#475569' },
-  stopTxt: { color: '#f8fafc', fontSize: 14, fontWeight: 'bold' },
+  stopTxt: { color: '#f8fafc', fontSize: 13 },
   sendBtn: { backgroundColor: '#6366f1' },
-  sendTxt: { color: '#ffffff', fontSize: 15, fontWeight: 'bold' },
+  sendTxt: { color: '#ffffff', fontSize: 14, fontWeight: 'bold' },
 });

@@ -49,6 +49,15 @@ export const VideoPlayerView: React.FC<Props> = ({
   const mouseTimer = useRef<any>(null);
   const savedTimeRef = useRef(initialTime || 0);
 
+  useEffect(() => {
+    if (initialTime && initialTime > 0) {
+      savedTimeRef.current = initialTime;
+      if (videoRef.current && Math.abs(videoRef.current.currentTime - initialTime) > 1) {
+        videoRef.current.currentTime = initialTime;
+      }
+    }
+  }, [initialTime]);
+
   const resetMouse = () => {
     setMouseActive(true);
     if (mouseTimer.current) clearTimeout(mouseTimer.current);

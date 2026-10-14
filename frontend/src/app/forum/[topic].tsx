@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ForumTopMediasRail } from '@/components/ForumTopMediasRail';
 import { MediaForumSection } from '@/components/MediaForumSection';
 import { MediaTileItem } from '@/services/taxonomyApi';
+import { SiteHeader } from '@/components/SiteHeader';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 
 export default function ForumTopicScreen() {
@@ -21,7 +22,7 @@ export default function ForumTopicScreen() {
 
   const [quotedMedia, setQuotedMedia] = useState<{ id: string; title: string; poster?: string } | null>(null);
 
-  const handleCiteMedia = (item: MediaTileItem) => {
+  const handleProposeSessionMedia = (item: MediaTileItem) => {
     setQuotedMedia({
       id: item.id,
       title: item.title,
@@ -31,7 +32,8 @@ export default function ForumTopicScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <SiteHeader />
+      <View style={[styles.header, { marginTop: 65 }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backTxt}>←</Text>
         </Pressable>
@@ -39,7 +41,7 @@ export default function ForumTopicScreen() {
           <Text style={styles.topicName} numberOfLines={1}>
             💬 #{topicTitle}
           </Text>
-          <Text style={styles.subTxt}>Forum communautaire • Séances & Vocal</Text>
+          <Text style={styles.subTxt}>Forum communautaire • Séances & Vocal direct</Text>
         </View>
       </View>
 
@@ -49,8 +51,7 @@ export default function ForumTopicScreen() {
           topic={topicSlug}
           topicTitle={topicTitle}
           category={catSlug}
-          onCiteMedia={handleCiteMedia}
-          onProposeSession={handleCiteMedia}
+          onProposeSession={handleProposeSessionMedia}
         />
 
         {/* Espace Forum unifié & Salle d'attente de Séance */}

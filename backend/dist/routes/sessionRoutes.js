@@ -3,10 +3,10 @@ import { db } from '../db/connection.js';
 import { mediaSessions, mediaSessionParticipants, users, mediaNodes } from '../db/schema/index.js';
 import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
+import { getActiveMediaCounts } from '../watcher/presenceStore.js';
 export const sessionRouter = new Hono();
-sessionRouter.use('*', requireAuth);
 // Proposer une nouvelle séance
-sessionRouter.post('/', async (c) => {
+sessionRouter.post('/', requireAuth, async (c) => {
     const user = c.get('user');
     const body = await c.req.json().catch(() => ({}));
     const { nodeId, topicSlug, title, scheduledAt } = body;
@@ -35,7 +35,7 @@ sessionRouter.post('/', async (c) => {
     });
     return c.json({ success: true, session });
 });
-// Liste des séances actives
+// Liste des séances actives et compteurs de visionnage par média (accessible publiquement)
 sessionRouter.get('/active', async (c) => {
     const sessions = await db.query.mediaSessions.findMany({
         where: (t, { eq }) => eq(t.status, 'ACTIVE'),
@@ -66,7 +66,12 @@ sessionRouter.get('/active', async (c) => {
             participantCount: parts.length,
         };
     });
-    return c.json({ success: true, sessions: grouped });
+    const liveMediaCounts = getActiveMediaCounts();
+    return c.json({
+        success: true,
+        sessions: grouped,
+        activeMediaCounts: liveMediaCounts,
+    });
 });
 // Séances actives pour un média particulier (ou ses enfants)
 sessionRouter.get('/media/:nodeId', async (c) => {
@@ -88,15 +93,19 @@ sessionRouter.get('/media/:nodeId', async (c) => {
             .where(and(inArray(mediaSessionParticipants.sessionId, sessionIds), eq(users.isIncognito, false)));
         totalViewers = Number(counts[0]?.count ?? 0);
     }
+    // Agréger aussi les spectateurs solo ou groupe actifs
+    const liveMediaCounts = getActiveMediaCounts();
+    const liveSoloCount = liveMediaCounts[nodeId]?.count || 0;
+    totalViewers = Math.max(totalViewers, liveSoloCount);
     return c.json({
         success: true,
         sessions: flatSessions,
         totalViewers,
-        hasActiveSession: flatSessions.length > 0,
+        hasActiveSession: flatSessions.length > 0 || totalViewers > 0,
     });
 });
 // Rejoindre une séance
-sessionRouter.post('/:id/join', async (c) => {
+sessionRouter.post('/:id/join', requireAuth, async (c) => {
     const sessionId = c.req.param('id');
     const user = c.get('user');
     await db
@@ -112,7 +121,7 @@ sessionRouter.post('/:id/join', async (c) => {
     return c.json({ success: true });
 });
 // Quitter une séance
-sessionRouter.post('/:id/leave', async (c) => {
+sessionRouter.post('/:id/leave', requireAuth, async (c) => {
     const sessionId = c.req.param('id');
     const user = c.get('user');
     await db
@@ -121,7 +130,7 @@ sessionRouter.post('/:id/leave', async (c) => {
     return c.json({ success: true });
 });
 // Ping / Heartbeat & statut vocal
-sessionRouter.post('/:id/ping', async (c) => {
+sessionRouter.post('/:id/ping', requireAuth, async (c) => {
     const sessionId = c.req.param('id');
     const user = c.get('user');
     const body = await c.req.json().catch(() => ({}));
@@ -156,14 +165,12 @@ sessionRouter.post('/:id/ping', async (c) => {
     })
         .from(mediaSessionParticipants)
         .leftJoin(users, eq(mediaSessionParticipants.userId, users.id))
-        .where(and(eq(mediaSessionParticipants.sessionId, sessionId), sql `${mediaSessionParticipants.lastPingAt} > NOW() - INTERVAL '30 seconds'`));
-    const visibleParts = participants.filter((p) => !p.isIncognito || p.userId === user.id);
+        .where(eq(mediaSessionParticipants.sessionId, sessionId));
     return c.json({
         success: true,
         session: {
             ...session,
-            participants: visibleParts,
-            activeVoiceCount: visibleParts.filter((p) => !p.isMuted).length,
+            participants: participants.filter((p) => !p.isIncognito),
         },
     });
 });

@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { ForumMessage } from '@/services/forumApi';
 import { getApiBaseUrl } from '@/services/apiConfig';
 import { resolveImageUrl } from '@/services/api';
+import { InlineAudioPlayer } from './InlineAudioPlayer';
 import { Radius } from '@/constants/theme';
 
 interface Props {
@@ -11,10 +12,9 @@ interface Props {
   isMe: boolean;
   onReply: (m: ForumMessage) => void;
   onVote?: (msgId: string) => void;
-  onRateAuthor?: (authorId: string, authorName: string) => void;
 }
 
-export function ForumMessageBubble({ msg, isMe, onReply, onVote, onRateAuthor }: Props) {
+export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
   const router = useRouter();
   const time = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const fullUrl = msg.mediaUrl
@@ -28,6 +28,29 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote, onRateAuthor }:
   return (
     <View style={[styles.wrap, isMe ? styles.wrapRight : styles.wrapLeft]}>
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther]}>
+        {/* Entête de l'auteur avec sa dernière page / média connu sous son nom */}
+        <View style={styles.authorHeader}>
+          <Text style={styles.author}>{msg.authorName}</Text>
+
+          {/* Dernière page connue ou média actuellement regardé */}
+          {msg.authorLocation ? (
+            <Pressable
+              focusable={true}
+              onPress={() => router.push(msg.authorLocation!.path as any)}
+              style={[
+                styles.authorLocationBadge,
+                msg.authorLocation.isLive && styles.authorLocationBadgeLive,
+              ]}
+            >
+              <Text style={styles.authorLocationText} numberOfLines={1}>
+                {msg.authorLocation.isLive ? '🔴 En séance : ' : '📍 '}
+                {msg.authorLocation.title}
+              </Text>
+              <Text style={styles.authorLocationJoin}>Rejoindre ➔</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
         {/* Citation textuelle classique */}
         {msg.replyToText ? (
           <View style={styles.quoteBox}>
@@ -36,7 +59,7 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote, onRateAuthor }:
           </View>
         ) : null}
 
-        {/* Citation d'une œuvre / média / épisode pour séance */}
+        {/* Citation d'une œuvre / média pour séance */}
         {msg.quotedMediaId ? (
           <Pressable
             focusable={true}
@@ -70,10 +93,9 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote, onRateAuthor }:
           </Pressable>
         ) : null}
 
+        {/* Lecture des vocaux DIRECTEMENT sur la page du forum (aucun nouvel onglet !) */}
         {fullUrl && msg.mediaType === 'AUDIO' ? (
-          <Pressable focusable={true} onPress={() => Linking.openURL(fullUrl)} style={styles.mediaPill}>
-            <Text style={styles.pillText}>🎙️ Vocal différé : {msg.fileName || 'Écouter le message vocal'}</Text>
-          </Pressable>
+          <InlineAudioPlayer audioUrl={fullUrl} fileName={msg.fileName} />
         ) : null}
 
         {fullUrl && msg.mediaType === 'DOCUMENT' ? (
@@ -91,19 +113,6 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote, onRateAuthor }:
         {msg.content ? <Text style={styles.content}>{msg.content}</Text> : null}
 
         <View style={styles.footer}>
-          <Text style={styles.author}>{msg.authorName}</Text>
-          
-          {/* Évaluer le membre ou gérant */}
-          {!isMe && msg.authorId && onRateAuthor ? (
-            <Pressable
-              focusable={true}
-              onPress={() => onRateAuthor(msg.authorId!, msg.authorName)}
-              style={styles.rateAuthorBtn}
-            >
-              <Text style={styles.rateAuthorTxt}>⭐</Text>
-            </Pressable>
-          ) : null}
-
           {/* Système de vote / upvote */}
           <Pressable
             focusable={true}
@@ -127,13 +136,62 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote, onRateAuthor }:
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 10, width: '100%', flexDirection: 'row' },
+  wrap: { marginBottom: 12, width: '100%', flexDirection: 'row' },
   wrapLeft: { justifyContent: 'flex-start' },
   wrapRight: { justifyContent: 'flex-end' },
   bubble: { maxWidth: '85%', borderRadius: Radius.md, padding: 10 },
   bubbleMe: { backgroundColor: '#4338ca', borderBottomRightRadius: 2 },
-  bubbleOther: { backgroundColor: 'rgba(30, 41, 59, 0.9)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.4)', borderBottomLeftRadius: 2 },
-  quoteBox: { borderLeftWidth: 3, borderLeftColor: '#818cf8', backgroundColor: 'rgba(0,0,0,0.25)', padding: 6, borderRadius: Radius.sm, marginBottom: 6 },
+  bubbleOther: {
+    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderBottomLeftRadius: 2,
+  },
+  authorHeader: {
+    marginBottom: 6,
+    gap: 3,
+  },
+  author: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  authorLocationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    alignSelf: 'flex-start',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  authorLocationBadgeLive: {
+    backgroundColor: 'rgba(220, 38, 38, 0.25)',
+    borderColor: 'rgba(239, 68, 68, 0.6)',
+  },
+  authorLocationText: {
+    color: '#e2e8f0',
+    fontSize: 10,
+    fontWeight: '700',
+    maxWidth: 220,
+  },
+  authorLocationJoin: {
+    color: '#818cf8',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  quoteBox: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#818cf8',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    padding: 6,
+    borderRadius: Radius.sm,
+    marginBottom: 6,
+  },
   quoteAuthor: { color: '#a5b4fc', fontSize: 11, fontWeight: '700' },
   quoteText: { color: '#cbd5e1', fontSize: 11, fontStyle: 'italic' },
   quotedMediaCard: {
@@ -149,22 +207,26 @@ const styles = StyleSheet.create({
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   quotedMediaPoster: { width: 36, height: 48, borderRadius: Radius.sm },
-  quotedMediaPlaceholder: { width: 36, height: 48, borderRadius: Radius.sm, backgroundColor: '#334155', alignItems: 'center', justifyContent: 'center' },
+  quotedMediaPlaceholder: {
+    width: 36,
+    height: 48,
+    borderRadius: Radius.sm,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   quotedMediaLabel: { color: '#fbbf24', fontSize: 10, fontWeight: '800' },
   quotedMediaTitle: { color: '#f8fafc', fontSize: 12, fontWeight: '700' },
   quotedMediaArrow: { color: '#818cf8', fontSize: 12, marginRight: 4 },
   mediaImg: { width: '100%', height: 180, borderRadius: Radius.sm, marginBottom: 6 },
   mediaPill: { backgroundColor: 'rgba(0,0,0,0.3)', padding: 8, borderRadius: Radius.sm, marginBottom: 6 },
   pillText: { color: '#e2e8f0', fontSize: 12, fontWeight: '600' },
-  content: { color: '#ffffff', fontSize: 13, lineHeight: 18 },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 4 },
-  author: { color: '#94a3b8', fontSize: 10, fontWeight: '600', marginRight: 'auto' },
-  rateAuthorBtn: { paddingHorizontal: 4, paddingVertical: 1 },
-  rateAuthorTxt: { fontSize: 11 },
+  content: { color: '#ffffff', fontSize: 13, lineHeight: 18, marginTop: 2 },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 },
   voteBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: Radius.pill,
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },

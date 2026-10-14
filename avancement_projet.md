@@ -1,3 +1,50 @@
+### 🌟 Hub Exhaustif de Métadonnées, Reprise Automatique Universelle, Fiabilisation des Appels Vocaux & Raccourcis Utilisateurs
+- [x] **Rétablissement & Affichage Intégral des Métadonnées sous le Forum ([media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx) & [media.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts)) :**
+  - Correction de l'extraction Drizzle avec postgres.js (Array.isArray(linkedTags)) permettant le chargement sans perte des 101+ tags et attributs EAV.
+  - Déploiement d'un Hub de Métadonnées complet structuré sous la section forum et salle d'attente :
+    - 🎭 **Casting & Artistes** (Acteurs avec photos, rôles narratifs, tags interactifs cliquables).
+    - 🎬 **Réalisation & Création** (Réalisateurs, scénaristes, producteurs, compositeurs).
+    - 🏢 **Studios & Sociétés de Production** (Studios, labels, distributeurs).
+    - 🌍 **Origine & Lieux** (Pays d'origine, lieux de tournage).
+    - 🛠️ **Fiche Technique & Flux** (Codecs vidéo/audio, résolution, débit, aspect ratio, canaux, sous-titres, langues).
+    - ⭐ **Notes & Classifications d'Âge** (Note communautaire, classification CSA / MPAA).
+    - 🔗 **Liens & Identifiants Externes** (Badges interactifs directs vers IMDb, TMDb, TVmaze, AniDB, Wikipédia avec ouverture native in-browser).
+- [x] **Reprise de Lecture Automatique & Barres de Progression Universelles ([VideoPlayerView.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/VideoPlayerView.tsx), [player/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/player/[id].tsx), [MediaCard.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [MediaChildrenRow.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaChildrenRow.tsx), [ui.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/ui.ts)) :**
+  - Hydratation de watchProgress pour tous les rails d'accueil (uiRails) et tous les épisodes d'une série.
+  - Affichage de la jauge rouge de progression au bas de chaque image (MediaCard.tsx) et de chaque vignette d'épisode (MediaChildrenRow.tsx), positionnée avec élégance au-dessus des badges de séance active.
+  - Reprise intelligente : le bouton ▶ Regarder de la fiche série bascule automatiquement en ▶ Reprendre (S01 • EP 03) sur le dernier épisode entamé.
+  - Le lecteur vidéo (PlayerScreen & VideoPlayerView) s'initialise directement à la seconde exacte mémorisée avec toast d'information immédiat.
+- [x] **Correction Définitive des Appels Vocaux Continus ([LiveVoiceRoomBar.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/LiveVoiceRoomBar.tsx) & [presenceStore.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/presenceStore.ts)) :**
+  - Élimination du bogue MediaRecorder.start(timeslice) qui privait les tranches suivantes de l'en-tête EBML indispensable aux navigateurs.
+  - Génération déterministe de tranches fermées (recorder.stop() toutes les 2.5s) produisant 100% de fichiers WebM/Opus autonomes et complets.
+  - Mise en place d'une file d'attente audio séquentielle (audioQueueRef) côté récepteur pour diffuser sans coupure, sans saccade et sans fin les voix des participants.
+- [x] **Raccourcis Utilisateurs Omniprésents sur Toutes les Pages ([SiteHeader.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/SiteHeader.tsx), [user.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/user.tsx)) :**
+  - Intégration dans le header universel des 4 accès directs : ❤️ Favoris (X), 👥 Amis, 💬 Mes Salons, 🔄 Fil d'avis.
+  - Compteur dynamique en temps réel pour les favoris synchronisé via l'événement favoritesUpdated.
+  - Prise en charge du paramètre d'URL ?tab= dans /user, ouvrant instantanément l'onglet ciblé lors d'un clic depuis n'importe quelle page du site.
+  - Déploiement du SiteHeader sur /media/[id], /explore, /user, /tv, /admin et /forum/[topic].
+
+### 🎙️ Lecture Vocale In-Place, Appels Vocaux Directs, Présence Active des Séances & Navigation Rapide Inter-Membres
+- [x] **Lecture Vocale Directe In-Place sur la Page du Forum ([`InlineAudioPlayer.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/InlineAudioPlayer.tsx) & [`ForumMessageBubble.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMessageBubble.tsx)) :**
+  - Fin de l'ouverture intempestive dans un nouvel onglet : les messages vocaux sont désormais écoutables directement au sein de la bulle de discussion sur la page du forum.
+  - Lecteur audio intégré avec bouton Play/Pause interactif, temps écoulé / durée et barre de progression fluide.
+- [x] **Suppression des Faux Éléments de Citation, Disparition du Rôle de "Gérant" & Dernière Page Connue Cliquable :**
+  - Élimination de la rangée "Citer un épisode pour la séance" : le bouton "Proposer une séance" suffit amplement pour initier des visionnages.
+  - Retrait des mentions et notations intrusives de "Gérant".
+  - Affichage automatique sous chaque auteur dans le forum de sa **dernière page connue ou média actuellement visionné** avec pastille cliquable (`🔴 En séance : [Titre du média]` ou `📍 [Dernier média]`) permettant de le rejoindre immédiatement dans sa séance d'un simple clic.
+- [x] **Bouton d'Appel Vocal Direct & Vocaux Continus ([`LiveVoiceRoomBar.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/LiveVoiceRoomBar.tsx) & [`presenceStore.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/presenceStore.ts)) :**
+  - Ajout du bouton `📞 Appel direct` / `Rejoindre l'appel` dans l'en-tête du forum avec badge dynamique de spectateurs actifs en direct.
+  - Support des vocaux continus (`MediaRecorder` découpé en tranches de 2.5s) permettant de converser en temps réel sans devoir enregistrer et envoyer manuellement chaque message, avec diffusion audio instantanée aux participants connectés.
+- [x] **Indicateur Dynamique "X en séance" sur Cartes et Groupes de Médias ([`MediaCard.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [`ForumTopMediasRail.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumTopMediasRail.tsx) & [`sessionStore.ts`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/services/sessionStore.ts)) :**
+  - Détection automatique et temps réel des spectateurs actifs (même solo : `1 en séance`, `3 en séance`) via le nouveau gestionnaire de présence et le heartbeat de lecture vidéo (`POST /api/media/:id/progress`).
+  - Agrégation automatique des épisodes vers la série parente pour que la fiche série reflète immédiatement les spectateurs en cours.
+  - Règle stricte : la div `🍿 X en séance` s'affiche exclusivement si le nombre de spectateurs est $\ge 1$, et n'affiche jamais "0 en séance".
+- [x] **Correction du Système de Discussion Synchronisée / Asynchrone :**
+  - Remplacement du mécanisme bloquant d'IntersectionObserver par un polling asynchrone résilient à 2.5s qui ne gèle plus jamais.
+  - Ajout de l'affichage optimiste immédiat lors de l'envoi d'un message et auto-envoi direct dès la fin d'un enregistrement vocal.
+- [x] **Résolution de l'Erreur 404 sur l'Enrichissement des Métadonnées ([`AdminScanTab.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/AdminScanTab.tsx)) :**
+  - Remplacement du fetch relatif non routé par l'appel unifié `triggerLibraryRefresh()` (`${getApiBaseUrl()}/api/admin/library/refresh` avec en-têtes d'authentification administrateur), rétablissant l'enrichissement TVmaze / Wikipedia sans clé payante.
+
 ### 🚀 Architecture de Scraping Multimodal Kyoo++, Résolution Déterministe de Hiérarchie & Scanner Universel In-Place (`/admin`, `AdminScanTab.tsx`, `pipeline/`, `hierarchyResolver.ts`)
 - [x] **Résolution Déterministe de la Hiérarchie et Élimination des Collisions Séries/Saisons :**
   - **Résolution Déterministe de la Racine de Série ([`hierarchyResolver.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyResolver.ts)) :**

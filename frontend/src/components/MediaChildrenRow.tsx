@@ -105,6 +105,7 @@ function renderEpisodeCard(item: ParsedChildNode, parentPoster: string | undefin
   const { node, tag, displayTitle, durationLabel } = item;
   // Préférer l'artwork d'épisode 16:9 (thumb), sinon poster local, sinon poster parent
   const imgUri = resolveImageUrl(node.thumbPath || node.posterPath || parentPoster);
+  const progressPercent = node.progressPercent ?? 0;
 
   return (
     <Pressable
@@ -132,6 +133,11 @@ function renderEpisodeCard(item: ParsedChildNode, parentPoster: string | undefin
         <View style={styles.playBadge}>
           <Text style={styles.playBadgeTxt}>▶</Text>
         </View>
+        {progressPercent > 0 && progressPercent < 95 ? (
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+          </View>
+        ) : null}
       </View>
       <Text style={styles.title} numberOfLines={2}>
         {displayTitle}
@@ -236,6 +242,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   playBadgeTxt: { color: '#ffffff', fontSize: 11, fontWeight: '900' },
+  progressTrack: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    zIndex: 10,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#ef4444',
+  },
   title: {
     color: '#f1f5f9',
     fontSize: 13,

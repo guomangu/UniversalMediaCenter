@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { users } from '../db/schema/index.js';
 import { eq } from 'drizzle-orm';
+import { recordUserPagePresence } from '../watcher/presenceStore.js';
 
 export const userProfileRouter = new Hono();
 
@@ -78,4 +79,22 @@ userProfileRouter.post('/incognito', async (c) => {
     .returning();
 
   return c.json({ success: true, isIncognito: updated.isIncognito });
+});
+
+// Signaler la dernière page connue / navigation de l'utilisateur
+userProfileRouter.post('/presence', async (c) => {
+  const sessionUser = (c as any).get('user');
+  const body = await c.req.json().catch(() => ({}));
+  const { pageTitle, pagePath, mediaId } = body;
+
+  if (pageTitle && pagePath) {
+    recordUserPagePresence(
+      sessionUser.id,
+      sessionUser.displayName || 'Utilisateur',
+      pageTitle,
+      pagePath,
+      mediaId
+    );
+  }
+  return c.json({ success: true });
 });

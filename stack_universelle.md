@@ -1,3 +1,39 @@
+- `backend/src/routes/media.ts` & `backend/src/routes/ui.ts` : Hydratation universelle de `watchProgress` pour tous les rails (`uiRails`) et toutes les fiches médias, détection automatique du point de reprise intelligent (`resumeEpisodeId`, `resumePositionSeconds`), et extraction EAV polymorphique (`Array.isArray(linkedTags)`) restaurant 100% des tags et métadonnées.
+- `frontend/src/app/media/[id].tsx` : Fiche média enrichie avec Hub exhaustif de métadonnées sous l'espace forum (Artistes & Casting avec photos/rôles, Réalisation & Équipe créative, Studios de production, Origine & Lieux, Notes & Classifications d'âge, Fiche technique détaillée, Liens externes interactifs IMDb/TMDb/TVmaze/AniDB/Wikipédia), intégration de `SiteHeader` et bouton de lecture avec reprise intelligente (`▶ Reprendre (S01 • EP 03)`).
+- `frontend/src/components/SiteHeader.tsx` : En-tête universel présent sur l'ensemble des pages avec accès instantané aux 4 fonctionnalités clés utilisateurs (`❤️ Favoris (X)`, `👥 Amis`, `💬 Mes Salons`, `🔄 Fil d'avis`), compteur temps réel synchronisé, et adaptation responsive desktop/mobile.
+- `frontend/src/components/LiveVoiceRoomBar.tsx` : Moteur d'appels vocaux continus avec génération déterministe de fragments WebM/Opus complets et autonomes (clôture toutes les 2.5s) et file d'attente de restitution séquentielle ininterrompue.
+- `frontend/src/components/MediaCard.tsx` & `MediaChildrenRow.tsx` : Barre de progression de lecture au bas de l'image sur l'intégralité des cartes et vignettes d'épisodes.
+- `backend/src/watcher/presenceStore.ts` : Registre temps réel de présence et d'écoute multimédia :
+  - `recordActivePlayback()` & `removeActivePlayback()` : Suivi des spectateurs actifs en direct (solo comme en groupe) avec fenêtre glissante de 25 secondes.
+  - Propagation montante automatique : Tout visionnage d'un épisode crédite automatiquement la série parente (`parentId`), assurant l'exactitude des badges sur la fiche de série et l'accueil.
+  - `getActiveMediaCounts()` : Agrégation temps réel des spectateurs par média, filtrant rigoureusement les compteurs nuls.
+  - `recordUserPagePresence()` & `getUserLastLocation()` : Géolocalisation de la dernière page ou média visionné par utilisateur avec pastille `isLive` et fallback base de données `watchProgress`.
+  - Moteur d'appels vocaux directs & vocaux continus (`joinVoiceCall`, `leaveVoiceCall`, `pingVoiceCall`, `pushVoiceAudioChunk`, `getVoiceAudioChunks`) : Découpage en tranches audio de 2.5s et rediffusion instantanée entre participants connectés.
+- `components/InlineAudioPlayer.tsx` : Lecteur vocal in-place fluide pour le forum :
+  - Écoute directe des messages vocaux sur la page du forum sans aucune ouverture d'onglet externe (`Linking.openURL`).
+  - Commandes Play/Pause interactives (`▶` / `⏸`), temps dynamique écoulé/total et barre de progression fluide.
+  - Gestionnaire d'exclusivité audio statique garantissant qu'un seul vocal joue à la fois sur la page.
+- `components/LiveVoiceRoomBar.tsx` : Barre d'appel vocal continu en direct intégrée au forum :
+  - Capture continue du microphone par `MediaRecorder` découpé en tranches régulières de 2.5s dès que le micro est actif (`🎙️`).
+  - Réception et lecture automatique en tâche de fond des fragments audio des autres participants.
+  - Bascule micro actif / muet (`🔇 Micro coupé`) et bouton de déconnexion `🔴 Quitter l'appel`.
+- `components/ForumMessageBubble.tsx` : Bulle de message du forum enrichie :
+  - Intégration du lecteur audio in-place pour tout contenu de type `'AUDIO'`.
+  - Pastille cliquable sous l'auteur affichant sa dernière position connue (`🔴 En séance : [Média]` ou `📍 [Dernier média]`) avec action immédiate `Rejoindre ➔`.
+  - Suppression de la notation de gérant au profit d'un design épuré axé sur les upvotes et citations d'œuvres.
+- `components/MediaForumSection.tsx` : Section unifiée de forum et salle d'attente :
+  - Bouton `📞 Appel direct` / `Rejoindre l'appel ([X])` avec indicateur d'affluence en temps réel.
+  - Élimination de la rangée encombrante "Citer un épisode pour la séance" et des mentions de "gérant".
+  - Boucle de polling asynchrone déterministe à 2.5s exempte de blocages d'IntersectionObserver.
+  - Injection optimiste immédiate des nouveaux messages avant validation serveur.
+- `components/ForumTopMediasRail.tsx` : Rail horizontal des 10 médias du forum sans doublons :
+  - Bouton unique et intuitif `🍿 Proposer une séance`.
+  - Badge dynamique `🍿 X en séance` conditionné strictement à `count >= 1` (masqué si nul).
+- `components/MediaCard.tsx` : Carte de média universelle style Kyoo (Posters 260x390px, Tuiles 200x290px) :
+  - Affichage conditionnel strict du badge supérieur et du bandeau inférieur `🍿 X en séance` si et seulement si `count >= 1`.
+  - Bannissement formel de l'affichage trompeur "0 en séance".
+- `components/AdminScanTab.tsx` : Console d'administration du Scanner Universel Kyoo++ :
+  - Fonction d'enrichissement unifiée `triggerLibraryRefresh()` éliminant les erreurs 404 de chemin relatif.
 - `backend/src/watcher/pipeline/` : Pipeline d'identification multimodal en cascade (Architecture Waterfall Kyoo++) en 6 niveaux :
   - `binaryFingerprint.ts` : Empreinte binaire en O(1) avec calcul de l'OpenSubtitles Hash (OSHash 64Ko début/fin), extraction de CRC32 fansub anime (`[A1B2C3D4]`) et des identifiants explicites (`[tmdbid-XXXX]`, `[imdbid-ttXXXX]`, `[anidbid-XXXX]`).
   - `ffprobeProbe.ts` : Inspection technique complète en JSON via ffprobe des conteneurs MKV/MP4, lecture des tags de conteneur, formats, résolutions, flux audio/sous-titres et extraction des chapitres avec classification automatique (`INTRO`, `OUTRO`, `NORMAL`).

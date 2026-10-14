@@ -17,6 +17,7 @@ import {
   matchMedia,
   type ScanStatusResponse,
 } from '@/services/adminApi';
+import { triggerLibraryRefresh } from '@/services/api';
 import { Radius } from '@/constants/theme';
 
 export function AdminScanTab() {
@@ -93,17 +94,12 @@ export function AdminScanTab() {
     setEnriching(true);
     setActionMsg('Enrichissement des métadonnées (TVmaze / Wiki) en cours...');
     try {
-      const res = await fetch('/api/admin/library/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 100 }),
-      });
-      const data = await res.json();
+      const data = await triggerLibraryRefresh(100);
       if (data.success) {
         setActionMsg(`✅ Enrichissement terminé : ${data.enrichedCount} média(s) enrichi(s) sans clé payante !`);
         loadData();
       } else {
-        setActionMsg(`❌ Erreur : ${data.error}`);
+        setActionMsg(`❌ Erreur : ${data.error || "Échec de l'enrichissement"}`);
       }
     } catch (err: any) {
       setActionMsg(`❌ Erreur réseau : ${err.message}`);

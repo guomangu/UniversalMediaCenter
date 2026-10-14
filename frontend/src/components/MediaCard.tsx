@@ -19,6 +19,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
   const isLive = styleVariant === 'LIVE_CARD';
   const sessionsMap = useActiveSessionsMap();
   const activeSession = sessionsMap[item.id];
+  const hasActiveSession = Boolean(activeSession && activeSession.count > 0);
 
   // Format 2 fois plus grand comme Kyoo, tout en préservant le ratio d'aspect cinéma (2:3 pour posters, 16:9 pour paysage)
   const cardWidth = isLandscape
@@ -64,7 +65,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
             </View>
           ) : null}
 
-          {activeSession ? (
+          {hasActiveSession ? (
             <View style={[styles.ratingBadge, { backgroundColor: '#dc2626', left: 8, right: undefined }]}>
               <Text style={[styles.ratingText, { color: '#ffffff', fontWeight: '900' }]}>🍿 SÉANCE</Text>
             </View>
@@ -76,25 +77,26 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
             </View>
           ) : null}
 
-          {progressPercent > 0 && progressPercent < 95 ? (
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
-            </View>
-          ) : null}
-
-          {activeSession ? (
+          {hasActiveSession ? (
             <View style={{
               position: 'absolute',
-              bottom: 0,
+              bottom: (progressPercent > 0 && progressPercent < 95) ? 6 : 0,
               left: 0,
               right: 0,
               backgroundColor: 'rgba(220, 38, 38, 0.94)',
-              paddingVertical: 5,
+              paddingVertical: 4,
               alignItems: 'center',
+              zIndex: 10,
             }}>
               <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '800' }}>
                 🍿 {activeSession.count} en séance
               </Text>
+            </View>
+          ) : null}
+
+          {progressPercent > 0 && progressPercent < 95 ? (
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
             </View>
           ) : null}
         </View>

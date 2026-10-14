@@ -60,6 +60,9 @@ export async function toggleFavorite(nodeId: string, shouldAdd: boolean): Promis
       headers: getAuthHeaders(),
     });
     const data = await res.json();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("favoritesUpdated", { detail: { nodeId, shouldAdd } }));
+    }
     return Boolean(data.isFavorite);
   } catch {
     return false;

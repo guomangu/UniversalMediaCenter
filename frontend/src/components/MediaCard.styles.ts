@@ -66,8 +66,9 @@ export const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 4,
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    height: 5,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    zIndex: 15,
   },
   progressFill: {
     height: '100%',

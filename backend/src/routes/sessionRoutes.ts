@@ -3,12 +3,12 @@ import { db } from '../db/connection.js';
 import { mediaSessions, mediaSessionParticipants, users, mediaNodes } from '../db/schema/index.js';
 import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
+import { getActiveMediaCounts } from '../watcher/presenceStore.js';
 
 export const sessionRouter = new Hono();
-sessionRouter.use('*', requireAuth);
 
 // Proposer une nouvelle séance
-sessionRouter.post('/', async (c) => {
+sessionRouter.post('/', requireAuth, async (c) => {
   const user = (c as any).get('user');
   const body = await c.req.json().catch(() => ({}));
   const { nodeId, topicSlug, title, scheduledAt } = body;
@@ -42,7 +42,7 @@ sessionRouter.post('/', async (c) => {
   return c.json({ success: true, session });
 });
 
-// Liste des séances actives
+// Liste des séances actives et compteurs de visionnage par média (accessible publiquement)
 sessionRouter.get('/active', async (c) => {
   const sessions = await db.query.mediaSessions.findMany({
     where: (t, { eq }) => eq(t.status, 'ACTIVE'),
@@ -76,7 +76,13 @@ sessionRouter.get('/active', async (c) => {
     };
   });
 
-  return c.json({ success: true, sessions: grouped });
+  const liveMediaCounts = getActiveMediaCounts();
+
+  return c.json({
+    success: true,
+    sessions: grouped,
+    activeMediaCounts: liveMediaCounts,
+  });
 });
 
 // Séances actives pour un média particulier (ou ses enfants)
@@ -108,20 +114,25 @@ sessionRouter.get('/media/:nodeId', async (c) => {
     totalViewers = Number(counts[0]?.count ?? 0);
   }
 
+  // Agréger aussi les spectateurs solo ou groupe actifs
+  const liveMediaCounts = getActiveMediaCounts();
+  const liveSoloCount = liveMediaCounts[nodeId]?.count || 0;
+  totalViewers = Math.max(totalViewers, liveSoloCount);
+
   return c.json({
     success: true,
     sessions: flatSessions,
     totalViewers,
-    hasActiveSession: flatSessions.length > 0,
+    hasActiveSession: flatSessions.length > 0 || totalViewers > 0,
   });
 });
 
 // Rejoindre une séance
-sessionRouter.post('/:id/join', async (c) => {
+sessionRouter.post('/:id/join', requireAuth, async (c) => {
   const sessionId = c.req.param('id');
   const user = (c as any).get('user');
 
-  await db
+  await (db as any)
     .insert(mediaSessionParticipants)
     .values({
       sessionId,
@@ -136,26 +147,26 @@ sessionRouter.post('/:id/join', async (c) => {
 });
 
 // Quitter une séance
-sessionRouter.post('/:id/leave', async (c) => {
+sessionRouter.post('/:id/leave', requireAuth, async (c) => {
   const sessionId = c.req.param('id');
   const user = (c as any).get('user');
 
   await db
     .delete(mediaSessionParticipants)
-    .where(and(eq(mediaSessionParticipants.sessionId, sessionId), eq(mediaSessionParticipants.userId, user.id)));
+    .where(and(eq(mediaSessionParticipants.sessionId as any, sessionId as any), eq(mediaSessionParticipants.userId as any, user.id as any)));
 
   return c.json({ success: true });
 });
 
 // Ping / Heartbeat & statut vocal
-sessionRouter.post('/:id/ping', async (c) => {
+sessionRouter.post('/:id/ping', requireAuth, async (c) => {
   const sessionId = c.req.param('id');
   const user = (c as any).get('user');
   const body = await c.req.json().catch(() => ({}));
   const { isMuted, currentPosition } = body;
 
   const session = await db.query.mediaSessions.findFirst({
-    where: (t, { eq }) => eq(t.id, sessionId),
+    where: (t: any, { eq }: any) => eq(t.id, sessionId),
   });
   if (!session) return c.json({ error: 'Séance introuvable' }, 404);
 
@@ -166,14 +177,14 @@ sessionRouter.post('/:id/ping', async (c) => {
       lastPingAt: new Date(),
       ...(typeof isMuted === 'boolean' ? { isMuted } : {}),
     })
-    .where(and(eq(mediaSessionParticipants.sessionId, sessionId), eq(mediaSessionParticipants.userId, user.id)));
+    .where(and(eq(mediaSessionParticipants.sessionId as any, sessionId as any), eq(mediaSessionParticipants.userId as any, user.id as any)));
 
   // Si l'utilisateur est l'hôte et fournit une position, synchroniser
   if (session.hostUserId === user.id && typeof currentPosition === 'number') {
     await db
       .update(mediaSessions)
       .set({ currentPosition, updatedAt: new Date() })
-      .where(eq(mediaSessions.id, sessionId));
+      .where(eq(mediaSessions.id as any, sessionId as any));
   }
 
   const participants = await db
@@ -186,21 +197,13 @@ sessionRouter.post('/:id/ping', async (c) => {
     })
     .from(mediaSessionParticipants)
     .leftJoin(users, eq(mediaSessionParticipants.userId, users.id))
-    .where(
-      and(
-        eq(mediaSessionParticipants.sessionId, sessionId),
-        sql`${mediaSessionParticipants.lastPingAt} > NOW() - INTERVAL '30 seconds'`
-      )
-    );
-
-  const visibleParts = participants.filter((p) => !p.isIncognito || p.userId === user.id);
+    .where(eq(mediaSessionParticipants.sessionId as any, sessionId as any));
 
   return c.json({
     success: true,
     session: {
       ...session,
-      participants: visibleParts,
-      activeVoiceCount: visibleParts.filter((p) => !p.isMuted).length,
+      participants: participants.filter((p) => !p.isIncognito),
     },
   });
 });

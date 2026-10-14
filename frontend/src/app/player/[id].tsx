@@ -13,7 +13,7 @@ import { usePlayerControls } from '@/hooks/usePlayerControls';
 import { useActiveCastTarget } from '@/services/castState';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
 import { getVideoStreamUrl, fetchNextMedia, fetchMediaDetail } from '@/services/api';
-import { fetchMediaSessions, pingSession, MediaSession } from '@/services/sessionApi';
+import { fetchMediaSessions, pingSession, reportPlaybackProgress, leavePlayback, MediaSession } from '@/services/sessionApi';
 import { styles } from '@/components/PlayerScreen.styles';
 
 export default function PlayerScreen() {
@@ -23,6 +23,7 @@ export default function PlayerScreen() {
   const savedPosRef = useRef<number>(0);
   const activeCastTarget = useActiveCastTarget();
   const [isPlaying, setIsPlaying] = useState(true);
+  const [initialTime, setInitialTime] = useState<number>(0);
   const [showSkipIntro, setShowSkipIntro] = useState(true);
   const [showCast, setShowCast] = useState(false);
   const [showQuality, setShowQuality] = useState(false);
@@ -60,6 +61,14 @@ export default function PlayerScreen() {
           if (foundIntro) {
             setIntroChapter({ start: foundIntro.startSeconds, end: foundIntro.endSeconds });
           }
+
+          if (res.media.positionSeconds && res.media.positionSeconds > 10 && !res.media.isCompleted) {
+            savedPosRef.current = res.media.positionSeconds;
+            setInitialTime(res.media.positionSeconds);
+            const m = Math.floor(res.media.positionSeconds / 60);
+            const s = Math.floor(res.media.positionSeconds % 60);
+            showToast(`Reprise de la lecture à ${m}:${String(s).padStart(2, '0')}`);
+          }
         }
       });
     }
@@ -88,10 +97,13 @@ export default function PlayerScreen() {
     }
   }, [id]);
 
-  // Surveillance de la présence et des spectateurs en séance (rafraîchi toutes les 3s)
+  // Surveillance de la présence et des spectateurs en séance (rafraîchi toutes les 3s, solo ou groupe)
   useEffect(() => {
     if (!id) return;
     const updatePresence = async () => {
+      // Signaler la lecture active (même solo)
+      reportPlaybackProgress(String(id), savedPosRef.current || 0, 0, true);
+
       const res = await fetchMediaSessions(String(id));
       setViewersCount(Math.max(1, res.totalViewers));
       if (res.sessions.length > 0) {
@@ -102,7 +114,10 @@ export default function PlayerScreen() {
     };
     updatePresence();
     const timer = setInterval(updatePresence, 3000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      leavePlayback(String(id));
+    };
   }, [id, isMuted]);
 
   // Compte à rebours automatique Netflix
@@ -171,6 +186,7 @@ export default function PlayerScreen() {
       <VideoPlayerView
         id={String(id)}
         streamUrl={streamUrl}
+        initialTime={initialTime}
         isPlaying={isPlaying}
         videoRef={videoRef}
         showSkipIntro={showSkipIntro}
@@ -187,6 +203,9 @@ export default function PlayerScreen() {
         }}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
+        onTimeUpdate={(t) => {
+          savedPosRef.current = t;
+        }}
         onNearEnd={handleNearEnd}
         onEnded={handleVideoEnded}
       />
