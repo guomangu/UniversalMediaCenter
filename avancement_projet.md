@@ -48,3 +48,18 @@
     - `media` : `globalExcludedFolders` (dossiers ignorés par défaut lors de l'indexation comme `.git`, `@eaDir`, `#recycle`), `defaultAudioLanguage`, `defaultSubtitleLanguage`.
     - `ui` : `theme`, `enableHeroSpotlight`, `enableSkipIntro`, `skipIntroDurationSeconds`, `cardsPerRail`, `bannerHeight`.
   - Onglet `AdminConfigTab.tsx` étendu permettant de modifier et synchroniser en direct ces paramètres avec `param.yaml`.
+
+---
+
+### 🎮 Navigation Télécommande Fluide dans les Formulaires & Vrai Téléversement Médias Forums
+- [x] **Navigation Spatiale Non-Bloquante dans les Formulaires (`useTvNavigation.ts`) :**
+  - Élimination complète du piégeage de curseur entre les lettres : les flèches directionnelles (`ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`) permettent désormais de sortir du champ et de déplacer le focus spatial vers les éléments voisins sans forcer le déplacement du curseur texte.
+  - La touche **Entrée** ouvre / focalise le clavier virtuel de l'OS hôte ou du navigateur client.
+  - Les touches **Retour / Escape** libèrent instantanément le focus du champ de saisie (`active.blur()`).
+- [x] **Bouton Stop Dédié dans la Barre de Discussion (`ForumInputBar.tsx`) :**
+  - Bouton `⏹ Stop` ajouté juste à côté du bouton d'envoi (`➤`), focusable à la télécommande (`focusable={true}`), permettant de désactiver immédiatement la saisie et de reprendre la navigation sur les messages ou l'en-tête.
+- [x] **Téléversement Réel de Fichiers & Pièces Jointes dans les Forums :**
+  - Endpoint backend modulaire `POST /api/forum/upload` et `GET /api/forum/attachments/:filename` dans [`forumUpload.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/forumUpload.ts).
+  - Remplacement complet des liens factices par un sélecteur natif de l'OS hôte (`<input type="file">` invisible déclenché au clic / télécommande).
+  - Prise en charge des Photos / Images réelles, Vidéos, Audios, Documents PDF et GIFs avec téléversement en arrière-plan, barre de progression et aperçu avant envoi.
+  - Affichage direct et responsive dans [`ForumMessageBubble.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMessageBubble.tsx).

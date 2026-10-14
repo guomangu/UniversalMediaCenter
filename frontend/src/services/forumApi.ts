@@ -58,3 +58,42 @@ export async function postTopicMessage(
     return null;
   }
 }
+
+export async function uploadForumMedia(
+  file: File | Blob,
+  fileName: string,
+  mediaType: string
+): Promise<{ success: boolean; url?: string; fileName?: string; mediaType?: string; error?: string }> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file, fileName);
+    const headers = { ...getAuthHeaders() };
+    delete (headers as any)['Content-Type'];
+
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function uploadForumMediaBase64(
+  base64Data: string,
+  fileName: string,
+  mediaType: string
+): Promise<{ success: boolean; url?: string; fileName?: string; mediaType?: string; error?: string }> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/upload`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ fileData: base64Data, fileName, mediaType }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

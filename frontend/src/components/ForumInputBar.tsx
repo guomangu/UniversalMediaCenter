@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
-import { ForumMessage } from '@/services/forumApi';
+import React, { useState, useRef } from 'react';
+import { View, TextInput, Text, Pressable, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { ForumMessage, uploadForumMedia } from '@/services/forumApi';
 import { Radius } from '@/constants/theme';
 
 interface Props {
@@ -12,6 +12,10 @@ interface Props {
 export function ForumInputBar({ replyMsg, onCancelReply, onSend }: Props) {
   const [text, setText] = useState('');
   const [activeMedia, setActiveMedia] = useState<{ type: string; url?: string; name?: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [targetType, setTargetType] = useState<string>('IMAGE');
 
   const handleSend = () => {
     if (!text.trim() && !activeMedia) return;
@@ -25,50 +29,115 @@ export function ForumInputBar({ replyMsg, onCancelReply, onSend }: Props) {
     setActiveMedia(null);
   };
 
-  const handlePickMedia = (type: string) => {
-    if (type === 'IMAGE') setActiveMedia({ type, url: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=600', name: 'Affiche.jpg' });
-    if (type === 'GIF') setActiveMedia({ type, url: 'https://media.giphy.com/media/26AHONQ79FdWZhAI0/giphy.gif', name: 'Reaction.gif' });
-    if (type === 'VIDEO') setActiveMedia({ type, url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', name: 'Extrait.mp4' });
-    if (type === 'AUDIO') setActiveMedia({ type, url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', name: 'Vocal 0:18' });
-    if (type === 'DOCUMENT') setActiveMedia({ type, url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', name: 'Dossier-Presse.pdf' });
-    if (type === 'LINK') setActiveMedia({ type, url: 'https://themoviedb.org', name: 'Lien Web' });
+  const handleStop = () => {
+    if (inputRef.current) {
+      inputRef.current.blur?.();
+    }
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      (document.activeElement as HTMLElement)?.blur?.();
+    }
+  };
+
+  const triggerPicker = (type: string, accept: string) => {
+    setTargetType(type);
+    if (Platform.OS === 'web' && fileInputRef.current) {
+      fileInputRef.current.accept = accept;
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (e: any) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const res = await uploadForumMedia(file, file.name, targetType);
+    setUploading(false);
+
+    if (res.success && res.url) {
+      setActiveMedia({ type: res.mediaType || targetType, url: res.url, name: res.fileName || file.name });
+    }
+    e.target.value = '';
   };
 
   return (
     <View style={styles.container}>
-      {replyMsg ? (
+      {Platform.OS === 'web' ? (
+        <input
+          type="file"
+          ref={fileInputRef as any}
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
+      ) : null}
+
+      {replyMsg && (
         <View style={styles.replyBar}>
           <Text style={styles.replyTxt} numberOfLines={1}>↩ Réponse à {replyMsg.authorName} : {replyMsg.content}</Text>
-          <Pressable onPress={onCancelReply}><Text style={styles.cancelTxt}>✕</Text></Pressable>
+          <Pressable focusable={true} onPress={onCancelReply}><Text style={styles.cancelTxt}>✕</Text></Pressable>
         </View>
-      ) : null}
+      )}
 
-      {activeMedia ? (
+      {activeMedia && (
         <View style={styles.mediaTag}>
-          <Text style={styles.mediaTagTxt}>Pièce jointe : [{activeMedia.type}] {activeMedia.name}</Text>
-          <Pressable onPress={() => setActiveMedia(null)}><Text style={styles.cancelTxt}>✕</Text></Pressable>
+          <Text style={styles.mediaTagTxt}>📎 Pièce jointe prête : [{activeMedia.type}] {activeMedia.name}</Text>
+          <Pressable focusable={true} onPress={() => setActiveMedia(null)}><Text style={styles.cancelTxt}>✕</Text></Pressable>
         </View>
-      ) : null}
+      )}
+
+      {uploading && (
+        <View style={styles.uploadingBar}>
+          <ActivityIndicator size="small" color="#6366f1" />
+          <Text style={styles.uploadingTxt}>Téléversement du fichier en cours...</Text>
+        </View>
+      )}
 
       <View style={styles.actionRow}>
-        {(['IMAGE', 'GIF', 'VIDEO', 'AUDIO', 'DOCUMENT', 'LINK'] as const).map((t) => (
-          <Pressable key={t} onPress={() => handlePickMedia(t)} style={styles.mediaBtn}>
-            <Text style={styles.mediaEmoji}>
-              {t === 'IMAGE' ? '📷' : t === 'GIF' ? '👾' : t === 'VIDEO' ? '🎬' : t === 'AUDIO' ? '🎙️' : t === 'DOCUMENT' ? '📎' : '🔗'}
-            </Text>
-          </Pressable>
-        ))}
+        <Pressable focusable={true} onPress={() => triggerPicker('IMAGE', 'image/*')} style={styles.mediaBtn}>
+          <Text style={styles.mediaEmoji}>📷 Image</Text>
+        </Pressable>
+        <Pressable focusable={true} onPress={() => triggerPicker('VIDEO', 'video/*')} style={styles.mediaBtn}>
+          <Text style={styles.mediaEmoji}>🎬 Vidéo</Text>
+        </Pressable>
+        <Pressable focusable={true} onPress={() => triggerPicker('AUDIO', 'audio/*')} style={styles.mediaBtn}>
+          <Text style={styles.mediaEmoji}>🎙️ Audio</Text>
+        </Pressable>
+        <Pressable focusable={true} onPress={() => triggerPicker('DOCUMENT', '*/*')} style={styles.mediaBtn}>
+          <Text style={styles.mediaEmoji}>📎 Fichier</Text>
+        </Pressable>
+        <Pressable focusable={true} onPress={() => {
+          const url = prompt('Entrez le lien direct du GIF (Giphy, Tenor, etc.) :');
+          if (url?.trim()) setActiveMedia({ type: 'GIF', url: url.trim(), name: 'Reaction.gif' });
+        }} style={styles.mediaBtn}>
+          <Text style={styles.mediaEmoji}>👾 GIF</Text>
+        </Pressable>
       </View>
 
       <View style={styles.inputRow}>
         <TextInput
+          ref={inputRef}
           style={styles.input}
-          placeholder="Écrire un message ou partager un média..."
+          placeholder="Écrire un message... (Entrée = Clavier virtuel, Flèches = Naviguer)"
           placeholderTextColor="#64748b"
           value={text}
           onChangeText={setText}
         />
-        <Pressable style={styles.sendBtn} onPress={handleSend}>
+        {/* Touche Stop demandée pour libérer le focus immédiatement */}
+        <Pressable
+          focusable={true}
+          style={[styles.btn, styles.stopBtn]}
+          onPress={handleStop}
+          accessibilityLabel="Arrêter la saisie et quitter le champ"
+        >
+          <Text style={styles.stopTxt}>⏹</Text>
+        </Pressable>
+        {/* Touche Envoyer */}
+        <Pressable
+          focusable={true}
+          style={[styles.btn, styles.sendBtn]}
+          onPress={handleSend}
+          accessibilityLabel="Envoyer le message"
+        >
           <Text style={styles.sendTxt}>➤</Text>
         </Pressable>
       </View>
@@ -81,13 +150,18 @@ const styles = StyleSheet.create({
   replyBar: { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: Radius.sm, marginBottom: 6 },
   replyTxt: { color: '#a5b4fc', fontSize: 11, flex: 1 },
   cancelTxt: { color: '#f87171', fontWeight: 'bold', paddingHorizontal: 6 },
-  mediaTag: { flexDirection: 'row', justifyContent: 'space-between', padding: 4, backgroundColor: 'rgba(79, 70, 229, 0.2)', borderRadius: Radius.sm, marginBottom: 6 },
-  mediaTagTxt: { color: '#818cf8', fontSize: 11, fontWeight: '600' },
-  actionRow: { flexDirection: 'row', gap: 6, marginBottom: 6 },
-  mediaBtn: { padding: 5, borderRadius: Radius.sm, backgroundColor: 'rgba(51, 65, 85, 0.5)' },
-  mediaEmoji: { fontSize: 14 },
-  inputRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  mediaTag: { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: 'rgba(79, 70, 229, 0.25)', borderRadius: Radius.sm, marginBottom: 6, borderWidth: 1, borderColor: '#6366f1' },
+  mediaTagTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '700' },
+  uploadingBar: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 6, marginBottom: 6 },
+  uploadingTxt: { color: '#818cf8', fontSize: 12 },
+  actionRow: { flexDirection: 'row', gap: 6, marginBottom: 6, flexWrap: 'wrap' },
+  mediaBtn: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: Radius.sm, backgroundColor: 'rgba(51, 65, 85, 0.7)' },
+  mediaEmoji: { fontSize: 11, color: '#e2e8f0', fontWeight: '600' },
+  inputRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   input: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.8)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.5)', borderRadius: Radius.pill, paddingHorizontal: 14, paddingVertical: 8, color: '#f8fafc', fontSize: 13 },
-  sendBtn: { backgroundColor: '#6366f1', width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  sendTxt: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
+  btn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  stopBtn: { backgroundColor: '#475569' },
+  stopTxt: { color: '#f8fafc', fontSize: 14, fontWeight: 'bold' },
+  sendBtn: { backgroundColor: '#6366f1' },
+  sendTxt: { color: '#ffffff', fontSize: 15, fontWeight: 'bold' },
 });

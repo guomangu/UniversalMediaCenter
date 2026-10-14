@@ -3,8 +3,13 @@ import { db } from '../db/connection.js';
 import { forumMessages, userFriends, users } from '../db/schema/index.js';
 import { eq, asc, desc, count, sql, and, or } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
+import { forumUploadRouter } from './forumUpload.js';
 
 export const forumRouter = new Hono();
+
+// Uploads et téléchargements de médias forum
+forumRouter.route('/', forumUploadRouter);
+
 forumRouter.use('*', requireAuth);
 
 async function canAccessPrivateForum(userId: string, ownerId: string): Promise<boolean> {

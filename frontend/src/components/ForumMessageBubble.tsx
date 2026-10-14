@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Image, Pressable, Linking, StyleSheet } from 'react-native';
 import { ForumMessage } from '@/services/forumApi';
+import { getApiBaseUrl } from '@/services/apiConfig';
 import { Radius } from '@/constants/theme';
 
 interface Props {
@@ -11,6 +12,11 @@ interface Props {
 
 export function ForumMessageBubble({ msg, isMe, onReply }: Props) {
   const time = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fullUrl = msg.mediaUrl
+    ? msg.mediaUrl.startsWith('http')
+      ? msg.mediaUrl
+      : `${getApiBaseUrl()}${msg.mediaUrl}`
+    : undefined;
 
   return (
     <View style={[styles.wrap, isMe ? styles.wrapRight : styles.wrapLeft]}>
@@ -22,30 +28,30 @@ export function ForumMessageBubble({ msg, isMe, onReply }: Props) {
           </View>
         ) : null}
 
-        {msg.mediaType === 'IMAGE' || msg.mediaType === 'GIF' ? (
-          <Image source={{ uri: msg.mediaUrl! }} style={styles.mediaImg} resizeMode="cover" />
+        {fullUrl && (msg.mediaType === 'IMAGE' || msg.mediaType === 'GIF') ? (
+          <Image source={{ uri: fullUrl }} style={styles.mediaImg} resizeMode="cover" />
         ) : null}
 
-        {msg.mediaType === 'VIDEO' ? (
-          <Pressable onPress={() => msg.mediaUrl && Linking.openURL(msg.mediaUrl)} style={styles.mediaPill}>
+        {fullUrl && msg.mediaType === 'VIDEO' ? (
+          <Pressable focusable={true} onPress={() => Linking.openURL(fullUrl)} style={styles.mediaPill}>
             <Text style={styles.pillText}>▶️ Vidéo : {msg.fileName || 'Ouvrir la vidéo'}</Text>
           </Pressable>
         ) : null}
 
-        {msg.mediaType === 'AUDIO' ? (
-          <View style={styles.mediaPill}>
-            <Text style={styles.pillText}>🎙️ Vocal : {msg.fileName || 'Audio 0:34'}</Text>
-          </View>
-        ) : null}
-
-        {msg.mediaType === 'DOCUMENT' ? (
-          <Pressable onPress={() => msg.mediaUrl && Linking.openURL(msg.mediaUrl)} style={styles.mediaPill}>
-            <Text style={styles.pillText}>📄 Document : {msg.fileName || 'Télécharger'}</Text>
+        {fullUrl && msg.mediaType === 'AUDIO' ? (
+          <Pressable focusable={true} onPress={() => Linking.openURL(fullUrl)} style={styles.mediaPill}>
+            <Text style={styles.pillText}>🎙️ Vocal : {msg.fileName || 'Écouter l’audio'}</Text>
           </Pressable>
         ) : null}
 
-        {msg.mediaType === 'LINK' ? (
-          <Pressable onPress={() => msg.mediaUrl && Linking.openURL(msg.mediaUrl)} style={styles.mediaPill}>
+        {fullUrl && msg.mediaType === 'DOCUMENT' ? (
+          <Pressable focusable={true} onPress={() => Linking.openURL(fullUrl)} style={styles.mediaPill}>
+            <Text style={styles.pillText}>📄 Document : {msg.fileName || 'Télécharger le fichier'}</Text>
+          </Pressable>
+        ) : null}
+
+        {fullUrl && msg.mediaType === 'LINK' ? (
+          <Pressable focusable={true} onPress={() => Linking.openURL(fullUrl)} style={styles.mediaPill}>
             <Text style={[styles.pillText, { color: '#93c5fd' }]}>🔗 {msg.mediaUrl}</Text>
           </Pressable>
         ) : null}
@@ -55,7 +61,7 @@ export function ForumMessageBubble({ msg, isMe, onReply }: Props) {
         <View style={styles.footer}>
           <Text style={styles.author}>{msg.authorName}</Text>
           <Text style={styles.time}>{time}</Text>
-          <Pressable onPress={() => onReply(msg)} style={styles.replyBtn}>
+          <Pressable focusable={true} onPress={() => onReply(msg)} style={styles.replyBtn}>
             <Text style={styles.replyText}>↩</Text>
           </Pressable>
         </View>

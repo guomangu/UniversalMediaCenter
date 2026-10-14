@@ -43,3 +43,15 @@
 * **Bonne Pratique :**
   - **Garde-fou backend strict :** Vérifier systématiquement `if (currentUser && currentUser.id === id)` et rejeter l'auto-suppression avec un code HTTP 400 clair.
   - **Confirmation obligatoire côté UI :** Utiliser un composant dédié (`ConfirmModal.tsx`) exigeant une action délibérée de l'utilisateur avec message d'avertissement avant toute suppression de compte, de source ou de ressource critique.
+
+---
+
+## 🛑 29. Piégeage du Curseur Télécommande dans les Formulaires & Uploads Factices dans les Salons
+
+* **Problème / Symptôme :** Dans les salons de forum ou les formulaires, la télécommande se retrouvait piégée entre les lettres d'un champ texte (`TextInput`), empêchant la navigation directionnelle avec les flèches du D-Pad. De plus, les boutons d'envoi d'images et de médias inséraient des liens fictifs distants non fonctionnels au lieu de permettre un vrai téléversement depuis l'appareil hôte.
+* **Conséquences :** Expérience utilisateur bloquante sur Smart TV (impossibilité de quitter le champ de saisie sans souris), et échec du partage de photos/vidéos réelles dans les forums.
+* **Mauvaise Pratique :** Confondre la saisie textuelle (qui relève du clavier virtuel de l'OS) avec la navigation spatiale de l'interface, et masquer l'absence d'API de téléversement par des URLs d'images factices en dur.
+* **Bonne Pratique :**
+  - **D-Pad Universel :** Configurer les flèches directionnelles (`ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`) dans `useTvNavigation.ts` pour toujours transférer le focus spatial vers les éléments voisins sans bloquer le curseur dans le texte.
+  - **Touche Stop Dédiée :** Ajouter un bouton visible `⏹ Stop` à côté du bouton d'envoi pour libérer instantanément le focus (`blur()`) en un clic télécommande.
+  - **Téléversement Réel :** Fournir une route de téléversement backend (`/api/forum/upload` et `/api/forum/attachments/:filename`) connectée au sélecteur de fichiers natif de l'OS hôte (`<input type="file">`).

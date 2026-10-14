@@ -23,7 +23,7 @@ function getCandidates(): HTMLElement[] {
   const modal = getActiveModal();
   const scope: HTMLElement = modal || document.body;
   const sel =
-    'button, a, input, video, [role="button"], [tabindex="0"], [data-focusable="true"], [data-video-player="true"]';
+    'button, a, input, textarea, video, [role="button"], [tabindex="0"], [data-focusable="true"], [data-video-player="true"]';
   return Array.from(scope.querySelectorAll<HTMLElement>(sel)).filter((el) => {
     if (el.getAttribute('aria-hidden') === 'true' || el.style.display === 'none') return false;
     const r = el.getBoundingClientRect();
@@ -80,7 +80,7 @@ export function useTvNavigation() {
       const isInput = active ? ['INPUT', 'TEXTAREA'].includes(active.tagName) : false;
       const modal = getActiveModal();
 
-      // Gestion touche Retour / Escape
+      // Gestion touche Retour / Escape : libère immédiatement le focus du champ
       if (['Escape', 'BrowserBack', 'GoBack'].includes(e.key)) {
         if (isInput) {
           e.preventDefault();
@@ -99,7 +99,10 @@ export function useTvNavigation() {
         return;
       }
 
-      // Gestion spécifique des champs de recherche (Input)
+      // Gestion des champs de saisie & formulaires :
+      // Sur TV / télécommande, les flèches Haut/Bas/Gauche/Droite permettent de naviguer
+      // directement hors du champ sans se retrouver piégé entre les lettres.
+      // La touche Entrée ouvre/maintient le clavier virtuel de l'OS client.
       if (isInput) {
         if (e.key === 'ArrowDown') {
           e.preventDefault();
@@ -111,21 +114,18 @@ export function useTvNavigation() {
           moveFocus('up');
           return;
         }
-        if (e.key === 'Enter') {
-          const candidates = getCandidates();
-          const idx = candidates.indexOf(active!);
-          if (idx >= 0 && idx + 1 < candidates.length) {
-            e.preventDefault();
-            candidates[idx + 1].focus();
-            return;
-          }
-        }
-        const inputEl = active as HTMLInputElement;
-        const atStart = inputEl.selectionStart === 0 && inputEl.selectionEnd === 0;
-        const atEnd = inputEl.selectionStart === inputEl.value.length;
-        if ((e.key === 'ArrowLeft' && atStart) || (e.key === 'ArrowRight' && atEnd)) {
+        if (e.key === 'ArrowLeft') {
           e.preventDefault();
-          moveFocus(e.key === 'ArrowLeft' ? 'left' : 'right');
+          moveFocus('left');
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          moveFocus('right');
+          return;
+        }
+        if (e.key === 'Enter') {
+          // Laisser l'événement standard ouvrir le clavier virtuel de l'OS hôte
           return;
         }
         return;
