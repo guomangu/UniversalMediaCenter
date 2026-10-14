@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, LayoutChangeEvent } from 'react-native';
+import { View, Text, Pressable, StyleSheet, LayoutChangeEvent, Platform } from 'react-native';
 import { TaxonomyCategory } from '@/services/taxonomyApi';
 import { TagCard } from './TagCard';
 import { ClickableTopicText } from './ClickableTopicText';
@@ -13,8 +13,9 @@ interface Props {
 }
 
 export function CategorySection({ category, activeFilter, searchQuery, onLayoutPos }: Props) {
-  const [expanded, setExpanded] = useState(false);
-  const visibleTags = expanded ? category.tags : category.tags.slice(0, 5);
+  const [tagLimit, setTagLimit] = useState(5);
+  const visibleTags = category.tags.slice(0, tagLimit);
+  const hasMore = category.tags.length > tagLimit;
 
   const handleLayout = (e: LayoutChangeEvent) => {
     onLayoutPos?.(category.id, e.nativeEvent.layout.y);
@@ -30,7 +31,7 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
           style={styles.categoryTitle}
         />
         <View style={styles.tagCountBadge}>
-          <Text style={styles.tagCountText}>{category.tags.length} tags</Text>
+          <Text style={styles.tagCountText}>{visibleTags.length}/{category.tags.length} tags</Text>
         </View>
       </View>
 
@@ -46,10 +47,10 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
         ))}
       </View>
 
-      {category.tags.length > 5 ? (
-        <Pressable onPress={() => setExpanded(!expanded)} style={styles.moreBtn}>
+      {hasMore ? (
+        <Pressable onPress={() => setTagLimit((prev) => prev + 10)} style={styles.moreBtn}>
           <Text style={styles.moreText}>
-            {expanded ? '▲ Réduire les tags' : `▼ Voir ${category.tags.length - 5} autres tags (${category.title})`}
+            ▼ Afficher plus (+10 tags) • {visibleTags.length}/{category.tags.length}
           </Text>
         </Pressable>
       ) : null}
@@ -69,11 +70,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: Radius.pill,
-    backgroundColor: 'rgba(51, 65, 85, 0.4)',
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.3)',
-    marginTop: 4,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    marginTop: 6,
     marginBottom: Spacing.two,
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   moreText: { color: '#a5b4fc', fontSize: 12, fontWeight: '700' },
 });

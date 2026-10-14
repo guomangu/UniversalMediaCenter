@@ -44,6 +44,7 @@ export interface MediaDetailResponse {
     PERSON_CAROUSEL: TagBadge[];
     TECHNICAL_DRAWER: TagBadge[];
   };
+  children?: MediaNode[];
 }
 
 export interface MediaStatsResponse {

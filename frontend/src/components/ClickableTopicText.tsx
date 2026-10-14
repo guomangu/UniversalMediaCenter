@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, Pressable, TextStyle, StyleSheet } from 'react-native';
+import { Text, Pressable, TextStyle, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 
 interface Props {
@@ -23,7 +23,9 @@ export function ClickableTopicText({ text, topicSlug, topicTitle, style, numberO
   };
 
   return (
-    <Pressable onPress={handlePress} style={({ pressed }) => [pressed && styles.pressed]}>
+    <Pressable
+      onPress={handlePress}
+      style={({ pressed }) => [styles.box, pressed && styles.pressed]}>
       <Text style={[styles.defaultText, style]} numberOfLines={numberOfLines}>
         {text}
       </Text>
@@ -32,6 +34,9 @@ export function ClickableTopicText({ text, topicSlug, topicTitle, style, numberO
 }
 
 const styles = StyleSheet.create({
+  box: {
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
   defaultText: {
     color: '#f1f5f9',
   },

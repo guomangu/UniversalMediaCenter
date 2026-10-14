@@ -37,6 +37,7 @@ export async function fetchTaxonomyMedias(params: {
   tag: string;
   filter?: string;
   q?: string;
+  limit?: number;
 }): Promise<MediaTileItem[]> {
   try {
     const query = new URLSearchParams({
@@ -44,6 +45,7 @@ export async function fetchTaxonomyMedias(params: {
       tag: params.tag,
       filter: params.filter || '',
       q: params.q || '',
+      limit: String(params.limit || 15),
     }).toString();
     const res = await fetch(`${API_BASE}/api/ui/taxonomy/medias?${query}`);
     if (!res.ok) return [];

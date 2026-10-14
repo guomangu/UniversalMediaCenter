@@ -32,8 +32,8 @@ mediaRouter.get('/:id', async (c) => {
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
   const linkedTags = await db.execute(sql`
-    SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme, a.icon_name,
-           v.value_text, v.value_slug, v.metadata_json, l.context_role, l.order_index
+    SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme,
+           v.value_text, v.value_slug, l.context_role, l.order_index
     FROM node_eav_links l
     JOIN eav_values v ON l.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
@@ -41,18 +41,18 @@ mediaRouter.get('/:id', async (c) => {
     ORDER BY a.display_order ASC, l.order_index ASC;
   `);
 
-  const tagsByZone: Record<string, any[]> = {
-    HERO_BADGE: [],
-    PRIMARY_PILL: [],
-    PERSON_CAROUSEL: [],
-    TECHNICAL_DRAWER: [],
-  };
-
+  const tagsByZone: Record<string, any[]> = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] };
   for (const row of Array.from(linkedTags) as any[]) {
     const zone = row.ui_zone || 'PRIMARY_PILL';
     if (!tagsByZone[zone]) tagsByZone[zone] = [];
     tagsByZone[zone].push(row);
   }
+
+  const childNodes = await db.query.mediaNodes.findMany({
+    where: (t, { eq }) => eq(t.parentId, media.id),
+    orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.title)],
+    limit: 150,
+  });
 
   const formattedMedia = {
     ...media,
@@ -60,33 +60,23 @@ mediaRouter.get('/:id', async (c) => {
     fanartPath: media.fanartPath ? `/api/media/${media.id}/fanart` : undefined,
   };
 
-  return c.json({ media: formattedMedia, tags: tagsByZone });
+  const children = childNodes.map((ch) => ({
+    ...ch,
+    posterPath: ch.posterPath ? `/api/media/${ch.id}/poster` : formattedMedia.posterPath,
+  }));
+
+  return c.json({ media: formattedMedia, tags: tagsByZone, children });
 });
 
 mediaRouter.post('/:id/progress', async (c) => {
   const nodeId = c.req.param('id');
-  const body = await c.req.json();
-  const { userId, positionSeconds, durationSeconds, isCompleted } = body;
+  const { userId, positionSeconds = 0, durationSeconds = 0, isCompleted = false } = await c.req.json();
   if (!userId) return c.json({ error: 'userId is required' }, 400);
 
-  await db
-    .insert(watchProgress)
-    .values({
-      userId,
-      nodeId,
-      positionSeconds: positionSeconds || 0,
-      durationSeconds: durationSeconds || 0,
-      isCompleted: isCompleted || false,
-    })
+  await db.insert(watchProgress).values({ userId, nodeId, positionSeconds, durationSeconds, isCompleted })
     .onConflictDoUpdate({
       target: [watchProgress.userId, watchProgress.nodeId],
-      set: {
-        positionSeconds: positionSeconds || 0,
-        durationSeconds: durationSeconds || 0,
-        isCompleted: isCompleted || false,
-        updatedAt: new Date(),
-      },
+      set: { positionSeconds, durationSeconds, isCompleted, updatedAt: new Date() },
     });
-
   return c.json({ success: true });
 });

@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { SiteHeader } from '@/components/SiteHeader';
 import { TagSearchBar } from '@/components/TagSearchBar';
-import { FloatingCategoryBar } from '@/components/FloatingCategoryBar';
 import { CategorySection } from '@/components/CategorySection';
 import { fetchTaxonomy, TaxonomyCategory } from '@/services/taxonomyApi';
 import { Spacing, MaxContentWidth } from '@/constants/theme';
@@ -35,24 +34,25 @@ export default function HomeScreen() {
   const handleJumpToCategory = (id: string) => {
     const y = catPositions.current[id];
     if (y !== undefined) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, y - 70), animated: true });
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - 65), animated: true });
     }
   };
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
+        <SiteHeader
+          categories={categories}
+          onSelectCategory={handleJumpToCategory}
+          onScrollToTop={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+        />
+
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}>
-          <SiteHeader />
-          <FloatingCategoryBar
-            categories={categories}
-            onSelectCategory={handleJumpToCategory}
-          />
           <TagSearchBar
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -80,13 +80,13 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  safeArea: { flex: 1, alignItems: 'center' },
+  safeArea: { flex: 1, alignItems: 'center', width: '100%' },
   scroll: { width: '100%' },
   contentContainer: {
     maxWidth: MaxContentWidth,
     width: '100%',
     alignSelf: 'center',
-    paddingTop: Platform.OS === 'web' ? 70 : Spacing.two,
+    paddingTop: Platform.OS === 'web' ? 62 : 68,
     paddingBottom: 80,
     paddingHorizontal: Spacing.two,
   },
