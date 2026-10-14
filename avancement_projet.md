@@ -16,8 +16,6 @@ Dernière mise à jour : 14 Octobre 2026
   - `scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })` appliqué au focus, garantissant que les listes horizontales de médias et les sections verticales défilent automatiquement quand le curseur avance.
 - [x] **Indicateur visuel haute visibilité TV (`global.css`) :**
   - Contour indigo dynamique (`outline: 3px solid #818cf8`), halo lumineux (`box-shadow`) et zoom subtil (`scale(1.04)`) sur tout élément sélectionné.
-- [x] **Éléments focusables adaptés :**
-  - Puces de catégories du menu d'en-tête, barre de recherche et filtres rapides, cartes de médias (`MediaTile`), cartes de tags (`TagCard`), forum, suites/épisodes (`MediaChildrenRow`), et boutons de contrôle du lecteur.
 
 ### 🎯 Synchronisation Bidirectionnelle `param.yaml` & Administration
 - [x] Fichier central `param.yaml` synchronisé dynamiquement avec validation Zod (`paramSchema.ts`).
@@ -52,18 +50,17 @@ Dernière mise à jour : 14 Octobre 2026
   - Limite de 15 médias par tag avec bouton "+10 médias" basé sur `hasMore`.
 
 ### 🎬 Streaming Vidéo, Pistes Audio & Qualité Dynamique (`mediaStream.ts`, `mediaTracks.ts`, `player/[id].tsx`, `VideoPlayerView.tsx`)
-- [x] **Barre de progression complète & Direct Play :**
-  - En mode par défaut (`audio: auto`, `quality: auto`), streaming direct en HTTP 206 Partial Content (Byte-Range) avec `Content-Range` et `Content-Length`. Durée totale reconnue instantanément par `<video>`.
-- [x] **Changement de Langue Audio Dynamique & Effectif :**
-  - Sélection d'une piste audio réelle depuis le modal (`🔊 Audio`).
-  - L'URL de streaming intègre dynamiquement `?audio=<index>` (ex: `audio=2` pour le japonais sur Bleach).
-  - FFmpeg route à la volée le flux audio sélectionné (`-map 0:v:0 -map 0:<index>`) sans réencodage vidéo (`-c:v copy`), démarrage instantané.
+- [x] **Barre de progression complète & Direct Play conservés lors du changement d'audio :**
+  - Lors du choix d'une autre langue audio (ex: Japonais), le flux vidéo d'origine est conservé sans réencodage (`-c copy`) dans un conteneur en cache rapide (`/tmp/ums_cache`).
+  - Le fichier résultant est diffusé en HTTP 206 Partial Content (Byte-Range) avec `Content-Range` et `Content-Length` complets : la barre de progression reste 100% complète et le seeking instantané est opérationnel à n'importe quel moment de la vidéo.
+  - Maintien du curseur temporel (`currentTime`) : le changement de langue ne remet pas la vidéo au début.
+- [x] **Passer l'Introduction Précis & Auto-Hide Inactivité 5s :**
+  - Extraction des chapitres réels par `ffprobe` pour obtenir la fin exacte de l'intro (ex: 90.04s pour Bleach). Le bouton saute au temps précis calculé et non à un saut arbitraire (`+= 85s`).
+  - Disparition automatique dès que la lecture dépasse la fin de l'intro ou en cas de saut temporel en dehors de la plage d'introduction.
+  - Temporisateur d'inactivité de 5 secondes : le bouton se masque si la souris ne bouge plus pendant 5s, et réapparaît dès le moindre mouvement.
 - [x] **Changement de Qualité / Résolution Dynamique :**
   - Sélection de la résolution souhaitée (`1080p`, `720p`, `480p`) depuis le modal (`⚙️ Qualité`).
-  - L'URL de streaming intègre `?quality=<valeur>`.
-  - FFmpeg redimensionne le flux à la volée avec le preset `ultrafast` et diffuse le flux MP4 fragmenté.
-- [x] **Continuité Temporelle lors des Changements :**
-  - Le lecteur mémorise le curseur temporel (`savedTimeRef`) et repositionne automatiquement la lecture au même instant (`onLoadedMetadata`) lors du basculement de langue ou de résolution.
+  - L'URL de streaming intègre `?quality=<valeur>&startTime=<timestamp>`, démarrage immédiat au timestamp courant avec `ultrafast`.
 - [x] **Sous-Titres Réels Garantis :**
   - Extraction à la volée des sous-titres texte réels embarqués ou externes (`.srt`/`.vtt`), synchronisation WebVTT et affichage textuel instantané.
 
