@@ -2,21 +2,28 @@ import React from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, Platform } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
-const QUALITIES = [
-  { label: 'Auto (Direct Play)', value: 'auto' },
-  { label: '1080p FHD (10 Mbps)', value: '1080p' },
-  { label: '720p HD (4 Mbps)', value: '720p' },
-  { label: '480p SD (1.5 Mbps)', value: '480p' },
-];
+export interface QualityItem {
+  label: string;
+  value: string;
+}
 
 interface Props {
   visible: boolean;
   activeQuality: string;
+  qualities?: QualityItem[];
   onSelect: (q: string) => void;
   onClose: () => void;
 }
 
-export function PlayerQualityModal({ visible, activeQuality, onSelect, onClose }: Props) {
+const DEFAULT_QUALITIES: QualityItem[] = [
+  { label: 'Auto (Direct Play)', value: 'auto' },
+  { label: '1080p FHD', value: '1080p' },
+  { label: '720p HD', value: '720p' },
+  { label: '480p SD', value: '480p' },
+];
+
+export function PlayerQualityModal({ visible, activeQuality, qualities = DEFAULT_QUALITIES, onSelect, onClose }: Props) {
+  const list = qualities.length > 0 ? qualities : DEFAULT_QUALITIES;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
@@ -26,7 +33,7 @@ export function PlayerQualityModal({ visible, activeQuality, onSelect, onClose }
             <Pressable onPress={onClose}><Text style={styles.close}>✕</Text></Pressable>
           </View>
           <View style={styles.list}>
-            {QUALITIES.map((q) => {
+            {list.map((q) => {
               const isSelected = activeQuality === q.value;
               return (
                 <Pressable

@@ -10,6 +10,7 @@ import { PlayerSubtitleModal } from '@/components/PlayerSubtitleModal';
 import { PlayerAudioModal } from '@/components/PlayerAudioModal';
 import { PlayerShareModal } from '@/components/PlayerShareModal';
 import { registerAsReceiver, pollDeviceCommands, getLocalDeviceId, CastDevice } from '@/services/castService';
+import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
 import { getVideoStreamUrl } from '@/services/api';
 import { styles } from '@/components/PlayerScreen.styles';
 
@@ -17,7 +18,6 @@ export default function PlayerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const videoRef = useRef<any>(null);
-  const savedTimeRef = useRef<number>(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [showSkipIntro, setShowSkipIntro] = useState(true);
   const [showCast, setShowCast] = useState(false);
@@ -30,13 +30,14 @@ export default function PlayerScreen() {
   const [activeAudio, setActiveAudio] = useState('auto');
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [activeCastTarget, setActiveCastTarget] = useState<CastDevice | null>(null);
+  const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
 
-  const streamBase = id ? getVideoStreamUrl(id) : '';
-  const qParams = new URLSearchParams();
-  if (activeQuality !== 'auto') qParams.append('quality', activeQuality);
-  if (activeAudio !== 'auto') qParams.append('audio', activeAudio);
-  const streamUrl = qParams.toString() ? `${streamBase}?${qParams.toString()}` : streamBase;
+  const streamUrl = id ? getVideoStreamUrl(id) : '';
   const showToast = (msg: string) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); };
+
+  useEffect(() => {
+    if (id) fetchMediaTracks(String(id)).then(setTracks);
+  }, [id]);
 
   useEffect(() => {
     registerAsReceiver(`Écran UMS (${id})`, { isPlaying, positionSeconds: 0, durationSeconds: 7200 });
@@ -50,26 +51,12 @@ export default function PlayerScreen() {
     return () => clearInterval(interval);
   }, [id, isPlaying]);
 
-  const switchStreamConfig = (type: 'quality' | 'audio', val: string) => {
-    savedTimeRef.current = videoRef.current?.currentTime || 0;
-    if (type === 'quality') { setActiveQuality(val); showToast(`⚙️ Qualité : ${val.toUpperCase()}`); }
-    else { setActiveAudio(val); showToast(`🔊 Audio : ${val.toUpperCase()}`); }
-  };
-
-  const onLoadedMetadata = () => {
-    if (savedTimeRef.current > 0 && videoRef.current) {
-      videoRef.current.currentTime = savedTimeRef.current;
-      savedTimeRef.current = 0;
-      if (isPlaying) videoRef.current.play?.().catch(() => {});
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <VideoPlayerView
         id={String(id)} streamUrl={streamUrl} isPlaying={isPlaying} videoRef={videoRef}
         showSkipIntro={showSkipIntro} activeSubtitle={activeSubtitle} activeQuality={activeQuality}
-        statusMessage={statusMessage} onLoadedMetadata={onLoadedMetadata}
+        statusMessage={statusMessage}
         onSkipIntro={() => { if (videoRef.current) videoRef.current.currentTime += 85; setShowSkipIntro(false); showToast('⏭ Intro passée (+85s)'); }}
         onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)}
       />
@@ -80,15 +67,15 @@ export default function PlayerScreen() {
         </View>
         <View style={styles.rightGroup}>
           <Pressable onPress={() => setShowQuality(true)} style={styles.btn}><Text style={styles.btnText}>⚙️ {activeQuality.toUpperCase()}</Text></Pressable>
-          <Pressable onPress={() => setShowAudio(true)} style={styles.btn}><Text style={styles.btnText}>🔊 {activeAudio.toUpperCase()}</Text></Pressable>
+          <Pressable onPress={() => setShowAudio(true)} style={styles.btn}><Text style={styles.btnText}>🔊 Audio ({tracks.audioTracks.length})</Text></Pressable>
           <Pressable onPress={() => setShowSubtitles(true)} style={styles.btn}><Text style={styles.btnText}>💬 {activeSubtitle === 'off' ? 'ST: Off' : 'ST: Actif'}</Text></Pressable>
           <Pressable onPress={() => setShowShare(true)} style={styles.btn}><Text style={styles.btnText}>🔗 Partager</Text></Pressable>
           <Pressable onPress={() => setShowCast(true)} style={[styles.btn, styles.castBtn]}><Text style={styles.castText}>📡 Caster</Text></Pressable>
         </View>
       </View>
-      <PlayerQualityModal visible={showQuality} activeQuality={activeQuality} onSelect={(q) => switchStreamConfig('quality', q)} onClose={() => setShowQuality(false)} />
-      <PlayerAudioModal visible={showAudio} activeAudio={activeAudio} onSelect={(a) => switchStreamConfig('audio', a)} onClose={() => setShowAudio(false)} />
-      <PlayerSubtitleModal visible={showSubtitles} activeSubtitle={activeSubtitle} onSelect={(s) => { setActiveSubtitle(s); showToast(s === 'off' ? '💬 Sous-titres désactivés' : `💬 Sous-titres : ${s.toUpperCase()}`); }} onClose={() => setShowSubtitles(false)} />
+      <PlayerQualityModal visible={showQuality} activeQuality={activeQuality} qualities={tracks.qualities} onSelect={(q) => { setActiveQuality(q); showToast(`⚙️ Qualité : ${q.toUpperCase()}`); }} onClose={() => setShowQuality(false)} />
+      <PlayerAudioModal visible={showAudio} activeAudio={activeAudio} tracks={tracks.audioTracks} onSelect={(a) => { setActiveAudio(a); showToast(`🔊 Piste audio : ${a}`); }} onClose={() => setShowAudio(false)} />
+      <PlayerSubtitleModal visible={showSubtitles} activeSubtitle={activeSubtitle} tracks={tracks.subtitleTracks} onSelect={(s) => { setActiveSubtitle(s); showToast(s === 'off' ? '💬 Sous-titres désactivés' : '💬 Sous-titres activés'); }} onClose={() => setShowSubtitles(false)} />
       <PlayerShareModal visible={showShare} mediaId={String(id)} onClose={() => setShowShare(false)} />
       <CastModal visible={showCast} onClose={() => setShowCast(false)} currentMedia={{ id: String(id), title: `Média #${id}`, positionSeconds: 120 }} onTargetSelected={(t) => { setActiveCastTarget(t); videoRef.current?.pause?.(); setIsPlaying(false); }} />
       {activeCastTarget && <CastControlBar target={activeCastTarget} onDisconnect={() => setActiveCastTarget(null)} />}

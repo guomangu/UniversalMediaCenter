@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, ScrollView, RefreshControl, Platform, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { StyleSheet, ScrollView, RefreshControl, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { SiteHeader } from '@/components/SiteHeader';
@@ -36,7 +36,7 @@ export default function HomeScreen() {
   const handleJumpToCategory = (id: string) => {
     const y = catPositions.current[id];
     if (y !== undefined) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, y - (isMobile ? 90 : 65)), animated: true });
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - (isMobile ? 100 : 92)), animated: true });
     }
   };
 
@@ -52,10 +52,7 @@ export default function HomeScreen() {
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
-          contentContainerStyle={[
-            styles.contentContainer,
-            { paddingTop: isMobile ? 86 : 64 },
-          ]}
+          contentContainerStyle={[styles.contentContainer, { paddingTop: isMobile ? 98 : 90 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}>
           <TagSearchBar

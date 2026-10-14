@@ -14,12 +14,23 @@ interface Props {
 
 export function CategorySection({ category, activeFilter, searchQuery, onLayoutPos }: Props) {
   const [tagLimit, setTagLimit] = useState(5);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const visibleTags = category.tags.slice(0, tagLimit);
   const hasMore = category.tags.length > tagLimit;
 
   const handleLayout = (e: LayoutChangeEvent) => {
     onLayoutPos?.(category.id, e.nativeEvent.layout.y);
   };
+
+  const handleCount = (slug: string, c: number) => {
+    setCounts((prev) => (prev[slug] === c ? prev : { ...prev, [slug]: c }));
+  };
+
+  const hasLoadedAny = Object.keys(counts).length > 0;
+  const allEmpty = hasLoadedAny && Object.values(counts).every((c) => c === 0);
+  if (searchQuery && allEmpty) return null;
+
+  const matchedCount = Object.values(counts).filter((c) => c > 0).length;
 
   return (
     <View onLayout={handleLayout} style={styles.container}>
@@ -31,7 +42,9 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
           style={styles.categoryTitle}
         />
         <View style={styles.tagCountBadge}>
-          <Text style={styles.tagCountText}>{visibleTags.length}/{category.tags.length} tags</Text>
+          <Text style={styles.tagCountText}>
+            {searchQuery ? `${matchedCount} actif${matchedCount > 1 ? 's' : ''}` : `${visibleTags.length}/${category.tags.length} tags`}
+          </Text>
         </View>
       </View>
 
@@ -43,11 +56,12 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
             tag={tag}
             activeFilter={activeFilter}
             searchQuery={searchQuery}
+            onCountChange={handleCount}
           />
         ))}
       </View>
 
-      {hasMore ? (
+      {hasMore && !searchQuery ? (
         <Pressable onPress={() => setTagLimit((prev) => prev + 10)} style={styles.moreBtn}>
           <Text style={styles.moreText}>
             ▼ Afficher plus (+10 tags) • {visibleTags.length}/{category.tags.length}

@@ -25,21 +25,30 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
 }) => {
   const [currentCue, setCurrentCue] = useState<string>('');
 
+  const subtitleUrl = React.useMemo(() => {
+    if (!activeSubtitle || activeSubtitle === 'off') return '';
+    if (activeSubtitle.startsWith('file:')) {
+      return `${getApiBaseUrl()}/api/media/${id}/subtitles?fileName=${encodeURIComponent(activeSubtitle.slice(5))}`;
+    }
+    if (activeSubtitle.startsWith('track:')) {
+      return `${getApiBaseUrl()}/api/media/${id}/subtitles?trackIndex=${encodeURIComponent(activeSubtitle.slice(6))}`;
+    }
+    return `${getApiBaseUrl()}/api/media/${id}/subtitles?lang=${encodeURIComponent(activeSubtitle)}`;
+  }, [id, activeSubtitle]);
+
   useEffect(() => {
     if (Platform.OS === 'web' && videoRef.current?.textTracks) {
       const tracks = videoRef.current.textTracks;
       for (let i = 0; i < tracks.length; i++) {
         const tr = tracks[i];
-        const isMatch = activeSubtitle && activeSubtitle !== 'off' &&
-          tr.language && activeSubtitle.toLowerCase().startsWith(tr.language.toLowerCase());
-        tr.mode = isMatch ? 'showing' : 'disabled';
+        tr.mode = activeSubtitle !== 'off' ? 'showing' : 'disabled';
         tr.oncuechange = () => {
-          setCurrentCue(isMatch && tr.activeCues?.[0]?.text ? tr.activeCues[0].text : '');
+          setCurrentCue(activeSubtitle !== 'off' && tr.activeCues?.[0]?.text ? tr.activeCues[0].text : '');
         };
       }
       if (!activeSubtitle || activeSubtitle === 'off') setCurrentCue('');
     }
-  }, [activeSubtitle, streamUrl]);
+  }, [activeSubtitle, subtitleUrl]);
 
   return (
     <View style={styles.videoPlaceholder}>
@@ -48,8 +57,9 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
           ref={videoRef} src={streamUrl} controls autoPlay playsInline crossOrigin="anonymous"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
           onPlay={onPlay} onPause={onPause} onLoadedMetadata={onLoadedMetadata}>
-          <track src={`${getApiBaseUrl()}/api/media/${id}/subtitles?lang=fr`} kind="subtitles" srcLang="fr" label="Français" default={activeSubtitle.startsWith('fr')} />
-          <track src={`${getApiBaseUrl()}/api/media/${id}/subtitles?lang=en`} kind="subtitles" srcLang="en" label="English" default={activeSubtitle === 'en'} />
+          {subtitleUrl ? (
+            <track key={subtitleUrl} src={subtitleUrl} kind="subtitles" default srcLang="fr" label="Actif" />
+          ) : null}
         </video>
       ) : (
         <>

@@ -6,6 +6,7 @@ import { artworkRouter } from './mediaArtworks.js';
 import { streamRouter } from './mediaStream.js';
 import { statsRouter } from './mediaStats.js';
 import { subtitleRouter } from './mediaSubtitles.js';
+import { tracksRouter } from './mediaTracks.js';
 import { processNfoFile } from '../watcher/index.js';
 import { getRelatedTagsForMedia } from './mediaRelated.js';
 
@@ -15,6 +16,7 @@ mediaRouter.route('/', artworkRouter);
 mediaRouter.route('/', streamRouter);
 mediaRouter.route('/', statsRouter);
 mediaRouter.route('/', subtitleRouter);
+mediaRouter.route('/', tracksRouter);
 
 mediaRouter.post('/webhook/tmm', async (c) => {
   const body = await c.req.json().catch(() => ({}));

@@ -25,24 +25,9 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
     fetchPublicConfig().then((cfg) => { if (cfg?.siteName) setSiteName(cfg.siteName); });
   }, []);
 
-  const shortcuts = categories.length > 0 && onSelectCategory ? (
-    <View style={[styles.shortcutsWrap, isMobile && styles.shortcutsMobile]}>
-      {onScrollToTop ? (
-        <Pressable onPress={onScrollToTop} style={styles.homeBtn}><Text style={styles.homeTxt}>🏠 Haut</Text></Pressable>
-      ) : null}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        {categories.map((cat) => (
-          <Pressable key={cat.id} onPress={() => onSelectCategory(cat.id)} style={[styles.chip, activeCategoryId === cat.id && styles.actChip]}>
-            <Text style={[styles.chipTxt, activeCategoryId === cat.id && styles.actTxt]}>{cat.title}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-    </View>
-  ) : null;
-
   return (
-    <View style={[styles.fixedWrap, isMobile && { paddingVertical: 6 }]}>
-      <View style={[styles.header, isMobile && styles.headerMobile]}>
+    <View style={styles.fixedWrap}>
+      <View style={styles.header}>
         <View style={styles.topRow}>
           <Pressable onPress={onScrollToTop || (() => router.push('/'))} style={styles.logoBtn}>
             <Text style={styles.logoText}>🎬 {isMobile ? 'UMS' : siteName}</Text>
@@ -56,7 +41,23 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
             </Pressable>
           </View>
         </View>
-        {shortcuts}
+
+        {categories.length > 0 && onSelectCategory ? (
+          <View style={styles.secondTierRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+              {onScrollToTop ? (
+                <Pressable onPress={onScrollToTop} style={styles.homeBtn}>
+                  <Text style={styles.homeTxt}>🏠 Haut</Text>
+                </Pressable>
+              ) : null}
+              {categories.map((cat) => (
+                <Pressable key={cat.id} onPress={() => onSelectCategory(cat.id)} style={[styles.chip, activeCategoryId === cat.id && styles.actChip]}>
+                  <Text style={[styles.chipTxt, activeCategoryId === cat.id && styles.actTxt]}>{cat.title}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
       </View>
       <QuickProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} onProfileCreated={(u) => setCurrentProfile(u)} />
     </View>
@@ -67,19 +68,17 @@ const styles = StyleSheet.create({
   fixedWrap: {
     position: (Platform.OS === 'web' ? 'fixed' : 'absolute') as any,
     top: 0, left: 0, right: 0, zIndex: 1000,
-    backgroundColor: 'rgba(15, 23, 42, 0.95)', borderBottomWidth: 1, borderBottomColor: 'rgba(99, 102, 241, 0.35)',
-    paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.96)', borderBottomWidth: 1, borderBottomColor: 'rgba(99, 102, 241, 0.35)',
+    paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center',
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', maxWidth: MaxContentWidth, width: '100%', gap: 8 },
-  headerMobile: { flexDirection: 'column', alignItems: 'stretch', gap: 6 },
+  header: { flexDirection: 'column', maxWidth: MaxContentWidth, width: '100%', gap: 6 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
   logoBtn: { cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
   logoText: { fontSize: 16, fontWeight: '800', color: '#f8fafc', letterSpacing: -0.5 },
-  shortcutsWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, minWidth: 120 },
-  shortcutsMobile: { marginHorizontal: 0, width: '100%' },
-  homeBtn: { backgroundColor: 'rgba(99, 102, 241, 0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.pill, marginRight: 6 },
+  secondTierRow: { width: '100%', flexDirection: 'row', alignItems: 'center', paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(99, 102, 241, 0.15)' },
+  scroll: { gap: 6, alignItems: 'center', paddingRight: 16 },
+  homeBtn: { backgroundColor: 'rgba(99, 102, 241, 0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.pill, marginRight: 2 },
   homeTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '800' },
-  scroll: { gap: 6, alignItems: 'center' },
   chip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.pill, backgroundColor: 'rgba(51, 65, 85, 0.55)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.35)' },
   actChip: { backgroundColor: '#6366f1', borderColor: '#818cf8' },
   chipTxt: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },

@@ -2,42 +2,57 @@ import React from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, Platform } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
-const SUBTITLES = [
-  { label: 'Désactivé', value: 'off' },
-  { label: 'Français (Complet)', value: 'fr' },
-  { label: 'Français (Forcé)', value: 'fr-forced' },
-  { label: 'English (Full)', value: 'en' },
-];
+export interface SubtitleTrackItem {
+  index: number;
+  language: string;
+  label: string;
+  fileName?: string;
+}
 
 interface Props {
   visible: boolean;
   activeSubtitle: string;
-  onSelect: (s: string) => void;
+  tracks: SubtitleTrackItem[];
+  onSelect: (value: string) => void;
   onClose: () => void;
 }
 
-export function PlayerSubtitleModal({ visible, activeSubtitle, onSelect, onClose }: Props) {
+export function PlayerSubtitleModal({ visible, activeSubtitle, tracks = [], onSelect, onClose }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.content} onPress={(e) => e.stopPropagation()}>
           <View style={styles.header}>
-            <Text style={styles.title}>💬 Sous-titres</Text>
+            <Text style={styles.title}>💬 Sous-titres du média</Text>
             <Pressable onPress={onClose}><Text style={styles.close}>✕</Text></Pressable>
           </View>
           <View style={styles.list}>
-            {SUBTITLES.map((s) => {
-              const isSelected = activeSubtitle === s.value;
-              return (
-                <Pressable
-                  key={s.value}
-                  onPress={() => { onSelect(s.value); onClose(); }}
-                  style={[styles.item, isSelected && styles.activeItem]}>
-                  <Text style={[styles.itemText, isSelected && styles.activeText]}>{s.label}</Text>
-                  {isSelected ? <Text style={styles.check}>✓</Text> : null}
-                </Pressable>
-              );
-            })}
+            <Pressable
+              onPress={() => { onSelect('off'); onClose(); }}
+              style={[styles.item, activeSubtitle === 'off' && styles.activeItem]}>
+              <Text style={[styles.itemText, activeSubtitle === 'off' && styles.activeText]}>Désactivé</Text>
+              {activeSubtitle === 'off' ? <Text style={styles.check}>✓</Text> : null}
+            </Pressable>
+
+            {tracks.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>Aucun sous-titre compatible détecté pour ce fichier vidéo.</Text>
+              </View>
+            ) : (
+              tracks.map((s, idx) => {
+                const val = s.fileName ? `file:${s.fileName}` : `track:${s.index}`;
+                const isSelected = activeSubtitle === val;
+                return (
+                  <Pressable
+                    key={`${val}-${idx}`}
+                    onPress={() => { onSelect(val); onClose(); }}
+                    style={[styles.item, isSelected && styles.activeItem]}>
+                    <Text style={[styles.itemText, isSelected && styles.activeText]}>{s.label}</Text>
+                    {isSelected ? <Text style={styles.check}>✓</Text> : null}
+                  </Pressable>
+                );
+              })
+            )}
           </View>
         </Pressable>
       </Pressable>
@@ -47,14 +62,16 @@ export function PlayerSubtitleModal({ visible, activeSubtitle, onSelect, onClose
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: Spacing.three },
-  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 360, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)' },
+  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 380, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.three },
   title: { fontSize: 16, fontWeight: '800', color: '#f8fafc' },
   close: { color: '#94a3b8', fontSize: 16, fontWeight: '700', padding: 4 },
   list: { gap: 8 },
   item: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: Radius.md, backgroundColor: 'rgba(51, 65, 85, 0.4)', cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
   activeItem: { backgroundColor: 'rgba(99, 102, 241, 0.25)', borderWidth: 1, borderColor: '#6366f1' },
-  itemText: { color: '#cbd5e1', fontSize: 13, fontWeight: '600' },
+  itemText: { color: '#cbd5e1', fontSize: 13, fontWeight: '600', flex: 1 },
   activeText: { color: '#ffffff', fontWeight: '800' },
-  check: { color: '#818cf8', fontSize: 16, fontWeight: '800' },
+  check: { color: '#818cf8', fontSize: 16, fontWeight: '800', marginLeft: 8 },
+  emptyWrap: { padding: 12, backgroundColor: 'rgba(51, 65, 85, 0.2)', borderRadius: Radius.md },
+  emptyText: { color: '#94a3b8', fontSize: 12, fontStyle: 'italic', textAlign: 'center' },
 });
