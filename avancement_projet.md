@@ -6,6 +6,19 @@ Dernière mise à jour : 14 Octobre 2026
 
 ## 🟢 1. Fonctionnalités Réalisées & Validées
 
+### 🎮 Navigation Télévision, Télécommande & Manette (Spatial Navigation)
+- [x] **Moteur de navigation spatiale 2D universel (`useTvNavigation.ts`) :**
+  - Actif sur toutes les pages du site via le layout racine (`_layout.tsx`).
+  - Détection automatique et calcul géométrique vectoriel de distance entre éléments interactifs.
+  - Prise en charge des touches de télécommande / clavier (`ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Enter`, `Select`, `Escape`, `BrowserBack`).
+  - Prise en charge des manettes de jeu via l'API standard Gamepad (croix directionnelle D-Pad, stick analogique gauche, bouton A pour valider, bouton B pour retour).
+- [x] **Défilement automatique dans le viewport :**
+  - `scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })` appliqué au focus, garantissant que les listes horizontales de médias et les sections verticales défilent automatiquement quand le curseur avance.
+- [x] **Indicateur visuel haute visibilité TV (`global.css`) :**
+  - Contour indigo dynamique (`outline: 3px solid #818cf8`), halo lumineux (`box-shadow`) et zoom subtil (`scale(1.04)`) sur tout élément sélectionné.
+- [x] **Éléments focusables adaptés :**
+  - Puces de catégories du menu d'en-tête, barre de recherche et filtres rapides, cartes de médias (`MediaTile`), cartes de tags (`TagCard`), forum, suites/épisodes (`MediaChildrenRow`), et boutons de contrôle du lecteur.
+
 ### 🎯 Synchronisation Bidirectionnelle `param.yaml` & Administration
 - [x] Fichier central `param.yaml` synchronisé dynamiquement avec validation Zod (`paramSchema.ts`).
 - [x] Chiffrement sécurisé du mot de passe admin via Argon2id.
