@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, Pressable, Platform } from 'react-native';
 import { styles } from '@/components/PlayerScreen.styles';
 import { getApiBaseUrl } from '@/services/apiConfig';
@@ -11,6 +11,7 @@ interface VideoPlayerViewProps {
   showSkipIntro: boolean;
   activeSubtitle?: string;
   activeQuality?: string;
+  activeAudio?: string;
   statusMessage?: string;
   onSkipIntro: () => void;
   onPlay: () => void;
@@ -20,10 +21,11 @@ interface VideoPlayerViewProps {
 
 export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
   id, streamUrl, isPlaying, videoRef, showSkipIntro,
-  activeSubtitle = 'off', activeQuality = 'auto', statusMessage,
+  activeSubtitle = 'off', activeQuality = 'auto', activeAudio = 'auto', statusMessage,
   onSkipIntro, onPlay, onPause, onLoadedMetadata,
 }) => {
   const [currentCue, setCurrentCue] = useState<string>('');
+  const savedTimeRef = useRef<number>(0);
 
   const subtitleUrl = React.useMemo(() => {
     if (!activeSubtitle || activeSubtitle === 'off') return '';
@@ -50,13 +52,24 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
     }
   }, [activeSubtitle, subtitleUrl]);
 
+  const handleTimeUpdate = () => {
+    if (videoRef.current?.currentTime) savedTimeRef.current = videoRef.current.currentTime;
+  };
+
+  const handleLoadedMeta = () => {
+    if (savedTimeRef.current > 0 && videoRef.current) {
+      videoRef.current.currentTime = savedTimeRef.current;
+    }
+    onLoadedMetadata?.();
+  };
+
   return (
     <View style={styles.videoPlaceholder}>
       {Platform.OS === 'web' ? (
         <video
           ref={videoRef} src={streamUrl} controls autoPlay playsInline crossOrigin="anonymous"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
-          onPlay={onPlay} onPause={onPause} onLoadedMetadata={onLoadedMetadata}>
+          onPlay={onPlay} onPause={onPause} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={handleLoadedMeta}>
           {subtitleUrl ? (
             <track key={subtitleUrl} src={subtitleUrl} kind="subtitles" default srcLang="fr" label="Actif" />
           ) : null}
