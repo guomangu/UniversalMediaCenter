@@ -68,7 +68,7 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
               ]}
             >
               <Text style={styles.authorLocationText} numberOfLines={1}>
-                {msg.authorLocation.isLive ? '🔴 En séance : ' : '📍 '}
+                {msg.authorLocation.isLive ? 'En séance : ' : 'Position : '}
                 {msg.authorLocation.title}
               </Text>
               <Text style={styles.authorLocationJoin}>Rejoindre ➔</Text>
@@ -95,7 +95,7 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
               <Image source={{ uri: quotedPosterUri }} style={styles.quotedMediaPoster} />
             ) : (
               <View style={styles.quotedMediaPlaceholder}>
-                <Text style={{ fontSize: 16 }}>🎬</Text>
+                <Text style={styles.quotedMediaPlaceholderTxt}>M</Text>
               </View>
             )}
             <View style={{ flex: 1 }}>
@@ -116,7 +116,7 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
           >
             <Image source={{ uri: fullUrl }} style={styles.mediaImg} resizeMode="cover" />
             <View style={styles.mediaZoomBadge}>
-              <Text style={styles.mediaZoomTxt}>🔍 Agrandir</Text>
+              <Text style={styles.mediaZoomTxt}>Agrandir</Text>
             </View>
           </Pressable>
         ) : null}
@@ -142,13 +142,13 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
             onPress={() => openModal('DOCUMENT')}
             style={styles.mediaPill}
           >
-            <Text style={styles.pillText}>📄 Fichier : {msg.fileName || 'Voir le document'}</Text>
+            <Text style={styles.pillText}>Document : {msg.fileName || 'Voir le document'}</Text>
           </Pressable>
         ) : null}
 
         {fullUrl && msg.mediaType === 'LINK' ? (
           <Pressable focusable={true} onPress={() => Linking.openURL(fullUrl)} style={styles.mediaPill}>
-            <Text style={[styles.pillText, { color: '#93c5fd' }]}>🔗 {msg.mediaUrl}</Text>
+            <Text style={[styles.pillText, { color: '#94a1b3' }]}>Lien : {msg.mediaUrl}</Text>
           </Pressable>
         ) : null}
 
@@ -162,7 +162,7 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
             style={[styles.voteBtn, msg.hasVoted && styles.votedBtn]}
           >
             <Text style={[styles.voteTxt, msg.hasVoted && styles.votedTxt]}>
-              👍 {(msg.voteCount ?? 0) > 0 ? msg.voteCount : ''}
+              +1 {(msg.voteCount ?? 0) > 0 ? msg.voteCount : ''}
             </Text>
           </Pressable>
 
@@ -193,11 +193,11 @@ const styles = StyleSheet.create({
   wrapLeft: { justifyContent: 'flex-start' },
   wrapRight: { justifyContent: 'flex-end' },
   bubble: { maxWidth: '85%', borderRadius: Radius.md, padding: 10 },
-  bubbleMe: { backgroundColor: '#4338ca', borderBottomRightRadius: 2 },
+  bubbleMe: { backgroundColor: '#384352', borderBottomRightRadius: 2 },
   bubbleOther: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    backgroundColor: 'rgba(38, 44, 54, 0.75)',
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
     borderBottomLeftRadius: 2,
   },
   authorHeader: {
@@ -205,55 +205,55 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   author: {
-    color: '#cbd5e1',
+    color: '#b0bccb',
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   authorLocationBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    backgroundColor: 'rgba(30, 36, 45, 0.7)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.15)',
     alignSelf: 'flex-start',
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   authorLocationBadgeLive: {
-    backgroundColor: 'rgba(220, 38, 38, 0.25)',
-    borderColor: 'rgba(239, 68, 68, 0.6)',
+    backgroundColor: 'rgba(168, 70, 70, 0.25)',
+    borderColor: 'rgba(168, 70, 70, 0.5)',
   },
   authorLocationText: {
-    color: '#e2e8f0',
+    color: '#dfe4ec',
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
     maxWidth: 220,
   },
   authorLocationJoin: {
-    color: '#818cf8',
+    color: '#94a1b3',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   quoteBox: {
     borderLeftWidth: 3,
-    borderLeftColor: '#818cf8',
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderLeftColor: '#7c8797',
+    backgroundColor: 'rgba(25, 30, 38, 0.4)',
     padding: 6,
     borderRadius: Radius.sm,
     marginBottom: 6,
   },
-  quoteAuthor: { color: '#a5b4fc', fontSize: 11, fontWeight: '700' },
-  quoteText: { color: '#cbd5e1', fontSize: 11, fontStyle: 'italic' },
+  quoteAuthor: { color: '#c5cedb', fontSize: 11, fontWeight: '600' },
+  quoteText: { color: '#9ba7b7', fontSize: 11, fontStyle: 'italic' },
   quotedMediaCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: 'rgba(30, 36, 45, 0.65)',
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
     padding: 6,
     borderRadius: Radius.md,
     marginBottom: 6,
@@ -264,12 +264,13 @@ const styles = StyleSheet.create({
     width: 36,
     height: 48,
     borderRadius: Radius.sm,
-    backgroundColor: '#334155',
+    backgroundColor: 'rgba(45, 52, 64, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quotedMediaTitle: { color: '#f8fafc', fontSize: 12, fontWeight: '700' },
-  quotedMediaJoin: { color: '#818cf8', fontSize: 11, fontWeight: '800', marginRight: 4 },
+  quotedMediaPlaceholderTxt: { color: '#7c8797', fontSize: 11, fontWeight: '700' },
+  quotedMediaTitle: { color: '#dfe4ec', fontSize: 12, fontWeight: '600' },
+  quotedMediaJoin: { color: '#94a1b3', fontSize: 10.5, fontWeight: '700', marginRight: 4 },
   mediaImgPressable: {
     position: 'relative',
     marginBottom: 6,
@@ -282,41 +283,45 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 6,
     right: 6,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    backgroundColor: 'rgba(26, 31, 40, 0.78)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   mediaZoomTxt: {
-    color: '#f8fafc',
+    color: '#dfe4ec',
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   mediaPill: {
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(25, 30, 38, 0.5)',
     padding: 8,
     borderRadius: Radius.sm,
     marginBottom: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+    borderColor: 'rgba(160, 175, 195, 0.1)',
   },
-  pillText: { color: '#e2e8f0', fontSize: 12, fontWeight: '600' },
-  content: { color: '#ffffff', fontSize: 13, lineHeight: 18, marginTop: 2 },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 6 },
+  pillText: { color: '#cbd5e1', fontSize: 11 },
+  content: { color: '#edeef2', fontSize: 13, lineHeight: 18 },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
   voteBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    backgroundColor: 'rgba(45, 52, 64, 0.5)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: Radius.pill,
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
-  votedBtn: { backgroundColor: 'rgba(99, 102, 241, 0.35)' },
-  voteTxt: { color: '#94a3b8', fontSize: 10, fontWeight: '700' },
-  votedTxt: { color: '#a5b4fc' },
-  time: { color: '#cbd5e1', fontSize: 10, opacity: 0.8 },
-  replyBtn: { paddingHorizontal: 4 },
-  replyText: { color: '#93c5fd', fontSize: 12, fontWeight: 'bold' },
+  votedBtn: { backgroundColor: 'rgba(70, 85, 105, 0.5)' },
+  voteTxt: { color: '#8a95a5', fontSize: 10, fontWeight: '600' },
+  votedTxt: { color: '#edeef2' },
+  time: { color: '#7c8797', fontSize: 9.5 },
+  replyBtn: { padding: 2 },
+  replyText: { color: '#8a95a5', fontSize: 12 },
 });

@@ -56,7 +56,7 @@ export default function HomeScreen() {
           style={styles.scroll}
           contentContainerStyle={[styles.contentContainer, { paddingTop: isMobile ? 98 : 90 }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}>
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8e9ab0" />}>
           <TagSearchBar
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -64,7 +64,7 @@ export default function HomeScreen() {
             onFilterChange={setActiveFilter}
           />
           {loading ? (
-            <ActivityIndicator color="#6366f1" style={{ marginVertical: 40 }} />
+            <ActivityIndicator color="#8e9ab0" style={{ marginVertical: 40 }} />
           ) : categories.length > 0 ? (
             categories.map((cat) => (
               <CategorySection
@@ -77,20 +77,19 @@ export default function HomeScreen() {
             ))
           ) : (
             <View style={styles.emptyWelcomeBox}>
-              <Text style={styles.welcomeIcon}>🎬</Text>
-              <Text style={styles.welcomeTitle}>Bienvenue sur Universal Media Stack</Text>
+              <Text style={styles.welcomeTitle}>Universal Media Stack</Text>
               <Text style={styles.welcomeDesc}>
-                Votre médiathèque s'initialise. Vous pouvez dès maintenant profiter des espaces fonctionnels :
+                Votre médiathèque s'initialise. Vous pouvez dès maintenant explorer vos espaces :
               </Text>
               <View style={styles.quickActions}>
                 <Pressable onPress={() => router.push('/tv')} style={styles.quickBtn}>
-                  <Text style={styles.quickBtnTxt}>📺 Regarder la TV en Direct</Text>
+                  <Text style={styles.quickBtnTxt}>TV en Direct</Text>
                 </Pressable>
-                <Pressable onPress={() => router.push('/user')} style={[styles.quickBtn, { backgroundColor: '#4f46e5' }]}>
-                  <Text style={styles.quickBtnTxt}>👤 Mon Espace & Profil</Text>
+                <Pressable onPress={() => router.push('/user')} style={[styles.quickBtn, { backgroundColor: '#3b4554' }]}>
+                  <Text style={styles.quickBtnTxt}>Mon Espace</Text>
                 </Pressable>
-                <Pressable onPress={() => router.push('/admin')} style={[styles.quickBtn, { backgroundColor: '#334155' }]}>
-                  <Text style={styles.quickBtnTxt}>⚙️ Administration & Sources</Text>
+                <Pressable onPress={() => router.push('/admin')} style={[styles.quickBtn, { backgroundColor: '#2d3542' }]}>
+                  <Text style={styles.quickBtnTxt}>Administration</Text>
                 </Pressable>
               </View>
             </View>
@@ -102,7 +101,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+  container: { flex: 1, backgroundColor: '#1d2127' },
   safeArea: { flex: 1, width: '100%' },
   scroll: { width: '100%', flex: 1 },
   contentContainer: {
@@ -113,24 +112,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
   },
   emptyWelcomeBox: {
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
-    borderRadius: 20,
+    backgroundColor: 'rgba(38, 44, 54, 0.7)',
+    borderRadius: Radius.lg,
     padding: Spacing.four,
     alignItems: 'center',
     marginTop: 20,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    borderColor: 'rgba(160, 175, 195, 0.15)',
     gap: 12,
   },
-  welcomeIcon: { fontSize: 44 },
-  welcomeTitle: { fontSize: 20, fontWeight: '900', color: '#f8fafc', textAlign: 'center' },
-  welcomeDesc: { color: '#94a3b8', fontSize: 13, textAlign: 'center', maxWidth: 450, lineHeight: 18 },
+  welcomeTitle: { fontSize: 18, fontWeight: '700', color: '#edeef2', textAlign: 'center', letterSpacing: -0.3 },
+  welcomeDesc: { color: '#9ba7b7', fontSize: 13, textAlign: 'center', maxWidth: 450, lineHeight: 18 },
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginTop: 10 },
   quickBtn: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#475569',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: Radius.pill,
   },
-  quickBtnTxt: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  quickBtnTxt: { color: '#edeef2', fontWeight: '700', fontSize: 12 },
 });

@@ -235,13 +235,13 @@ export function LiveVoiceRoomBar({
     <View style={styles.bar}>
       <View style={styles.infoCol}>
         <View style={styles.titleRow}>
-          <Text style={styles.liveDot}>🔴</Text>
+          <View style={styles.liveDot} />
           <Text style={styles.sessionName} numberOfLines={1}>
-            Appel Vocal en Direct • #{topicTitle}
+            Appel vocal en direct • #{topicTitle}
           </Text>
           <View style={[styles.activePill, isLiveSpeaking && styles.speakingPill]}>
             <Text style={styles.activeTxt}>
-              {isLiveSpeaking ? '🎙️ Vous parlez en continu' : `🎙️ ${activeVoiceCount}/${participants.length} en direct`}
+              {isLiveSpeaking ? 'En direct (continu)' : `${activeVoiceCount}/${participants.length} connectés`}
             </Text>
           </View>
         </View>
@@ -251,7 +251,7 @@ export function LiveVoiceRoomBar({
             {participants.map((p, idx) => (
               <View key={idx} style={[styles.participantChip, p.isMuted && styles.mutedChip]}>
                 <Text style={styles.participantName}>
-                  {p.isMuted ? '🔇' : '🗣️'} {p.displayName} {p.isHost ? '👑' : ''}
+                  {p.displayName}{p.isMuted ? ' (Muet)' : ''}{p.isHost ? ' • Hôte' : ''}
                 </Text>
               </View>
             ))}
@@ -267,7 +267,7 @@ export function LiveVoiceRoomBar({
           style={[styles.toggleBtn, isMuted ? styles.mutedBtn : styles.unmutedBtn]}
         >
           <Text style={styles.toggleBtnTxt}>
-            {isMuted ? '🔇 Micro coupé' : '🎙️ Micro actif'}
+            {isMuted ? 'Micro coupé' : 'Micro actif'}
           </Text>
         </Pressable>
 
@@ -277,7 +277,7 @@ export function LiveVoiceRoomBar({
           onPress={handleLeave}
           style={styles.leaveBtn}
         >
-          <Text style={styles.leaveBtnTxt}>🔴 Quitter l'appel</Text>
+          <Text style={styles.leaveBtnTxt}>Quitter l'appel</Text>
         </Pressable>
       </View>
     </View>
@@ -286,12 +286,12 @@ export function LiveVoiceRoomBar({
 
 const styles = StyleSheet.create({
   bar: {
-    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    backgroundColor: 'rgba(38, 44, 54, 0.85)',
     borderRadius: Radius.lg,
     padding: Spacing.three,
     marginBottom: Spacing.three,
-    borderWidth: 1.5,
-    borderColor: '#6366f1',
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.16)',
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
@@ -300,56 +300,61 @@ const styles = StyleSheet.create({
   },
   infoCol: { flex: 1, minWidth: 260, gap: 6 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  liveDot: { fontSize: 13 },
-  sessionName: { color: '#f8fafc', fontWeight: '800', fontSize: 14 },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#b95252',
+  },
+  sessionName: { color: '#edeef2', fontWeight: '700', fontSize: 13.5 },
   activePill: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    backgroundColor: 'rgba(148, 163, 184, 0.12)',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.15)',
   },
   speakingPill: {
-    backgroundColor: 'rgba(16, 185, 129, 0.25)',
-    borderColor: '#10b981',
+    backgroundColor: 'rgba(59, 112, 94, 0.25)',
+    borderColor: 'rgba(59, 112, 94, 0.5)',
   },
-  activeTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '700' },
+  activeTxt: { color: '#c5cedb', fontSize: 10.5, fontWeight: '600' },
   avatarsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   participantChip: {
-    backgroundColor: 'rgba(51, 65, 85, 0.7)',
+    backgroundColor: 'rgba(42, 48, 58, 0.6)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    borderColor: 'rgba(160, 175, 195, 0.14)',
   },
   mutedChip: {
-    backgroundColor: 'rgba(51, 65, 85, 0.35)',
-    borderColor: 'rgba(100, 116, 139, 0.3)',
+    backgroundColor: 'rgba(42, 48, 58, 0.35)',
+    borderColor: 'rgba(160, 175, 195, 0.08)',
   },
-  participantName: { color: '#f1f5f9', fontSize: 11, fontWeight: '600' },
+  participantName: { color: '#c5cedb', fontSize: 11, fontWeight: '500' },
   actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   toggleBtn: {
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: Radius.pill,
     borderWidth: 1,
   },
   unmutedBtn: {
-    backgroundColor: 'rgba(16, 185, 129, 0.25)',
-    borderColor: '#10b981',
+    backgroundColor: 'rgba(59, 112, 94, 0.3)',
+    borderColor: 'rgba(59, 112, 94, 0.6)',
   },
   mutedBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderColor: '#ef4444',
+    backgroundColor: 'rgba(168, 70, 70, 0.25)',
+    borderColor: 'rgba(168, 70, 70, 0.5)',
   },
-  toggleBtnTxt: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
+  toggleBtnTxt: { color: '#edeef2', fontSize: 11, fontWeight: '600' },
   leaveBtn: {
-    backgroundColor: '#dc2626',
+    backgroundColor: 'rgba(168, 70, 70, 0.88)',
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: Radius.pill,
   },
-  leaveBtnTxt: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  leaveBtnTxt: { color: '#ffffff', fontSize: 11, fontWeight: '700' },
 });

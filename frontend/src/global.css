@@ -13,20 +13,20 @@ html, body, #root {
   width: 100%;
   margin: 0;
   padding: 0;
-  background-color: #0f172a;
+  background-color: #1d2127;
   -webkit-text-size-adjust: 100%;
 }
 
-/* TV Remote & Gamepad Focus Indicator */
+/* TV Remote & Keyboard Focus Indicator - Soft Slate Steel */
 [role="button"]:focus,
 [tabindex="0"]:focus,
 button:focus,
 a:focus,
 input:focus {
-  outline: 3px solid #818cf8 !important;
-  outline-offset: 3px !important;
-  box-shadow: 0 0 18px rgba(129, 140, 248, 0.85) !important;
-  transform: scale(1.04) !important;
+  outline: 2px solid rgba(148, 163, 184, 0.75) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 14px rgba(148, 163, 184, 0.4) !important;
+  transform: scale(1.02) !important;
   transition: transform 0.12s ease, outline 0.12s ease, box-shadow 0.12s ease !important;
   z-index: 50 !important;
 }
@@ -34,9 +34,9 @@ input:focus {
 /* Indicateur visuel spécifique quand la vidéo est sélectionnée */
 video:focus,
 [data-video-player="true"]:focus {
-  outline: 3px solid #818cf8 !important;
-  outline-offset: -3px !important;
-  box-shadow: 0 0 24px rgba(129, 140, 248, 0.65) !important;
+  outline: 2px solid rgba(148, 163, 184, 0.75) !important;
+  outline-offset: -2px !important;
+  box-shadow: 0 0 20px rgba(148, 163, 184, 0.35) !important;
   transform: none !important;
   z-index: 20 !important;
 }

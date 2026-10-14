@@ -82,7 +82,7 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
       {hasMore && !searchQuery ? (
         <Pressable focusable={true} onPress={() => setTagLimit((prev) => prev + 10)} style={styles.moreBtn}>
           <Text style={styles.moreText}>
-            ▼ Afficher plus (+10 tags) • {visibleTags.length}/{category.tags.length}
+            Afficher plus (+10 tags) • {visibleTags.length}/{category.tags.length}
           </Text>
         </Pressable>
       ) : null}
@@ -93,21 +93,21 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
 const styles = StyleSheet.create({
   container: { marginBottom: Spacing.four },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: Spacing.two },
-  categoryTitle: { fontSize: 20, fontWeight: '800', color: '#f8fafc' },
-  tagCountBadge: { backgroundColor: 'rgba(51, 65, 85, 0.5)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.pill },
-  tagCountText: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },
+  categoryTitle: { fontSize: 18, fontWeight: '700', color: '#edeef2', letterSpacing: -0.3 },
+  tagCountBadge: { backgroundColor: 'rgba(148, 163, 184, 0.12)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.pill },
+  tagCountText: { color: '#8b97a8', fontSize: 11, fontWeight: '600' },
   verticalTagList: { marginTop: 4 },
   moreBtn: {
     alignSelf: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: Radius.pill,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    backgroundColor: 'rgba(50, 60, 74, 0.4)',
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
     marginTop: 6,
     marginBottom: Spacing.two,
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
-  moreText: { color: '#a5b4fc', fontSize: 12, fontWeight: '700' },
+  moreText: { color: '#a0adc0', fontSize: 12, fontWeight: '600' },
 });

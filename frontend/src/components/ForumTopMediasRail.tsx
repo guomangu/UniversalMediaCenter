@@ -54,17 +54,16 @@ export function ForumTopMediasRail({
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
-          <Text style={styles.secIcon}>🎬</Text>
           <Text style={styles.secTitle}>Médias associés à #{topicTitle}</Text>
           <View style={styles.countPill}>
             <Text style={styles.countTxt}>{medias.length} sélectionné{medias.length > 1 ? 's' : ''}</Text>
           </View>
         </View>
-        <Text style={styles.hintTxt}>Cliquez pour voir ou proposez une séance</Text>
+        <Text style={styles.hintTxt}>Sélectionnez pour consulter ou proposer une séance</Text>
       </View>
 
       {loading ? (
-        <ActivityIndicator color="#6366f1" style={{ marginVertical: 20 }} />
+        <ActivityIndicator color="#8e9ab0" style={{ marginVertical: 20 }} />
       ) : (
         <ScrollView
           horizontal
@@ -87,20 +86,20 @@ export function ForumTopMediasRail({
                     <Image source={{ uri: poster }} style={styles.poster} resizeMode="cover" />
                   ) : (
                     <View style={styles.posterPlaceholder}>
-                      <Text style={{ fontSize: 28 }}>📺</Text>
+                      <Text style={styles.placeholderTxt}>{item.nodeType === 'SHOW' ? 'SÉRIE' : 'FILM'}</Text>
                     </View>
                   )}
 
                   {hasActiveSession ? (
                     <View style={styles.sessionBadge}>
-                      <Text style={styles.sessionBadgeTxt}>🍿 SÉANCE</Text>
+                      <Text style={styles.sessionBadgeTxt}>EN SÉANCE</Text>
                     </View>
                   ) : null}
 
                   {hasActiveSession ? (
                     <View style={styles.sessionBottomInfo}>
                       <Text style={styles.sessionBottomTxt}>
-                        🍿 {activeSession.count} en séance
+                        {activeSession.count} en séance
                       </Text>
                     </View>
                   ) : null}
@@ -117,7 +116,7 @@ export function ForumTopMediasRail({
                       onPress={() => onProposeSession(item)}
                       style={styles.sessionBtn}
                     >
-                      <Text style={styles.sessionBtnTxt}>🍿 Proposer une séance</Text>
+                      <Text style={styles.sessionBtnTxt}>Proposer une séance</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -132,12 +131,12 @@ export function ForumTopMediasRail({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(30, 41, 59, 0.75)',
+    backgroundColor: 'rgba(38, 44, 54, 0.65)',
     borderRadius: Radius.lg,
     padding: Spacing.three,
     marginBottom: Spacing.three,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
   },
   headerRow: {
     flexDirection: 'row',
@@ -148,16 +147,15 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  secIcon: { fontSize: 18 },
-  secTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '800' },
+  secTitle: { color: '#edeef2', fontSize: 13.5, fontWeight: '700', letterSpacing: -0.2 },
   countPill: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    paddingHorizontal: 8,
+    backgroundColor: 'rgba(148, 163, 184, 0.12)',
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: Radius.pill,
   },
-  countTxt: { color: '#c7d2fe', fontSize: 10, fontWeight: '700' },
-  hintTxt: { color: '#94a3b8', fontSize: 11 },
+  countTxt: { color: '#94a1b3', fontSize: 10, fontWeight: '600' },
+  hintTxt: { color: '#8a95a5', fontSize: 11 },
   scrollList: { gap: 12, paddingVertical: 4 },
   mediaCard: { width: 140 },
   posterWrap: {
@@ -165,35 +163,36 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: Radius.md,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
+    backgroundColor: 'rgba(35, 41, 51, 0.95)',
     position: 'relative',
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.3)',
+    borderColor: 'rgba(160, 175, 195, 0.14)',
   },
   poster: { width: '100%', height: '100%' },
   posterPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
+  placeholderTxt: { color: '#7c8797', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  pressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
   sessionBadge: {
     position: 'absolute',
     top: 6,
     left: 6,
-    backgroundColor: '#dc2626',
+    backgroundColor: 'rgba(168, 70, 70, 0.9)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: Radius.sm,
   },
-  sessionBadgeTxt: { color: '#ffffff', fontSize: 9, fontWeight: '900' },
+  sessionBadgeTxt: { color: '#ffffff', fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
   sessionBottomInfo: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(220, 38, 38, 0.92)',
+    backgroundColor: 'rgba(150, 58, 58, 0.92)',
     paddingVertical: 3,
     alignItems: 'center',
   },
-  sessionBottomTxt: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
-  mediaTitle: { color: '#f1f5f9', fontSize: 12, fontWeight: '700', marginTop: 6 },
+  sessionBottomTxt: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
+  mediaTitle: { color: '#dfe4ec', fontSize: 12, fontWeight: '600', marginTop: 6 },
   actionBtnsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -202,10 +201,10 @@ const styles = StyleSheet.create({
   },
   sessionBtn: {
     flex: 1,
-    backgroundColor: '#4f46e5',
-    paddingVertical: 6,
+    backgroundColor: '#475569',
+    paddingVertical: 5,
     borderRadius: Radius.pill,
     alignItems: 'center',
   },
-  sessionBtnTxt: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
+  sessionBtnTxt: { color: '#edeef2', fontSize: 10, fontWeight: '700' },
 });

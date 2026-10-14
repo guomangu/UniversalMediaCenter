@@ -105,8 +105,8 @@ export default function MediaDetailScreen() {
     const ratingList: { label: string; value: string; theme: string }[] = [];
     if (media?.communityRating) {
       ratingList.push({
-        label: 'Note Spectateurs',
-        value: `★ ${Number(media.communityRating).toFixed(1)} / 10`,
+        label: 'Note spectateurs',
+        value: `${Number(media.communityRating).toFixed(1)} / 10`,
         theme: 'amber',
       });
     }
@@ -135,7 +135,7 @@ export default function MediaDetailScreen() {
   if (loading || !data) {
     return (
       <View style={styles.loading}>
-        <Text style={{ color: '#94a3b8' }}>Chargement du média...</Text>
+        <Text style={{ color: '#8a95a5' }}>Chargement du média...</Text>
       </View>
     );
   }
@@ -147,8 +147,8 @@ export default function MediaDetailScreen() {
   // Libellé de reprise automatique de lecture
   const playLabel =
     media.resumePositionSeconds && media.resumePositionSeconds > 0
-      ? `▶ Reprendre (${Math.floor(media.resumePositionSeconds / 60)} min)`
-      : `▶ Regarder`;
+      ? `Reprendre (${Math.floor(media.resumePositionSeconds / 60)} min)`
+      : `Regarder`;
 
   const handlePlay = () => {
     router.push({
@@ -193,25 +193,20 @@ export default function MediaDetailScreen() {
                   <Text style={styles.seasonTagTxt}>{seasonTag}</Text>
                 </View>
               ) : null}
+              {media.releaseYear ? (
+                <View style={styles.metaYearPill}>
+                  <Text style={styles.metaYearTxt}>{media.releaseYear}</Text>
+                </View>
+              ) : null}
               {media.edition ? (
-                <View
-                  style={[
-                    styles.seasonTagPill,
-                    { backgroundColor: 'rgba(99, 102, 241, 0.25)', borderColor: '#6366f1' },
-                  ]}
-                >
-                  <Text style={[styles.seasonTagTxt, { color: '#a5b4fc' }]}>✨ {media.edition}</Text>
+                <View style={[styles.seasonTagPill, styles.editionPill]}>
+                  <Text style={[styles.seasonTagTxt, { color: '#c5cedb' }]}>{media.edition}</Text>
                 </View>
               ) : null}
               {media.confidenceScore && media.confidenceScore < 0.9 ? (
-                <View
-                  style={[
-                    styles.seasonTagPill,
-                    { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: '#f87171' },
-                  ]}
-                >
-                  <Text style={[styles.seasonTagTxt, { color: '#fca5a5' }]}>
-                    ⚠️ À vérifier ({Math.round(media.confidenceScore * 100)}%)
+                <View style={[styles.seasonTagPill, styles.verifyPill]}>
+                  <Text style={[styles.seasonTagTxt, { color: '#e2a3a3' }]}>
+                    À vérifier ({Math.round(media.confidenceScore * 100)}%)
                   </Text>
                 </View>
               ) : null}
@@ -249,24 +244,26 @@ export default function MediaDetailScreen() {
                 onPress={handleToggleFav}
                 style={[
                   styles.playBtn,
-                  isFav ? { backgroundColor: '#dc2626' } : { backgroundColor: '#334155' },
+                  isFav
+                    ? { backgroundColor: 'rgba(168, 70, 70, 0.9)' }
+                    : { backgroundColor: 'rgba(45, 52, 64, 0.7)' },
                 ]}
               >
-                <Text style={styles.btnText}>{isFav ? '❤️ Favori' : '🤍 Ajouter aux favoris'}</Text>
+                <Text style={styles.btnText}>{isFav ? 'Favori' : 'Ajouter aux favoris'}</Text>
               </Pressable>
               <Pressable
                 focusable={true}
                 onPress={() => setShowRepostModal(true)}
-                style={[styles.playBtn, { backgroundColor: '#0284c7' }]}
+                style={[styles.playBtn, { backgroundColor: 'rgba(55, 75, 95, 0.7)' }]}
               >
-                <Text style={styles.btnText}>🔄 Avis & Repost</Text>
+                <Text style={styles.btnText}>Avis & Repost</Text>
               </Pressable>
               <Pressable
                 focusable={true}
                 onPress={() => setShowCast(true)}
-                style={[styles.playBtn, { backgroundColor: '#4338ca' }]}
+                style={[styles.playBtn, { backgroundColor: 'rgba(50, 65, 85, 0.7)' }]}
               >
-                <Text style={styles.btnText}>📡 Diffuser</Text>
+                <Text style={styles.btnText}>Diffuser</Text>
               </Pressable>
               <Pressable
                 focusable={true}
@@ -276,9 +273,9 @@ export default function MediaDetailScreen() {
                     params: { topic: media.slug || media.id, title: media.title },
                   } as any)
                 }
-                style={[styles.playBtn, { backgroundColor: '#334155' }]}
+                style={[styles.playBtn, { backgroundColor: 'rgba(45, 52, 64, 0.7)' }]}
               >
-                <Text style={styles.btnText}>💬 Forum WhatsApp</Text>
+                <Text style={styles.btnText}>Discussion</Text>
               </Pressable>
             </View>
           </View>
@@ -294,7 +291,7 @@ export default function MediaDetailScreen() {
         {/* Bonus, Coulisses et Scènes coupées (Extras) */}
         {extras && extras.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.secTitle}>🎁 Bonus & Coulisses ({extras.length})</Text>
+            <Text style={styles.secTitle}>Bonus & Coulisses ({extras.length})</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -313,7 +310,7 @@ export default function MediaDetailScreen() {
                   style={styles.extraCard}
                 >
                   <View style={styles.extraThumbWrap}>
-                    <Text style={{ fontSize: 32 }}>🎬</Text>
+                    <Text style={styles.extraThumbTxt}>BONUS</Text>
                     <View style={styles.extraTypeBadge}>
                       <Text style={styles.extraTypeBadgeTxt}>
                         {extra.extraType ? extra.extraType.toUpperCase() : 'BONUS'}
@@ -346,14 +343,14 @@ export default function MediaDetailScreen() {
         {/* ======================================================== */}
 
         <View style={styles.metaHubContainer}>
-          <Text style={styles.metaHubMainTitle}>📋 Fiche Complète & Métadonnées de l'Œuvre</Text>
+          <Text style={styles.metaHubMainTitle}>Fiche technique & Métadonnées</Text>
 
           {/* 1. Casting des Acteurs avec Photos et Rôles */}
           {actors.length > 0 && (
             <View style={styles.metaSubSection}>
               <View style={styles.secHeaderRow}>
-                <Text style={styles.secTitle}>🎭 Casting & Artistes ({actors.length})</Text>
-                <Text style={styles.secHint}>Cliquez sur un artiste pour voir ses œuvres et son forum</Text>
+                <Text style={styles.secTitle}>Casting & Artistes ({actors.length})</Text>
+                <Text style={styles.secHint}>Sélectionnez un artiste pour consulter sa filmographie</Text>
               </View>
               <ScrollView
                 horizontal
@@ -374,7 +371,9 @@ export default function MediaDetailScreen() {
                           <Image source={{ uri: thumb }} style={styles.actorAvatar} />
                         ) : (
                           <View style={styles.actorAvatarPlaceholder}>
-                            <Text style={{ fontSize: 24 }}>👤</Text>
+                            <Text style={styles.actorAvatarPlaceholderTxt}>
+                              {actor.value_text?.slice(0, 2)?.toUpperCase() || 'ART'}
+                            </Text>
                           </View>
                         )}
                       </View>
@@ -399,7 +398,7 @@ export default function MediaDetailScreen() {
           {/* 2. Équipes Créatives (Réalisateurs, Scénaristes, Producteurs, Musique) */}
           {(directors.length > 0 || writers.length > 0 || producers.length > 0 || composers.length > 0) && (
             <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>🎬 Réalisation & Équipe Créative</Text>
+              <Text style={styles.secTitle}>Réalisation & Équipe Créative</Text>
               <View style={styles.zoneRow}>
                 {directors.map((d: any, i: number) => (
                   <TagPill key={`dir-${i}`} label={d.value_text} subtext="Réalisateur" theme="amber" />
@@ -411,7 +410,7 @@ export default function MediaDetailScreen() {
                   <TagPill key={`prod-${i}`} label={p.value_text} subtext="Producteur" theme="indigo" />
                 ))}
                 {composers.map((m: any, i: number) => (
-                  <TagPill key={`comp-${i}`} label={m.value_text} subtext="Musique / Compositeur" theme="rose" />
+                  <TagPill key={`comp-${i}`} label={m.value_text} subtext="Compositeur" theme="rose" />
                 ))}
               </View>
             </View>
@@ -420,7 +419,7 @@ export default function MediaDetailScreen() {
           {/* 3. Studios & Production */}
           {studios.length > 0 && (
             <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>🏢 Studios & Sociétés de Production</Text>
+              <Text style={styles.secTitle}>Studios & Production</Text>
               <View style={styles.zoneRow}>
                 {studios.map((s: any, i: number) => (
                   <TagPill key={`std-${i}`} label={s.value_text} subtext="Studio" theme="sky" />
@@ -432,7 +431,7 @@ export default function MediaDetailScreen() {
           {/* 4. Pays d'Origine & Lieux */}
           {countries.length > 0 && (
             <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>🌍 Origine & Lieux de Tournage</Text>
+              <Text style={styles.secTitle}>Origine & Lieux de tournage</Text>
               <View style={styles.zoneRow}>
                 {countries.map((c: any, i: number) => (
                   <TagPill key={`cnt-${i}`} label={c.value_text} subtext="Pays / Lieu" theme="teal" />
@@ -444,7 +443,7 @@ export default function MediaDetailScreen() {
           {/* 5. Notes & Classifications */}
           {ratings.length > 0 && (
             <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>⭐ Notes & Classification d'Âge</Text>
+              <Text style={styles.secTitle}>Notes & Classification</Text>
               <View style={styles.zoneRow}>
                 {ratings.map((r, i) => (
                   <TagPill key={`rat-${i}`} label={r.value} subtext={r.label} theme={r.theme as any} />
@@ -456,7 +455,7 @@ export default function MediaDetailScreen() {
           {/* 6. Caractéristiques Techniques & Pistes de Flux */}
           {technicalSpecs.length > 0 && (
             <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>🛠️ Fiche Technique, Codecs & Flux Audio/Vidéo</Text>
+              <Text style={styles.secTitle}>Caractéristiques techniques & Codecs</Text>
               <View style={styles.zoneRow}>
                 {technicalSpecs.map((t: any, i: number) => (
                   <TagPill
@@ -477,7 +476,7 @@ export default function MediaDetailScreen() {
         {/* Section Avis & Reposts communautaires */}
         {reposts.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.secTitle}>💬 Avis & Reposts de la Communauté ({reposts.length})</Text>
+            <Text style={styles.secTitle}>Avis & Retours de la communauté ({reposts.length})</Text>
             <View style={{ gap: 10 }}>
               {reposts.map((r) => (
                 <View key={r.id} style={styles.repostCard}>
@@ -511,19 +510,21 @@ export default function MediaDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' },
+  container: { flex: 1, backgroundColor: '#1d2127' },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1d2127' },
   content: { padding: Spacing.four, gap: Spacing.four },
   backBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+    backgroundColor: 'rgba(42, 48, 58, 0.65)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: Radius.pill,
     marginBottom: Spacing.two,
     marginTop: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.14)',
   },
-  backTxt: { color: '#94a3b8', fontSize: 13, fontWeight: '600' },
+  backTxt: { color: '#9ba7b7', fontSize: 13, fontWeight: '600' },
   heroBox: {
     position: 'relative',
     minHeight: 340,
@@ -531,125 +532,144 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     borderRadius: Radius.lg,
     overflow: 'hidden',
-    backgroundColor: '#1e293b',
+    backgroundColor: 'rgba(38, 44, 54, 0.75)',
     marginBottom: Spacing.three,
     borderWidth: 1,
-    borderColor: 'rgba(51, 65, 85, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.14)',
   },
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.35 },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.3 },
   heroContent: { maxWidth: MaxContentWidth, gap: 10 },
   zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   seasonTagPill: {
-    backgroundColor: '#6366f1',
+    backgroundColor: 'rgba(26, 31, 40, 0.82)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: '#818cf8',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  seasonTagTxt: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
-  title: { fontSize: 28, fontWeight: '900', color: '#f8fafc' },
-  taglineTxt: { fontSize: 15, fontStyle: 'italic', color: '#a5b4fc', lineHeight: 22 },
-  overview: { fontSize: 14, color: '#cbd5e1', lineHeight: 22, maxWidth: 800 },
+  seasonTagTxt: { color: '#d6dbe3', fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+  metaYearPill: {
+    backgroundColor: 'rgba(26, 31, 40, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  metaYearTxt: { color: '#8a95a5', fontSize: 11, fontWeight: '600' },
+  editionPill: {
+    backgroundColor: 'rgba(45, 52, 64, 0.6)',
+    borderColor: 'rgba(160, 175, 195, 0.16)',
+  },
+  verifyPill: {
+    backgroundColor: 'rgba(168, 70, 70, 0.25)',
+    borderColor: 'rgba(168, 70, 70, 0.4)',
+  },
+  title: { fontSize: 26, fontWeight: '700', color: '#edeef2', letterSpacing: -0.3 },
+  taglineTxt: { fontSize: 14, fontStyle: 'italic', color: '#9ba7b7', lineHeight: 20 },
+  overview: { fontSize: 13.5, color: '#b0bccb', lineHeight: 22, maxWidth: 800 },
   playBtn: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: Radius.pill,
-    backgroundColor: '#6366f1',
+    backgroundColor: '#475569',
   },
-  btnText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  btnText: { color: '#edeef2', fontWeight: '700', fontSize: 12 },
   section: { padding: Spacing.four },
-  secTitle: { fontSize: 18, fontWeight: '800', color: '#f8fafc', marginBottom: 12 },
+  secTitle: { fontSize: 17, fontWeight: '700', color: '#dfe4ec', marginBottom: 12, letterSpacing: -0.2 },
   secHeaderRow: { marginBottom: 12 },
-  secHint: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  secHint: { color: '#8a95a5', fontSize: 12, marginTop: 2 },
   actorsScroll: { gap: 14, paddingVertical: 4 },
   actorCard: {
     width: 105,
     alignItems: 'center',
     gap: 4,
   },
-  actorCardPressed: { opacity: 0.8 },
+  actorCardPressed: { opacity: 0.85 },
   actorAvatarWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     overflow: 'hidden',
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-    borderWidth: 2,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    backgroundColor: 'rgba(35, 41, 51, 0.95)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(160, 175, 195, 0.2)',
     marginBottom: 4,
   },
   actorAvatar: { width: '100%', height: '100%' },
   actorAvatarPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  actorName: { color: '#f1f5f9', fontSize: 12, fontWeight: '700', textAlign: 'center' },
-  actorRole: { color: '#94a3b8', fontSize: 10, fontWeight: '500', textAlign: 'center', lineHeight: 13 },
+  actorAvatarPlaceholderTxt: { color: '#7c8797', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
+  actorName: { color: '#dfe4ec', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  actorRole: { color: '#8a95a5', fontSize: 10, fontWeight: '500', textAlign: 'center', lineHeight: 13 },
   actorTagBadge: {
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    backgroundColor: 'rgba(148, 163, 184, 0.12)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.15)',
     marginTop: 2,
   },
-  actorTagBadgeTxt: { color: '#a5b4fc', fontSize: 9, fontWeight: '700' },
+  actorTagBadgeTxt: { color: '#94a1b3', fontSize: 9, fontWeight: '600' },
   extraCard: {
     width: 180,
-    backgroundColor: 'rgba(30, 41, 59, 0.75)',
-    borderRadius: 14,
+    backgroundColor: 'rgba(38, 44, 54, 0.65)',
+    borderRadius: Radius.md,
     padding: 10,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
   },
   extraThumbWrap: {
     height: 100,
-    borderRadius: 10,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderRadius: 8,
+    backgroundColor: 'rgba(30, 36, 45, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
   },
+  extraThumbTxt: { color: '#7c8797', fontSize: 12, fontWeight: '700', letterSpacing: 1.5 },
   extraTypeBadge: {
     position: 'absolute',
     bottom: 6,
     right: 6,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(20, 24, 30, 0.75)',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: 4,
   },
-  extraTypeBadgeTxt: { color: '#f8fafc', fontSize: 10, fontWeight: '700' },
-  extraTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 13 },
-  extraRuntime: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
+  extraTypeBadgeTxt: { color: '#cbd5e1', fontSize: 9.5, fontWeight: '600' },
+  extraTitle: { color: '#dfe4ec', fontWeight: '600', fontSize: 13 },
+  extraRuntime: { color: '#8a95a5', fontSize: 11, marginTop: 2 },
   metaHubContainer: {
-    backgroundColor: 'rgba(30, 41, 59, 0.65)',
+    backgroundColor: 'rgba(38, 44, 54, 0.65)',
     borderRadius: Radius.xl,
     padding: Spacing.four,
     marginTop: Spacing.four,
     marginBottom: Spacing.four,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
     gap: 20,
   },
   metaHubMainTitle: {
-    fontSize: 19,
-    fontWeight: '900',
-    color: '#c7d2fe',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#edeef2',
     letterSpacing: -0.3,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(99, 102, 241, 0.2)',
+    borderBottomColor: 'rgba(160, 175, 195, 0.1)',
     paddingBottom: 10,
   },
   metaSubSection: { gap: 10 },
   repostCard: {
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
-    borderRadius: 16,
+    backgroundColor: 'rgba(38, 44, 54, 0.65)',
+    borderRadius: Radius.md,
     padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
   },
   repostHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  repostAuthor: { color: '#f8fafc', fontWeight: '700', fontSize: 13 },
-  repostRating: { color: '#fbbf24', fontSize: 12 },
-  repostComment: { color: '#cbd5e1', fontSize: 13, lineHeight: 18 },
+  repostAuthor: { color: '#dfe4ec', fontWeight: '600', fontSize: 13 },
+  repostRating: { color: '#cfb991', fontSize: 12 },
+  repostComment: { color: '#b0bccb', fontSize: 13, lineHeight: 18 },
 });

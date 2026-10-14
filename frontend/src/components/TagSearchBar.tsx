@@ -23,8 +23,8 @@ export function TagSearchBar({ searchQuery, onSearchChange, activeFilter, onFilt
       <View style={styles.inputWrap}>
         <TextInput
           style={styles.input}
-          placeholder="🔍 Rechercher un tag (ex: Tarantino, 2023, Action, Bleach)..."
-          placeholderTextColor="#64748b"
+          placeholder="Rechercher un tag (Tarantino, 2023, Action, Bleach)..."
+          placeholderTextColor="#7c8797"
           value={searchQuery}
           onChangeText={onSearchChange}
         />
@@ -36,7 +36,7 @@ export function TagSearchBar({ searchQuery, onSearchChange, activeFilter, onFilt
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-        <Text style={styles.filterPrefix}>Filtres rapides :</Text>
+        <Text style={styles.filterPrefix}>Filtres :</Text>
         {FILTER_TAGS.map((f) => {
           const isSelected = activeFilter === f;
           return (
@@ -60,28 +60,28 @@ const styles = StyleSheet.create({
   container: { marginBottom: Spacing.three },
   inputWrap: { position: 'relative', marginBottom: 8 },
   input: {
-    backgroundColor: 'rgba(30, 41, 59, 0.75)',
+    backgroundColor: 'rgba(38, 44, 54, 0.7)',
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.16)',
     borderRadius: Radius.pill,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: '#f8fafc',
+    paddingVertical: 9,
+    color: '#edeef2',
     fontSize: 13,
   },
-  clearBtn: { position: 'absolute', right: 14, top: 10, padding: 2 },
-  clearText: { color: '#94a3b8', fontSize: 13, fontWeight: '700' },
+  clearBtn: { position: 'absolute', right: 14, top: 9, padding: 2 },
+  clearText: { color: '#8894a4', fontSize: 13, fontWeight: '700' },
   filterRow: { gap: 6, alignItems: 'center' },
-  filterPrefix: { color: '#64748b', fontSize: 11, fontWeight: '700', marginRight: 4 },
+  filterPrefix: { color: '#7c8797', fontSize: 11, fontWeight: '600', marginRight: 4 },
   filterChip: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: Radius.pill,
-    backgroundColor: 'rgba(51, 65, 85, 0.4)',
+    backgroundColor: 'rgba(42, 48, 58, 0.6)',
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.3)',
+    borderColor: 'rgba(160, 175, 195, 0.14)',
   },
-  activeChip: { backgroundColor: '#4f46e5', borderColor: '#818cf8' },
-  filterText: { color: '#94a3b8', fontSize: 11, fontWeight: '600' },
-  activeText: { color: '#ffffff', fontWeight: '700' },
+  activeChip: { backgroundColor: 'rgba(70, 85, 105, 0.5)', borderColor: 'rgba(148, 163, 184, 0.4)' },
+  filterText: { color: '#8e9ab0', fontSize: 11, fontWeight: '600' },
+  activeText: { color: '#edeef2', fontWeight: '700' },
 });

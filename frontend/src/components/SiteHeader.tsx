@@ -68,7 +68,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
       <View style={styles.header}>
         <View style={styles.topRow}>
           <Pressable focusable={true} onPress={onScrollToTop || (() => router.push('/'))} style={styles.logoBtn}>
-            <Text style={styles.logoText}>🎬 {isMobile ? 'UMS' : siteName}</Text>
+            <Text style={styles.logoText}>{isMobile ? 'UMS' : siteName}</Text>
           </Pressable>
 
           <View style={styles.actions}>
@@ -80,7 +80,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                   style={styles.userNavPill}
                   onPress={() => navigateUserTab('FAVORITES')}
                 >
-                  <Text style={styles.userNavPillTxt}>❤️ Favoris ({favoritesCount})</Text>
+                  <Text style={styles.userNavPillTxt}>Favoris ({favoritesCount})</Text>
                 </Pressable>
 
                 <Pressable
@@ -88,7 +88,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                   style={styles.userNavPill}
                   onPress={() => navigateUserTab('FRIENDS')}
                 >
-                  <Text style={styles.userNavPillTxt}>👥 Amis</Text>
+                  <Text style={styles.userNavPillTxt}>Amis</Text>
                 </Pressable>
 
                 <Pressable
@@ -96,7 +96,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                   style={styles.userNavPill}
                   onPress={() => navigateUserTab('FORUMS')}
                 >
-                  <Text style={styles.userNavPillTxt}>💬 Mes Salons</Text>
+                  <Text style={styles.userNavPillTxt}>Salons</Text>
                 </Pressable>
 
                 <Pressable
@@ -104,13 +104,13 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                   style={styles.userNavPill}
                   onPress={() => navigateUserTab('FEED')}
                 >
-                  <Text style={styles.userNavPillTxt}>🔄 Fil d'avis</Text>
+                  <Text style={styles.userNavPillTxt}>Fil d'avis</Text>
                 </Pressable>
               </View>
             ) : null}
 
             <Pressable focusable={true} style={styles.tvBtn} onPress={() => router.push('/tv' as any)}>
-              <Text style={styles.tvBtnText}>📺 TV</Text>
+              <Text style={styles.tvBtnText}>TV</Text>
             </Pressable>
 
             {currentUser ? (
@@ -119,18 +119,18 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                 style={styles.profileBtn}
                 onPress={() => router.push('/user' as any)}>
                 <Text style={styles.profileBtnText}>
-                  👤 {currentUser.displayName}{currentUser.isAdmin ? ' 👑' : ''}
+                  {currentUser.displayName}{currentUser.isAdmin ? ' • Admin' : ''}
                 </Text>
               </Pressable>
             ) : (
               <Pressable focusable={true} style={styles.loginBtn} onPress={() => router.push('/login' as any)}>
-                <Text style={styles.loginBtnText}>🔑 Se connecter</Text>
+                <Text style={styles.loginBtnText}>Connexion</Text>
               </Pressable>
             )}
 
             {currentUser?.isAdmin ? (
               <Pressable focusable={true} style={styles.adminBtn} onPress={() => router.push('/admin' as any)}>
-                <Text style={styles.adminBtnText}>⚙️ Admin</Text>
+                <Text style={styles.adminBtnText}>Admin</Text>
               </Pressable>
             ) : null}
           </View>
@@ -144,7 +144,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               style={[styles.userNavPill, styles.mobileUserPill]}
               onPress={() => navigateUserTab('FAVORITES')}
             >
-              <Text style={styles.userNavPillTxt}>❤️ Favoris ({favoritesCount})</Text>
+              <Text style={styles.userNavPillTxt}>Favoris ({favoritesCount})</Text>
             </Pressable>
 
             <Pressable
@@ -152,7 +152,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               style={[styles.userNavPill, styles.mobileUserPill]}
               onPress={() => navigateUserTab('FRIENDS')}
             >
-              <Text style={styles.userNavPillTxt}>👥 Amis</Text>
+              <Text style={styles.userNavPillTxt}>Amis</Text>
             </Pressable>
 
             <Pressable
@@ -160,7 +160,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               style={[styles.userNavPill, styles.mobileUserPill]}
               onPress={() => navigateUserTab('FORUMS')}
             >
-              <Text style={styles.userNavPillTxt}>💬 Mes Salons</Text>
+              <Text style={styles.userNavPillTxt}>Salons</Text>
             </Pressable>
 
             <Pressable
@@ -168,7 +168,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               style={[styles.userNavPill, styles.mobileUserPill]}
               onPress={() => navigateUserTab('FEED')}
             >
-              <Text style={styles.userNavPillTxt}>🔄 Fil d'avis</Text>
+              <Text style={styles.userNavPillTxt}>Fil d'avis</Text>
             </Pressable>
           </ScrollView>
         ) : null}
@@ -178,7 +178,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
               {onScrollToTop ? (
                 <Pressable focusable={true} onPress={onScrollToTop} style={styles.homeBtn}>
-                  <Text style={styles.homeTxt}>🏠 Haut</Text>
+                  <Text style={styles.homeTxt}>Haut</Text>
                 </Pressable>
               ) : null}
               {categories.map((cat) => (
@@ -199,43 +199,47 @@ const styles = StyleSheet.create({
   fixedWrap: {
     position: (Platform.OS === 'web' ? 'fixed' : 'absolute') as any,
     top: 0, left: 0, right: 0, zIndex: 1000,
-    backgroundColor: 'rgba(15, 23, 42, 0.96)', borderBottomWidth: 1, borderBottomColor: 'rgba(99, 102, 241, 0.35)',
-    paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center',
+    backgroundColor: 'rgba(28, 33, 41, 0.94)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(160, 175, 195, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignItems: 'center',
   },
   header: { flexDirection: 'column', maxWidth: MaxContentWidth, width: '100%', gap: 6 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
   logoBtn: { cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
-  logoText: { fontSize: 16, fontWeight: '800', color: '#f8fafc', letterSpacing: -0.5 },
-  secondTierRow: { width: '100%', flexDirection: 'row', alignItems: 'center', paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(99, 102, 241, 0.15)' },
+  logoText: { fontSize: 15, fontWeight: '700', color: '#edeef2', letterSpacing: -0.3 },
+  secondTierRow: { width: '100%', flexDirection: 'row', alignItems: 'center', paddingTop: 5, borderTopWidth: 1, borderTopColor: 'rgba(160, 175, 195, 0.1)' },
   scroll: { gap: 6, alignItems: 'center', paddingRight: 16 },
-  homeBtn: { backgroundColor: 'rgba(99, 102, 241, 0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.pill, marginRight: 2 },
-  homeTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '800' },
-  chip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.pill, backgroundColor: 'rgba(51, 65, 85, 0.55)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.35)' },
-  actChip: { backgroundColor: '#6366f1', borderColor: '#818cf8' },
-  chipTxt: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },
-  actTxt: { color: '#ffffff', fontWeight: '800' },
+  homeBtn: { backgroundColor: 'rgba(55, 65, 80, 0.45)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: Radius.pill, marginRight: 2 },
+  homeTxt: { color: '#c5cedb', fontSize: 11, fontWeight: '700' },
+  chip: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: Radius.pill, backgroundColor: 'rgba(42, 48, 58, 0.6)', borderWidth: 1, borderColor: 'rgba(160, 175, 195, 0.14)' },
+  actChip: { backgroundColor: 'rgba(70, 85, 105, 0.5)', borderColor: 'rgba(148, 163, 184, 0.4)' },
+  chipTxt: { color: '#8e9ab0', fontSize: 11, fontWeight: '600' },
+  actTxt: { color: '#edeef2', fontWeight: '700' },
   actions: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   userShortcutsRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginRight: 4 },
   userNavPill: {
-    backgroundColor: 'rgba(30, 41, 59, 0.75)',
+    backgroundColor: 'rgba(42, 48, 58, 0.55)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    borderColor: 'rgba(160, 175, 195, 0.14)',
   },
-  userNavPillTxt: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
+  userNavPillTxt: { color: '#c5cedb', fontSize: 11, fontWeight: '600' },
   mobileUserScroll: { gap: 6, paddingVertical: 2, paddingHorizontal: 2 },
   mobileUserPill: {
     paddingHorizontal: 9,
     paddingVertical: 4,
   },
-  tvBtn: { backgroundColor: 'rgba(99, 102, 241, 0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: '#6366f1' },
-  tvBtnText: { color: '#c7d2fe', fontWeight: '800', fontSize: 11 },
-  loginBtn: { backgroundColor: '#6366f1', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill },
-  loginBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 11 },
-  profileBtn: { backgroundColor: 'rgba(99, 102, 241, 0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.45)' },
-  profileBtnText: { color: '#c7d2fe', fontWeight: '800', fontSize: 11 },
-  adminBtn: { backgroundColor: 'rgba(51, 65, 85, 0.6)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: Radius.pill },
-  adminBtnText: { color: '#e2e8f0', fontWeight: '600', fontSize: 11 },
+  tvBtn: { backgroundColor: 'rgba(55, 68, 85, 0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(140, 165, 195, 0.25)' },
+  tvBtnText: { color: '#cbd5e1', fontWeight: '700', fontSize: 11 },
+  loginBtn: { backgroundColor: '#3b4554', paddingHorizontal: 11, paddingVertical: 5, borderRadius: Radius.pill },
+  loginBtnText: { color: '#edeef2', fontWeight: '600', fontSize: 11 },
+  profileBtn: { backgroundColor: 'rgba(50, 60, 75, 0.45)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(140, 165, 195, 0.22)' },
+  profileBtnText: { color: '#cbd5e1', fontWeight: '700', fontSize: 11 },
+  adminBtn: { backgroundColor: 'rgba(42, 48, 58, 0.6)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: Radius.pill },
+  adminBtnText: { color: '#c5cedb', fontWeight: '600', fontSize: 11 },
 });

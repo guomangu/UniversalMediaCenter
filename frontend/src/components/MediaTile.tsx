@@ -28,7 +28,7 @@ export function MediaTile({ item }: { item: MediaTileItem }) {
           <Image source={{ uri: poster }} style={styles.img} resizeMode="cover" />
         ) : (
           <View style={styles.empty}>
-            <Text style={{ fontSize: 32 }}>{isGroup ? '📺' : '🎬'}</Text>
+            <Text style={styles.emptyTxt}>{isGroup ? 'SÉRIE' : 'FILM'}</Text>
           </View>
         )}
         
@@ -40,7 +40,7 @@ export function MediaTile({ item }: { item: MediaTileItem }) {
         {/* Badge séance active en haut à droite */}
         {activeSession ? (
           <View style={styles.sessionBadgeTop}>
-            <Text style={styles.sessionBadgeTopTxt}>🍿 SÉANCE</Text>
+            <Text style={styles.sessionBadgeTopTxt}>EN SÉANCE</Text>
           </View>
         ) : null}
 
@@ -55,7 +55,7 @@ export function MediaTile({ item }: { item: MediaTileItem }) {
         {activeSession ? (
           <View style={styles.sessionBottomBar}>
             <Text style={styles.sessionBottomTxt}>
-              🍿 {activeSession.count} en séance
+              {activeSession.count} en séance
             </Text>
           </View>
         ) : null}
@@ -77,72 +77,72 @@ const styles = StyleSheet.create({
   imgWrap: {
     width: 200,
     height: 290,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     overflow: 'hidden',
-    backgroundColor: 'rgba(30, 41, 59, 0.85)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
+    backgroundColor: 'rgba(38, 44, 54, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.14)',
     position: 'relative',
   },
   img: { width: '100%', height: '100%' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(35, 41, 51, 0.95)' },
+  emptyTxt: { color: '#7c8797', fontSize: 13, fontWeight: '700', letterSpacing: 1.5 },
   badge: {
     position: 'absolute',
     top: 8,
     left: 8,
-    backgroundColor: 'rgba(99, 102, 241, 0.95)',
+    backgroundColor: 'rgba(26, 31, 40, 0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radius.pill,
   },
-  badgeTxt: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
+  badgeTxt: { color: '#d6dbe3', fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
   sessionBadgeTop: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: '#dc2626',
-    paddingHorizontal: 8,
+    backgroundColor: 'rgba(168, 70, 70, 0.9)',
+    paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: Radius.pill,
-    shadowColor: '#dc2626',
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
   },
-  sessionBadgeTopTxt: { color: '#ffffff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
+  sessionBadgeTopTxt: { color: '#ffffff', fontSize: 9.5, fontWeight: '700', letterSpacing: 0.5 },
   yr: {
     position: 'absolute',
     bottom: 8,
     right: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(26, 31, 40, 0.75)',
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: Radius.sm,
   },
-  yrTxt: { color: '#94a3b8', fontSize: 10, fontWeight: '700' },
+  yrTxt: { color: '#8a95a5', fontSize: 10, fontWeight: '600' },
   sessionBottomBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(220, 38, 38, 0.92)',
-    paddingVertical: 5,
+    backgroundColor: 'rgba(150, 58, 58, 0.92)',
+    paddingVertical: 4,
     paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sessionBottomTxt: {
     color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 10.5,
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
   title: {
     marginTop: 8,
-    color: '#f1f5f9',
+    color: '#dfe4ec',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     lineHeight: 18,
     textAlign: 'center',
   },
-  pressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
+  pressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
 });

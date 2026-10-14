@@ -1,3 +1,26 @@
+### 🎬 Catégorie "Réalisateur", DA Sobre & Palette Reposante Mid-Tone (Sans Emojis)
+- [x] **Ajout de la Catégorie "Réalisateur" dans la Taxonomie d'Accueil ([taxonomyRoutes.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/taxonomyRoutes.ts)) :**
+  - Requête d'agrégation SQL sur l'attribut EAV `code = 'director'` regroupant films, sagas et séries associées aux réalisateurs (Pete Docter, Brad Bird, Jonathan Cohen, Mark Andrews, etc.).
+  - Intégration dans la liste des catégories principales retournées par `GET /api/ui/taxonomy` avec `id = 'directors'` et titre `"Réalisateur"`.
+  - Prise en charge dédiée dans l'endpoint `GET /api/ui/taxonomy/medias` assurant le filtrage direct et performant des œuvres selon le réalisateur sélectionné.
+
+- [x] **Direction Artistique Neutre, Adulte et Reposante (Entre-Deux Clair / Sombre) ([theme.ts](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/constants/theme.ts), [global.css](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/global.css)) :**
+  - Remplacement du fond sombre tranchant `#0f172a` et des néons électriques (`#6366f1`) par une palette minérale graphite/ardoise reposante (`#1d2127`, surface `rgba(38, 44, 54, 0.75)`).
+  - Couleurs équilibrées et apaisantes pour les yeux : suppression de la fatigue visuelle sans basculer ni en mode sombre agressif ni en mode clair éblouissant.
+  - Typographie nuancée en platine doux (`#edeef2`, corps `#9ba7b7`, sous-titres `#8a95a5`), bordures feutrées et anneau de focus adouci (`rgba(148, 163, 184, 0.75)`).
+
+- [x] **Élimination Exhaustive des Emojis & Épure Visuelle ([SiteHeader.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/SiteHeader.tsx), [TagSearchBar.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/TagSearchBar.tsx), [CategorySection.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/CategorySection.tsx), [TagCard.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/TagCard.tsx), [MediaTile.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaTile.tsx), [MediaCard.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx)) :**
+  - Remplacement des emojis décoratifs par une typographie nette, soignée et professionnelle.
+  - En-tête : logos et onglets épurés (`UMS`, `Favoris`, `Amis`, `Salons`, `Fil d'avis`, `TV`, `Admin`, `Connexion`).
+  - Recherche & Filtres : suppression de la loupe et uniformisation des tags de filtres rapides.
+  - Badges des médias : `Film`, `Série`, `Saga`, `S01 • EP 01` en cartouches discrets et élégants ; badge `EN SÉANCE` en terracotta mesuré au lieu du rouge criard et sans emoji pop-corn.
+  - Fiche détaillée du média : refonte des titres de sections du Hub de Métadonnées (`Casting & Artistes`, `Réalisation & Équipe Créative`, `Studios & Production`, `Origine & Lieux de tournage`, `Notes & Classification`, `Caractéristiques techniques & Codecs`).
+
+- [x] **Sublimation du Design des Cards & Ergonomie UX Préservee ([MediaTile.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaTile.tsx), [MediaCard.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [MediaChildrenRow.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaChildrenRow.tsx), [TagPill.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/TagPill.tsx)) :**
+  - Structure et arborescence 100% préservées.
+  - Coins adoucis, bordures subtiles au quart de contraste, pastilles d'années et de notes dans des tons champagne/sable reposants (`#cfb991`).
+  - Cartes d'épisodes et tags adoucis avec des thèmes de couleurs désaturés pour une lecture fluide et agréable.
+
 ### ⚡ UX & Nettoyage Réactif des Séances, Vidéos In-Place & Lightbox Popup Forum, Liens Intelligents sans Doublon
 - [x] **Clôture Déterministe et Nettoyage en Temps Réel des Séances et Badges "En Séance" ([sessionRoutes.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/sessionRoutes.ts), [presenceStore.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/presenceStore.ts), [player/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/player/[id].tsx)) :**
   - Fin définitive des séances fantômes qui restaient affichées indéfiniment (ex: `🔴 EN COURS Initié par : TeleAdmin Pro Séance Soirée Popcorn 👥 1 spectateur`).

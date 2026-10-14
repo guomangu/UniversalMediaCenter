@@ -120,7 +120,7 @@ export function ForumInputBar({
               content: '',
               mediaType: 'AUDIO',
               mediaUrl: res.url,
-              fileName: 'Message vocal 🎙️',
+              fileName: 'Message vocal',
               quotedMediaId: quotedMedia?.id,
               quotedMediaTitle: quotedMedia?.title,
               quotedMediaPoster: quotedMedia?.poster,
@@ -150,29 +150,29 @@ export function ForumInputBar({
 
       {replyMsg && (
         <View style={styles.replyBar}>
-          <Text style={styles.replyTxt} numberOfLines={1}>↩ Réponse à {replyMsg.authorName} : {replyMsg.content}</Text>
+          <Text style={styles.replyTxt} numberOfLines={1}>Réponse à {replyMsg.authorName} : {replyMsg.content}</Text>
           <Pressable focusable={true} onPress={onCancelReply}><Text style={styles.cancelTxt}>✕</Text></Pressable>
         </View>
       )}
 
       {quotedMedia && (
         <View style={styles.quoteBar}>
-          <Text style={styles.quoteTxt} numberOfLines={1}>🍿 Média lié : {quotedMedia.title}</Text>
+          <Text style={styles.quoteTxt} numberOfLines={1}>Média lié : {quotedMedia.title}</Text>
           <Pressable focusable={true} onPress={onCancelQuote}><Text style={styles.cancelTxt}>✕</Text></Pressable>
         </View>
       )}
 
       {activeMedia && (
         <View style={styles.mediaTag}>
-          <Text style={styles.mediaTagTxt}>📎 Pièce jointe prête : [{activeMedia.type}] {activeMedia.name}</Text>
+          <Text style={styles.mediaTagTxt}>Fichier joint : [{activeMedia.type}] {activeMedia.name}</Text>
           <Pressable focusable={true} onPress={() => setActiveMedia(null)}><Text style={styles.cancelTxt}>✕</Text></Pressable>
         </View>
       )}
 
       {uploading && (
         <View style={styles.uploadingBar}>
-          <ActivityIndicator size="small" color="#6366f1" />
-          <Text style={styles.uploadingTxt}>Téléversement du fichier / vocal en cours...</Text>
+          <ActivityIndicator size="small" color="#8e9ab0" />
+          <Text style={styles.uploadingTxt}>Téléversement en cours...</Text>
         </View>
       )}
 
@@ -183,23 +183,23 @@ export function ForumInputBar({
           style={[styles.mediaBtn, isRecording && styles.recordingBtn]}
         >
           <Text style={[styles.mediaEmoji, isRecording && styles.recordingTxt]}>
-            {isRecording ? '⏹️ Terminer Vocal & Envoyer' : '🎙️ Vocal différé'}
+            {isRecording ? 'Terminer & Envoyer' : 'Vocal'}
           </Text>
         </Pressable>
         <Pressable focusable={true} onPress={() => triggerPicker('IMAGE', 'image/*')} style={styles.mediaBtn}>
-          <Text style={styles.mediaEmoji}>📷 Image</Text>
+          <Text style={styles.mediaEmoji}>Image</Text>
         </Pressable>
         <Pressable focusable={true} onPress={() => triggerPicker('VIDEO', 'video/*')} style={styles.mediaBtn}>
-          <Text style={styles.mediaEmoji}>🎬 Vidéo</Text>
+          <Text style={styles.mediaEmoji}>Vidéo</Text>
         </Pressable>
         <Pressable focusable={true} onPress={() => triggerPicker('DOCUMENT', '*/*')} style={styles.mediaBtn}>
-          <Text style={styles.mediaEmoji}>📎 Fichier</Text>
+          <Text style={styles.mediaEmoji}>Fichier</Text>
         </Pressable>
         <Pressable focusable={true} onPress={() => {
           const url = prompt('Entrez le lien direct du GIF (Giphy, Tenor, etc.) :');
           if (url?.trim()) setActiveMedia({ type: 'GIF', url: url.trim(), name: 'Reaction.gif' });
         }} style={styles.mediaBtn}>
-          <Text style={styles.mediaEmoji}>👾 GIF</Text>
+          <Text style={styles.mediaEmoji}>GIF</Text>
         </Pressable>
       </View>
 
@@ -208,7 +208,7 @@ export function ForumInputBar({
           ref={inputRef}
           style={styles.input}
           placeholder="Écrire un message... (Entrée pour envoyer)"
-          placeholderTextColor="#64748b"
+          placeholderTextColor="#7c8797"
           value={text}
           onChangeText={setText}
           onSubmitEditing={handleSend}
@@ -220,10 +220,10 @@ export function ForumInputBar({
           onPress={handleStop}
           accessibilityLabel="Arrêter la saisie et quitter le champ"
         >
-          <Text style={styles.stopTxt}>⏹</Text>
+          <Text style={styles.stopTxt}>✕</Text>
         </Pressable>
         <Pressable focusable={true} style={[styles.btn, styles.sendBtn]} onPress={handleSend}>
-          <Text style={styles.sendTxt}>➤</Text>
+          <Text style={styles.sendTxt}>➔</Text>
         </Pressable>
       </View>
     </View>
@@ -232,44 +232,44 @@ export function ForumInputBar({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    backgroundColor: 'rgba(38, 44, 54, 0.75)',
     borderRadius: Radius.lg,
     padding: 10,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
   },
   replyBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    backgroundColor: 'rgba(50, 60, 75, 0.4)',
     padding: 6,
     borderRadius: Radius.sm,
     marginBottom: 6,
   },
-  replyTxt: { color: '#c7d2fe', fontSize: 11, flex: 1 },
+  replyTxt: { color: '#c5cedb', fontSize: 11, flex: 1 },
   quoteBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    backgroundColor: 'rgba(50, 60, 75, 0.4)',
     padding: 6,
     borderRadius: Radius.sm,
     marginBottom: 6,
   },
-  quoteTxt: { color: '#fcd34d', fontSize: 11, flex: 1 },
-  cancelTxt: { color: '#94a3b8', fontSize: 13, fontWeight: 'bold', paddingHorizontal: 6 },
+  quoteTxt: { color: '#cfb991', fontSize: 11, flex: 1 },
+  cancelTxt: { color: '#8a95a5', fontSize: 12, fontWeight: 'bold', paddingHorizontal: 6 },
   mediaTag: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    backgroundColor: 'rgba(45, 55, 68, 0.4)',
     padding: 6,
     borderRadius: Radius.sm,
     marginBottom: 6,
   },
-  mediaTagTxt: { color: '#6ee7b7', fontSize: 11, flex: 1 },
+  mediaTagTxt: { color: '#88c7a8', fontSize: 11, flex: 1 },
   uploadingBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
     padding: 6,
     marginBottom: 6,
   },
-  uploadingTxt: { color: '#a5b4fc', fontSize: 11 },
+  uploadingTxt: { color: '#8a95a5', fontSize: 11 },
   actionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -285,17 +285,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   mediaBtn: {
-    backgroundColor: 'rgba(51, 65, 85, 0.7)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: 'rgba(42, 48, 58, 0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.14)',
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   recordingBtn: {
-    backgroundColor: '#dc2626',
+    backgroundColor: 'rgba(168, 70, 70, 0.9)',
+    borderColor: 'rgba(168, 70, 70, 0.9)',
   },
-  mediaEmoji: { color: '#e2e8f0', fontSize: 11, fontWeight: '600' },
-  recordingTxt: { color: '#ffffff', fontWeight: '800' },
+  mediaEmoji: { color: '#8e9ab0', fontSize: 11, fontWeight: '600' },
+  recordingTxt: { color: '#ffffff', fontWeight: '700' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -303,25 +306,25 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    backgroundColor: 'rgba(30, 36, 45, 0.75)',
     borderRadius: Radius.pill,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    color: '#ffffff',
+    color: '#edeef2',
     fontSize: 13,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.5)',
+    borderColor: 'rgba(160, 175, 195, 0.14)',
   },
   btn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
-  stopBtn: { backgroundColor: '#475569' },
-  stopTxt: { color: '#f8fafc', fontSize: 13 },
-  sendBtn: { backgroundColor: '#6366f1' },
-  sendTxt: { color: '#ffffff', fontSize: 14, fontWeight: 'bold' },
+  stopBtn: { backgroundColor: 'rgba(50, 60, 72, 0.6)' },
+  stopTxt: { color: '#8a95a5', fontSize: 12 },
+  sendBtn: { backgroundColor: '#475569' },
+  sendTxt: { color: '#edeef2', fontSize: 13, fontWeight: 'bold' },
 });

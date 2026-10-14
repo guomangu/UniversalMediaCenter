@@ -66,14 +66,14 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
           ) : null}
 
           {hasActiveSession ? (
-            <View style={[styles.ratingBadge, { backgroundColor: '#dc2626', left: 8, right: undefined }]}>
-              <Text style={[styles.ratingText, { color: '#ffffff', fontWeight: '900' }]}>🍿 SÉANCE</Text>
+            <View style={[styles.ratingBadge, { backgroundColor: 'rgba(168, 70, 70, 0.9)', left: 8, right: undefined }]}>
+              <Text style={[styles.ratingText, { color: '#ffffff', fontWeight: '700', letterSpacing: 0.5 }]}>EN SÉANCE</Text>
             </View>
           ) : null}
 
           {item.communityRating ? (
             <View style={styles.ratingBadge}>
-              <Text style={styles.ratingText}>★ {item.communityRating.toFixed(1)}</Text>
+              <Text style={styles.ratingText}>{item.communityRating.toFixed(1)}</Text>
             </View>
           ) : null}
 
@@ -83,13 +83,13 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
               bottom: (progressPercent > 0 && progressPercent < 95) ? 6 : 0,
               left: 0,
               right: 0,
-              backgroundColor: 'rgba(220, 38, 38, 0.94)',
+              backgroundColor: 'rgba(150, 58, 58, 0.92)',
               paddingVertical: 4,
               alignItems: 'center',
               zIndex: 10,
             }}>
-              <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '800' }}>
-                🍿 {activeSession.count} en séance
+              <Text style={{ color: '#ffffff', fontSize: 10.5, fontWeight: '700', letterSpacing: 0.3 }}>
+                {activeSession.count} en séance
               </Text>
             </View>
           ) : null}

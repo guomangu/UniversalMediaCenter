@@ -78,12 +78,12 @@ export function TagCard({
           onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: tag.slug, title: tag.label } } as any)}
           style={styles.forumBtn}
         >
-          <Text style={styles.forumTxt}>💬 Forum #{tag.label}</Text>
+          <Text style={styles.forumTxt}>Forum • {tag.label}</Text>
         </Pressable>
       </View>
 
       {loading && medias.length === 0 ? (
-        <ActivityIndicator color="#6366f1" style={{ marginVertical: 15 }} />
+        <ActivityIndicator color="#8e9ab0" style={{ marginVertical: 15 }} />
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
           {medias.map((m) => <MediaTile key={m.id} item={m} />)}
@@ -100,16 +100,43 @@ export function TagCard({
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: 'rgba(30, 41, 59, 0.7)', borderRadius: Radius.lg, padding: Spacing.three, marginBottom: Spacing.three, borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.35)' },
+  card: {
+    backgroundColor: 'rgba(38, 44, 54, 0.65)',
+    borderRadius: Radius.lg,
+    padding: Spacing.three,
+    marginBottom: Spacing.three,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.12)',
+  },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.two },
   titleWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tagTitle: { fontSize: 16, fontWeight: '800', color: '#f8fafc' },
-  countPill: { backgroundColor: 'rgba(99, 102, 241, 0.15)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: Radius.pill },
-  countText: { color: '#a5b4fc', fontSize: 10, fontWeight: '700' },
-  forumBtn: { backgroundColor: 'rgba(51, 65, 85, 0.6)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: Radius.pill, cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
-  forumTxt: { color: '#cbd5e1', fontSize: 11, fontWeight: '600' },
+  tagTitle: { fontSize: 15, fontWeight: '700', color: '#edeef2' },
+  countPill: { backgroundColor: 'rgba(148, 163, 184, 0.12)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: Radius.pill },
+  countText: { color: '#94a1b3', fontSize: 10, fontWeight: '600' },
+  forumBtn: {
+    backgroundColor: 'rgba(45, 52, 64, 0.55)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.15)',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  forumTxt: { color: '#b0bccb', fontSize: 11, fontWeight: '600' },
   mediaRow: { paddingVertical: 4, gap: 4, alignItems: 'center' },
-  moreTile: { width: 112, height: 160, borderRadius: Radius.md, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.5)', backgroundColor: 'rgba(99, 102, 241, 0.12)', alignItems: 'center', justifyContent: 'center', marginRight: 8, marginBottom: 12, cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
-  morePlus: { fontSize: 24, fontWeight: '800', color: '#818cf8' },
-  moreTxt: { fontSize: 11, fontWeight: '700', color: '#c7d2fe', marginTop: 4, textAlign: 'center' },
+  moreTile: {
+    width: 112,
+    height: 160,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.2)',
+    backgroundColor: 'rgba(45, 52, 64, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    marginBottom: 12,
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  morePlus: { fontSize: 20, fontWeight: '700', color: '#cbd5e1' },
+  moreTxt: { fontSize: 11, fontWeight: '600', color: '#94a1b3', marginTop: 4, textAlign: 'center' },
 });

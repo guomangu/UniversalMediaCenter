@@ -190,9 +190,8 @@ export function MediaForumSection({
       {/* En-tête Salle d'Attente & Forum */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerIcon}>💬</Text>
           <View>
-            <Text style={styles.headerTitle}>Salle d'attente & Forum #{topicTitle}</Text>
+            <Text style={styles.headerTitle}>Salle d'attente & Discussion • {topicTitle}</Text>
             <Text style={styles.headerSub}>
               Proposez une séance, discutez en direct ou lancez un appel vocal continu
             </Text>
@@ -208,10 +207,10 @@ export function MediaForumSection({
           >
             <Text style={styles.callBtnTxt}>
               {inCall
-                ? '🔴 Quitter l\'appel'
+                ? 'Quitter l\'appel'
                 : callActiveCount > 0
-                ? `📞 Rejoindre l'appel (${callActiveCount})`
-                : '📞 Appel direct'}
+                ? `Rejoindre l'appel (${callActiveCount})`
+                : 'Appel direct'}
             </Text>
           </Pressable>
 
@@ -224,7 +223,7 @@ export function MediaForumSection({
             }}
             style={styles.proposeBtn}
           >
-            <Text style={styles.proposeBtnTxt}>🍿 Proposer une séance</Text>
+            <Text style={styles.proposeBtnTxt}>Proposer une séance</Text>
           </Pressable>
         </View>
       </View>
@@ -244,7 +243,7 @@ export function MediaForumSection({
       {/* Liste des Séances actives ou proposées */}
       {sessions.length > 0 ? (
         <View style={styles.sessionsBox}>
-          <Text style={styles.sessionsBoxTitle}>🍿 Séances en cours ou à venir ({sessions.length})</Text>
+          <Text style={styles.sessionsBoxTitle}>Séances en cours ou à venir ({sessions.length})</Text>
           <View style={styles.sessionsList}>
             {sessions.map((s) => {
               const isJoined = s.participants?.some((p) => p.userId === currentUser?.id);
@@ -254,11 +253,11 @@ export function MediaForumSection({
                 <View key={s.id} style={styles.sessionCard}>
                   <View style={{ flex: 1 }}>
                     <View style={styles.sessionCardTop}>
-                      <Text style={styles.sessionBadgeTxt}>🔴 EN COURS</Text>
+                      <Text style={styles.sessionBadgeTxt}>EN COURS</Text>
                       <Text style={styles.sessionHostTxt}>Initié par : {s.hostDisplayName}</Text>
                     </View>
                     <Text style={styles.sessionCardTitle} numberOfLines={1}>{s.title}</Text>
-                    <Text style={styles.sessionParticipantsCount}>👥 {pCount} spectateur{pCount > 1 ? 's' : ''}</Text>
+                    <Text style={styles.sessionParticipantsCount}>{pCount} spectateur{pCount > 1 ? 's' : ''}</Text>
                   </View>
 
                   <View style={styles.sessionActions}>
@@ -276,7 +275,7 @@ export function MediaForumSection({
                         onPress={() => handleJoinSession(s)}
                         style={styles.joinBtn}
                       >
-                        <Text style={styles.joinBtnTxt}>Rejoindre ▶</Text>
+                        <Text style={styles.joinBtnTxt}>Rejoindre</Text>
                       </Pressable>
                     )}
                   </View>
@@ -290,7 +289,7 @@ export function MediaForumSection({
       {/* Messages du Forum */}
       <View style={styles.messagesContainer}>
         {loading && messages.length === 0 ? (
-          <ActivityIndicator color="#6366f1" style={{ marginVertical: 30 }} />
+          <ActivityIndicator color="#8e9ab0" style={{ marginVertical: 30 }} />
         ) : messages.length === 0 ? (
           <Text style={styles.emptyTxt}>
             Aucun message pour l'instant. Lancez la discussion ou proposez une séance !
@@ -346,12 +345,12 @@ export function MediaForumSection({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    backgroundColor: 'rgba(38, 44, 54, 0.65)',
     borderRadius: Radius.xl,
     padding: Spacing.four,
     marginTop: Spacing.four,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
     maxWidth: MaxContentWidth,
     width: '100%',
     alignSelf: 'center',
@@ -365,79 +364,78 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.three,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 260 },
-  headerIcon: { fontSize: 26 },
-  headerTitle: { color: '#f8fafc', fontSize: 17, fontWeight: '800' },
-  headerSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  headerTitle: { color: '#edeef2', fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  headerSub: { color: '#8a95a5', fontSize: 12, marginTop: 2 },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   callBtn: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    backgroundColor: '#3b6e5e',
+    paddingHorizontal: 13,
+    paddingVertical: 8,
     borderRadius: Radius.pill,
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   callBtnActive: {
-    backgroundColor: '#dc2626',
+    backgroundColor: 'rgba(168, 70, 70, 0.9)',
   },
-  callBtnTxt: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  callBtnTxt: { color: '#edeef2', fontWeight: '700', fontSize: 11.5 },
   proposeBtn: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: '#475569',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: Radius.pill,
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
-  proposeBtnTxt: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  proposeBtnTxt: { color: '#edeef2', fontWeight: '700', fontSize: 11.5 },
   sessionsBox: {
-    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    backgroundColor: 'rgba(35, 41, 51, 0.75)',
     borderRadius: Radius.lg,
     padding: Spacing.three,
     marginBottom: Spacing.three,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    borderColor: 'rgba(160, 175, 195, 0.12)',
   },
-  sessionsBoxTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '800', marginBottom: 8 },
+  sessionsBoxTitle: { color: '#dfe4ec', fontSize: 13.5, fontWeight: '700', marginBottom: 8 },
   sessionsList: { gap: 8 },
   sessionCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    backgroundColor: 'rgba(30, 36, 45, 0.7)',
     borderRadius: Radius.md,
     padding: 10,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.35)',
+    borderColor: 'rgba(160, 175, 195, 0.1)',
   },
   sessionCardTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
-  sessionBadgeTxt: { color: '#ef4444', fontSize: 10, fontWeight: '900' },
-  sessionHostTxt: { color: '#94a3b8', fontSize: 11 },
-  sessionCardTitle: { color: '#f8fafc', fontSize: 13, fontWeight: '700' },
-  sessionParticipantsCount: { color: '#a5b4fc', fontSize: 11, fontWeight: '600', marginTop: 2 },
+  sessionBadgeTxt: { color: '#d97777', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  sessionHostTxt: { color: '#8a95a5', fontSize: 11 },
+  sessionCardTitle: { color: '#dfe4ec', fontSize: 13, fontWeight: '600' },
+  sessionParticipantsCount: { color: '#94a1b3', fontSize: 11, fontWeight: '500', marginTop: 2 },
   sessionActions: { marginLeft: 12 },
   joinBtn: {
-    backgroundColor: '#10b981',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    backgroundColor: '#3b705e',
+    paddingHorizontal: 13,
+    paddingVertical: 7,
     borderRadius: Radius.pill,
   },
-  joinBtnTxt: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  joinBtnTxt: { color: '#edeef2', fontSize: 11.5, fontWeight: '700' },
   leaveBtn: {
-    backgroundColor: 'rgba(71, 85, 105, 0.8)',
+    backgroundColor: 'rgba(65, 75, 90, 0.7)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: Radius.pill,
   },
-  leaveBtnTxt: { color: '#cbd5e1', fontSize: 11, fontWeight: '700' },
+  leaveBtnTxt: { color: '#cbd5e1', fontSize: 11, fontWeight: '600' },
   messagesContainer: {
     minHeight: 120,
     marginBottom: Spacing.three,
   },
   emptyTxt: {
-    color: '#64748b',
+    color: '#7c8797',
     fontStyle: 'italic',
     textAlign: 'center',
     marginVertical: 20,
