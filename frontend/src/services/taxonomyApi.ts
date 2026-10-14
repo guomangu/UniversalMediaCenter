@@ -21,6 +21,12 @@ export interface MediaTileItem {
   communityRating?: number;
 }
 
+export interface TaxonomyMediasResult {
+  items: MediaTileItem[];
+  hasMore: boolean;
+  totalReturned: number;
+}
+
 export async function fetchTaxonomy(): Promise<TaxonomyCategory[]> {
   try {
     const res = await fetch(`${API_BASE}/api/ui/taxonomy`);
@@ -38,7 +44,7 @@ export async function fetchTaxonomyMedias(params: {
   filter?: string;
   q?: string;
   limit?: number;
-}): Promise<MediaTileItem[]> {
+}): Promise<TaxonomyMediasResult> {
   try {
     const query = new URLSearchParams({
       category: params.category,
@@ -48,10 +54,14 @@ export async function fetchTaxonomyMedias(params: {
       limit: String(params.limit || 15),
     }).toString();
     const res = await fetch(`${API_BASE}/api/ui/taxonomy/medias?${query}`);
-    if (!res.ok) return [];
+    if (!res.ok) return { items: [], hasMore: false, totalReturned: 0 };
     const data = await res.json();
-    return data.items || [];
+    return {
+      items: data.items || [],
+      hasMore: Boolean(data.hasMore),
+      totalReturned: data.totalReturned || 0,
+    };
   } catch {
-    return [];
+    return { items: [], hasMore: false, totalReturned: 0 };
   }
 }

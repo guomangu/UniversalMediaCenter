@@ -79,13 +79,18 @@ taxonomyRouter.get('/medias', async (c) => {
     querySql = sql`${querySql} AND (n.title ILIKE ${'%' + q + '%'} OR n.search_vector_text ILIKE ${'%' + q + '%'} OR v.value_text ILIKE ${'%' + q + '%'})`;
   }
 
-  querySql = sql`${querySql} ORDER BY n.community_rating DESC NULLS LAST, n.release_year DESC NULLS LAST LIMIT ${limit};`;
+  const fetchLimit = limit + 1;
+  querySql = sql`${querySql} ORDER BY n.community_rating DESC NULLS LAST, n.release_year DESC NULLS LAST LIMIT ${fetchLimit};`;
 
   const rows = await db.execute(querySql);
-  const items = Array.from(rows).map((item: any) => ({
+  const rawItems = Array.from(rows);
+  const hasMore = rawItems.length > limit;
+  const sliced = hasMore ? rawItems.slice(0, limit) : rawItems;
+
+  const items = sliced.map((item: any) => ({
     id: item.id, title: item.title, nodeType: item.node_type, releaseYear: item.release_year,
     posterPath: item.poster_path ? `/api/media/${item.id}/poster` : undefined, communityRating: item.community_rating,
   }));
 
-  return c.json({ items, limit, totalReturned: items.length });
+  return c.json({ items, limit, hasMore, totalReturned: items.length });
 });
