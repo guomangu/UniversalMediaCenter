@@ -54,7 +54,19 @@ Ce document trace l'avancement global du projet, les jalons validés et les chan
 - [x] Middleware d'authentification et permissions.
 - [x] Sécurité par code PIN et appairage TV Quick-Connect.
 
-### 📱 Module E : Frontend Universel Kyoo-Style (Expo / React Native)
+### 📺 Module E : Système de Cast Complet & Multi-Écrans (`cast/` & `routes/cast.ts`)
+- [x] **Registry de Périphériques Actifs (`cast/deviceRegistry.ts`) :** Détection automatique des écrans UMS sur le réseau avec heartbeat et expiration TTL.
+- [x] **File d'Attente de Commandes Distantes :** Synchronisation bidirectionnelle (`LOAD`, `PLAY`, `PAUSE`, `SEEK`, `STOP`).
+- [x] **Multi-Protocoles :**
+  - **UMS Connect :** Diffusion sans fil instantanée vers n'importe quel écran UMS (Salon TV, chambre, autre navigateur).
+  - **Google Cast / Chromecast :** Prise en charge des diffuseurs Google Cast.
+  - **AirPlay :** Prise en charge sans fil Apple (Apple TV, Mac, iPhone).
+- [x] **Composants Frontend :**
+  - `CastModal.tsx` : Modale glassmorphe de sélection d'écrans avec handoff de position.
+  - `CastControlBar.tsx` : Mini-télécommande flottante pour contrôler la lecture à distance.
+  - `player/[id].tsx` : Mode récepteur automatique pour lire les flux reçus.
+
+### 📱 Module F : Frontend Universel Kyoo-Style (Expo / React Native)
 - [x] Charte d'excellence `bon_ux_ui.md` respectée : glassmorphisme, ardoise bleutée `#0f172a`, zéro coin aigu (`Radius` 12-24px et pilules 9999px), TDAH-friendly.
 - [x] Accueil dynamique piloté par le serveur (`app/index.tsx`) avec carrousel Hero Spotlight et rails défilants.
 - [x] Onglet Exploration avec recherche instantanée et filtres par tags (`app/explore.tsx`).

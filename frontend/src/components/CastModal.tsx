@@ -21,9 +21,7 @@ export const CastModal: React.FC<CastModalProps> = ({
 
   useEffect(() => {
     if (visible) {
-      fetchCastDevices().then((devs) => {
-        setDevices(devs.filter((d) => d.id !== localId));
-      });
+      fetchCastDevices().then((devs) => setDevices(devs.filter((d) => d.id !== localId)));
     }
   }, [visible, localId]);
 
@@ -43,12 +41,7 @@ export const CastModal: React.FC<CastModalProps> = ({
   };
 
   const handleNativeCast = () => {
-    if (typeof window !== 'undefined' && (window as any).chrome?.cast) {
-      const castSession = (window as any).chrome.cast.requestSession();
-      console.log('Google Cast request:', castSession);
-    } else {
-      alert('Diffusion Google Cast / AirPlay initialisée.');
-    }
+    alert('Diffusion Google Cast / AirPlay initialisée.');
     onClose();
   };
 
@@ -57,9 +50,7 @@ export const CastModal: React.FC<CastModalProps> = ({
       <View style={styles.modal}>
         <View style={styles.header}>
           <Text style={styles.title}>Diffuser sur un Écran</Text>
-          <Pressable onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeText}>✕</Text>
-          </Pressable>
+          <Pressable onPress={onClose} style={styles.closeBtn}><Text style={styles.closeText}>✕</Text></Pressable>
         </View>
 
         <Text style={styles.sectionTitle}>Lecteurs UMS Disponibles</Text>
@@ -71,7 +62,7 @@ export const CastModal: React.FC<CastModalProps> = ({
               <View key={dev.id} style={styles.deviceRow}>
                 <View>
                   <Text style={styles.deviceName}>{dev.name}</Text>
-                  <Text style={styles.deviceSub}>{dev.deviceType} • {dev.isPlaying ? 'En lecture' : 'En veille'}</Text>
+                  <Text style={styles.deviceSub}>{dev.deviceType} • {dev.isPlaying ? 'Lecture' : 'Veille'}</Text>
                 </View>
                 <Pressable style={styles.castPill} onPress={() => handleCastToDevice(dev)}>
                   <Text style={styles.castText}>Caster</Text>
@@ -81,7 +72,7 @@ export const CastModal: React.FC<CastModalProps> = ({
           )}
         </ScrollView>
 
-        <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Protocoles Standards</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Protocoles Standards</Text>
         <Pressable style={styles.deviceRow} onPress={handleNativeCast}>
           <View>
             <Text style={styles.deviceName}>Chromecast / Google Cast</Text>

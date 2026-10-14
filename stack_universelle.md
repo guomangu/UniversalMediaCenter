@@ -15,6 +15,7 @@ flowchart TD
     HonoAPI -->|Drizzle ORM| Postgres[(PostgreSQL 16 + PostGIS + pg_trgm)]
     HonoAPI -->|Chokidar Watcher| DiskPool
     HonoAPI -->|Sync M3U / XMLTV| IPTVSource[Flux IPTV & Guide EPG]
+    HonoAPI -->|Cast Registry & Commands| CastTargets[Écrans Connectés / Chromecast / AirPlay]
 ```
 
 ---
@@ -49,6 +50,9 @@ flowchart TD
   - `m3uParser.ts` : Parsing des directives `#EXTINF` des playlists IPTV.
   - `xmltvParser.ts` : Extraction du guide TV XMLTV.
   - `channelIngester.ts` : Création des chaînes dans `media_nodes` et tags.
+- `cast/` :
+  - `types.ts` : Types pour périphériques et commandes Cast.
+  - `deviceRegistry.ts` : Registre in-memory avec TTL et file de commandes distantes.
 - `middleware/` :
   - `access.ts` : Contrôle d'accès RBAC et filtrage de session.
 - `routes/` :
@@ -57,6 +61,7 @@ flowchart TD
   - `media.ts` : Fiche détaillée média et heartbeat de progression.
   - `search.ts` : Recherche instantanée par trigrammes (`< 10ms`).
   - `iptv.ts` : Chaînes TV, import de listes M3U et proxy HLS.
+  - `cast.ts` : Découverte des écrans et envoi de commandes distantes.
   - `admin.ts` : Réordonnancement des rails et gestion des tags.
 
 ### Frontend (`/frontend/src`)
@@ -65,7 +70,7 @@ flowchart TD
   - `explore.tsx` : Exploration et filtrage multi-tags.
   - `live.tsx` : Chaînes TV en direct et guide EPG.
   - `media/[id].tsx` : Fiche média (4 zones de tags Kyoo).
-  - `player/[id].tsx` : Lecteur vidéo avec bouton *Skip Intro*.
+  - `player/[id].tsx` : Lecteur vidéo avec bouton *Skip Intro* et fonction récepteur/émetteur Cast.
   - `admin.tsx` : Back-Office Server-Driven UI et import IPTV.
 - `components/` :
   - `HeroSpotlight.tsx` & `.styles.ts` : Bannière plein écran cinématique.
@@ -73,9 +78,12 @@ flowchart TD
   - `MediaRail.tsx` : Rail horizontal défilant.
   - `TagPill.tsx` : Pilules de tags translucides et arrondies.
   - `SearchBar.tsx` & `.styles.ts` : Recherche instantanée auto-complétée.
+  - `CastModal.tsx` & `.styles.ts` : Modale de sélection d'écrans (UMS Screens, Chromecast, AirPlay).
+  - `CastControlBar.tsx` : Mini-télécommande flottante pour piloter la lecture distante.
   - `app-tabs.web.tsx` & `app-tabs.tsx` : Barre de navigation universelle.
 - `constants/theme.ts` : Palette nuancée (fond `#0f172a`, cartes translucides, arrondis 12px à 24px et pilules 9999px).
 - `services/api.ts` & `types.ts` : Client d'API typé.
+- `services/castService.ts` : Service Cast (découverte, enregistrement, commandes).
 
 ---
 
@@ -92,6 +100,11 @@ flowchart TD
 | `GET` | `/api/iptv/channels` | Chaînes TV actives avec EPG |
 | `POST` | `/api/iptv/sources` | Ingestion d'une playlist M3U / XMLTV |
 | `GET` | `/api/iptv/stream/:id/live.m3u8` | Proxy de flux HLS avec en-têtes CORS |
+| `GET` | `/api/cast/devices` | Liste des écrans cibles actifs sur le réseau |
+| `POST` | `/api/cast/register` | Enregistrement d'un écran en tant que récepteur Cast |
+| `POST` | `/api/cast/heartbeat` | Mise à jour de la position et de l'état de lecture |
+| `POST` | `/api/cast/command` | Envoi d'une commande distante (`LOAD`, `PLAY`, `PAUSE`, `SEEK`, `STOP`) |
+| `GET` | `/api/cast/poll/:deviceId` | Récupération des commandes en attente pour un écran |
 | `GET` | `/api/auth/profiles` | Liste des profils utilisateurs |
 | `POST` | `/api/auth/login` | Connexion profil (code PIN) |
 | `GET` | `/api/auth/quick-connect/code` | Code d'appairage TV à 6 chiffres |
