@@ -14,6 +14,7 @@ interface VideoPlayerViewProps {
   activeQuality?: string;
   activeAudio?: string;
   statusMessage?: string;
+  initialTime?: number;
   onSkipIntro: () => void;
   onPlay: () => void;
   onPause: () => void;
@@ -23,12 +24,12 @@ interface VideoPlayerViewProps {
 export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
   id, streamUrl, isPlaying, videoRef, showSkipIntro, intro,
   activeSubtitle = 'off', activeQuality = 'auto', activeAudio = 'auto', statusMessage,
-  onSkipIntro, onPlay, onPause, onLoadedMetadata,
+  initialTime, onSkipIntro, onPlay, onPause, onLoadedMetadata,
 }) => {
   const [currentCue, setCurrentCue] = useState('');
   const [curTime, setCurTime] = useState(0);
   const [mouseActive, setMouseActive] = useState(true);
-  const savedTimeRef = useRef(0);
+  const savedTimeRef = useRef(initialTime || 0);
   const mouseTimer = useRef<any>(null);
 
   const resetMouse = () => {
@@ -53,17 +54,21 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
     if (Platform.OS === 'web' && videoRef.current?.textTracks) {
       const tracks = videoRef.current.textTracks;
       for (let i = 0; i < tracks.length; i++) {
-        const tr = tracks[i];
-        tr.mode = activeSubtitle !== 'off' ? 'showing' : 'disabled';
-        tr.oncuechange = () => setCurrentCue(activeSubtitle !== 'off' && tr.activeCues?.[0]?.text ? tr.activeCues[0].text : '');
+        tracks[i].mode = activeSubtitle !== 'off' ? 'showing' : 'disabled';
+        tracks[i].oncuechange = () => setCurrentCue(activeSubtitle !== 'off' && tracks[i].activeCues?.[0]?.text ? tracks[i].activeCues[0].text : '');
       }
       if (!activeSubtitle || activeSubtitle === 'off') setCurrentCue('');
     }
   }, [activeSubtitle, subtitleUrl]);
 
+  const handleLoaded = () => {
+    const target = initialTime && initialTime > 0 ? initialTime : savedTimeRef.current;
+    if (target > 0 && videoRef.current && Math.abs(videoRef.current.currentTime - target) > 0.5) videoRef.current.currentTime = target;
+    onLoadedMetadata?.();
+  };
+
   const introEnd = intro?.end ?? 90.04;
-  const inIntro = curTime >= (intro?.start ?? 0) && curTime < introEnd;
-  const showBtn = showSkipIntro && inIntro && mouseActive;
+  const showBtn = showSkipIntro && curTime >= (intro?.start ?? 0) && curTime < introEnd && mouseActive;
 
   return (
     <View style={styles.videoPlaceholder} onPointerMove={resetMouse}>
@@ -72,15 +77,8 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
           ref={videoRef} src={streamUrl} controls autoPlay playsInline crossOrigin="anonymous"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
           onPlay={onPlay} onPause={onPause}
-          onTimeUpdate={() => {
-            const t = videoRef.current?.currentTime || 0;
-            savedTimeRef.current = t;
-            setCurTime(t);
-          }}
-          onLoadedMetadata={() => {
-            if (savedTimeRef.current > 0 && videoRef.current) videoRef.current.currentTime = savedTimeRef.current;
-            onLoadedMetadata?.();
-          }}>
+          onTimeUpdate={() => { const t = videoRef.current?.currentTime || 0; if (t > 0) savedTimeRef.current = t; setCurTime(t); }}
+          onLoadedMetadata={handleLoaded} onCanPlay={handleLoaded}>
           {subtitleUrl ? <track key={subtitleUrl} src={subtitleUrl} kind="subtitles" default srcLang="fr" label="Actif" /> : null}
         </video>
       ) : (

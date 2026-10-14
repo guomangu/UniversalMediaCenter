@@ -16,43 +16,27 @@ function moveFocus(dir: Direction) {
   const candidates = getCandidates();
   if (candidates.length === 0) return;
   const current = document.activeElement as HTMLElement;
-
   if (!current || current === document.body || !candidates.includes(current)) {
     candidates[0]?.focus();
     return;
   }
-
   const cR = current.getBoundingClientRect();
   const cC = { x: cR.left + cR.width / 2, y: cR.top + cR.height / 2 };
-  let best: HTMLElement | null = null;
-  let bestDist = Infinity;
+  let best: HTMLElement | null = null, bestDist = Infinity;
 
   for (const t of candidates) {
     if (t === current || t.contains(current) || current.contains(t)) continue;
     const tR = t.getBoundingClientRect();
     const tC = { x: tR.left + tR.width / 2, y: tR.top + tR.height / 2 };
-    const dx = tC.x - cC.x;
-    const dy = tC.y - cC.y;
-
+    const dx = tC.x - cC.x, dy = tC.y - cC.y;
     if (dir === 'right' && dx <= 5) continue;
     if (dir === 'left' && dx >= -5) continue;
     if (dir === 'down' && dy <= 5) continue;
     if (dir === 'up' && dy >= -5) continue;
-
-    const dist = dir === 'left' || dir === 'right'
-      ? Math.abs(dx) + Math.abs(dy) * 2.2
-      : Math.abs(dy) + Math.abs(dx) * 1.8;
-
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = t;
-    }
+    const dist = dir === 'left' || dir === 'right' ? Math.abs(dx) + Math.abs(dy) * 2.2 : Math.abs(dy) + Math.abs(dx) * 1.8;
+    if (dist < bestDist) { bestDist = dist; best = t; }
   }
-
-  if (best) {
-    best.focus();
-    best.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-  }
+  if (best) { best.focus(); best.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); }
 }
 
 export function useTvNavigation() {
@@ -60,21 +44,23 @@ export function useTvNavigation() {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
 
     const onKey = (e: KeyboardEvent) => {
+      const inPlayer = window.location.pathname.includes('/player');
+      const hasModal = !!document.querySelector('[role="dialog"]') || !!document.querySelector('.modal');
+      if (['ArrowLeft', 'ArrowRight'].includes(e.key) && inPlayer && !hasModal) return;
+
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-        const isInput = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '');
-        if (isInput && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
+        if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) return;
         e.preventDefault();
         moveFocus(e.key.replace('Arrow', '').toLowerCase() as Direction);
       } else if (e.key === 'Enter' || e.key === 'Select') {
         const active = document.activeElement as HTMLElement;
-        if (active && active.tagName !== 'INPUT' && active.tagName !== 'TEXTAREA') active.click?.();
+        if (active && !['INPUT', 'TEXTAREA'].includes(active.tagName)) active.click?.();
       } else if (e.key === 'Escape' || e.key === 'BrowserBack') {
         window.history.back();
       }
     };
 
-    let lastPad = 0;
-    let animId: number;
+    let lastPad = 0, animId: number;
     const pollPad = () => {
       const gp = navigator.getGamepads?.()?.[0];
       if (gp && Date.now() - lastPad > 220) {

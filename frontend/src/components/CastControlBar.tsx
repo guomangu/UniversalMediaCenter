@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Platform } from 'react-native';
 import { sendCastCommand, fetchDeviceStatus, CastDevice } from '@/services/castService';
 import { setActiveCastTarget } from '@/services/castState';
 import { styles } from './CastControlBar.styles';
@@ -33,6 +33,29 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
     await sendCastCommand(device.id, 'SEEK', { positionSeconds: nextPos });
   };
 
+  const handleBarClick = (e: any) => {
+    if (Platform.OS !== 'web' || !device.durationSeconds) return;
+    const rect = e.currentTarget?.getBoundingClientRect?.();
+    if (!rect) return;
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const target = Math.floor(ratio * device.durationSeconds);
+    setDevice((d) => ({ ...d, positionSeconds: target }));
+    sendCastCommand(device.id, 'SEEK', { positionSeconds: target });
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) return;
+      if (window.location.pathname.includes('/player')) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); seekRelative(-10); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); seekRelative(10); }
+      else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [device.positionSeconds, device.durationSeconds, device.isPlaying]);
+
   const toggleMute = async () => {
     const nextMute = !device.isMuted;
     setDevice((d) => ({ ...d, isMuted: nextMute }));
@@ -57,25 +80,17 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
         </View>
         <Text style={styles.timeText}>{fmt(device.positionSeconds)} / {fmt(device.durationSeconds)}</Text>
       </View>
-
-      <View style={styles.progressBarBg}>
+      <Pressable style={styles.progressBarBg} onPress={handleBarClick as any}>
         <View style={[styles.progressBarFill, { width: `${Math.min(100, Math.max(0, pct))}%` }]} />
-      </View>
-
+      </Pressable>
       <View style={styles.controlsRow}>
         <View style={styles.btnGroup}>
           <Pressable style={styles.btn} onPress={() => seekRelative(-10)}><Text style={styles.btnText}>-10s</Text></Pressable>
-          <Pressable style={[styles.btn, styles.primaryBtn]} onPress={togglePlay}>
-            <Text style={[styles.btnText, { fontSize: 16 }]}>{device.isPlaying ? '⏸' : '▶'}</Text>
-          </Pressable>
+          <Pressable style={[styles.btn, styles.primaryBtn]} onPress={togglePlay}><Text style={[styles.btnText, { fontSize: 16 }]}>{device.isPlaying ? '⏸' : '▶'}</Text></Pressable>
           <Pressable style={styles.btn} onPress={() => seekRelative(30)}><Text style={styles.btnText}>+30s</Text></Pressable>
-          <Pressable style={styles.btn} onPress={toggleMute}>
-            <Text style={styles.btnText}>{device.isMuted ? '🔇' : '🔊'}</Text>
-          </Pressable>
+          <Pressable style={styles.btn} onPress={toggleMute}><Text style={styles.btnText}>{device.isMuted ? '🔇' : '🔊'}</Text></Pressable>
         </View>
-        <Pressable style={[styles.btn, styles.stopBtn]} onPress={handleStop}>
-          <Text style={styles.stopText}>Arrêter</Text>
-        </Pressable>
+        <Pressable style={[styles.btn, styles.stopBtn]} onPress={handleStop}><Text style={styles.stopText}>Arrêter</Text></Pressable>
       </View>
     </View>
   );

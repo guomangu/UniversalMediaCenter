@@ -6,7 +6,21 @@ Dernière mise à jour : 14 Octobre 2026
 
 ## 🟢 1. Fonctionnalités Réalisées & Validées
 
-### 📡 Système de Cast & Télécommande Réseau Universel (Style Jellyfin Amélioré)
+### 📡 Système de Cast, Progression & Télécommande Réseau Universel
+- [x] **Contrôle de la Progression Temporelle par Télécommande / Manette / Clavier (`usePlayerControls.ts`, `useTvNavigation.ts`) :**
+  - **Recul / Avance rapide :** Touche `Flèche Gauche` (recul de 10s) et `Flèche Droite` (avance de 10s) avec toasts visuels réactifs (`⏪ -10s`, `⏩ +10s`).
+  - **Bouton Play / Pause :** Touche `Espace`, touche `MediaPlayPause` ou bouton A / X de manette.
+  - **Contrôle du volume :** Touche `Flèche Haut` (+10%) et `Flèche Bas` (-10%) avec feedback en pourcentage.
+  - **Scrubbing tactile / clic direct :** La barre de progression dans la télécommande `CastControlBar` est entièrement interactive et permet de sauter à n'importe quel point temporel d'un simple clic.
+  - **Pilotage réseau distant :** Les touches du contrôleur envoient directement les ordres `SEEK`, `PLAY`, `PAUSE` à l'écran cible casté.
+- [x] **Reprise Instantanée au Changement de Qualité ou de Langue (`VideoPlayerView.tsx`, `player/[id].tsx`) :**
+  - Maintien rigoureux du timestamp exact lors de la bascule de langue audio ou de qualité via `savedPosRef` et `initialTime`.
+  - Protection contre la réinitialisation de `savedTimeRef` à 0 lors du rechargement de la source par le navigateur (`loadstart`).
+  - Restauration immédiate dès le déclenchement des événements `loadedmetadata` et `canplay`.
+- [x] **Barre de Progression 100% Complète & Seekable en Qualité Non-Automatique (`mediaStream.ts`) :**
+  - Suppression du pipe ffmpeg fragmenté non indexé au profit d'un streaming HTTP 206 Partial Content (Byte-Range) systématique avec en-têtes `Content-Range`, `Accept-Ranges: bytes` et `Content-Length`.
+  - Durée totale (`duration`) immédiatement reconnue par le lecteur HTML5 : finie la barre qui grandit petit à petit.
+  - Navigation instantanée vers n'importe quelle minute de la vidéo sans lag ni réencodage inutile sur réseau local.
 - [x] **Registre Réseau et Découverte Bidirectionnelle (`backend/src/cast/`) :**
   - Enregistrement des appareils (`/api/cast/register`, `/api/cast/devices`, `/api/cast/device/:id`).
   - Heartbeat live avec transmission d'état complète (titre en cours, position temporelle, durée totale, statut lecture/pause, volume, mute, pistes audio/sous-titres).
@@ -75,9 +89,6 @@ Dernière mise à jour : 14 Octobre 2026
   - Extraction des chapitres réels par `ffprobe` pour obtenir la fin exacte de l'intro (ex: 90.04s pour Bleach). Le bouton saute au temps précis calculé et non à un saut arbitraire (`+= 85s`).
   - Disparition automatique dès que la lecture dépasse la fin de l'intro ou en cas de saut temporel en dehors de la plage d'introduction.
   - Temporisateur d'inactivité de 5 secondes : le bouton se masque si la souris ne bouge plus pendant 5s, et réapparaît dès le moindre mouvement.
-- [x] **Changement de Qualité / Résolution Dynamique :**
-  - Sélection de la résolution souhaitée (`1080p`, `720p`, `480p`) depuis le modal (`⚙️ Qualité`).
-  - L'URL de streaming intègre `?quality=<valeur>&startTime=<timestamp>`, démarrage immédiat au timestamp courant avec `ultrafast`.
 - [x] **Sous-Titres Réels Garantis :**
   - Extraction à la volée des sous-titres texte réels embarqués ou externes (`.srt`/`.vtt`), synchronisation WebVTT et affichage textuel instantané.
 
