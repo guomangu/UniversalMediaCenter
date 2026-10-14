@@ -14,10 +14,14 @@ Dernière mise à jour : 14 Octobre 2026
 - [x] Interface d'administration modulaire `/admin` avec gestion des utilisateurs et des paramètres du site.
 - [x] **En-tête unifié persistant sur `/admin` :** Intégration de `SiteHeader` sur la page d'administration garantissant l'accès permanent au logo, retour à l'accueil, sélection de profil et navigation.
 
-### 🌐 Résolution Réseau LAN & Architecture Proxy
-- [x] **Résolveur d'Hôte Dynamique à l'Exécution (`apiConfig.ts`) :** Détection automatique de `window.location.hostname` permettant à l'application de dialoguer instantanément avec le backend sans bloquer sur un `localhost:3000` hardcodé.
-- [x] **Compatibilité Gateway Caddy & Reverse Proxy :** Configuration du proxy amont avec `header_up Host {upstream_hostport}` pour éviter les rejets d'origine de Metro bundler et harmoniser les flux sur le port 8080.
-- [x] **Désactivation Splash Screen Bloquant sur Web (`animated-icon.tsx`, `_layout.tsx`) :** Suppression du verrouillage de démarrage asynchrone sur navigateur afin d'éliminer tout blocage en écran infini.
+### 🌐 Menu Navigation à 2 Niveaux & Recherche Assainie
+- [x] **En-tête à deux étages (`SiteHeader.tsx`) :**
+  - **1er étage (supérieur) :** Logo UMS à gauche, boutons de profil (`+ Profil`) et d'administration (`⚙️ Admin`) à droite.
+  - **2ème étage (inférieur) :** Raccourcis de catégories avec bouton `🏠 Haut` et défilement horizontal fluide (`showsHorizontalScrollIndicator={false}`) occupant 100% de la largeur sans aucun rognage sur le bord de l'écran.
+- [x] **Masquage des tags et catégories vides lors de la recherche (`TagCard.tsx`, `CategorySection.tsx`) :**
+  - Lors d'une recherche depuis la page d'accueil, aucun tag avec 0 média n'est affiché.
+  - Suppression des cartes vides parasites ("Aucun média trouvé pour ce filtre") au profit d'un affichage ciblé et instantané.
+  - Masquage automatique des catégories entières ne comportant aucun résultat pour la recherche courante.
 
 ### 🗂️ Taxonomie, Cartes & Navigation Hiérarchique
 - [x] **Structure d'accueil catégorisée :** Catégories verticales > Tags verticaux (Cards) > Médias en défilement horizontal.
@@ -26,9 +30,6 @@ Dernière mise à jour : 14 Octobre 2026
   - Aucun tag n'est vide sur la page d'accueil : les groupes apparaissent sous chaque tag partagé par leurs épisodes ou films liés.
 - [x] **Tri prioritaire des tags par quantité (`count DESC`) :**
   - Toutes les catégories ordonnent leurs tags par volume de médias liés décroissant.
-- [x] **Mode Responsive Smartphone Robuste :**
-  - Menu d'en-tête adaptatif (`SiteHeader.tsx`) : sur smartphone (< 768px), passage en 2 rangées propres.
-  - Élimination des débordements avec `paddingTop: 86` dynamique et pleine largeur (`width: 100%`).
 - [x] **Films de cette suite avec affiches & fallbacks (`MediaChildrenRow.tsx`) :**
   - Sur `/media/[id]`, chaque film d'une saga ou épisode d'une série affiche sa vignette/affiche dédiée avec fallback automatique.
 - [x] **Genres & Thématiques avec Médias Liés (`MediaGenreSection.tsx`, `mediaRelated.ts`) :**
@@ -36,32 +37,28 @@ Dernière mise à jour : 14 Octobre 2026
 - [x] **Pagination dynamique & à la volée :**
   - Limite de 5 tags par catégorie avec bouton "+10 tags".
   - Limite de 15 médias par tag avec bouton "+10 médias" basé sur `hasMore`.
-- [x] **Regroupement intelligent (Loi Groupe vs Fichier Unique) :**
-  - Groupes parents pour les sagas/séries, affichage direct pour les films autonomes.
+
+### 🎬 Streaming Vidéo & Barre de Progression Complète (`mediaStream.ts`, `mediaTracks.ts`, `player/[id].tsx`)
+- [x] **Barre de progression complète & Seeking instantané :**
+  - Remplacement du flux morcelé par un streaming HTTP 206 Partial Content (Byte-Range) avec `Content-Range` et `Content-Length` exacts.
+  - La durée totale de la vidéo (ex: 2h03m) est reconnue immédiatement par le lecteur HTML5 `<video>`, permettant d'aller à n'importe quel moment de la vidéo sans attendre.
+- [x] **Zéro piste inventée / Détection dynamique réelle (`/api/media/:id/tracks`) :**
+  - Inspection dynamique du fichier réel via `ffprobe` pour extraire les flux audio effectifs (langue, codec, titre).
+  - Détection dynamique des sous-titres embarqués texte réels et des fichiers `.srt` / `.vtt` existants sur disque (dossier et `Subtitles/`).
+  - Extraction à la volée via `ffmpeg` uniquement pour les sous-titres réels sans fabrication artificielle.
+  - Résolutions disponibles calculées selon la hauteur réelle de la vidéo (480p pour SD, jusqu'à 1080p pour FHD).
 
 ### 💬 Forum WhatsApp Universel Multimédia (`/forum/[topic]`)
 - [x] **Universal Clickable Text :** Tous les textes (titres, tags, catégories, overviews) ouvrent leur salon de forum dédié.
 - [x] **Messagerie style WhatsApp :** Bulles de messages, citations/réponses (`replyTo`), images, vidéos, audios, documents et liens.
 - [x] Persistance PostgreSQL avec indexation optimisée sur `topic_slug`.
 
-### 🎬 Streaming Vidéo & Lecteur HTML5 (`routes/mediaStream.ts`, `mediaTranscoder.ts`, `player/[id].tsx`)
-- [x] Streaming HTTP Range (206 Partial Content) direct pour un chargement instantané.
-- [x] **Transcodage Qualité Dynamique (1080p, 720p, 480p, Auto) :** FFmpeg redimensionne le flux vidéo à la volée sur demande de l'utilisateur, tout en conservant le curseur temporel (`currentTime`) pour une continuité fluide.
-- [x] **Sélection de Langue Audio (VF / VO / Piste 2 / Auto) :** Modal dédié (`PlayerAudioModal.tsx`) et routage des pistes audio via FFmpeg (`-map 0:v:0 -map 0:m:language:...`).
-- [x] **Sous-Titres Garantis & Double Incrustation :**
-  - Détection automatique récursive des fichiers `.srt` / `.vtt` dans le dossier, les sous-dossiers et parents (`../Subtitles`).
-  - Extraction à la volée des pistes sous-titres embarquées dans les conteneurs MKV/MP4 via FFmpeg.
-  - Piste WebVTT continue de secours et incrustation visuelle nette (`subtitleOverlay`) via écouteur d'événements `oncuechange`.
-- [x] **Ergonomie des Contrôles :** Repositionnement flottant de *Passer l'Introduction* (`bottom: 84`) pour ne plus masquer la barre de progression.
-- [x] **Fonctionnalités de Partage (`PlayerShareModal.tsx`) :** Partage natif Web Share API, copie instantanée du lien et redirection forum.
-
 ---
 
-## 🟡 2. Diagnostic & Bonnes Pratiques Réseau / Accès Externe
+## 🟡 2. Diagnostic & Bonnes Pratiques Réseau / Accès Local
 
-1. **Accès via IP Locale (`http://192.168.1.93:8080/`) :**
-   - Toujours spécifier le port de la passerelle (:8080) ou le port dev (:8081). Sans port, le navigateur tape sur le port 80 où aucun service ne répond.
-2. **Proxies Locaux & VPN (NekoBox, Sing-box, Xray, etc.) :**
-   - Si un proxy système ou TUN est actif, inclure `192.168.1.0/24` ou `192.168.1.93` dans la liste des exclusions / bypass du proxy afin d'éviter l'erreur **HTTP ERROR 502** renvoyée par le serveur proxy distant incapable de joindre une IP LAN privée.
-3. **Pare-feu d'Application (OpenSnitch) :**
-   - Autoriser explicitement les connexions entrantes pour `node`, `caddy`, et `pasta` sur les interfaces locales `enp0s13f0u3u3` pour éviter les timeouts de file d'attente.
+1. **Accès Local :**
+   - Accès privilégié et testé sur `localhost:8080` (Gateway Caddy) ou `localhost:3000` (API Backend).
+2. **Accès via IP Locale (`http://192.168.1.93:8080/`) :**
+   - Toujours spécifier le port de la passerelle (:8080).
+   - En présence de tunnels VPN ou proxies applicatifs (ex: NekoBox), ajouter `192.168.1.0/24` dans la liste de contournement/bypass du proxy.
