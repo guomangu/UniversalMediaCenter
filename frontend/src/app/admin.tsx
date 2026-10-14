@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SiteHeader } from '@/components/SiteHeader';
 import { triggerLibraryRefresh } from '@/services/api';
 import { getApiBaseUrl } from '@/services/apiConfig';
 import { styles } from '@/components/AdminScreen.styles';
@@ -39,6 +40,7 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <SiteHeader />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.heading}>Panneau d’Administration Centralisé</Text>
         <View style={styles.tabRow}>
