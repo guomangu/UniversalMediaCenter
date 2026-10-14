@@ -3,12 +3,14 @@ import { View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet } from
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchTopicMessages, postTopicMessage, ForumMessage } from '@/services/forumApi';
+import { useCurrentUser } from '@/services/authStore';
 import { ForumMessageBubble } from '@/components/ForumMessageBubble';
 import { ForumInputBar } from '@/components/ForumInputBar';
 import { MaxContentWidth } from '@/constants/theme';
 
 export default function ForumTopicScreen() {
   const router = useRouter();
+  const currentUser = useCurrentUser();
   const { topic, title } = useLocalSearchParams<{ topic: string; title?: string }>();
   const [messages, setMessages] = useState<ForumMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,10 +29,12 @@ export default function ForumTopicScreen() {
 
   const handleSend = async (payload: { content: string; mediaType: string; mediaUrl?: string; fileName?: string }) => {
     if (!topic) return;
+    const myName = currentUser?.displayName || 'Visiteur';
     await postTopicMessage(String(topic), {
       topicTitle,
       content: payload.content,
-      authorName: 'Moi',
+      authorName: myName,
+      authorId: currentUser?.id || undefined,
       mediaType: payload.mediaType,
       mediaUrl: payload.mediaUrl,
       fileName: payload.fileName,
@@ -42,6 +46,8 @@ export default function ForumTopicScreen() {
     await loadMessages();
     scrollRef.current?.scrollToEnd({ animated: true });
   };
+
+  const myName = currentUser?.displayName || 'Moi';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -60,7 +66,12 @@ export default function ForumTopicScreen() {
           <Text style={styles.emptyTxt}>Aucun message dans ce forum. Soyez le premier à partager !</Text>
         ) : (
           messages.map((m) => (
-            <ForumMessageBubble key={m.id} msg={m} isMe={m.authorName === 'Moi'} onReply={(msg) => setReplyMsg(msg)} />
+            <ForumMessageBubble
+              key={m.id}
+              msg={m}
+              isMe={(currentUser?.id && m.authorId === currentUser.id) || m.authorName === myName || m.authorName === 'Moi'}
+              onReply={(msg) => setReplyMsg(msg)}
+            />
           ))
         )}
       </ScrollView>

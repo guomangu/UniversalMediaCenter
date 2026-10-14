@@ -40,7 +40,16 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
 
   useEffect(() => {
     resetMouse();
-    return () => { if (mouseTimer.current) clearTimeout(mouseTimer.current); };
+    // Sélection par défaut de la vidéo au chargement pour télécommande / clavier
+    const focusTimer = setTimeout(() => {
+      if (Platform.OS === 'web' && videoRef.current) {
+        videoRef.current.focus?.();
+      }
+    }, 200);
+    return () => {
+      if (mouseTimer.current) clearTimeout(mouseTimer.current);
+      clearTimeout(focusTimer);
+    };
   }, []);
 
   const subtitleUrl = React.useMemo(() => {
@@ -75,6 +84,7 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       {Platform.OS === 'web' ? (
         <video
           ref={videoRef} src={streamUrl} controls autoPlay playsInline crossOrigin="anonymous"
+          tabIndex={0} data-video-player="true"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
           onPlay={onPlay} onPause={onPause}
           onTimeUpdate={() => { const t = videoRef.current?.currentTime || 0; if (t > 0) savedTimeRef.current = t; setCurTime(t); }}
@@ -84,8 +94,16 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       ) : (
         <Text style={styles.videoText}>🎬 Lecture ({activeQuality.toUpperCase()})</Text>
       )}
-      {currentCue && activeSubtitle !== 'off' ? <View style={styles.subtitleOverlay} pointerEvents="none"><Text style={styles.subtitleText}>{currentCue}</Text></View> : null}
-      {statusMessage ? <View style={styles.statusToast} pointerEvents="none"><Text style={styles.statusText}>{statusMessage}</Text></View> : null}
+      {currentCue && activeSubtitle !== 'off' ? (
+        <View style={styles.subtitleOverlay} pointerEvents="none">
+          <Text style={styles.subtitleText}>{currentCue}</Text>
+        </View>
+      ) : null}
+      {statusMessage ? (
+        <View style={styles.statusToast} pointerEvents="none">
+          <Text style={styles.statusText}>{statusMessage}</Text>
+        </View>
+      ) : null}
       {showBtn && (
         <Pressable focusable={true} style={styles.skipBtn} onPress={onSkipIntro}>
           <Text style={styles.skipText}>⏭ Passer l'introduction ({Math.floor(introEnd)}s)</Text>

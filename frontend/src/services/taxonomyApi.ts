@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
+import { getAuthHeaders } from './authStore';
 
 export interface TaxonomyTag {
   label: string;
@@ -29,7 +30,9 @@ export interface TaxonomyMediasResult {
 
 export async function fetchTaxonomy(): Promise<TaxonomyCategory[]> {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy`);
+    const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy`, {
+      headers: getAuthHeaders(),
+    });
     if (!res.ok) return [];
     const data = await res.json();
     return data.categories || [];
@@ -53,12 +56,14 @@ export async function fetchTaxonomyMedias(params: {
       q: params.q || '',
       limit: String(params.limit || 15),
     }).toString();
-    const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy/medias?${query}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy/medias?${query}`, {
+      headers: getAuthHeaders(),
+    });
     if (!res.ok) return { items: [], hasMore: false, totalReturned: 0 };
     const data = await res.json();
     return {
       items: data.items || [],
-      hasMore: Boolean(data.hasMore),
+      hasMore: !!data.hasMore,
       totalReturned: data.totalReturned || 0,
     };
   } catch {

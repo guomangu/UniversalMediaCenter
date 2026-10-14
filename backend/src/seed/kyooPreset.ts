@@ -1,31 +1,12 @@
 import { db } from '../db/connection.js';
-import { eavAttributes, uiRails, users } from '../db/schema/index.js';
-import { KYOO_DEFAULT_ATTRIBUTES } from './attributesData.js';
-import { KYOO_DEFAULT_RAILS } from './railsData.js';
+import { uiRails } from '../db/schema/index.js';
 import { sql } from 'drizzle-orm';
+import { KYOO_DEFAULT_RAILS } from './kyooRailsData.js';
 
 export async function seedKyooPreset(): Promise<void> {
-  console.log('🌱 Starting Kyoo Native Zero-Config Seeder...');
+  console.log('🌱 Checking Kyoo Native Preset in PostgreSQL...');
 
-  // 1. Ingestion des groupes d'attributs EAV
-  for (const attr of KYOO_DEFAULT_ATTRIBUTES) {
-    await db
-      .insert(eavAttributes)
-      .values(attr)
-      .onConflictDoUpdate({
-        target: eavAttributes.code,
-        set: {
-          displayName: attr.displayName,
-          uiZone: attr.uiZone,
-          displayOrder: attr.displayOrder,
-          iconName: attr.iconName,
-          colorTheme: attr.colorTheme,
-        },
-      });
-  }
-  console.log(`✨ Seeded ${KYOO_DEFAULT_ATTRIBUTES.length} EAV tag groups.`);
-
-  // 2. Ingestion des rails Server-Driven UI par défaut
+  // 1. Initialisation des Rails d'accueil
   const existingRails = await db.select({ count: sql<number>`count(*)` }).from(uiRails);
   const railCount = Number(existingRails[0]?.count || 0);
 
@@ -34,23 +15,6 @@ export async function seedKyooPreset(): Promise<void> {
       await db.insert(uiRails).values(rail);
     }
     console.log(`✨ Seeded ${KYOO_DEFAULT_RAILS.length} home UI rails.`);
-  }
-
-  // 3. Ingestion de l'administrateur par défaut
-  const existingUsers = await db.select({ count: sql<number>`count(*)` }).from(users);
-  const userCount = Number(existingUsers[0]?.count || 0);
-
-  if (userCount === 0) {
-    await db.insert(users).values({
-      email: 'admin@ums.local',
-      displayName: 'Administrateur',
-      isAdmin: true,
-      canDownload: true,
-      canTranscode: true,
-      canWatchIptv: true,
-      pinHash: null,
-    });
-    console.log('✨ Seeded default admin profile (admin@ums.local).');
   }
 
   console.log('✅ Kyoo Native Preset ready out of the box.');

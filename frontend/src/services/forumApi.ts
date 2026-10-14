@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
+import { getAuthHeaders } from './authStore';
 
 export interface ForumMessage {
   id: string;
@@ -7,7 +8,7 @@ export interface ForumMessage {
   authorId?: string | null;
   authorName: string;
   content: string;
-  mediaType: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' | 'GIF' | 'LINK';
+  mediaType?: string | null;
   mediaUrl?: string | null;
   fileName?: string | null;
   replyToId?: string | null;
@@ -19,8 +20,9 @@ export interface ForumMessage {
 export async function fetchTopicMessages(topicSlug: string): Promise<ForumMessage[]> {
   try {
     const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
-    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/messages`);
-    if (!res.ok) return [];
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/messages`, {
+      headers: getAuthHeaders(),
+    });
     const data = await res.json();
     return data.messages || [];
   } catch {
@@ -34,6 +36,7 @@ export async function postTopicMessage(
     topicTitle: string;
     content: string;
     authorName: string;
+    authorId?: string;
     mediaType?: string;
     mediaUrl?: string;
     fileName?: string;
@@ -46,10 +49,9 @@ export async function postTopicMessage(
     const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
     const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload),
     });
-    if (!res.ok) return null;
     const data = await res.json();
     return data.message || null;
   } catch {

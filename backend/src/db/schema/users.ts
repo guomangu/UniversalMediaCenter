@@ -15,6 +15,7 @@ export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull().unique(),
   displayName: text('display_name').notNull(),
+  passwordHash: text('password_hash'),
   avatarUrl: text('avatar_url'),
   pinHash: text('pin_hash'),
   isAdmin: boolean('is_admin').default(false).notNull(),

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Radius, Spacing } from '@/constants/theme';
+import { getApiBaseUrl } from '@/services/apiConfig';
+import { getAuthHeaders } from '@/services/authStore';
 
 interface Props {
   visible: boolean;
@@ -13,7 +15,27 @@ interface Props {
 export function PlayerShareModal({ visible, mediaId, mediaTitle, onClose }: Props) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
-  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/player/${mediaId}` : `http://localhost:8081/player/${mediaId}`;
+  const [shareToken, setShareToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (visible && mediaId) {
+      fetch(`${getApiBaseUrl()}/api/media/${mediaId}/share-token`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.shareToken) {
+            setShareToken(data.shareToken);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [visible, mediaId]);
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081';
+  const queryParam = shareToken ? `?share=${shareToken}` : '';
+  const shareUrl = `${origin}/player/${mediaId}${queryParam}`;
 
   const handleCopyLink = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -52,14 +74,14 @@ export function PlayerShareModal({ visible, mediaId, mediaTitle, onClose }: Prop
               <Text style={styles.itemIcon}>📲</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemTitle}>Partager avec mes contacts</Text>
-                <Text style={styles.itemSub}>Via applications (WhatsApp, Telegram, etc.)</Text>
+                <Text style={styles.itemSub}>Lien direct sécurisé (WhatsApp, Telegram, etc.)</Text>
               </View>
             </Pressable>
             <Pressable onPress={handleCopyLink} style={styles.item}>
               <Text style={styles.itemIcon}>📋</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemTitle}>{copied ? '✓ Lien copié !' : 'Copier le lien direct'}</Text>
-                <Text style={styles.itemSub}>{shareUrl}</Text>
+                <Text numberOfLines={1} style={styles.itemSub}>{shareUrl}</Text>
               </View>
             </Pressable>
             <Pressable onPress={handleGoToForum} style={[styles.item, styles.forumItem]}>

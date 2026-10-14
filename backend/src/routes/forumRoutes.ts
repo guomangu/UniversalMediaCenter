@@ -2,8 +2,11 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { forumMessages } from '../db/schema/index.js';
 import { eq, asc, desc, count, sql } from 'drizzle-orm';
+import { requireAuth } from '../middleware/access.js';
 
 export const forumRouter = new Hono();
+
+forumRouter.use('*', requireAuth);
 
 // Récupère la liste des messages pour un sujet / texte précis
 forumRouter.get('/topics/:slug/messages', async (c) => {
@@ -20,11 +23,10 @@ forumRouter.get('/topics/:slug/messages', async (c) => {
 forumRouter.post('/topics/:slug/messages', async (c) => {
   const slug = c.req.param('slug').toLowerCase();
   const body = await c.req.json().catch(() => ({}));
+  const user = c.get('user');
   const {
     topicTitle,
     content,
-    authorName,
-    authorId,
     mediaType = 'TEXT',
     mediaUrl,
     fileName,
@@ -43,8 +45,8 @@ forumRouter.post('/topics/:slug/messages', async (c) => {
       topicSlug: slug,
       topicTitle: topicTitle || slug,
       content: content || '',
-      authorName: authorName || 'Visiteur',
-      authorId: authorId || null,
+      authorName: user?.displayName || body.authorName || 'Utilisateur',
+      authorId: user?.id || body.authorId || null,
       mediaType,
       mediaUrl: mediaUrl || null,
       fileName: fileName || null,

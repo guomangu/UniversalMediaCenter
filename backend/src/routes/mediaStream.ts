@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
+import { checkMediaAccess } from '../auth/mediaAccess.js';
 
 const execFileAsync = promisify(execFile);
 export const streamRouter = new Hono();
@@ -19,12 +20,26 @@ const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 
 streamRouter.get('/:id/stream', async (c) => {
   const id = c.req.param('id');
+  const user = c.get('user');
+  const shareToken = c.req.query('share');
+
   const media = await db.query.mediaNodes.findFirst({
     where: (t, { or, eq }) => isUuid(id) ? or(eq(t.id, id), eq(t.slug, id)) : eq(t.slug, id),
   });
 
-  if (!media?.videoFilePath) return c.json({ error: 'Fichier vidéo absent' }, 404);
+  if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  // Vérification d'accès : compte connecté requis, ou lien de partage valide pour ce média
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId);
+  if (!isAuthorized) {
+    return c.json({
+      error: 'Connexion requise pour visionner cette vidéo ou lien expiré',
+      code: 'UNAUTHORIZED',
+    }, 401);
+  }
+
   if (media.streamUrl) return c.redirect(media.streamUrl);
+  if (!media.videoFilePath) return c.json({ error: 'Fichier vidéo absent' }, 404);
 
   const audio = c.req.query('audio');
   let activeFilePath = media.videoFilePath;
@@ -44,32 +59,35 @@ streamRouter.get('/:id/stream', async (c) => {
 
   const stat = await fsp.stat(activeFilePath);
   const fileSize = stat.size;
-  const mime = MIME_MAP[path.extname(activeFilePath).toLowerCase()] || 'video/mp4';
+  const mimeType = MIME_MAP[ext] || 'video/mp4';
   const range = c.req.header('range');
 
   if (range) {
     const parts = range.replace(/bytes=/, '').split('-');
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    return new Response(Readable.toWeb(fs.createReadStream(activeFilePath, { start, end })) as any, {
-      status: 206,
-      headers: {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': String(end - start + 1),
-        'Content-Type': mime,
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+
+    if (start >= fileSize || end >= fileSize) {
+      c.header('Content-Range', `bytes */${fileSize}`);
+      return c.text('Range Not Satisfiable', 416);
+    }
+
+    const chunksize = end - start + 1;
+    const fileStream = fs.createReadStream(activeFilePath, { start, end });
+    const webStream = Readable.toWeb(fileStream);
+
+    c.status(206);
+    c.header('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+    c.header('Accept-Ranges', 'bytes');
+    c.header('Content-Length', String(chunksize));
+    c.header('Content-Type', mimeType);
+    return c.body(webStream as any);
   }
 
-  return new Response(Readable.toWeb(fs.createReadStream(activeFilePath)) as any, {
-    status: 200,
-    headers: {
-      'Content-Length': String(fileSize),
-      'Accept-Ranges': 'bytes',
-      'Content-Type': mime,
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
+  const fileStream = fs.createReadStream(activeFilePath);
+  const webStream = Readable.toWeb(fileStream);
+  c.header('Content-Length', String(fileSize));
+  c.header('Content-Type', mimeType);
+  c.header('Accept-Ranges', 'bytes');
+  return c.body(webStream as any);
 });

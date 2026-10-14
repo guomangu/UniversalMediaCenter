@@ -1,9 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
-
-const ADMIN_HEADERS = {
-  'Content-Type': 'application/json',
-  'X-User-Id': 'f551d728-1a26-414b-9fc5-84da681b1164',
-};
+import { getAuthHeaders } from './authStore';
 
 export async function fetchPublicConfig(): Promise<any> {
   try {
@@ -34,7 +30,7 @@ export async function registerOnTheFly(payload: {
 
 export async function fetchSiteConfig(): Promise<any> {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/admin/config`, { headers: ADMIN_HEADERS });
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/config`, { headers: getAuthHeaders() });
     const data = await res.json();
     return data.params || null;
   } catch {
@@ -46,7 +42,7 @@ export async function updateSiteConfig(partial: any): Promise<any> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/admin/config`, {
       method: 'PUT',
-      headers: ADMIN_HEADERS,
+      headers: getAuthHeaders(),
       body: JSON.stringify(partial),
     });
     return await res.json();
@@ -57,7 +53,7 @@ export async function updateSiteConfig(partial: any): Promise<any> {
 
 export async function fetchAdminUsers(): Promise<any[]> {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/admin/users`, { headers: ADMIN_HEADERS });
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/users`, { headers: getAuthHeaders() });
     const data = await res.json();
     return data.users || [];
   } catch {
@@ -65,11 +61,33 @@ export async function fetchAdminUsers(): Promise<any[]> {
   }
 }
 
+export async function createAdminUser(payload: {
+  displayName: string;
+  email?: string;
+  pin?: string;
+  isAdmin?: boolean;
+  canDownload?: boolean;
+  canTranscode?: boolean;
+  canWatchIptv?: boolean;
+  maxCsaAgeLimit?: number | null;
+}): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/users`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function updateAdminUser(id: string, updates: any): Promise<any> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/admin/users/${id}`, {
       method: 'PATCH',
-      headers: ADMIN_HEADERS,
+      headers: getAuthHeaders(),
       body: JSON.stringify(updates),
     });
     return await res.json();
@@ -82,7 +100,7 @@ export async function deleteAdminUser(id: string): Promise<any> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/admin/users/${id}`, {
       method: 'DELETE',
-      headers: ADMIN_HEADERS,
+      headers: getAuthHeaders(),
     });
     return await res.json();
   } catch (err: any) {

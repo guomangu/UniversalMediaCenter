@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
+import { requireAuth } from '../middleware/access.js';
 
 export const searchRouter = new Hono();
+
+searchRouter.use('*', requireAuth);
 
 searchRouter.get('/', async (c) => {
   const query = c.req.query('q')?.trim();

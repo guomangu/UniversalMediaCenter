@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { fetchPublicConfig } from '@/services/adminApi';
-import { QuickProfileModal } from './QuickProfileModal';
+import { useCurrentUser } from '@/services/authStore';
+import { AccountModal } from './AccountModal';
 import { TaxonomyCategory } from '@/services/taxonomyApi';
 import { Radius, MaxContentWidth } from '@/constants/theme';
 
@@ -19,7 +20,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
   const isMobile = width < 768;
   const [siteName, setSiteName] = useState('Universal Media Stack');
   const [modalVisible, setModalVisible] = useState(false);
-  const [currentProfile, setCurrentProfile] = useState<any>(null);
+  const currentUser = useCurrentUser();
 
   useEffect(() => {
     fetchPublicConfig().then((cfg) => { if (cfg?.siteName) setSiteName(cfg.siteName); });
@@ -33,12 +34,25 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
             <Text style={styles.logoText}>🎬 {isMobile ? 'UMS' : siteName}</Text>
           </Pressable>
           <View style={styles.actions}>
-            <Pressable focusable={true} style={styles.profileBtn} onPress={() => setModalVisible(true)}>
-              <Text style={styles.profileBtnText}>{currentProfile ? `👤 ${currentProfile.displayName}` : '+ Profil'}</Text>
+            <Pressable focusable={true} style={styles.tvBtn} onPress={() => router.push('/tv' as any)}>
+              <Text style={styles.tvBtnText}>📺 TV</Text>
             </Pressable>
-            <Pressable focusable={true} style={styles.adminBtn} onPress={() => router.push('/admin' as any)}>
-              <Text style={styles.adminBtnText}>⚙️ Admin</Text>
-            </Pressable>
+            {currentUser ? (
+              <Pressable focusable={true} style={styles.profileBtn} onPress={() => setModalVisible(true)}>
+                <Text style={styles.profileBtnText}>
+                  👤 {currentUser.displayName}{currentUser.isAdmin ? ' 👑' : ''}
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable focusable={true} style={styles.loginBtn} onPress={() => router.push('/login' as any)}>
+                <Text style={styles.loginBtnText}>🔑 Se connecter</Text>
+              </Pressable>
+            )}
+            {currentUser?.isAdmin ? (
+              <Pressable focusable={true} style={styles.adminBtn} onPress={() => router.push('/admin' as any)}>
+                <Text style={styles.adminBtnText}>⚙️ Admin</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
@@ -59,7 +73,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
           </View>
         ) : null}
       </View>
-      <QuickProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} onProfileCreated={(u) => setCurrentProfile(u)} />
+      <AccountModal visible={modalVisible} onClose={() => setModalVisible(false)} />
     </View>
   );
 }
@@ -84,7 +98,11 @@ const styles = StyleSheet.create({
   chipTxt: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },
   actTxt: { color: '#ffffff', fontWeight: '800' },
   actions: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  profileBtn: { backgroundColor: 'rgba(99, 102, 241, 0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.4)' },
+  tvBtn: { backgroundColor: 'rgba(99, 102, 241, 0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: '#6366f1' },
+  tvBtnText: { color: '#c7d2fe', fontWeight: '800', fontSize: 11 },
+  loginBtn: { backgroundColor: '#6366f1', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill },
+  loginBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 11 },
+  profileBtn: { backgroundColor: 'rgba(99, 102, 241, 0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.35)' },
   profileBtnText: { color: '#a5b4fc', fontWeight: '700', fontSize: 11 },
   adminBtn: { backgroundColor: 'rgba(51, 65, 85, 0.6)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: Radius.pill },
   adminBtnText: { color: '#e2e8f0', fontWeight: '600', fontSize: 11 },

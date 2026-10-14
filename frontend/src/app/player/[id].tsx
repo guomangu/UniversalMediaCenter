@@ -76,6 +76,7 @@ export default function PlayerScreen() {
           <Pressable focusable={true} onPress={() => { if (videoRef.current) { isPlaying ? videoRef.current.pause?.() : videoRef.current.play?.(); } setIsPlaying(!isPlaying); }} style={[styles.btn, styles.primaryBtn]}><Text style={styles.primaryText}>{isPlaying ? '⏸ Pause' : '▶ Lecture'}</Text></Pressable>
         </View>
         <View style={styles.rightGroup}>
+          <Pressable focusable={true} onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: `tv-${id}`, title: mediaTitle } } as any)} style={styles.btn}><Text style={styles.btnText}>💬 Forum</Text></Pressable>
           <Pressable focusable={true} onPress={() => setShowQuality(true)} style={styles.btn}><Text style={styles.btnText}>⚙️ {activeQuality.toUpperCase()}</Text></Pressable>
           <Pressable focusable={true} onPress={() => setShowAudio(true)} style={styles.btn}><Text style={styles.btnText}>🔊 Audio ({tracks.audioTracks.length})</Text></Pressable>
           <Pressable focusable={true} onPress={() => setShowSubtitles(true)} style={styles.btn}><Text style={styles.btnText}>💬 {activeSubtitle === 'off' ? 'ST: Off' : 'ST: Actif'}</Text></Pressable>

@@ -3,6 +3,7 @@ import { db } from '../db/connection.js';
 import { users } from '../db/schema/index.js';
 import { count } from 'drizzle-orm';
 import { getSiteParams, validateInvitationCode } from '../config/paramManager.js';
+import { createSessionToken } from '../auth/token.js';
 
 export const authRegisterRouter = new Hono();
 
@@ -59,9 +60,23 @@ authRegisterRouter.post('/register-on-the-fly', async (c) => {
     })
     .returning();
 
+  const token = createSessionToken(newUser.id);
+
   return c.json({
     success: true,
-    user: newUser,
+    token,
+    user: {
+      id: newUser.id,
+      email: newUser.email,
+      displayName: newUser.displayName,
+      avatarUrl: newUser.avatarUrl,
+      isAdmin: newUser.isAdmin,
+      canDownload: newUser.canDownload,
+      canTranscode: newUser.canTranscode,
+      canWatchIptv: newUser.canWatchIptv,
+      maxCsaAgeLimit: newUser.maxCsaAgeLimit,
+      hasPin: !!(newUser.pinHash && newUser.pinHash.trim().length > 0),
+    },
     message: isFirstUser
       ? 'Premier profil créé avec succès : vous êtes l’Administrateur du site !'
       : 'Profil créé à la volée avec succès.',

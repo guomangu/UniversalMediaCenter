@@ -3,8 +3,13 @@ import { Platform } from 'react-native';
 
 type Direction = 'up' | 'down' | 'left' | 'right';
 
+function isVideoElement(el: Element | null): boolean {
+  if (!el) return false;
+  return el.tagName === 'VIDEO' || el.getAttribute('data-video-player') === 'true' || !!el.closest('video, [data-video-player="true"]');
+}
+
 function getCandidates(): HTMLElement[] {
-  const sel = 'button, a, input, [role="button"], [tabindex="0"], [data-focusable="true"]';
+  const sel = 'button, a, input, video, [role="button"], [tabindex="0"], [data-focusable="true"], [data-video-player="true"]';
   return Array.from(document.querySelectorAll<HTMLElement>(sel)).filter((el) => {
     if (el.getAttribute('aria-hidden') === 'true' || el.style.display === 'none') return false;
     const r = el.getBoundingClientRect();
@@ -44,16 +49,17 @@ export function useTvNavigation() {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
 
     const onKey = (e: KeyboardEvent) => {
-      const inPlayer = window.location.pathname.includes('/player');
-      const hasModal = !!document.querySelector('[role="dialog"]') || !!document.querySelector('.modal');
-      if (['ArrowLeft', 'ArrowRight'].includes(e.key) && inPlayer && !hasModal) return;
+      const active = document.activeElement as HTMLElement | null;
+      const isVideo = isVideoElement(active);
+
+      // Si la vidéo est sélectionnée, les flèches Gauche/Droite gèrent la progression temporelle
+      if (['ArrowLeft', 'ArrowRight'].includes(e.key) && isVideo) return;
 
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-        if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) return;
+        if (['INPUT', 'TEXTAREA'].includes(active?.tagName || '')) return;
         e.preventDefault();
         moveFocus(e.key.replace('Arrow', '').toLowerCase() as Direction);
       } else if (e.key === 'Enter' || e.key === 'Select') {
-        const active = document.activeElement as HTMLElement;
         if (active && !['INPUT', 'TEXTAREA'].includes(active.tagName)) active.click?.();
       } else if (e.key === 'Escape' || e.key === 'BrowserBack') {
         window.history.back();
@@ -65,11 +71,19 @@ export function useTvNavigation() {
       const gp = navigator.getGamepads?.()?.[0];
       if (gp && Date.now() - lastPad > 220) {
         const [ax, ay] = [gp.axes[0] || 0, gp.axes[1] || 0];
+        const isVideo = isVideoElement(document.activeElement);
+
         if (gp.buttons[12]?.pressed || ay < -0.5) { moveFocus('up'); lastPad = Date.now(); }
         else if (gp.buttons[13]?.pressed || ay > 0.5) { moveFocus('down'); lastPad = Date.now(); }
-        else if (gp.buttons[14]?.pressed || ax < -0.5) { moveFocus('left'); lastPad = Date.now(); }
-        else if (gp.buttons[15]?.pressed || ax > 0.5) { moveFocus('right'); lastPad = Date.now(); }
-        else if (gp.buttons[0]?.pressed) { (document.activeElement as HTMLElement)?.click?.(); lastPad = Date.now(); }
+        else if (gp.buttons[14]?.pressed || ax < -0.5) {
+          if (isVideo) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+          else moveFocus('left');
+          lastPad = Date.now();
+        } else if (gp.buttons[15]?.pressed || ax > 0.5) {
+          if (isVideo) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+          else moveFocus('right');
+          lastPad = Date.now();
+        } else if (gp.buttons[0]?.pressed) { (document.activeElement as HTMLElement)?.click?.(); lastPad = Date.now(); }
         else if (gp.buttons[1]?.pressed) { window.history.back(); lastPad = Date.now(); }
       }
       animId = requestAnimationFrame(pollPad);

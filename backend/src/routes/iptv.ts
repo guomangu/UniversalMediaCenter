@@ -1,19 +1,57 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
-import { mediaNodes, iptvSources } from '../db/schema/index.js';
+import { mediaNodes, iptvSources, eavValues, eavAttributes } from '../db/schema/index.js';
 import { parseM3uContent } from '../iptv/m3uParser.js';
 import { ingestIptvChannels } from '../iptv/channelIngester.js';
-import { eq } from 'drizzle-orm';
+import { eq, and, or, ilike, asc } from 'drizzle-orm';
+import { requireAuth } from '../middleware/access.js';
 
 export const iptvRouter = new Hono();
 
+iptvRouter.use('*', requireAuth);
+
 iptvRouter.get('/channels', async (c) => {
-  const channels = await db.query.mediaNodes.findMany({
-    where: (t, { eq }) => eq(t.nodeType, 'LIVE_CHANNEL'),
-    orderBy: (t, { asc }) => [asc(t.title)],
-    limit: 100,
-  });
+  const q = c.req.query('q')?.trim();
+  const category = c.req.query('category')?.trim();
+  const limit = Math.min(parseInt(c.req.query('limit') || '300', 10), 500);
+
+  const conditions = [eq(mediaNodes.nodeType, 'LIVE_CHANNEL')];
+  if (q) {
+    conditions.push(
+      or(
+        ilike(mediaNodes.title, `%${q}%`),
+        ilike(mediaNodes.searchVectorText, `%${q}%`)
+      )!
+    );
+  }
+  if (category && category !== 'ALL') {
+    conditions.push(ilike(mediaNodes.searchVectorText, `%${category}%`));
+  }
+
+  const channels = await db
+    .select()
+    .from(mediaNodes)
+    .where(and(...conditions))
+    .orderBy(asc(mediaNodes.title))
+    .limit(limit);
+
   return c.json({ count: channels.length, channels });
+});
+
+iptvRouter.get('/categories', async (c) => {
+  try {
+    const rows = await db
+      .selectDistinct({ name: eavValues.valueText })
+      .from(eavValues)
+      .innerJoin(eavAttributes, eq(eavValues.attributeId, eavAttributes.id))
+      .where(eq(eavAttributes.code, 'iptv_category'))
+      .orderBy(asc(eavValues.valueText));
+
+    const categories = rows.map((r) => r.name).filter(Boolean);
+    return c.json({ categories });
+  } catch {
+    return c.json({ categories: [] });
+  }
 });
 
 iptvRouter.post('/sources', async (c) => {

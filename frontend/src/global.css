@@ -30,3 +30,13 @@ input:focus {
   transition: transform 0.12s ease, outline 0.12s ease, box-shadow 0.12s ease !important;
   z-index: 50 !important;
 }
+
+/* Indicateur visuel spécifique quand la vidéo est sélectionnée */
+video:focus,
+[data-video-player="true"]:focus {
+  outline: 3px solid #818cf8 !important;
+  outline-offset: -3px !important;
+  box-shadow: 0 0 24px rgba(129, 140, 248, 0.65) !important;
+  transform: none !important;
+  z-index: 20 !important;
+}

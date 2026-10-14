@@ -9,6 +9,9 @@ import { subtitleRouter } from './mediaSubtitles.js';
 import { tracksRouter } from './mediaTracks.js';
 import { processNfoFile } from '../watcher/index.js';
 import { getRelatedTagsForMedia } from './mediaRelated.js';
+import { createShareToken } from '../auth/shareToken.js';
+import { checkMediaAccess } from '../auth/mediaAccess.js';
+import { requireAuth } from '../middleware/access.js';
 
 export const mediaRouter = new Hono();
 
@@ -28,13 +31,43 @@ mediaRouter.post('/webhook/tmm', async (c) => {
   return c.json({ success: true, message: 'TMM webhook reçu' });
 });
 
-mediaRouter.get('/:id', async (c) => {
+// Génération d'un lien de partage spécifique pour un contenu (réservé aux membres connectés)
+mediaRouter.post('/:id/share-token', requireAuth, async (c) => {
   const id = c.req.param('id');
   const media = await db.query.mediaNodes.findFirst({
     where: (t, { or, eq }) => or(eq(t.id, id), eq(t.slug, id)),
   });
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  const token = createShareToken(media.id, 7);
+  return c.json({
+    success: true,
+    mediaId: media.id,
+    shareToken: token,
+    expiresInDays: 7,
+  });
+});
+
+mediaRouter.get('/:id', async (c) => {
+  const id = c.req.param('id');
+  const user = c.get('user');
+  const shareToken = c.req.query('share');
+
+  const media = await db.query.mediaNodes.findFirst({
+    where: (t, { or, eq }) => or(eq(t.id, id), eq(t.slug, id)),
+  });
+
+  if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  // Vérification des droits : compte connecté requis, sauf si token de partage valide pour ce média précis
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId);
+  if (!isAuthorized) {
+    return c.json({
+      error: 'Connexion requise pour accéder à ce contenu ou lien de partage expiré',
+      code: 'UNAUTHORIZED',
+    }, 401);
+  }
 
   const linkedTags = await db.execute(sql`
     SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme,
@@ -72,18 +105,30 @@ mediaRouter.get('/:id', async (c) => {
 
   const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId);
 
-  return c.json({ media: formattedMedia, tags: tagsByZone, children, relatedTags });
+  return c.json({
+    media: formattedMedia,
+    tags: tagsByZone,
+    children,
+    relatedTags,
+    isSharedAccess: !user && !!shareToken,
+  });
 });
 
-mediaRouter.post('/:id/progress', async (c) => {
+mediaRouter.post('/:id/progress', requireAuth, async (c) => {
   const nodeId = c.req.param('id');
-  const { userId, positionSeconds = 0, durationSeconds = 0, isCompleted = false } = await c.req.json();
-  if (!userId) return c.json({ error: 'userId is required' }, 400);
+  const user = c.get('user');
+  const { positionSeconds = 0, durationSeconds = 0, isCompleted = false } = await c.req.json();
 
-  await db.insert(watchProgress).values({ userId, nodeId, positionSeconds, durationSeconds, isCompleted }
-  ).onConflictDoUpdate({
+  await db.insert(watchProgress).values({
+    userId: user.id,
+    nodeId,
+    positionSeconds,
+    durationSeconds,
+    isCompleted,
+  }).onConflictDoUpdate({
     target: [watchProgress.userId, watchProgress.nodeId],
     set: { positionSeconds, durationSeconds, isCompleted, updatedAt: new Date() },
   });
+
   return c.json({ success: true });
 });
