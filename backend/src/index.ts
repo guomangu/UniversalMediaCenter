@@ -3,7 +3,8 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { runAllMigrations } from './db/runMigrations.js';
 import { seedKyooPreset } from './seed/kyooPreset.js';
-import { startNfoWatcher } from './watcher/index.js';
+import { startMultiRootNfoWatcher } from './watcher/index.js';
+import { parseMediaChaosRoots } from './watcher/rootConfig.js';
 import { authMiddleware } from './middleware/access.js';
 import { authRouter } from './routes/auth.js';
 import { uiRouter } from './routes/ui.js';
@@ -29,14 +30,14 @@ app.route('/api/cast', castRouter);
 
 async function startServer() {
   const port = parseInt(process.env.API_PORT || '3000', 10);
-  const mediaCleanRoot = process.env.MEDIA_CLEAN_ROOT || './media/clean';
+  const chaosRoots = parseMediaChaosRoots(process.env.MEDIA_CHAOS_ROOT);
 
   try {
     await runAllMigrations();
     if (process.env.AUTO_SEED_KYOO_PRESET !== 'false') {
       await seedKyooPreset();
     }
-    startNfoWatcher(mediaCleanRoot);
+    startMultiRootNfoWatcher(chaosRoots);
   } catch (err) {
     console.error('⚠️ Initial boot warning (will retry on incoming traffic):', err);
   }

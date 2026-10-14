@@ -14,6 +14,14 @@ Ce document trace l'avancement global du projet, les jalons validés et les chan
   - Prise en charge stricte de SELinux (`:z`) sur tous les volumes bind.
   - Respect strict de la règle des **fichiers de 100 lignes maximum** (script de 72 lignes).
 
+### 📂 Stockage In-Place & Zéro Déplacement Physique
+- [x] **Suppression définitive de `MEDIA_CLEAN_ROOT` :**
+  - Aucun fichier utilisateur n'est déplacé, renommé ou altéré sur le disque.
+  - La structure réelle des dossiers multimédias est préservée à 100 %.
+- [x] **Support Multi-Dossiers `MEDIA_CHAOS_ROOT` :**
+  - Possibilité de spécifier un ou plusieurs dossiers multimédias séparés par des virgules (ex: `/media/chaos,/mnt/nas/films,/mnt/storage/series`).
+  - Détecteur de fichiers adjacents in-place (`watcher/mediaFileDetector.ts`) associant vidéos et artworks locaux.
+
 ### 🗄️ Architecture Base de Données (PostgreSQL 16 + PostGIS + Drizzle ORM)
 - [x] **Schéma Drizzle Modulaire (100% fichiers < 100 lignes) :**
   - `enums.ts` : `nodeTypeEnum`, `nodeStateEnum`, `tagZoneEnum`, `railTypeEnum`.
@@ -33,8 +41,8 @@ Ce document trace l'avancement global du projet, les jalons validés et les chan
 - [x] Injection des rails d'accueil Kyoo par défaut (Hero Spotlight, Reprendre la lecture, Ajouts Récents, Direct TV, Sagas, Cinéma 4K).
 - [x] Création du compte administrateur initial (`admin@ums.local`).
 
-### 🎬 Module A : Watcher .NFO Zéro-Perte (`watcher/`)
-- [x] Surveillance temps réel Chokidar sur `MEDIA_CLEAN_ROOT` (`watcher/index.ts`).
+### 🎬 Module A : Watcher .NFO Zéro-Perte In-Place (`watcher/`)
+- [x] Surveillance temps réel Chokidar sur l'ensemble des dossiers déclarés dans `MEDIA_CHAOS_ROOT` (`watcher/index.ts`).
 - [x] Hachage cryptographique SHA-256 pour éviter tout parsing superflu.
 - [x] Parser XML `fast-xml-parser` (`watcher/nfoParser.ts`).
 - [x] **Loi Zéro-Perte :** Extraction automatique de toute balise non standard en attribut `custom_<tag>` avec liaison EAV (`watcher/mediaIngester.ts`).
@@ -65,6 +73,13 @@ Ce document trace l'avancement global du projet, les jalons validés et les chan
   - `CastModal.tsx` : Modale glassmorphe de sélection d'écrans avec handoff de position.
   - `CastControlBar.tsx` : Mini-télécommande flottante pour contrôler la lecture à distance.
   - `player/[id].tsx` : Mode récepteur automatique pour lire les flux reçus.
+
+### 📱 Module F : Frontend Universel Kyoo-Style (Expo / React Native)
+### 📺 Module E : Système de Cast Complet & Multi-Écrans (`cast/` & `routes/cast.ts`)
+- [x] **Registry de Périphériques Actifs (`cast/deviceRegistry.ts`) :** Détection automatique des écrans UMS sur le réseau avec heartbeat et expiration TTL.
+- [x] **File d'Attente de Commandes Distantes :** Synchronisation bidirectionnelle (`LOAD`, `PLAY`, `PAUSE`, `SEEK`, `STOP`).
+- [x] **Multi-Protocoles :** UMS Connect (écrans du réseau), Google Cast / Chromecast, et AirPlay.
+- [x] **Composants Frontend :** Modale glassmorphe `CastModal.tsx` et mini-télécommande `CastControlBar.tsx`.
 
 ### 📱 Module F : Frontend Universel Kyoo-Style (Expo / React Native)
 - [x] Charte d'excellence `bon_ux_ui.md` respectée : glassmorphisme, ardoise bleutée `#0f172a`, zéro coin aigu (`Radius` 12-24px et pilules 9999px), TDAH-friendly.

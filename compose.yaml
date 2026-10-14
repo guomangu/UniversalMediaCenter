@@ -33,7 +33,6 @@ services:
       - NODE_ENV=${NODE_ENV:-development}
       - API_PORT=${API_PORT:-3000}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ums}:${POSTGRES_PASSWORD:-ums_secret}@database:5432/${POSTGRES_DB:-ums_db}
-      - MEDIA_CLEAN_ROOT=${MEDIA_CLEAN_ROOT:-/media/clean}
       - MEDIA_CHAOS_ROOT=${MEDIA_CHAOS_ROOT:-/media/chaos}
       - AUTO_SEED_KYOO_PRESET=${AUTO_SEED_KYOO_PRESET:-true}
       - AUTH_SECRET=${AUTH_SECRET:-super_secret_session_key_ums}
@@ -57,7 +56,7 @@ services:
       - "${GATEWAY_PORT:-8080}:80"
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile:ro,z
-      - ./media/clean:/media/clean:ro,z
+      - ./media:/media:ro,z
     depends_on:
       - backend
     networks:

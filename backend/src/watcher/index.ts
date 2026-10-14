@@ -17,27 +17,33 @@ export async function processNfoFile(filePath: string): Promise<void> {
     const sha256 = await calculateFileSha256(filePath);
     const parsed = parseNfoXml(content);
     await ingestMediaNode(filePath, parsed, sha256);
-    console.log(`🎬 Ingested NFO [${parsed.type}]: ${parsed.title}`);
+    console.log(`🎬 Ingested NFO [${parsed.type}] in-place: ${parsed.title}`);
   } catch (err) {
     console.error(`❌ Failed to process NFO file ${filePath}:`, err);
   }
 }
 
-export function startNfoWatcher(watchDir: string): FSWatcher {
-  console.log(`👀 Starting NFO Watcher on: ${watchDir}`);
-  const watcher = chokidar.watch(path.join(watchDir, '**/*.nfo'), {
-    persistent: true,
-    ignoreInitial: false,
-    awaitWriteFinish: {
-      stabilityThreshold: 1000,
-      pollInterval: 200,
-    },
-  });
+export function startMultiRootNfoWatcher(watchDirs: string[]): FSWatcher[] {
+  const watchers: FSWatcher[] = [];
 
-  watcher
-    .on('add', (filePath) => processNfoFile(filePath))
-    .on('change', (filePath) => processNfoFile(filePath))
-    .on('error', (err) => console.error('Watcher error:', err));
+  for (const dir of watchDirs) {
+    console.log(`👀 Watching media directory (in-place tagging): ${dir}`);
+    const watcher = chokidar.watch(path.join(dir, '**/*.nfo'), {
+      persistent: true,
+      ignoreInitial: false,
+      awaitWriteFinish: {
+        stabilityThreshold: 1000,
+        pollInterval: 200,
+      },
+    });
 
-  return watcher;
+    watcher
+      .on('add', (filePath) => processNfoFile(filePath))
+      .on('change', (filePath) => processNfoFile(filePath))
+      .on('error', (err) => console.error(`Watcher error on ${dir}:`, err));
+
+    watchers.push(watcher);
+  }
+
+  return watchers;
 }
