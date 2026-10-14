@@ -71,3 +71,14 @@
 * **Mauvaise Pratique :** Verrouiller les libellés sur une seule ligne pour simplifier l'alignement vertical sans adapter le gabarit de la carte.
 * **Bonne Pratique :**
   - Définir `numberOfLines={2}` avec `lineHeight: 18` et `minHeight: 36` sur le titre pour autoriser le retour à la ligne tout en conservant un alignement horizontal parfait des cartes voisines.
+
+---
+
+## 🛑 18. Écrasement Inconditionnel de la Variable d'Environnement de l'API par la Détection Dynamique Client (`window.location`)
+
+* **Problème / Symptôme :** Le frontend ignore la variable d'environnement `EXPO_PUBLIC_API_URL` configurée dans le fichier `.env` (ex: `https://api.cool.sweaw.com`) et tente d'appeler `/api/...` directement sur le domaine du client web (`https://cool.sweaw.com`), provoquant des erreurs 404.
+* **Conséquences :** Impossibilité de séparer l'hébergement du frontend web et du backend API distant.
+* **Mauvaise Pratique :** Prioriser aveuglément `window.location` dès que le code s'exécute dans un navigateur, rendant inopérante la configuration d'environnement.
+* **Bonne Pratique :**
+  - Accorder la priorité absolue à `process.env.EXPO_PUBLIC_API_URL` dans `apiConfig.ts`.
+  - N'utiliser la détection dynamique d'hôte local (`window.location`) qu'en tant que fallback de commodité si aucune variable d'environnement n'est renseignée.
