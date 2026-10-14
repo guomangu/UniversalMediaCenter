@@ -98,14 +98,10 @@ mediaRouter.post('/:id/match', requireAuth, async (c) => {
   }
 
   const updates: Record<string, any> = {
-    title: external.title || media.title,
-    originalTitle: external.originalTitle || media.originalTitle,
     overview: external.overview || media.overview,
-    tagline: external.tagline || media.tagline,
     releaseYear: external.releaseYear || media.releaseYear,
     communityRating: external.communityRating || media.communityRating,
     confidenceScore: 1.0,
-    state: 'READY',
     updatedAt: new Date(),
   };
 
@@ -114,17 +110,21 @@ mediaRouter.post('/:id/match', requireAuth, async (c) => {
 
   await db.update(mediaNodes).set(updates).where(eq(mediaNodes.id, media.id));
 
-  for (const g of external.genres) await linkTagToNode(media.id, 'genre', g).catch(() => null);
-  for (const s of external.tags) await linkTagToNode(media.id, 'subject', s).catch(() => null);
-  for (const a of external.actors) await linkTagToNode(media.id, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {}).catch(() => null);
+  for (const g of external.genres || []) {
+    await linkTagToNode(media.id, 'genre', g);
+  }
 
-  return c.json({ success: true, matchedTitle: external.title, confidenceScore: 1.0 });
+  return c.json({
+    success: true,
+    matchedTitle: external.title,
+    externalSource: "TVmaze/Wikipedia",
+  });
 });
 
 mediaRouter.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const user = (c as any).get('user') as UserSession | null;
-  const shareToken = c.req.query('share');
+  const shareToken = c.req.query('share_token');
+  const user = (c as any).get('user') as UserSession | undefined;
 
   const media = await findMediaByIdOrSlug(id);
 
@@ -193,20 +193,37 @@ mediaRouter.get('/:id', async (c) => {
   const extraNodes = childNodes.filter((ch) => ch.isExtra);
 
   const children = regularChildren.map((ch) => {
-    const effIndex = ch.absoluteOrderIndex ?? ch.orderIndex;
-    const chInfo = parseSeasonEpisode(ch.title, effIndex);
-    const displayBadge =
-      ch.nodeType === 'MOVIE'
-        ? `FILM ${ch.orderIndex || ''}`.trim()
-        : ch.absoluteOrderIndex && ch.absoluteOrderIndex > 0
-        ? `EP ${String(ch.absoluteOrderIndex).padStart(2, '0')}`
-        : chInfo?.displayBadge ?? (effIndex > 0 ? `EP ${String(effIndex).padStart(2, '0')}` : null);
+    const chInfo = parseSeasonEpisode(ch.title, ch.orderIndex);
+
+    let displayBadge: string | null = null;
+    let seasonEpisodeTag: string | null = null;
+
+    if (ch.nodeType === 'MOVIE') {
+      displayBadge = ch.orderIndex > 0 ? `FILM ${ch.orderIndex}` : 'FILM';
+      seasonEpisodeTag = ch.orderIndex > 0 ? `FILM${ch.orderIndex}` : 'FILM';
+    } else if (chInfo?.displayBadge) {
+      displayBadge = chInfo.displayBadge;
+      seasonEpisodeTag = chInfo.seasonEpisodeTag;
+    } else if (ch.orderIndex >= 1000) {
+      const s = Math.floor(ch.orderIndex / 1000);
+      const e = ch.orderIndex % 1000;
+      const sStr = String(s).padStart(2, '0');
+      const eStr = String(e).padStart(2, '0');
+      displayBadge = `S${sStr} • EP ${eStr}`;
+      seasonEpisodeTag = `S${sStr}E${eStr}`;
+    } else if (ch.absoluteOrderIndex && ch.absoluteOrderIndex > 0 && ch.absoluteOrderIndex < 1000) {
+      displayBadge = `EP ${String(ch.absoluteOrderIndex).padStart(2, '0')}`;
+      seasonEpisodeTag = `E${String(ch.absoluteOrderIndex).padStart(2, '0')}`;
+    } else if (ch.orderIndex > 0) {
+      displayBadge = `EP ${String(ch.orderIndex).padStart(2, '0')}`;
+      seasonEpisodeTag = `E${String(ch.orderIndex).padStart(2, '0')}`;
+    }
 
     return {
       ...ch,
       posterPath: ch.posterPath ? `/api/media/${ch.id}/poster` : formattedMedia.posterPath,
       thumbPath: ch.thumbPath ? `/api/media/${ch.id}/thumb` : (ch.posterPath ? `/api/media/${ch.id}/poster` : undefined),
-      seasonEpisodeTag: chInfo?.seasonEpisodeTag ?? (effIndex > 0 ? `E${String(effIndex).padStart(2, '0')}` : null),
+      seasonEpisodeTag,
       displayBadge,
     };
   });
@@ -225,28 +242,9 @@ mediaRouter.get('/:id', async (c) => {
     children,
     extras,
     relatedTags,
-    isSharedAccess: !user && !!shareToken,
   });
 });
 
-mediaRouter.post('/:id/progress', requireAuth, async (c) => {
-  const nodeId = c.req.param('id');
-  const user = (c as any).get('user') as any;
-  const { positionSeconds = 0, durationSeconds = 0, isCompleted = false } = await c.req.json();
-
-  await db
-    .insert(watchProgress)
-    .values({
-      userId: user.id,
-      nodeId,
-      positionSeconds,
-      durationSeconds,
-      isCompleted,
-    } as any)
-    .onConflictDoUpdate({
-      target: [watchProgress.userId, watchProgress.nodeId],
-      set: { positionSeconds, durationSeconds, isCompleted, updatedAt: new Date() },
-    });
-
-  return c.json({ success: true });
-});
+export async function processSingleNfo(filePath: string) {
+  return await processNfoFile(filePath);
+}

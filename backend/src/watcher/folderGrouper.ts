@@ -9,12 +9,13 @@ export interface FolderGroupingResult {
 }
 
 /**
- * Analyse les sous-dossiers entre la racine de la série et le fichier média
+ * Analyse les sous-dossiers et le fichier pour détecter le regroupement (Saison, Arc, Extra, Film)
  */
 export function analyzeFolderGrouping(filePath: string, showDir: string): FolderGroupingResult {
   const normFile = filePath.replace(/\\/g, '/');
   const normShow = showDir.replace(/\\/g, '/');
   const relPath = path.relative(normShow, path.dirname(normFile));
+  const fileName = path.basename(normFile);
 
   let isExtra = false;
   let extraType: FolderGroupingResult['extraType'];
@@ -22,7 +23,7 @@ export function analyzeFolderGrouping(filePath: string, showDir: string): Folder
   let seasonNumber: number | undefined;
   let groupTitle: string | undefined;
 
-  // Détection des bonus / coulisses dans les sous-dossiers stricts (ex: "Featurettes", "Bonus", "Extras")
+  // 1. Détection des bonus / coulisses dans les sous-dossiers stricts (ex: "Featurettes", "Bonus", "Extras")
   if (/(?:^|\/)(?:featurettes|extras|bonus|deleted scenes|interviews)(?:$|\/)/i.test(relPath)) {
     isExtra = true;
     if (/behind|making|stunt|wall/i.test(normFile)) extraType = 'behindthescenes';
@@ -31,7 +32,7 @@ export function analyzeFolderGrouping(filePath: string, showDir: string): Folder
     return { isExtra, extraType, groupTitle: 'Bonus & Coulisses' };
   }
 
-  // Détection d'un dossier Films / Spéciaux
+  // 2. Détection d'un dossier Films / Spéciaux
   if (/^Films?(\/|$)/i.test(relPath) || /\/Films?(\/|$)/i.test(relPath)) {
     isMovie = true;
     groupTitle = 'Films & Spéciaux';
@@ -39,7 +40,20 @@ export function analyzeFolderGrouping(filePath: string, showDir: string): Folder
     return { isExtra: false, isMovie, groupTitle, seasonNumber };
   }
 
-  // Détection d'un Arc narratif (ex: "01- Soul Society", "02- The Bount")
+  // 3. Détection Picture Drama (spécifique Code Geass, etc.)
+  if (/Picture Drama/i.test(relPath) || /Picture Drama/i.test(fileName)) {
+    return { isExtra: false, isMovie: false, groupTitle: 'Picture Drama', seasonNumber: 998 };
+  }
+
+  // 4. Détection format R1 / R2 (Code Geass, etc.)
+  const rMatch = /(?:^|\/|[ _-])R([1-9])\b/i.exec(relPath);
+  if (rMatch) {
+    seasonNumber = parseInt(rMatch[1], 10);
+    groupTitle = `Saison ${seasonNumber}`;
+    return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
+  }
+
+  // 5. Détection d'un Arc narratif (ex: "01- Soul Society", "02- The Bount")
   const arcMatch = /(?:^|\/)(\d{1,2})[-_ ]+([a-zA-Z0-9' ]+)(?:$|\/)/.exec(relPath);
   if (arcMatch) {
     const arcNum = parseInt(arcMatch[1], 10);
@@ -49,10 +63,18 @@ export function analyzeFolderGrouping(filePath: string, showDir: string): Folder
     return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
   }
 
-  // Détection d'un dossier Saison standard (ex: "Season 1", "Saison 2", "S01")
-  const seasonMatch = /(?:^|\/)(?:Season|Saison|S)[-_ ]*(\d{1,2})(?:$|\/)/i.exec(relPath);
+  // 6. Détection d'un dossier Saison standard (ex: "Season 1", "Saison 2", "S01", "Part 1", "Cour 1")
+  const seasonMatch = /(?:^|\/)(?:Season|Saison|Part|Cour|S)[-_ ]*(\d{1,2})(?:$|\/)/i.exec(relPath);
   if (seasonMatch) {
     seasonNumber = parseInt(seasonMatch[1], 10);
+    groupTitle = `Saison ${seasonNumber}`;
+    return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
+  }
+
+  // 7. Fallback sur le nom de fichier lui-même (ex: "Code Geass S02E01")
+  const fileSeasonMatch = /S(\d+)[\s._-]*E(\d+)/i.exec(fileName);
+  if (fileSeasonMatch) {
+    seasonNumber = parseInt(fileSeasonMatch[1], 10);
     groupTitle = `Saison ${seasonNumber}`;
     return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
   }

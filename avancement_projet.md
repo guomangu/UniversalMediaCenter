@@ -5,8 +5,13 @@
     - Attribution absolue et inviolable de chaque épisode à son dossier de série physique, avec exclusion formelle de tout préfixe `LIKE` flou sans séparateur.
     - Création automatique et propre du conteneur `SHOW` pour les séries sans NFO (`Serial Experiments Lain`, `Diebuster`) avec titre nettoyé.
   - **Groupement Précis des Arcs, Saisons et Détection Restreinte des Extras ([`folderGrouper.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/folderGrouper.ts)) :**
-    - Analyse des sous-dossiers relatifs entre la racine de la série et le fichier (`Season 1`, `Saison 2`, arcs d'anime `01- Soul Society`, sous-dossiers `Films/`).
+    - Analyse des sous-dossiers relatifs entre la racine de la série et le fichier (`Season 1`, `Saison 2`, arcs d'anime `01- Soul Society`, sous-dossiers `Films/`, et nomenclatures alternatives `R1`, `R2`, `Picture Drama`, `Part 1`, `Cour 1`).
     - Élimination des contaminations de faux bonus : détection des extras (`isExtra`) cantonnée strictement aux dossiers de coulisses immédiats (`/(?:featurettes|extras|bonus|deleted scenes)/`), évitant qu'un dossier de release avec `+ Extras` ne marque tous les épisodes en bonus.
+  - **Suppression Totale de l'Entrelacement Inter-Saisons (S01E01, S02E01...) ([`mediaHierarchy.ts`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/utils/mediaHierarchy.ts)) :**
+    - Extraction prioritaire de la saison et de l'épisode depuis `SxxExx` avant tout fallback d'ordre absolu, garantissant la séparation étanche des onglets `Saison 1 (25)`, `Saison 2 (25)` et `Picture Drama (21)`.
+    - Tri hiérarchique quadri-dimensionnel (`season ASC` $\rightarrow$ `episode ASC` $\rightarrow$ `orderIndex ASC` $\rightarrow$ `fsSortKey ASC`) assurant que même sur la vue consolidée "Tous", la totalité de la Saison 1 précède la Saison 2 sans aucune alternance.
+  - **Décodage Arithmétique Universel des Badges et Tags ([`seasonEpisodeHelper.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/seasonEpisodeHelper.ts) & [`media.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts)) :**
+    - Décodage automatique des index $\ge 1000$ (`orderIndex = season * 1000 + episode`) : conversion systématique en `S02 • EP 01` et tag `S02E01`, bannissant définitivement les libellés bruts "EP 2001, 2002".
   - **Calcul d'Index d'Ordre Multi-Saisons sans Collision ([`mediaIngester.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/mediaIngester.ts)) :**
     - Application de la formule `orderIndex = season * 1000 + episode` pour toute saison > 1 (ex: S02E01 = 2001, S02E02 = 2002), éliminant les collisions avec la saison 1.
     - Respect des numéros absolus d'animes et préservation intégrale des titres narratifs.
@@ -15,39 +20,3 @@
     - Nettoyage des noeuds `SEASON` non-jouables créés par `season.nfo` et suppression des vidéos erronées associées aux métadonnées pures.
     - Décontamination des faux extras et suppression des noeuds fantômes sans fichiers.
     - Exposition via l'endpoint d'administration `POST /api/admin/scan/rebuild-hierarchy` et bouton interactif dédié `🔄 Réparer la Hiérarchie` dans la console d'administration.
-- [x] **Pipeline d'Identification Multimodal en Cascade (Waterfall Kyoo++) :**
-  - **Niveau 1 : Empreinte Binaire & Identifiants Internes en O(1) :**
-    - Calcul instantané de l'OpenSubtitles Hash (OSHash 64Ko début/fin) dans [`binaryFingerprint.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/binaryFingerprint.ts).
-    - Extraction du CRC32 fansub anime (`[A1B2C3D4]`) et des identifiants explicites (`[tmdbid-XXXX]`, `[imdbid-ttXXXX]`, `[anidbid-XXXX]`) pour court-circuit immédiat au niveau 1 ($S_{\text{hash}} = 1.0$).
-  - **Niveau 1.5 : Inspection Technique Approfondie Conteneur ffprobe :**
-    - Lecture en JSON des métadonnées du conteneur MKV/MP4, codecs vidéo/audio, résolution, pistes de sous-titres et chapitres dans [`ffprobeProbe.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/ffprobeProbe.ts).
-    - Classification automatique des chapitres (`INTRO`, `OUTRO`, `NORMAL`) pour permettre le saut direct du générique début.
-  - **Niveau 2 : Analyse Lexicale Heuristique & Gestion des Épisodes :**
-    - Nettoyage des tags de release (`1080p`, `x265`, `Remux`, etc.) dans [`lexicalParser.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/lexicalParser.ts).
-    - Séparation stricte du titre de la série (`showTitle`) et du titre narratif propre de l'épisode (`episodeTitle`), évitant tout écrasement ou concaténation générique.
-    - Détection des éditions spéciales (`[Edition-Director's Cut]`, `[Edition-Extended]`, etc.) et des fichiers bonus/extras (`-trailer`, `-behindthescenes`, `-deleted`).
-    - Prise en charge des épisodes doubles (`S01E01-E02`) et des numérotations absolues d'animes avec exclusion stricte des années (1900-2099).
-  - **Niveau 3 : Remapping Sémantique des Acronymes d'Animes :**
-    - Dictionnaire de correspondance dans [`animeAcronyms.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/animeAcronyms.ts) traduisant `FMA:B`, `KnY`, `SnK`, `LotGH`, `Eva`, `HxH`, `JJK`, etc. en titres canoniques.
-  - **Niveau 4 : Contexte de Voisinage & Découplage Logique :**
-    - Inférence déterministe de la série parente et de la saison dans [`siblingContext.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/siblingContext.ts) s'appuyant sur [`hierarchyResolver.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyResolver.ts).
-  - **Niveau 5 : Détection Dynamique des Sous-titres Sidecar :**
-    - Identification automatique des sous-titres externes (`.fr.forced.ass`, `.en.sdh.srt`) dans [`sidecarSubtitles.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/sidecarSubtitles.ts) avec drapeaux de forçage et malentendants.
-  - **Niveau 6 : Modèle de Score de Confiance Bayésien & Cache Local :**
-    - Formule mathématique exacte dans [`bayesianMatcher.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/bayesianMatcher.ts) : $S_{\text{total}} = \max\left(S_{\text{hash}}, \sum w_i \cdot s_i\right)$ combinant similarité trigramme, concordance d'année, fonction gaussienne sur la durée réelle et contexte de voisinage.
-    - Persistance locale du cache sidecar (`.ums.json`) dans [`sidecarCache.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/sidecarCache.ts) pour éliminer les requêtes réseau superflues.
-- [x] **Scanner Récursif In-Place & Suivi d'État en Direct (`bootScanner.ts`) :**
-  - Exclusion des dossiers parasites (`.git`, `node_modules`, `@eaDir`, `#recycle`, `lost+found`, `.trickplay`).
-  - Triple passe d'ingestion : 1ère passe pour les NFOs préexistants, 2ème passe pour les fichiers vidéo autonomes sans NFO (`ingestStandaloneVideoFile`), et 3ème passe pour la réconciliation hiérarchique globale (`repairAllMediaHierarchy`).
-  - Suivi d'état réactif exposé via `getScanStatus()` (fichiers découverts, traités, fichier courant, timestamp de fin).
-- [x] **Console d'Administration Complète du Scan (`AdminScanTab.tsx` & `/admin`) :**
-  - Intégration de l'onglet `🚀 Scan & Médiathèque` dans [`AdminScreen`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/admin.tsx).
-  - Bouton `🚀 Lancer le Scan Universel` avec jauge et compteur en temps réel (polling à 2.5s pendant l'analyse).
-  - Bouton `🔄 Réparer la Hiérarchie` pour réaligner immédiatement la base de données sur la topologie du système de fichiers sans rescanner tout le disque.
-  - Bouton `🧠 Enrichir Métadonnées` pour compléter posters, fanarts et castings sans clé payante.
-  - Grille de statistiques en direct : Total Médias, Films, Séries, Épisodes, Bonus / Extras, Validés (≥ 90%) et À vérifier (< 90%).
-  - Module de réconciliation manuelle des médias incertains (< 90%) : validation instantanée en 1 clic (`✅ Valider`) ou recherche externe (`🔍 Matcher`).
-- [x] **Fiche Média et Lecteur Vidéo Enrichis ([`media/[id].tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx) & [`player/[id].tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/player/[id].tsx)) :**
-  - Affichage des badges d'éditions spéciales (`✨ Director's Cut`, etc.) et alertes de score de confiance.
-  - Carrousel dédié `🎁 Bonus & Coulisses` pour les featurettes et scènes coupées sans polluer la liste des épisodes principaux.
-  - Bouton interactif `Passer l'intro (8s)` dans le lecteur vidéo lors du passage dans le chapitre identifié comme `INTRO`.

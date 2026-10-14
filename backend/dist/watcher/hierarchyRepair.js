@@ -71,31 +71,33 @@ export async function repairAllMediaHierarchy() {
                 updates.nodeType = 'MOVIE';
                 needsUpdate = true;
             }
-            // Vérification et recalcul de l'index d'ordre pour éviter toute collision entre saisons
+            // Vérification et recalcul de l'index d'ordre et de l'index absolu pour éviter toute collision
             const seInfo = parseSeasonEpisode(node.title, node.orderIndex);
+            const effSeason = grouping.seasonNumber ?? seInfo?.season ?? (node.orderIndex >= 1000 ? Math.floor(node.orderIndex / 1000) : 1);
+            const effEpisode = seInfo?.episode ?? (node.orderIndex >= 1000 ? node.orderIndex % 1000 : (node.absoluteOrderIndex ?? node.orderIndex));
             let targetOrder = node.orderIndex;
             let targetAbsolute = node.absoluteOrderIndex;
-            const effSeason = grouping.seasonNumber ?? seInfo?.season ?? 1;
-            const effEpisode = seInfo?.episode ?? node.absoluteOrderIndex ?? (node.orderIndex % 1000);
-            if (effSeason > 1 && effEpisode > 0) {
-                const calculatedOrder = effSeason * 1000 + effEpisode;
-                if (node.orderIndex !== calculatedOrder) {
-                    targetOrder = calculatedOrder;
-                    targetAbsolute = effEpisode;
-                    needsUpdate = true;
-                    report.fixedOrders++;
-                }
+            if (effSeason > 1 && effSeason < 990 && effEpisode > 0) {
+                targetOrder = effSeason * 1000 + effEpisode;
+                targetAbsolute = effEpisode; // L'épisode 2 de la saison 2 est l'épisode 2, jamais 2002 !
             }
-            else if (effSeason === 1 && effEpisode > 0 && node.orderIndex >= 1000) {
+            else if (effSeason === 1 && effEpisode > 0) {
                 targetOrder = effEpisode;
                 targetAbsolute = effEpisode;
+            }
+            else if (effSeason === 998 && effEpisode > 0) {
+                targetOrder = 998000 + effEpisode;
+                targetAbsolute = effEpisode;
+            }
+            if (targetOrder !== node.orderIndex) {
+                updates.orderIndex = targetOrder;
                 needsUpdate = true;
                 report.fixedOrders++;
             }
-            if (targetOrder !== node.orderIndex)
-                updates.orderIndex = targetOrder;
-            if (targetAbsolute !== node.absoluteOrderIndex)
+            if (targetAbsolute !== node.absoluteOrderIndex) {
                 updates.absoluteOrderIndex = targetAbsolute;
+                needsUpdate = true;
+            }
         }
         if (needsUpdate) {
             await db.update(mediaNodes).set(updates).where(eq(mediaNodes.id, node.id));

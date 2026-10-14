@@ -22,77 +22,105 @@ export function parseChildNode(c: any): ParsedChildNode {
   const fsPath = c.videoFilePath || c.nfoFilePath || rawTitle;
   const fsSortKey = fsPath.toLowerCase();
 
-  // 1. Détection de dossier d'Arc ou de Saison
   let groupName = 'Épisodes';
   let season: number | undefined;
+  let episode: number | undefined;
 
-  const arcMatch = /[/\\\\](\d+)[-_ ]+([a-zA-Z0-9' ]+)[/\\\\]/i.exec(fsPath);
-  const filmsMatch = /[/\\\\]Films?[/\\\\]/i.exec(fsPath) || c.nodeType === 'MOVIE';
-  const seasonDirMatch = /[/\\\\](?:Season|Saison)[-_ ]*(\d+)[/\\\\]/i.exec(fsPath) || /[/\\\\]S(\d+)[/\\\\]/i.exec(fsPath);
+  const filmsMatch = /[/\\\\]Films?[/\\\\]/i.test(fsPath) || c.nodeType === 'MOVIE';
+  const picDramaMatch = /Picture Drama/i.test(fsPath) || /Picture Drama/i.test(rawTitle);
 
+  // 1. Détection prioritaire par nom de fichier / titre explicite SxxExx
+  const sMatch =
+    /S(\d+)[\s._-]*E(\d+)/i.exec(rawTitle) ||
+    /S(\d+)[\s._-]*E(\d+)/i.exec(fsPath) ||
+    /(\d+)x(\d+)/i.exec(rawTitle);
+
+  if (sMatch) {
+    season = parseInt(sMatch[1], 10);
+    episode = parseInt(sMatch[2], 10);
+    groupName = `Saison ${season}`;
+  }
+
+  // 2. Détection par dossier d'Arc ou de Saison spécifique
   if (filmsMatch) {
     groupName = 'Films & Spéciaux';
     season = 999;
-  } else if (arcMatch) {
-    const arcNum = parseInt(arcMatch[1], 10);
-    const arcLabel = arcMatch[2].trim();
-    groupName = `${String(arcNum).padStart(2, '0')} • ${arcLabel}`;
-    season = arcNum;
-  } else if (seasonDirMatch) {
-    const sNum = parseInt(seasonDirMatch[1], 10);
-    groupName = `Saison ${sNum}`;
-    season = sNum;
-  }
+  } else if (picDramaMatch) {
+    groupName = 'Picture Drama';
+    season = 998;
+  } else if (!sMatch) {
+    // A. Détection R1 / R2 (Code Geass, etc.)
+    const rMatch = /(?:^|[/\\\\]|[ _-])R([1-9])\b/i.exec(fsPath);
+    // B. Détection format anime: "01- Soul Society"
+    const arcMatch = /[/\\\\](\d{1,2})[-_ ]+([a-zA-Z0-9' ]+)[/\\\\]/i.exec(fsPath);
+    // C. Détection standard: Season 1, Saison 2, Part 1, Cour 1
+    const seasonDirMatch =
+      /[/\\\\](?:Season|Saison|Part|Cour|S)[-_ ]*(\d{1,2})[/\\\\]/i.exec(fsPath) ||
+      /[/\\\\]S(\d{1,2})[/\\\\]/i.exec(fsPath);
 
-  // 2. Détection du numéro d'épisode absolu ou relatif
-  let episode: number | undefined;
-
-  // A. Si absoluteOrderIndex est déjà calculé côté backend
-  if (c.absoluteOrderIndex != null && c.absoluteOrderIndex > 0) {
-    episode = c.absoluteOrderIndex;
-  } else {
-    // B. Détection format anime standard: "Bleach - 102 - Titre"
-    const dashNumMatch = /(?:^|\s)-?\s*(\d{1,4})\s*-\s*/.exec(rawTitle) || /[-_](\d{1,4})[-_]/.exec(fsPath);
-    // C. Détection S01E02 ou 1x02
-    const sMatch = /S(\d+)[-_ ]*E(\d+)/i.exec(rawTitle) || /(\d+)x(\d+)/i.exec(rawTitle);
-    // D. Détection EP02 / E02 / Épisode 2
-    const epMatch = /(?:EP|E|Épisode|Episode)[-_ ]*(\d+)/i.exec(rawTitle);
-
-    if (sMatch) {
-      if (season === undefined) season = parseInt(sMatch[1], 10);
-      episode = parseInt(sMatch[2], 10);
-      if (groupName === 'Épisodes' && season !== undefined) {
-        groupName = `Saison ${season}`;
-      }
-    } else if (dashNumMatch) {
-      episode = parseInt(dashNumMatch[1], 10);
-    } else if (epMatch) {
-      episode = parseInt(epMatch[1], 10);
-    } else if (c.orderIndex > 0) {
-      episode = c.orderIndex;
+    if (rMatch) {
+      season = parseInt(rMatch[1], 10);
+      groupName = `Saison ${season}`;
+    } else if (arcMatch) {
+      const arcNum = parseInt(arcMatch[1], 10);
+      const arcLabel = arcMatch[2].trim();
+      groupName = `${String(arcNum).padStart(2, '0')} • ${arcLabel}`;
+      season = arcNum;
+    } else if (seasonDirMatch) {
+      const sNum = parseInt(seasonDirMatch[1], 10);
+      groupName = `Saison ${sNum}`;
+      season = sNum;
     }
   }
 
-  // 3. Nettoyage du titre affiché (Retirer le préfixe "Show - 102 - " pour n'avoir que le titre de l'épisode)
+  // 3. Décodage depuis orderIndex si orderIndex >= 1000 (saison * 1000 + episode)
+  if (c.orderIndex && c.orderIndex >= 1000) {
+    const calcSeason = Math.floor(c.orderIndex / 1000);
+    const calcEp = c.orderIndex % 1000;
+    if (season === undefined) season = calcSeason;
+    if (episode === undefined) episode = calcEp;
+    if (groupName === 'Épisodes' && season !== undefined) {
+      groupName = `Saison ${season}`;
+    }
+  }
+
+  // 4. Fallback sur le numéro d'épisode si pas encore extrait
+  if (episode === undefined) {
+    if (c.absoluteOrderIndex != null && c.absoluteOrderIndex > 0 && c.absoluteOrderIndex < 1000) {
+      episode = c.absoluteOrderIndex;
+    } else {
+      const dashNumMatch = /(?:^|\s)-?\s*(\d{1,4})\s*-\s*/.exec(rawTitle) || /[-_](\d{1,4})[-_]/.exec(fsPath);
+      const epMatch = /(?:EP|E|Épisode|Episode)[-_ ]*(\d+)/i.exec(rawTitle);
+      if (dashNumMatch) {
+        episode = parseInt(dashNumMatch[1], 10);
+      } else if (epMatch) {
+        episode = parseInt(epMatch[1], 10);
+      } else if (c.orderIndex > 0) {
+        episode = c.orderIndex >= 1000 ? c.orderIndex % 1000 : c.orderIndex;
+      }
+    }
+  }
+
+  // 5. Nettoyage du titre affiché
   let displayTitle = rawTitle
     .replace(/^.*?-\s*\d{1,4}\s*-\s*/i, '')
     .replace(/^.*?-\s*S\d+E\d+\s*-\s*/i, '')
     .trim();
   if (!displayTitle) displayTitle = rawTitle;
 
-  // 4. Tag de badge (ex: "EP 102", "S01 • EP 02", "FILM 1")
+  // 6. Tag de badge sans ambiguïté (jamais "2001", toujours "S02 • EP 01")
   let tag = 'Fichier';
   if (c.nodeType === 'MOVIE' || filmsMatch) {
     tag = episode ? `FILM ${episode}` : 'FILM';
-  } else if (season !== undefined && season < 999 && episode !== undefined && episode < 100) {
+  } else if (season !== undefined && season > 0 && season < 990 && episode !== undefined) {
     tag = `S${String(season).padStart(2, '0')} • EP ${String(episode).padStart(2, '0')}`;
+  } else if (c.displayBadge && !/\b20\d\d\b/.test(c.displayBadge)) {
+    tag = c.displayBadge;
   } else if (episode !== undefined) {
     tag = `EP ${String(episode).padStart(2, '0')}`;
-  } else if (c.displayBadge) {
-    tag = c.displayBadge;
   }
 
-  // 5. Durée formatée (ex: "24 min")
+  // 7. Durée formatée
   let durationLabel: string | undefined;
   if (c.runtimeSeconds && c.runtimeSeconds > 0) {
     const mins = Math.round(c.runtimeSeconds / 60);
@@ -126,7 +154,7 @@ export function buildMediaHierarchy(children: any[]): EpisodeSectionGroup[] {
     groupsMap.get(key)!.items.push(item);
   }
 
-  // Tri des groupes (Saisons et Arcs dans l'ordre croissant, Films & Spéciaux à la fin)
+  // Tri des groupes (Saisons et Arcs dans l'ordre croissant, Picture Drama et Films à la fin)
   const sortedKeys = Array.from(groupsMap.keys()).sort((a, b) => {
     const aData = groupsMap.get(a)!;
     const bData = groupsMap.get(b)!;
@@ -140,10 +168,17 @@ export function buildMediaHierarchy(children: any[]): EpisodeSectionGroup[] {
 
   for (const key of sortedKeys) {
     const { items } = groupsMap.get(key)!;
-    // Tri des épisodes au sein du groupe par numéro d'épisode puis clé de fichier
+    // Tri déterministe au sein de chaque groupe : d'abord Saison, puis Épisode, puis orderIndex
     const sortedItems = [...items].sort((a, b) => {
+      const aSeason = a.season ?? 1;
+      const bSeason = b.season ?? 1;
+      if (aSeason !== bSeason) return aSeason - bSeason;
+
       if (a.episode != null && b.episode != null && a.episode !== b.episode) {
         return a.episode - b.episode;
+      }
+      if (a.node.orderIndex !== b.node.orderIndex) {
+        return a.node.orderIndex - b.node.orderIndex;
       }
       return a.fsSortKey.localeCompare(b.fsSortKey, undefined, { numeric: true, sensitivity: 'base' });
     });
