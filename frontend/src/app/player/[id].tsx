@@ -24,9 +24,12 @@ export default function PlayerScreen() {
   const [showShare, setShowShare] = useState(false);
   const [activeQuality, setActiveQuality] = useState('auto');
   const [activeSubtitle, setActiveSubtitle] = useState('off');
+  const [statusMessage, setStatusMessage] = useState<string>('');
   const [activeCastTarget, setActiveCastTarget] = useState<CastDevice | null>(null);
 
-  const streamUrl = id ? getVideoStreamUrl(id) : '';
+  const streamBase = id ? getVideoStreamUrl(id) : '';
+  const streamUrl = activeQuality === 'auto' ? streamBase : `${streamBase}?quality=${activeQuality}`;
+  const showToast = (msg: string) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); };
 
   useEffect(() => {
     registerAsReceiver(`Écran UMS (${id})`, { isPlaying, positionSeconds: 0, durationSeconds: 7200 });
@@ -34,7 +37,7 @@ export default function PlayerScreen() {
       pollDeviceCommands(getLocalDeviceId(), (cmd) => {
         if (cmd.action === 'PAUSE') { setIsPlaying(false); videoRef.current?.pause?.(); }
         if (cmd.action === 'PLAY') { setIsPlaying(true); videoRef.current?.play?.(); }
-        if (cmd.action === 'STOP') router.back();
+        if (cmd.action === 'STOP') { if (router.canGoBack()) router.back(); else router.push('/'); }
       });
     }, 2000);
     return () => clearInterval(interval);
@@ -48,6 +51,12 @@ export default function PlayerScreen() {
     setIsPlaying(!isPlaying);
   };
 
+  const handleSkipIntro = () => {
+    if (videoRef.current) videoRef.current.currentTime = (videoRef.current.currentTime || 0) + 85;
+    setShowSkipIntro(false);
+    showToast('⏩ Intro passée (+85 secondes)');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <VideoPlayerView
@@ -56,40 +65,30 @@ export default function PlayerScreen() {
         isPlaying={isPlaying}
         videoRef={videoRef}
         showSkipIntro={showSkipIntro}
-        onSkipIntro={() => {
-          if (videoRef.current) videoRef.current.currentTime = (videoRef.current.currentTime || 0) + 85;
-          setShowSkipIntro(false);
-        }}
+        activeSubtitle={activeSubtitle}
+        activeQuality={activeQuality}
+        statusMessage={statusMessage}
+        onSkipIntro={handleSkipIntro}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
       />
 
       <View style={styles.controlsBar}>
         <View style={styles.leftGroup}>
-          <Pressable onPress={() => router.back()} style={styles.btn}><Text style={styles.btnText}>✕ Fermer</Text></Pressable>
-          <Pressable onPress={togglePlay} style={[styles.btn, styles.primaryBtn]}>
-            <Text style={styles.primaryText}>{isPlaying ? '⏸ Pause' : '▶ Lecture'}</Text>
-          </Pressable>
+          <Pressable onPress={() => { if (router.canGoBack()) router.back(); else router.push('/'); }} style={styles.btn}><Text style={styles.btnText}>✕ Fermer</Text></Pressable>
+          <Pressable onPress={togglePlay} style={[styles.btn, styles.primaryBtn]}><Text style={styles.primaryText}>{isPlaying ? '⏸ Pause' : '▶ Lecture'}</Text></Pressable>
         </View>
 
         <View style={styles.rightGroup}>
-          <Pressable onPress={() => setShowQuality(true)} style={styles.btn}>
-            <Text style={styles.btnText}>⚙️ {activeQuality.toUpperCase()}</Text>
-          </Pressable>
-          <Pressable onPress={() => setShowSubtitles(true)} style={styles.btn}>
-            <Text style={styles.btnText}>💬 {activeSubtitle === 'off' ? 'ST: Off' : 'ST: Actif'}</Text>
-          </Pressable>
-          <Pressable onPress={() => setShowShare(true)} style={styles.btn}>
-            <Text style={styles.btnText}>🔗 Partager</Text>
-          </Pressable>
-          <Pressable onPress={() => setShowCast(true)} style={[styles.btn, styles.castBtn]}>
-            <Text style={styles.castText}>📡 Caster</Text>
-          </Pressable>
+          <Pressable onPress={() => setShowQuality(true)} style={styles.btn}><Text style={styles.btnText}>⚙️ {activeQuality.toUpperCase()}</Text></Pressable>
+          <Pressable onPress={() => setShowSubtitles(true)} style={styles.btn}><Text style={styles.btnText}>💬 {activeSubtitle === 'off' ? 'ST: Off' : 'ST: Actif'}</Text></Pressable>
+          <Pressable onPress={() => setShowShare(true)} style={styles.btn}><Text style={styles.btnText}>🔗 Partager</Text></Pressable>
+          <Pressable onPress={() => setShowCast(true)} style={[styles.btn, styles.castBtn]}><Text style={styles.castText}>📡 Caster</Text></Pressable>
         </View>
       </View>
 
-      <PlayerQualityModal visible={showQuality} activeQuality={activeQuality} onSelect={setActiveQuality} onClose={() => setShowQuality(false)} />
-      <PlayerSubtitleModal visible={showSubtitles} activeSubtitle={activeSubtitle} onSelect={setActiveSubtitle} onClose={() => setShowSubtitles(false)} />
+      <PlayerQualityModal visible={showQuality} activeQuality={activeQuality} onSelect={(q) => { setActiveQuality(q); showToast(`⚙️ Flux : ${q.toUpperCase()}`); }} onClose={() => setShowQuality(false)} />
+      <PlayerSubtitleModal visible={showSubtitles} activeSubtitle={activeSubtitle} onSelect={(s) => { setActiveSubtitle(s); showToast(s === 'off' ? '💬 Sous-titres désactivés' : `💬 Sous-titres : ${s.toUpperCase()}`); }} onClose={() => setShowSubtitles(false)} />
       <PlayerShareModal visible={showShare} mediaId={String(id)} onClose={() => setShowShare(false)} />
       <CastModal visible={showCast} onClose={() => setShowCast(false)} currentMedia={{ id: String(id), title: `Média #${id}`, positionSeconds: 120 }} onTargetSelected={(t) => { setActiveCastTarget(t); videoRef.current?.pause?.(); setIsPlaying(false); }} />
       {activeCastTarget && <CastControlBar target={activeCastTarget} onDisconnect={() => setActiveCastTarget(null)} />}

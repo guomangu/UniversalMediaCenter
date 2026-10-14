@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm';
 import { artworkRouter } from './mediaArtworks.js';
 import { streamRouter } from './mediaStream.js';
 import { statsRouter } from './mediaStats.js';
+import { subtitleRouter } from './mediaSubtitles.js';
 import { processNfoFile } from '../watcher/index.js';
 import { getRelatedTagsForMedia } from './mediaRelated.js';
 
@@ -13,6 +14,7 @@ export const mediaRouter = new Hono();
 mediaRouter.route('/', artworkRouter);
 mediaRouter.route('/', streamRouter);
 mediaRouter.route('/', statsRouter);
+mediaRouter.route('/', subtitleRouter);
 
 mediaRouter.post('/webhook/tmm', async (c) => {
   const body = await c.req.json().catch(() => ({}));
@@ -76,10 +78,10 @@ mediaRouter.post('/:id/progress', async (c) => {
   const { userId, positionSeconds = 0, durationSeconds = 0, isCompleted = false } = await c.req.json();
   if (!userId) return c.json({ error: 'userId is required' }, 400);
 
-  await db.insert(watchProgress).values({ userId, nodeId, positionSeconds, durationSeconds, isCompleted })
-    .onConflictDoUpdate({
-      target: [watchProgress.userId, watchProgress.nodeId],
-      set: { positionSeconds, durationSeconds, isCompleted, updatedAt: new Date() },
-    });
+  await db.insert(watchProgress).values({ userId, nodeId, positionSeconds, durationSeconds, isCompleted }
+  ).onConflictDoUpdate({
+    target: [watchProgress.userId, watchProgress.nodeId],
+    set: { positionSeconds, durationSeconds, isCompleted, updatedAt: new Date() },
+  });
   return c.json({ success: true });
 });

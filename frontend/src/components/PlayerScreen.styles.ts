@@ -10,6 +10,12 @@ export const styles = StyleSheet.create({
   },
   videoText: { fontSize: 22, fontWeight: '700', color: '#f8fafc' },
   subText: { fontSize: 13, color: '#94a3b8', marginTop: 4 },
+  statusToast: {
+    position: 'absolute', top: 16, alignSelf: 'center', zIndex: 60,
+    backgroundColor: 'rgba(15, 23, 42, 0.92)', paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: Radius.pill, borderWidth: 1, borderColor: '#6366f1',
+  },
+  statusText: { color: '#c7d2fe', fontSize: 12, fontWeight: '700' },
   skipBtn: {
     position: 'absolute', bottom: 84, right: 24, zIndex: 50,
     backgroundColor: 'rgba(99, 102, 241, 0.92)', paddingHorizontal: Spacing.three,
