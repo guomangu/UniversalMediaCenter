@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { fetchLiveChannels } from '@/services/api';
@@ -18,7 +18,7 @@ export default function LiveTvScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <Text style={styles.heading}>Télévision en Direct (IPTV & EPG)</Text>
-          <Text style={styles.badge}>{channels.length} Chaînes actives</Text>
+          <Text style={styles.badge}>{channels.length} Chaînes</Text>
         </View>
         <View style={styles.grid}>
           {channels.map((ch) => (
@@ -47,24 +47,23 @@ export default function LiveTvScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', padding: Spacing.four },
+  content: {
+    maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center',
+    paddingHorizontal: Spacing.three, paddingBottom: 80,
+    paddingTop: Platform.OS === 'web' ? 70 : Spacing.four,
+  },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.four },
   heading: { fontSize: 22, fontWeight: '800', color: '#f8fafc' },
   badge: { backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 9999, fontSize: 12, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three, justifyContent: 'center' },
   channelCard: {
-    width: 220,
-    backgroundColor: 'rgba(30, 41, 59, 0.75)',
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
-    padding: Spacing.three,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
+    minWidth: 160, maxWidth: 280, flexGrow: 1,
+    backgroundColor: 'rgba(30, 41, 59, 0.75)', borderRadius: Radius.md,
+    borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.4)', padding: Spacing.three,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.three,
   },
-  logoWrap: { width: 50, height: 50, borderRadius: Radius.sm, backgroundColor: 'rgba(15, 23, 42, 0.6)', alignItems: 'center', justifyContent: 'center' },
-  logo: { width: 40, height: 40 },
+  logoWrap: { width: 44, height: 44, borderRadius: Radius.sm, backgroundColor: 'rgba(15, 23, 42, 0.6)', alignItems: 'center', justifyContent: 'center' },
+  logo: { width: 36, height: 36 },
   logoText: { color: '#94a3b8', fontWeight: '700' },
   channelInfo: { flex: 1 },
   channelName: { color: '#f8fafc', fontSize: 14, fontWeight: '700' },

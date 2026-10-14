@@ -14,7 +14,6 @@ export async function linkTagToNode(
   const valueSlug = generateSlug(cleanText) || 'tag';
 
   // 1. Trouver ou créer l'attribut EAV
-  let [attr] = await db.select().from(eavAttributes).where(eavAttributes.code.getSQL());
   const attrQuery = await db.query.eavAttributes.findFirst({
     where: (t, { eq }) => eq(t.code, attributeCode),
   });

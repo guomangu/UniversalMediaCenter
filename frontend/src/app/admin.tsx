@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
@@ -34,14 +34,10 @@ export default function AdminScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.heading}>Studio d'Administration (Server-Driven UI)</Text>
         <View style={styles.tabRow}>
-          <Pressable
-            style={[styles.tabBtn, activeTab === 'LAYOUT' && styles.activeTab]}
-            onPress={() => setActiveTab('LAYOUT')}>
+          <Pressable style={[styles.tabBtn, activeTab === 'LAYOUT' && styles.activeTab]} onPress={() => setActiveTab('LAYOUT')}>
             <Text style={styles.tabText}>📐 Disposition des Rails</Text>
           </Pressable>
-          <Pressable
-            style={[styles.tabBtn, activeTab === 'IPTV' && styles.activeTab]}
-            onPress={() => setActiveTab('IPTV')}>
+          <Pressable style={[styles.tabBtn, activeTab === 'IPTV' && styles.activeTab]} onPress={() => setActiveTab('IPTV')}>
             <Text style={styles.tabText}>📡 Sources IPTV & EPG</Text>
           </Pressable>
         </View>
@@ -61,7 +57,7 @@ export default function AdminScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Ajouter une Liste IPTV (.m3u)</Text>
             <Text style={styles.cardSub}>Formulaire contextuel (2 champs max).</Text>
-            <TextInput style={styles.input} placeholder="Nom (ex: Freebox TV / GitHub IPTV)" placeholderTextColor="#64748b" value={sourceName} onChangeText={setSourceName} />
+            <TextInput style={styles.input} placeholder="Nom (ex: Freebox TV)" placeholderTextColor="#64748b" value={sourceName} onChangeText={setSourceName} />
             <TextInput style={styles.input} placeholder="URL M3U8 (https://...)" placeholderTextColor="#64748b" value={m3uUrl} onChangeText={setM3uUrl} />
             <Pressable style={styles.submitBtn} onPress={handleAddIptv}>
               <Text style={styles.submitText}>+ Importer & Synchroniser</Text>
@@ -76,7 +72,7 @@ export default function AdminScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', padding: Spacing.four },
+  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', paddingHorizontal: Spacing.three, paddingBottom: 80, paddingTop: Platform.OS === 'web' ? 70 : Spacing.four },
   heading: { fontSize: 22, fontWeight: '800', color: '#f8fafc', marginBottom: Spacing.three },
   tabRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.four },
   tabBtn: { paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, borderRadius: Radius.pill, backgroundColor: 'rgba(51, 65, 85, 0.5)' },

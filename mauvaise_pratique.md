@@ -1,6 +1,6 @@
-# Registre des Mauvaises Pratiques & Pièges Détectés — Plateforme iWorker
+# Registre des Mauvaises Pratiques & Pièges Détectés — The Universal Media Stack
 
-Ce document capitalise les erreurs majeures rencontrées au cours du développement de l'application iWorker. Il sert de mémoire technique collective pour permettre aux développeurs et agents IA d'éviter de reproduire ces écueils.
+Ce document capitalise les erreurs majeures rencontrées au cours du développement. Il sert de mémoire technique collective pour permettre aux développeurs et agents IA d'éviter de reproduire ces écueils.
 
 ---
 
@@ -111,5 +111,38 @@ Ce document capitalise les erreurs majeures rencontrées au cours du développem
 * **Conséquences :** Tension inconsciente de l'utilisateur, peur du clic, fatigue visuelle et sentiment d'interface agressive.
 * **Mauvaise Pratique :** Exposer la section de suppression de compte en permanence et utiliser des angles droits sans arrondis.
 * **Bonne Pratique :**
-  - Respecter la charte [`bon_ux_ui.md`](file:///home/gamo/Documents/iworker/bon_ux_ui.md) : arrondis doux systématiques (12px à 24px), glassmorphisme feutré et nuancé.
+  - Respecter la charte [`bon_ux_ui.md`](./bon_ux_ui.md) : arrondis doux systématiques (12px à 24px), glassmorphisme feutré et nuancé.
   - Dissimuler les zones sensibles sous un bouton accordéon discret qui ne se déploie que sous le déclencheur sur intention explicite.
+
+---
+
+## 🛑 11. Omission des Bind Mounts pour les Chemins Hôte Absolus & OS Immuables
+
+* **Problème / Symptôme :** Configurer un chemin absolu personnalisé comme `MEDIA_CHAOS_ROOT=/home/tele/Vidéos/drive` dans `.env` sans adapter les volumes de `compose.yaml`. Sur Bazzite / Fedora Atomic, `/home` est un lien symbolique vers `/var/home`.
+* **Conséquences :** Le conteneur ne trouve aucun fichier (`ENOENT`), et l'application démarre avec un catalogue complètement vide.
+* **Mauvaise Pratique :** Monter uniquement `./media:/media` dans `compose.yaml` en supposant que tous les utilisateurs rangeront leurs fichiers dans ce dossier relatif.
+* **Bonne Pratique :**
+  - Monter à la fois le chemin physique canonique (`/var/home/...`) et le lien utilisateur (`/home/...`) dans le conteneur (`ro,z`).
+  - Permettre la résolution transparente des chemins absolus inscrits dans les fichiers `.nfo` préexistants.
+
+---
+
+## 🛑 12. Dépendance Aveugle à Inotify (`chokidar.watch`) sans Crawler Récursif au Boot
+
+* **Problème / Symptôme :** Compter uniquement sur `chokidar.watch(path.join(dir, '**/*.nfo'))` pour détecter les fichiers médias au démarrage d'un conteneur Podman/Docker.
+* **Conséquences :** Les conteneurs rootless ou les montages bind profonds (> 10 000 fichiers) ignorent silencieusement les fichiers existants au boot, laissant la base de données à zéro enregistrement.
+* **Mauvaise Pratique :** Espérer que les événements inotify se déclencheront sur des fichiers immobiles déjà présents sur le disque avant le lancement du conteneur.
+* **Bonne Pratique :**
+  - Déployer un crawler récursif d'initialisation (`bootScanner.ts`) qui parcourt récursivement `MEDIA_CHAOS_ROOT` dès le démarrage.
+  - Traiter chaque fichier `.nfo` trouvé de façon asynchrone et idempotente (vérification SHA-256).
+
+---
+
+## 🛑 13. Chemins de Fichiers Locaux Bruts dans les Retours d'API
+
+* **Problème / Symptôme :** L'API renvoie des chemins bruts du disque hôte (ex: `posterPath: "/var/home/tele/Vidéos/.../folder.jpg"`) dans le JSON consommé par le frontend Web ou mobile.
+* **Conséquences :** Les navigateurs web refusent d'accéder aux URI locales `file:///` pour des raisons de sécurité, rendant les cartes médias sans artwork.
+* **Mauvaise Pratique :** Servir directement les chaînes de chemins du système de fichiers aux composants UI clients.
+* **Bonne Pratique :**
+  - Transformer les chemins d'artworks locaux en routes HTTP sécurisées (`/api/media/:id/poster`, `/api/media/:id/fanart`).
+  - Utiliser un utilitaire de résolution (`resolveImageUrl`) côté client pour préfixer avec `EXPO_PUBLIC_API_URL` si nécessaire.

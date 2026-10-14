@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { searchCatalog } from '@/services/api';
 import { MediaCard } from '@/components/MediaCard';
@@ -59,21 +59,20 @@ export default function ExploreScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', padding: Spacing.four },
+  content: {
+    maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center',
+    paddingHorizontal: Spacing.three, paddingBottom: 80,
+    paddingTop: Platform.OS === 'web' ? 70 : Spacing.four,
+  },
   heading: { fontSize: 24, fontWeight: '800', color: '#f8fafc', marginBottom: Spacing.three },
   searchBar: {
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
-    borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.5)',
-    borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    color: '#f8fafc',
-    marginBottom: Spacing.three,
+    backgroundColor: 'rgba(30, 41, 59, 0.8)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.5)',
+    borderRadius: Radius.pill, paddingHorizontal: Spacing.four, paddingVertical: Spacing.two,
+    color: '#f8fafc', marginBottom: Spacing.three,
   },
   tagSection: { marginBottom: Spacing.four },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: Spacing.two },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three },
-  gridItem: { marginBottom: Spacing.three },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, justifyContent: 'center' },
+  gridItem: { marginBottom: Spacing.two },
 });

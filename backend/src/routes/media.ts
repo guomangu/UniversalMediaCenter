@@ -2,8 +2,11 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { mediaNodes, watchProgress } from '../db/schema/index.js';
 import { sql } from 'drizzle-orm';
+import { artworkRouter } from './mediaArtworks.js';
 
 export const mediaRouter = new Hono();
+
+mediaRouter.route('/', artworkRouter);
 
 mediaRouter.get('/:id', async (c) => {
   const id = c.req.param('id');
@@ -11,11 +14,8 @@ mediaRouter.get('/:id', async (c) => {
     where: (t, { or, eq }) => or(eq(t.id, id), eq(t.slug, id)),
   });
 
-  if (!media) {
-    return c.json({ error: 'Média introuvable' }, 404);
-  }
+  if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
-  // Récupération de tous les tags EAV rattachés, ordonnés par display_order
   const linkedTags = await db.execute(sql`
     SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme, a.icon_name,
            v.value_text, v.value_slug, v.metadata_json, l.context_role, l.order_index
@@ -26,7 +26,6 @@ mediaRouter.get('/:id', async (c) => {
     ORDER BY a.display_order ASC, l.order_index ASC;
   `);
 
-  // Regroupement par zones Server-Driven UI (Kyoo Native Hierarchy)
   const tagsByZone: Record<string, any[]> = {
     HERO_BADGE: [],
     PRIMARY_PILL: [],
@@ -40,17 +39,19 @@ mediaRouter.get('/:id', async (c) => {
     tagsByZone[zone].push(row);
   }
 
-  return c.json({
-    media,
-    tags: tagsByZone,
-  });
+  const formattedMedia = {
+    ...media,
+    posterPath: media.posterPath ? `/api/media/${media.id}/poster` : undefined,
+    fanartPath: media.fanartPath ? `/api/media/${media.id}/fanart` : undefined,
+  };
+
+  return c.json({ media: formattedMedia, tags: tagsByZone });
 });
 
 mediaRouter.post('/:id/progress', async (c) => {
   const nodeId = c.req.param('id');
   const body = await c.req.json();
   const { userId, positionSeconds, durationSeconds, isCompleted } = body;
-
   if (!userId) return c.json({ error: 'userId is required' }, 400);
 
   await db

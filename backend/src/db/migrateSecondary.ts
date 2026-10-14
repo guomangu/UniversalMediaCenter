@@ -1,7 +1,7 @@
 import { sqlClient } from './connection.js';
 
 export async function createSecondaryTables(): Promise<void> {
-  await sqlClient`
+  await sqlClient.unsafe(`
     CREATE TABLE IF NOT EXISTS eav_values (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       attribute_id UUID NOT NULL REFERENCES eav_attributes(id) ON DELETE CASCADE,
@@ -77,5 +77,5 @@ export async function createSecondaryTables(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_media_nodes_trgm ON media_nodes USING gin (search_vector_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_eav_values_trgm ON eav_values USING gin (value_text gin_trgm_ops);
-  `;
+  `);
 }

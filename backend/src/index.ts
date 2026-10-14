@@ -5,6 +5,7 @@ import { runAllMigrations } from './db/runMigrations.js';
 import { seedKyooPreset } from './seed/kyooPreset.js';
 import { startMultiRootNfoWatcher } from './watcher/index.js';
 import { parseMediaChaosRoots } from './watcher/rootConfig.js';
+import { runBootMediaScan } from './watcher/bootScanner.js';
 import { authMiddleware } from './middleware/access.js';
 import { authRouter } from './routes/auth.js';
 import { uiRouter } from './routes/ui.js';
@@ -38,6 +39,9 @@ async function startServer() {
       await seedKyooPreset();
     }
     startMultiRootNfoWatcher(chaosRoots);
+    runBootMediaScan(chaosRoots).catch((err) => {
+      console.error('⚠️ Boot scan error:', err);
+    });
   } catch (err) {
     console.error('⚠️ Initial boot warning (will retry on incoming traffic):', err);
   }

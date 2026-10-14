@@ -12,6 +12,7 @@ Ce document trace l'avancement global du projet, les jalons validés et les chan
   - Détection dynamique du moteur de conteneurs (`docker compose` ou `podman compose` avec socket utilisateur `/run/user/$UID/podman/podman.sock`).
   - Détection automatique de l'interpréteur JavaScript (`bun` ou `node`/`npm`).
   - Prise en charge stricte de SELinux (`:z`) sur tous les volumes bind.
+  - Prise en compte des liens symboliques Bazzite (`/home` -> `/var/home`).
   - Respect strict de la règle des **fichiers de 100 lignes maximum** (script de 72 lignes).
 
 ### 📂 Stockage In-Place & Zéro Déplacement Physique
@@ -19,15 +20,17 @@ Ce document trace l'avancement global du projet, les jalons validés et les chan
   - Aucun fichier utilisateur n'est déplacé, renommé ou altéré sur le disque.
   - La structure réelle des dossiers multimédias est préservée à 100 %.
 - [x] **Support Multi-Dossiers `MEDIA_CHAOS_ROOT` :**
-  - Possibilité de spécifier un ou plusieurs dossiers multimédias séparés par des virgules (ex: `/media/chaos,/mnt/nas/films,/mnt/storage/series`).
+  - Possibilité de spécifier un ou plusieurs dossiers multimédias séparés par des virgules (ex: `/home/tele/Vidéos/drive`).
   - Détecteur de fichiers adjacents in-place (`watcher/mediaFileDetector.ts`) associant vidéos et artworks locaux.
+  - **Crawler Récursif au Démarrage (`watcher/bootScanner.ts`) :** Découverte synchrone et ingestion immédiate de toute l'arborescence de fichiers `.nfo` préexistants (695 nœuds médias indexés : 60 films, 627 épisodes, 8 séries TV).
+  - **Proxy d'Artworks Locaux (`routes/mediaArtworks.ts`) :** Exposition HTTP sécurisée (`/api/media/:id/poster`, `/api/media/:id/fanart`) permettant aux navigateurs Web d'afficher les affiches et fonds sans blocage de sécurité local.
 
 ### 🗄️ Architecture Base de Données (PostgreSQL 16 + PostGIS + Drizzle ORM)
 - [x] **Schéma Drizzle Modulaire (100% fichiers < 100 lignes) :**
   - `enums.ts` : `nodeTypeEnum`, `nodeStateEnum`, `tagZoneEnum`, `railTypeEnum`.
   - `spatial.ts` : Type spatial PostGIS natif `GEOMETRY(Point, 4326)`.
   - `nodes.ts` : Table `media_nodes` avec arbre récursif (`parent_id`), chapitres JSON (`INTRO`/`OUTRO`), et index de recherche trigramme `gin_trgm_ops`.
-  - `eav.ts` : Modèle polymorphique EAV `eav_attributes`, `eav_values`, `node_eav_links`.
+  - `eav.ts` : Modèle polymorphique EAV `eav_attributes`, `eav_values`, `node_eav_links` (2 082 liens EAV et 879 valeurs uniques indexées).
   - `rails.ts` : Modèle Server-Driven UI `ui_rails` avec filtres JSON dynamiques.
   - `users.ts` : RBAC + ABAC parental par tags (`max_csa_age_limit`, `blocked_value_ids`), et table `watch_progress`.
   - `iptv.ts` : `iptv_sources` et guide TV `epg_programs`.
@@ -65,25 +68,12 @@ Ce document trace l'avancement global du projet, les jalons validés et les chan
 ### 📺 Module E : Système de Cast Complet & Multi-Écrans (`cast/` & `routes/cast.ts`)
 - [x] **Registry de Périphériques Actifs (`cast/deviceRegistry.ts`) :** Détection automatique des écrans UMS sur le réseau avec heartbeat et expiration TTL.
 - [x] **File d'Attente de Commandes Distantes :** Synchronisation bidirectionnelle (`LOAD`, `PLAY`, `PAUSE`, `SEEK`, `STOP`).
-- [x] **Multi-Protocoles :**
-  - **UMS Connect :** Diffusion sans fil instantanée vers n'importe quel écran UMS (Salon TV, chambre, autre navigateur).
-  - **Google Cast / Chromecast :** Prise en charge des diffuseurs Google Cast.
-  - **AirPlay :** Prise en charge sans fil Apple (Apple TV, Mac, iPhone).
-- [x] **Composants Frontend :**
-  - `CastModal.tsx` : Modale glassmorphe de sélection d'écrans avec handoff de position.
-  - `CastControlBar.tsx` : Mini-télécommande flottante pour contrôler la lecture à distance.
-  - `player/[id].tsx` : Mode récepteur automatique pour lire les flux reçus.
-
-### 📱 Module F : Frontend Universel Kyoo-Style (Expo / React Native)
-### 📺 Module E : Système de Cast Complet & Multi-Écrans (`cast/` & `routes/cast.ts`)
-- [x] **Registry de Périphériques Actifs (`cast/deviceRegistry.ts`) :** Détection automatique des écrans UMS sur le réseau avec heartbeat et expiration TTL.
-- [x] **File d'Attente de Commandes Distantes :** Synchronisation bidirectionnelle (`LOAD`, `PLAY`, `PAUSE`, `SEEK`, `STOP`).
 - [x] **Multi-Protocoles :** UMS Connect (écrans du réseau), Google Cast / Chromecast, et AirPlay.
 - [x] **Composants Frontend :** Modale glassmorphe `CastModal.tsx` et mini-télécommande `CastControlBar.tsx`.
 
 ### 📱 Module F : Frontend Universel Kyoo-Style (Expo / React Native)
 - [x] Charte d'excellence `bon_ux_ui.md` respectée : glassmorphisme, ardoise bleutée `#0f172a`, zéro coin aigu (`Radius` 12-24px et pilules 9999px), TDAH-friendly.
-- [x] Accueil dynamique piloté par le serveur (`app/index.tsx`) avec carrousel Hero Spotlight et rails défilants.
+- [x] Accueil dynamique piloté par le serveur (`app/index.tsx`) avec carrousel Hero Spotlight et rails défilants alimentés par le catalogue utilisateur.
 - [x] Onglet Exploration avec recherche instantanée et filtres par tags (`app/explore.tsx`).
 - [x] Écran Direct TV avec grille temporelle et cartes de chaînes (`app/live.tsx`).
 - [x] Fiche média détaillée (`app/media/[id].tsx`) avec hiérarchie des 4 zones de tags Kyoo.

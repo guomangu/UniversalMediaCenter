@@ -2,6 +2,13 @@ import { UiRailItem, MediaDetailResponse } from './types';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
+export function resolveImageUrl(uri?: string): string | undefined {
+  if (!uri) return undefined;
+  if (uri.startsWith('http://') || uri.startsWith('https://')) return uri;
+  if (uri.startsWith('/')) return `${API_BASE}${uri}`;
+  return uri;
+}
+
 export async function fetchHomeLayout(): Promise<UiRailItem[]> {
   try {
     const res = await fetch(`${API_BASE}/api/ui/layout?page=HOME`);

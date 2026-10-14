@@ -1,15 +1,17 @@
 import { sqlClient } from './connection.js';
 
 export async function initDatabaseExtensions(): Promise<void> {
-  await sqlClient`CREATE EXTENSION IF NOT EXISTS postgis;`;
-  await sqlClient`CREATE EXTENSION IF NOT EXISTS pg_trgm;`;
-  await sqlClient`CREATE EXTENSION IF NOT EXISTS unaccent;`;
+  await sqlClient.unsafe(`
+    CREATE EXTENSION IF NOT EXISTS postgis;
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE EXTENSION IF NOT EXISTS unaccent;
+  `);
 }
 
 export async function createSchemaTables(): Promise<void> {
   await initDatabaseExtensions();
   
-  await sqlClient`
+  await sqlClient.unsafe(`
     DO $$ BEGIN
       CREATE TYPE node_type AS ENUM ('COLLECTION', 'SHOW', 'SEASON', 'MOVIE', 'EPISODE', 'EXTRA', 'LIVE_CHANNEL');
     EXCEPTION WHEN duplicate_object THEN null; END $$;
@@ -22,9 +24,9 @@ export async function createSchemaTables(): Promise<void> {
     DO $$ BEGIN
       CREATE TYPE rail_type AS ENUM ('HERO_SPOTLIGHT', 'CONTINUE_WATCHING', 'RECENTLY_ADDED', 'LIVE_TV_GRID', 'COLLECTIONS_ROW', 'DYNAMIC_TAG_QUERY', 'SPATIAL_NEARBY');
     EXCEPTION WHEN duplicate_object THEN null; END $$;
-  `;
+  `);
 
-  await sqlClient`
+  await sqlClient.unsafe(`
     CREATE TABLE IF NOT EXISTS media_nodes (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       parent_id UUID REFERENCES media_nodes(id) ON DELETE CASCADE,
@@ -56,9 +58,9 @@ export async function createSchemaTables(): Promise<void> {
       created_at TIMESTAMP DEFAULT NOW() NOT NULL,
       updated_at TIMESTAMP DEFAULT NOW() NOT NULL
     );
-  `;
+  `);
 
-  await sqlClient`
+  await sqlClient.unsafe(`
     CREATE TABLE IF NOT EXISTS eav_attributes (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       code TEXT NOT NULL UNIQUE,
@@ -70,5 +72,5 @@ export async function createSchemaTables(): Promise<void> {
       is_filterable BOOLEAN DEFAULT TRUE NOT NULL,
       is_dynamic_catch_all BOOLEAN DEFAULT FALSE NOT NULL
     );
-  `;
+  `);
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, ScrollView, RefreshControl, View } from 'react-native';
+import { StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { SearchBar } from '@/components/SearchBar';
@@ -69,6 +69,8 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     width: '100%',
     alignSelf: 'center',
+    paddingTop: Platform.OS === 'web' ? 70 : Spacing.two,
     paddingBottom: 80,
+    paddingHorizontal: Spacing.two,
   },
 });

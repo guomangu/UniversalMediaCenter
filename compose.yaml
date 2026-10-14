@@ -39,6 +39,8 @@ services:
     volumes:
       - ./backend:/app:z
       - ./media:/media:z
+      - /var/home/tele/Vidéos/drive:/home/tele/Vidéos/drive:ro,z
+      - /var/home/tele/Vidéos/drive:/var/home/tele/Vidéos/drive:ro,z
     ports:
       - "${API_PORT:-3000}:${API_PORT:-3000}"
     depends_on:
@@ -57,6 +59,8 @@ services:
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile:ro,z
       - ./media:/media:ro,z
+      - /var/home/tele/Vidéos/drive:/home/tele/Vidéos/drive:ro,z
+      - /var/home/tele/Vidéos/drive:/var/home/tele/Vidéos/drive:ro,z
     depends_on:
       - backend
     networks:

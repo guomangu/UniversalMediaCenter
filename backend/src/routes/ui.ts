@@ -1,11 +1,18 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { uiRails, mediaNodes, eavAttributes } from '../db/schema/index.js';
-import { eq, desc, asc } from 'drizzle-orm';
+import { desc, asc } from 'drizzle-orm';
 
 export const uiRouter = new Hono();
 
-// Configuration complète du layout d'accueil Server-Driven UI
+function formatMediaItem(item: any) {
+  return {
+    ...item,
+    posterPath: item.posterPath ? `/api/media/${item.id}/poster` : undefined,
+    fanartPath: item.fanartPath ? `/api/media/${item.id}/fanart` : undefined,
+  };
+}
+
 uiRouter.get('/layout', async (c) => {
   const pageTarget = c.req.query('page') || 'HOME';
   const rails = await db.query.uiRails.findMany({
@@ -20,13 +27,13 @@ uiRouter.get('/layout', async (c) => {
 
       if (rail.railType === 'HERO_SPOTLIGHT') {
         items = await db.query.mediaNodes.findMany({
-          where: (t, { inArray }) => inArray(t.nodeType, ['MOVIE', 'SHOW']),
+          where: (t, { inArray }) => inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']),
           orderBy: [desc(mediaNodes.createdAt)],
           limit: 5,
         });
       } else if (rail.railType === 'RECENTLY_ADDED') {
         items = await db.query.mediaNodes.findMany({
-          where: (t, { inArray }) => inArray(t.nodeType, ['MOVIE', 'SHOW']),
+          where: (t, { inArray }) => inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']),
           orderBy: [desc(mediaNodes.createdAt)],
           limit,
         });
@@ -37,12 +44,12 @@ uiRouter.get('/layout', async (c) => {
         });
       } else if (rail.railType === 'COLLECTIONS_ROW') {
         items = await db.query.mediaNodes.findMany({
-          where: (t, { eq }) => eq(t.nodeType, 'COLLECTION'),
+          where: (t, { inArray }) => inArray(t.nodeType, ['COLLECTION', 'SHOW']),
           limit,
         });
       } else {
         items = await db.query.mediaNodes.findMany({
-          where: (t, { eq }) => eq(t.nodeType, 'MOVIE'),
+          where: (t, { inArray }) => inArray(t.nodeType, ['MOVIE', 'SHOW', 'EPISODE']),
           orderBy: [desc(mediaNodes.communityRating)],
           limit,
         });
@@ -54,7 +61,7 @@ uiRouter.get('/layout', async (c) => {
         railType: rail.railType,
         cardStyle: rail.cardStyle,
         sortOrder: rail.sortOrder,
-        items,
+        items: items.map(formatMediaItem),
       };
     })
   );
@@ -62,7 +69,6 @@ uiRouter.get('/layout', async (c) => {
   return c.json({ rails: hydratedRails });
 });
 
-// Hiérarchie visuelle et taxonomie des tags
 uiRouter.get('/tags', async (c) => {
   const attributes = await db.query.eavAttributes.findMany({
     orderBy: [asc(eavAttributes.displayOrder)],

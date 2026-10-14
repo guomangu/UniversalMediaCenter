@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { fetchMediaDetail } from '@/services/api';
+import { fetchMediaDetail, resolveImageUrl } from '@/services/api';
 import { MediaDetailResponse } from '@/services/types';
 import { TagPill } from '@/components/TagPill';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
@@ -18,12 +18,13 @@ export default function MediaDetailScreen() {
 
   if (!data) return <View style={styles.loading}><Text style={styles.loadingText}>Chargement...</Text></View>;
   const { media, tags } = data;
+  const fanartUri = resolveImageUrl(media.fanartPath || media.posterPath);
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heroBox}>
-          {media.fanartPath ? <Image source={{ uri: media.fanartPath }} style={styles.backdrop} /> : null}
+          {fanartUri ? <Image source={{ uri: fanartUri }} style={styles.backdrop} /> : null}
           <View style={styles.heroContent}>
             <View style={styles.zoneRow}>
               {tags.HERO_BADGE.map((b, i) => (
@@ -77,12 +78,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f172a' },
   loadingText: { color: '#94a3b8' },
-  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', padding: Spacing.four },
+  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', paddingHorizontal: Spacing.three, paddingBottom: 80, paddingTop: Platform.OS === 'web' ? 70 : Spacing.four },
   heroBox: { minHeight: 280, borderRadius: Radius.lg, overflow: 'hidden', backgroundColor: 'rgba(30, 41, 59, 0.7)', padding: Spacing.four, justifyContent: 'flex-end', marginBottom: Spacing.four, position: 'relative' },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.35 },
   heroContent: { zIndex: 10 },
   zoneRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: Spacing.one },
-  title: { fontSize: 28, fontWeight: '800', color: '#ffffff', marginBottom: Spacing.one },
+  title: { fontSize: 26, fontWeight: '800', color: '#ffffff', marginBottom: Spacing.one },
   overview: { color: '#cbd5e1', fontSize: 13, lineHeight: 18, marginBottom: Spacing.three, maxWidth: 700 },
   playBtn: { alignSelf: 'flex-start', backgroundColor: '#6366f1', paddingHorizontal: Spacing.four, paddingVertical: Spacing.two, borderRadius: Radius.pill },
   playText: { color: '#ffffff', fontWeight: '700' },

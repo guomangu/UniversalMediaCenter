@@ -1,4 +1,4 @@
-# Bonnes Pratiques pour le Développement d'Agents IA Autonomes — Plateforme Coolove
+# Bonnes Pratiques pour le Développement d'Agents IA Autonomes — Plateforme Coolove & The Universal Media Stack
 
 Le développement d'agents IA autonomes nécessite une approche rigoureuse pour gérer le comportement non-déterministe des modèles de langage (LLM). Ce document constitue le **cœur central de référence** gouvernant l'architecture, la sécurité, l'observabilité, la résilience et les standards de conception du projet.
 
@@ -130,3 +130,14 @@ Tout composant ou interface conçu par un agent IA doit impérativement respecte
 *   **Dissimulation des zones destructives ou marginales :**
     *   Les blocs comme « Supprimer le compte » ne doivent jamais monopoliser l'attention.
     *   Ils doivent être dissimulés par défaut sous un bouton sobre (accordéon contextuel qui s'ouvre sous le bouton).
+
+---
+
+## 11. Gestion des Médias In-Place, Multi-Roots & Montages Conteneurs (Zéro-Déplacement & OS Immuables)
+La gestion de bibliothèques multimédias volumineuses sur des systèmes modernes (Bazzite, Fedora Atomic, NAS) exige des règles strictes pour garantir une réactivité instantanée sans jamais altérer les fichiers de l'utilisateur :
+
+*   **Zéro déplacement physique de médias :** Les dossiers multimédias réels (`MEDIA_CHAOS_ROOT`) ne doivent jamais être renommés, déplacés ou altérés. Le système lit in-place et stocke l'indexation, les métadonnées et les relations EAV uniquement dans PostgreSQL.
+*   **Support des OS Immuables et Liens Symboliques (Bazzite/Fedora) :** Sur les systèmes avec `/home` symlinké vers `/var/home`, `compose.yaml` doit obligatoirement binder à la fois les chemins canoniques physiques (`/var/home/...`) et les chemins d'accès utilisateur (`/home/...`). Cela garantit que les références absolues inscrites dans les fichiers `.nfo` préexistants résolvent sans erreur `ENOENT`.
+*   **Scanner récursif au démarrage (Boot Scan) vs Inotify :** Dans les conteneurs (particulièrement en Rootless Podman), la surveillance inotify pure (`chokidar.watch`) ne garantit pas la découverte synchrone des milliers de fichiers déjà existants sur disque au boot. Un crawler récursif d'initialisation (`bootScanner.ts`) doit obligatoirement s'exécuter de façon asynchrone au lancement pour ingérer instantanément la bibliothèque existante sans bloquer le démarrage de l'API.
+*   **Proxy d'Artworks & Sécurité Navigateur :** Les navigateurs web refusent formellement d'afficher des chemins de fichiers locaux (`file:///` ou `/var/home/...`). Le backend doit systématiquement exposer un endpoint dédié (`/api/media/:id/poster`, `/api/media/:id/fanart`) servant les fichiers images avec les en-têtes HTTP appropriés (`Content-Type: image/jpeg`, `Cache-Control: public, max-age=86400, immutable`).
+*   **Tolérance Server-Driven UI aux topologies de bibliothèques hétérogènes :** Les requêtes des rails d'accueil (`uiRails`) ne doivent jamais présumer qu'une bibliothèque ne contient que des films (`MOVIE`) ou des séries (`SHOW`). Elles doivent inclure ou basculer élégamment vers les épisodes (`EPISODE`) ou collections existantes pour garantir qu'aucun écran d'accueil ne reste vide lors d'une première ingestion.

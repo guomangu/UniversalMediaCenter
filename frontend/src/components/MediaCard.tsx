@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Pressable, Image, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MediaNode } from '@/services/types';
+import { resolveImageUrl } from '@/services/api';
 import { styles } from './MediaCard.styles';
 
 interface MediaCardProps {
@@ -11,13 +12,16 @@ interface MediaCardProps {
 
 export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POSTER' }) => {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isMobile = width < 640;
   const isLandscape = styleVariant === 'LANDSCAPE';
   const isLive = styleVariant === 'LIVE_CARD';
 
-  const cardWidth = isLandscape ? 240 : isLive ? 180 : 150;
-  const cardHeight = isLandscape ? 135 : isLive ? 120 : 225;
+  const cardWidth = isLandscape ? (isMobile ? 200 : 240) : isLive ? (isMobile ? 150 : 180) : (isMobile ? 125 : 150);
+  const cardHeight = isLandscape ? (isMobile ? 112 : 135) : isLive ? (isMobile ? 100 : 120) : (isMobile ? 188 : 225);
 
-  const imageUri = item.posterPath || item.thumbPath || item.clearlogoPath || item.fanartPath;
+  const rawUri = item.posterPath || item.thumbPath || item.clearlogoPath || item.fanartPath;
+  const imageUri = resolveImageUrl(rawUri);
 
   const handlePress = () => {
     if (item.nodeType === 'LIVE_CHANNEL') {
