@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Radius, Spacing } from '@/constants/theme';
@@ -16,18 +16,18 @@ export function PlayerShareModal({ visible, mediaId, mediaTitle, onClose }: Prop
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
+  const firstBtnRef = useRef<any>(null);
 
   useEffect(() => {
     if (visible && mediaId) {
+      setTimeout(() => firstBtnRef.current?.focus?.(), 60);
       fetch(`${getApiBaseUrl()}/api/media/${mediaId}/share-token`, {
         method: 'POST',
         headers: getAuthHeaders(),
       })
         .then((res) => res.json())
         .then((data) => {
-          if (data.success && data.shareToken) {
-            setShareToken(data.shareToken);
-          }
+          if (data.success && data.shareToken) setShareToken(data.shareToken);
         })
         .catch(() => {});
     }
@@ -64,27 +64,42 @@ export function PlayerShareModal({ visible, mediaId, mediaTitle, onClose }: Prop
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.content} onPress={(e) => e.stopPropagation()}>
+        <Pressable
+          style={styles.content}
+          onPress={(e) => e.stopPropagation()}
+          {...({ dataSet: { modalContainer: 'true' } } as any)}
+        >
           <View style={styles.header}>
             <Text style={styles.title}>🔗 Partager ce média</Text>
-            <Pressable onPress={onClose}><Text style={styles.close}>✕</Text></Pressable>
+            <Pressable
+              focusable={true}
+              onPress={onClose}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
+            >
+              <Text style={styles.close}>✕</Text>
+            </Pressable>
           </View>
           <View style={styles.list}>
-            <Pressable onPress={handleNativeShare} style={styles.item}>
-              <Text style={styles.itemIcon}>📲</Text>
+            <Pressable
+              ref={firstBtnRef}
+              focusable={true}
+              onPress={handleNativeShare}
+              style={styles.item}
+            >
+              <Text style={styles.itemIcon}>📱</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemTitle}>Partager avec mes contacts</Text>
                 <Text style={styles.itemSub}>Lien direct sécurisé (WhatsApp, Telegram, etc.)</Text>
               </View>
             </Pressable>
-            <Pressable onPress={handleCopyLink} style={styles.item}>
+            <Pressable focusable={true} onPress={handleCopyLink} style={styles.item}>
               <Text style={styles.itemIcon}>📋</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemTitle}>{copied ? '✓ Lien copié !' : 'Copier le lien direct'}</Text>
                 <Text numberOfLines={1} style={styles.itemSub}>{shareUrl}</Text>
               </View>
             </Pressable>
-            <Pressable onPress={handleGoToForum} style={[styles.item, styles.forumItem]}>
+            <Pressable focusable={true} onPress={handleGoToForum} style={[styles.item, styles.forumItem]}>
               <Text style={styles.itemIcon}>💬</Text>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.itemTitle, { color: '#a5b4fc' }]}>Ouvrir le Forum WhatsApp du média</Text>
@@ -100,14 +115,14 @@ export function PlayerShareModal({ visible, mediaId, mediaTitle, onClose }: Prop
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: Spacing.three },
-  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 400, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)' },
+  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 420, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.three },
   title: { fontSize: 16, fontWeight: '800', color: '#f8fafc' },
   close: { color: '#94a3b8', fontSize: 16, fontWeight: '700', padding: 4 },
-  list: { gap: 8 },
+  list: { gap: 10 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: Radius.md, backgroundColor: 'rgba(51, 65, 85, 0.4)', cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
-  forumItem: { backgroundColor: 'rgba(99, 102, 241, 0.2)', borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.4)' },
+  forumItem: { backgroundColor: 'rgba(99, 102, 241, 0.15)', borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.35)' },
   itemIcon: { fontSize: 20 },
-  itemTitle: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
+  itemTitle: { color: '#f8fafc', fontSize: 13, fontWeight: '700' },
   itemSub: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
 });

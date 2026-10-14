@@ -11,12 +11,9 @@ export interface CastDevice {
   isPlaying: boolean;
   volume?: number;
   isMuted?: boolean;
-  audioTrack?: string;
-  subtitleTrack?: string;
-  lastSeenAt?: number;
 }
 
-export type CastAction = 'LOAD' | 'PLAY' | 'PAUSE' | 'SEEK' | 'STOP' | 'SET_VOLUME' | 'MUTE' | 'UNMUTE' | 'SET_AUDIO' | 'SET_SUBTITLE';
+export type CastAction = 'LOAD' | 'PLAY' | 'PAUSE' | 'SEEK' | 'STOP' | 'SET_VOLUME' | 'MUTE' | 'UNMUTE';
 
 export function getLocalDeviceId(): string {
   if (typeof window !== 'undefined' && window.localStorage) {
@@ -40,6 +37,59 @@ export function setLocalDeviceName(name: string): void {
   }
 }
 
+/**
+ * Déclenche le Cast natif professionnel (Remote Playback API W3C & Google Cast SDK)
+ * Détecte immédiatement la télévision comme sur YouTube
+ */
+export async function triggerNativeCast(videoElement?: any): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  // 1. API standard W3C Remote Playback (Chrome, Edge, Samsung Internet, Android)
+  const video =
+    videoElement ||
+    (document.querySelector('video[data-video-player="true"]') as any) ||
+    document.querySelector('video');
+
+  if (video && video.remote && typeof video.remote.prompt === 'function') {
+    try {
+      await video.remote.prompt();
+      return true;
+    } catch (e) {
+      console.log('Remote Playback prompt:', e);
+    }
+  }
+
+  // 2. Google Cast Framework SDK
+  const cast = (window as any).cast;
+  const chrome = (window as any).chrome;
+  if (cast?.framework && chrome?.cast) {
+    try {
+      const context = cast.framework.CastContext.getInstance();
+      context.setOptions({
+        receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+        autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+      });
+      await context.requestSession();
+      return true;
+    } catch (e) {
+      console.log('Cast requestSession error:', e);
+    }
+  }
+
+  // 3. W3C Presentation API
+  if ((window as any).PresentationRequest) {
+    try {
+      const pReq = new (window as any).PresentationRequest(['https://www.google.com/chromecast']);
+      await pReq.start();
+      return true;
+    } catch (e) {
+      console.log('Presentation API error:', e);
+    }
+  }
+
+  return false;
+}
+
 export async function fetchCastDevices(): Promise<CastDevice[]> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/cast/devices`);
@@ -50,7 +100,11 @@ export async function fetchCastDevices(): Promise<CastDevice[]> {
 export async function fetchDeviceStatus(deviceId: string): Promise<CastDevice | null> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/cast/device/${deviceId}`);
-    return res.ok ? ((await res.json()).device || null) : null;
+    if (res.ok) {
+      const data = await res.json();
+      return data.device || null;
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -64,12 +118,12 @@ export async function registerAsReceiver(name: string, state: Partial<CastDevice
   } catch {}
 }
 
-export async function sendCastHeartbeat(updates: Partial<CastDevice>): Promise<void> {
+export async function sendCastHeartbeat(state: Partial<CastDevice>): Promise<void> {
   try {
     await fetch(`${getApiBaseUrl()}/api/cast/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: getLocalDeviceId(), ...updates }),
+      body: JSON.stringify({ id: getLocalDeviceId(), ...state }),
     });
   } catch {}
 }

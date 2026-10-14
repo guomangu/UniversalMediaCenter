@@ -9,6 +9,12 @@ import { AuthGuard } from '@/components/auth/AuthGuard';
 
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
+} else if (typeof document !== 'undefined' && !document.getElementById('google-cast-sender-script')) {
+  const script = document.createElement('script');
+  script.id = 'google-cast-sender-script';
+  script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+  script.async = true;
+  document.head.appendChild(script);
 }
 
 export default function RootLayout() {
@@ -24,6 +30,7 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="login" />
           <Stack.Screen name="admin" />
+          <Stack.Screen name="user" />
           <Stack.Screen name="tv" />
           <Stack.Screen name="media/[id]" />
           <Stack.Screen name="player/[id]" />

@@ -1,8 +1,8 @@
 export interface SeasonEpisodeInfo {
-  season: number;
-  episode: number;
-  seasonEpisodeTag: string; // e.g. "S01E03"
-  displayBadge: string;     // e.g. "S01 • EP 03"
+  season?: number;
+  episode?: number;
+  seasonEpisodeTag: string; // e.g. "S01E03" ou "E03"
+  displayBadge: string;     // e.g. "S01 • EP 03" ou "EP 03"
   sortRank: number;         // (season * 10000) + episode
 }
 
@@ -33,7 +33,7 @@ export function parseSeasonEpisode(
   }
 
   // Format 1x02
-  const xPattern = /(\d+)x(\d+)/i.exec(title);
+  const xPattern = /(\d+)x(\\d+)/i.exec(title);
   if (xPattern) {
     const s = parseInt(xPattern[1], 10);
     const e = parseInt(xPattern[2], 10);
@@ -54,7 +54,6 @@ export function parseSeasonEpisode(
     const e = parseInt(epPattern[1], 10);
     const eStr = String(e).padStart(2, '0');
     return {
-      season: 1,
       episode: e,
       seasonEpisodeTag: `E${eStr}`,
       displayBadge: `EP ${eStr}`,
@@ -66,7 +65,6 @@ export function parseSeasonEpisode(
   if (orderIndex && orderIndex > 0) {
     const eStr = String(orderIndex).padStart(2, '0');
     return {
-      season: 1,
       episode: orderIndex,
       seasonEpisodeTag: `E${eStr}`,
       displayBadge: `EP ${eStr}`,

@@ -24,6 +24,14 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
     userId = verifySessionToken(authHeader.slice(7).trim());
   }
 
+  // Support des balises vidéo HTML5 (<video src="...">) qui ne peuvent pas envoyer d'en-tête Authorization
+  if (!userId) {
+    const queryToken = c.req.query('token') || c.req.query('auth');
+    if (queryToken) {
+      userId = verifySessionToken(queryToken.trim());
+    }
+  }
+
   if (!userId) {
     userId = c.req.header('x-user-id') || null;
   }

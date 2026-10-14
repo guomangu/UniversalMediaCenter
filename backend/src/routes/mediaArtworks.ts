@@ -6,6 +6,9 @@ import path from 'node:path';
 export const artworkRouter = new Hono();
 
 async function sendArtworkFile(filePath: string, c: any) {
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+    return c.redirect(filePath);
+  }
   try {
     const data = await fs.readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();

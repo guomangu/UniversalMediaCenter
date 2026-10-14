@@ -1,7 +1,7 @@
 import { db } from '../db/connection.js';
 import { mediaNodes } from '../db/schema/index.js';
 import { eq } from 'drizzle-orm';
-import { fetchExternalMetadata } from './externalMetadata.js';
+import { fetchExternalMetadata, cleanShowTitle } from './externalMetadata.js';
 import { linkTagToNode } from './tagExtractor.js';
 import { detectAdjacentFiles } from './mediaFileDetector.js';
 
@@ -28,42 +28,57 @@ export async function enrichLibraryMetadata(batchLimit = 30): Promise<{
   let enrichedCount = 0;
 
   for (const { node } of targetBatch) {
-    let hasUpdate = false;
-    const updates: Record<string, any> = { updatedAt: new Date() };
+    try {
+      let hasUpdate = false;
+      const updates: Record<string, any> = { updatedAt: new Date() };
 
-    if ((!node.posterPath || !node.fanartPath) && node.nfoFilePath) {
-      const adjacent = await detectAdjacentFiles(node.nfoFilePath);
-      if (!node.posterPath && adjacent.posterPath) {
-        updates.posterPath = adjacent.posterPath;
-        hasUpdate = true;
+      if ((!node.posterPath || !node.fanartPath) && node.nfoFilePath) {
+        const adjacent = await detectAdjacentFiles(node.nfoFilePath);
+        if (!node.posterPath && adjacent.posterPath) {
+          updates.posterPath = adjacent.posterPath;
+          hasUpdate = true;
+        }
+        if (!node.fanartPath && adjacent.fanartPath) {
+          updates.fanartPath = adjacent.fanartPath;
+          hasUpdate = true;
+        }
       }
-      if (!node.fanartPath && adjacent.fanartPath) {
-        updates.fanartPath = adjacent.fanartPath;
-        hasUpdate = true;
-      }
-    }
 
-    const rawSearch = node.originalTitle || node.title;
-    const searchTitle = rawSearch.split(' - S')[0].replace(/\s*-\s*iNTEGRALE.*/i, '').trim();
-    const external = await fetchExternalMetadata(searchTitle, node.nodeType);
-
-    if (external) {
-      if (external.overview) { updates.overview = external.overview; hasUpdate = true; }
-      if (external.tagline) { updates.tagline = external.tagline; hasUpdate = true; }
-      if (external.releaseYear) { updates.releaseYear = external.releaseYear; hasUpdate = true; }
-      if (external.communityRating) { updates.communityRating = external.communityRating; hasUpdate = true; }
-      if (!node.posterPath && external.posterUrl) {
-        updates.posterPath = external.posterUrl;
-        hasUpdate = true;
+      let rawSearch = node.originalTitle || node.title;
+      const parentId = node.parentId;
+      if ((node.nodeType === 'EPISODE' || node.nodeType === 'SEASON') && parentId) {
+        const parent = await db.query.mediaNodes.findFirst({
+          where: (t, { eq: eqOp }) => eqOp(t.id, parentId as string),
+        });
+        if (parent?.title) rawSearch = parent.title;
       }
-      for (const g of external.genres) {
-        await linkTagToNode(node.id, 'genre', g);
-      }
-    }
 
-    if (hasUpdate) {
-      await db.update(mediaNodes).set(updates).where(eq(mediaNodes.id, node.id));
-      enrichedCount++;
+      const searchTitle = cleanShowTitle(rawSearch);
+      const external = await fetchExternalMetadata(searchTitle, node.nodeType);
+
+      if (external) {
+        if (!node.overview && external.overview) { updates.overview = external.overview; hasUpdate = true; }
+        if (!node.tagline && external.tagline) { updates.tagline = external.tagline; hasUpdate = true; }
+        if (!node.releaseYear && external.releaseYear) { updates.releaseYear = external.releaseYear; hasUpdate = true; }
+        if (node.communityRating == null && external.communityRating) { updates.communityRating = external.communityRating; hasUpdate = true; }
+        if (!node.posterPath && external.posterUrl) {
+          updates.posterPath = external.posterUrl;
+          hasUpdate = true;
+        }
+        for (const g of external.genres) {
+          await linkTagToNode(node.id, 'genre', g).catch(() => null);
+        }
+      }
+
+      if (hasUpdate) {
+        await db.update(mediaNodes).set(updates).where(eq(mediaNodes.id, node.id));
+        enrichedCount++;
+      }
+
+      // Pause de 200ms pour éviter tout blocage 429 Too Many Requests
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } catch (nodeErr) {
+      console.warn(`Enrichment skipped for media ${node.id}:`, nodeErr);
     }
   }
 

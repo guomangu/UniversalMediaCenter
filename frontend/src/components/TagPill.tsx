@@ -31,6 +31,7 @@ export const TagPill: React.FC<TagPillProps> = ({ label, theme = 'slate', onPres
 
   return (
     <Pressable
+      focusable={true}
       onPress={handlePress}
       style={({ pressed }) => [
         styles.pill,
@@ -45,16 +46,25 @@ export const TagPill: React.FC<TagPillProps> = ({ label, theme = 'slate', onPres
 
 const styles = StyleSheet.create({
   pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.two + 4,
-    paddingVertical: Spacing.half + 3,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 6,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    marginRight: Spacing.one + 2,
-    marginBottom: Spacing.one + 2,
+    marginRight: 6,
+    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  text: { fontSize: 12, fontWeight: '600', letterSpacing: 0.3 },
-  subtext: { fontSize: 11, color: '#94a3b8', marginLeft: 2 },
-  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  pressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.96 }],
+  },
+  text: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  subtext: {
+    color: '#94a3b8',
+    fontSize: 11,
+  },
 });

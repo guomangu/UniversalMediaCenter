@@ -1,37 +1,36 @@
-* **Mauvaise Pratique :** Verrouiller les libellés sur une seule ligne pour simplifier l'alignement vertical sans adapter le gabarit de la carte.
-* **Bonne Pratique :**
-  - Définir `numberOfLines={2}` avec `lineHeight: 18` et `minHeight: 36` sur le titre pour autoriser le retour à la ligne tout en conservant un alignement horizontal parfait des cartes voisines.
+  - Pour les nœuds `EPISODE` et `SEASON`, remonter d'abord chercher le titre propre du parent `SHOW` dans la base de données locale avant d'interroger le web.
+  - Définir des timeouts stricts (`AbortSignal.timeout(6000)`) et un délai inter-requêtes (200ms) pour respecter les quotas.
 
 ---
 
-## 🛑 18. Écrasement Inconditionnel de la Variable d'Environnement de l'API par la Détection Dynamique Client (`window.location`)
+## 🛑 24. Découverte Cast Limitée aux Seuls Clients Internes (Smart TV Invisibles)
 
-* **Problème / Symptôme :** Le frontend ignore la variable d'environnement `EXPO_PUBLIC_API_URL` configurée dans le fichier `.env` (ex: `https://api.cool.sweaw.com`) et tente d'appeler `/api/...` directement sur le domaine du client web (`https://cool.sweaw.com`), provoquant des erreurs 404.
-* **Conséquences :** Impossibilité de séparer l'hébergement du frontend web et du backend API distant.
-* **Mauvaise Pratique :** Prioriser aveuglément `window.location` dès que le code s'exécute dans un navigateur, rendant inopérante la configuration d'environnement.
+* **Problème / Symptôme :** La fonctionnalité de Cast reposait uniquement sur un registre en mémoire et un polling interne HTTP/WebSocket UMS, ne découvrant que les fenêtres de navigateur actives exécutant l'application. La Smart TV connectée au réseau (Google TV, Chromecast, Android TV, Smart TV Samsung/LG) n'apparaissait pas dans la modale de Cast.
+* **Conséquences :** Impossibilité de diffuser directement sur sa télévision comme le fait l'application YouTube.
+* **Mauvaise Pratique :** Tenter de réimplémenter entièrement la découverte mDNS / SSDP / DIAL en pur code applicatif web sans exploiter les APIs de projection matérielles du navigateur.
 * **Bonne Pratique :**
-  - Accorder la priorité absolue à `process.env.EXPO_PUBLIC_API_URL` dans `apiConfig.ts`.
-  - N'utiliser la détection dynamique d'hôte local (`window.location`) qu'en tant que fallback de commodité si aucune variable d'environnement n'est renseignée.
+  - Intégrer l'API W3C Remote Playback (`video.remote.prompt()`) et le Google Cast SDK standard (`cast_sender.js`).
+  - Proposer un bouton pro "Caster sur ma Télévision" qui réveille le dialogue natif du navigateur, offrant la parité parfaite avec YouTube pour la détection et la diffusion fluide vers toutes les Smart TVs du réseau local.
 
 ---
 
-## 🛑 19. Captation Abusive des Flèches Directionnelles pour le Volume Bloquant la Navigation Télécommande
+## 🛑 25. Appels de Fonctions Asynchrones Non-Défensives dans les Timers Périodiques (`setInterval` & HMR)
 
-* **Problème / Symptôme :** Associer les touches `ArrowUp` et `ArrowDown` au contrôle du volume sonore dans le lecteur vidéo (`usePlayerControls`), et capturer `ArrowLeft` et `ArrowRight` sans vérifier l'élément ayant le focus.
-* **Conséquences :** L'utilisateur télécommande/manette ne peut plus circuler entre les boutons du lecteur ("Fermer", "Pause", "Audio", "Sous-titres", "Caster"), car le moindre appui sur une flèche modifie le volume ou saute dans la vidéo au lieu de déplacer le focus.
-* **Mauvaise Pratique :** Détourner les flèches haut/bas pour le volume sonore et bloquer arbitrairement la navigation spatiale 2D dans le lecteur.
+* **Problème / Symptôme :** Lorsqu'un hook (`useCastReceiver`) lance un intervalle périodique (`setInterval`) appelant des fonctions importées d'un service (`sendCastHeartbeat`), le rechargement à chaud Metro (Fast Refresh / HMR) ou une session préexistante peut tenter d'exécuter la fonction avant que l'export ne soit résolu en mémoire, levant l'erreur `Uncaught TypeError: (0, ...).sendCastHeartbeat is not a function`.
+* **Conséquences :** Crash de la console ou bandeau d'erreur rouge dans le lecteur vidéo lors d'une mise à jour de code à chaud.
+* **Mauvaise Pratique :** Présumer qu'une fonction de service importée est invariablement disponible dans un timer asynchrone lors des cycles de rechargement à chaud.
 * **Bonne Pratique :**
-  - Laisser les flèches haut/bas libres pour la navigation spatiale de bouton en bouton (le volume restant dévolu aux touches matérielles de la télécommande ou à la barre de cast).
-  - Conditionner le seek vidéo (`ArrowLeft` / `ArrowRight`) à la sélection explicite de l'élément vidéo (`document.activeElement === video`). Lorsque le focus est sur la barre de contrôle, les flèches gauche/droite naviguent normalement d'un bouton à l'autre.
+  - Sécuriser les appels dans les timers périodiques par un garde de type (`if (typeof fn === 'function') fn(...)`).
+  - Nettoyer systématiquement les intervalles dans le cleanup d'effet (`return () => clearInterval(...)`).
 
 ---
 
-## 🛑 20. Fallback Automatique sur l'Administrateur dans le Middleware d'Authentification & Headers Fixes
+## 🛑 26. Piégeage des Touches Télécommande dans les Inputs de Recherche et Modales Non-Navigables
 
-* **Problème / Symptôme :** En l'absence d'en-tête d'authentification ou pour tout visiteur anonyme, le middleware assignait par défaut le premier compte trouvé en base (le compte administrateur). De plus, les requêtes admin utilisaient un ID admin codé en dur (`X-User-Id: 'admin-id'`).
-* **Conséquences :** Tout visiteur anonyme ou utilisateur standard (ex: profil enfant) héritait silencieusement des droits administrateur, voyait le bouton `⚙️ Admin` et pouvait modifier la configuration du serveur.
-* **Mauvaise Pratique :** Présumer qu'une requête sans identifiant provient de l'administrateur, ou coder en dur des identifiants dans le code client.
+* **Problème / Symptôme :** Dès que le focus entrait dans une barre de recherche (`TextInput`), les touches directionnelles étaient complètement ignorées (`return`), piégeant l'utilisateur télécommande dans le champ sans pouvoir descendre vers les résultats ou remonter vers la barre d'onglets. De plus, les boutons des menus du lecteur ("Partager", "Cast", "Audio", "ST", "Qualité") et leurs modales n'avaient pas d'attributs `focusable={true}` et n'étaient pas isolés lors de l'ouverture de la modale.
+* **Conséquences :** Impossible de piloter les menus du lecteur vidéo et les listes déroulantes de recherche à la télécommande ou à la manette.
+* **Mauvaise Pratique :** Bloquer globalement la navigation spatiale dans tous les `input`, et omettre `focusable={true}` / le confinement de focus dans les modales contextuelles.
 * **Bonne Pratique :**
-  - Assigner strictement `c.set('user', null)` (session invité sans droits) pour toute requête sans jeton valide.
-  - Émettre des jetons de session signés HMAC-SHA256 (`token.ts`) lors du login, persistés dynamiquement dans `authStore.ts` (`Authorization: Bearer <token>`).
-  - Conditionner l'affichage du bouton `⚙️ Admin` et l'accès à la route `/admin` à `currentUser?.isAdmin === true`.
+  - Autoriser `ArrowDown` pour descendre immédiatement du champ de recherche vers les résultats/filtres, `ArrowUp` pour remonter vers l'en-tête, et `Escape / Back` pour désactiver le focus (`blur()`).
+  - Marquer les boutons de modales avec `focusable={true}` et cantonner automatiquement la navigation spatiale à l'intérieur de la modale active (`[data-modal-container="true"]`).
+  - Associer la touche Retour de la télécommande à la fermeture de la modale ouverte (`[data-modal-close="true"]`) au lieu de déclencher un retour arrière d'historique web.

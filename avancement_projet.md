@@ -56,6 +56,56 @@
 
 ---
 
+### 📺 Cast Professionnel & Fiable vers Télévisions Physiques (`castService.ts`, `CastModal.tsx`)
+- [x] **Intégration W3C Remote Playback API & Google Cast SDK :**
+  - Support natif `video.remote.prompt()` réveillant la boîte de dialogue de projection matérielle du navigateur.
+  - Détection immédiate des téléviseurs physiques (Google TV, Chromecast, Android TV, Smart TV Samsung, LG, AirPlay) comme sur YouTube.
+  - Injection du SDK Google Cast (`cast_sender.js`) au niveau du layout racine Expo web (`_layout.tsx`).
+  - Bouton d'action pro saillant "Caster sur ma Télévision" avec feedback en temps réel.
+- [x] **Télécommande & Contrôle Déporté (`CastControlBar.tsx`) :**
+  - Pilotage de la lecture, pause, seek chronologique, volume et mute sur le périphérique ciblé.
+
+---
+
+### 🎮 Navigation Télécommande Pro & Menus du Lecteur (`useTvNavigation.ts`)
+- [x] **Contrôle Spatial des Menus Vidéo ("Partager", "Cast", "Audio", "ST", "Qualité") :**
+  - Confinement automatique de focus lors de l'ouverture d'une modale (`[data-modal-container="true"]`).
+  - Focus automatique immédiat sur le premier élément ou l'option active dès l'apparition de la modale.
+  - Déplacement 2D fluide (Haut/Bas/Gauche/Droite) entre les options avec validation par touche Entrée / OK.
+  - Touche Retour / Escape de la télécommande dédiée à la fermeture de la modale sans quitter le lecteur.
+- [x] **Intégration Complète des Barres de Recherche au Contrôle Télécommande :**
+  - `ArrowDown` permet de descendre instantanément du champ de recherche vers les résultats suggérés, les filtres et les rails de médias.
+  - `ArrowUp` permet de remonter vers la barre de navigation d'en-tête.
+  - `Escape / Back` désactive le focus (`blur()`) pour libérer la navigation sur l'écran.
+
+---
+
+### 🖼️ Disposition Kyoo & Affiches 2x Plus Grandes (`/media/[id]`)
+- [x] **Ordonnancement Vertical des Saisons & Horizontal des Épisodes (`mediaHierarchy.ts`) :**
+  - Regroupement automatique des épisodes par saison (`Saison 1`, `Saison 2`...) même en l'absence complète de métadonnées NFO.
+  - **Gestion stricte des métadonnées incomplètes ou asymétriques :**
+    - Les médias sans saison alors que des pairs en possèdent sont relégués dans la catégorie **« Saison inconnue » placée impérativement en dernier**, et triés chronologiquement par numéro d'épisode.
+    - Les médias sans numéro d'épisode alors que des pairs en possèdent sont isolés dans la sous-catégorie **« Épisode inconnu »**, et triés chronologiquement **grâce à l'ordre naturel dans le système de fichiers** (`videoFilePath` / `nfoFilePath`).
+  - Défilement vertical des blocs de saisons, chaque bloc affichant ses épisodes triés avec défilement horizontal fluide.
+- [x] **Agrandissement x2 des Affiches et Vignettes :**
+  - Gabarit des cartes et tuiles doublé (style Kyoo : posters de 260x390px, tuiles de 200x290px, vignettes horizontales de 380x214px).
+  - Préservation intégrale des ratios d'aspect (2:3 et 16:9), suppression de tout flou et affichage haute fidélité.
+
+---
+
+### 🛡️ Robustesse Ingestion & Scanner de Métadonnées
+- [x] **Résilience aux Métadonnées Manquantes :**
+  - Détection et parsing heuristique des titres de fichiers (`cleanShowTitle`).
+  - Timeouts stricts de 6 secondes sur les appels externes TVmaze et Wikipedia via `AbortSignal.timeout(6000)`.
+  - Pause anti-saturation (200ms) pour garantir zéro blocage HTTP 429 Too Many Requests.
+  - Redirection HTTP 302 instantanée dans `mediaArtworks.ts` pour les URLs d'images distantes.
+- [x] **Support Authentification Streaming `<video src>` :**
+  - Prise en charge du paramètre de requête `?token=...` dans le middleware `access.ts` et dans `getVideoStreamUrl()`.
+- [x] **Gestion des Administrateurs :**
+  - Promotion administrateur validée en base de données pour `guigui@gmail.com`.
+
+---
+
 ### 🧭 Redirection & Zéro Page Vide
 - [x] **Écran d'Accueil Tolérant (`index.tsx`) :**
   - Si le catalogue est en cours d'ingestion ou vide, affichage d'un panneau d'accueil chaleureux avec boutons fonctionnels directs vers la TV en Direct (`/tv`), l'Espace Utilisateur (`/user`), et l'Administration (`/admin`).

@@ -1,6 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
-import { fetchCastDevices, sendCastCommand, getLocalDeviceId, getLocalDeviceName, setLocalDeviceName, registerAsReceiver, CastDevice } from '@/services/castService';
+import {
+  fetchCastDevices,
+  sendCastCommand,
+  getLocalDeviceId,
+  getLocalDeviceName,
+  setLocalDeviceName,
+  registerAsReceiver,
+  triggerNativeCast,
+  CastDevice,
+} from '@/services/castService';
 import { setActiveCastTarget } from '@/services/castState';
 import { styles } from './CastModal.styles';
 
@@ -15,17 +24,24 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
   const [devices, setDevices] = useState<CastDevice[]>([]);
   const [myDeviceName, setMyDeviceName] = useState(getLocalDeviceName());
   const localId = getLocalDeviceId();
+  const nativeBtnRef = useRef<any>(null);
 
   const refresh = () => fetchCastDevices().then((d) => setDevices(d.filter((x) => x.id !== localId)));
 
   useEffect(() => {
     if (!visible) return;
     refresh();
+    setTimeout(() => nativeBtnRef.current?.focus?.(), 60);
     const interval = setInterval(refresh, 2500);
     return () => clearInterval(interval);
   }, [visible, localId]);
 
   if (!visible) return null;
+
+  const handleNativeCast = async () => {
+    onClose();
+    await triggerNativeCast();
+  };
 
   const handleRename = () => {
     const next = Platform.OS === 'web' ? window.prompt('Nom de cet appareil :', myDeviceName) : null;
@@ -50,21 +66,39 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
 
   return (
     <View style={styles.overlay}>
-      <View style={styles.modal}>
+      <View style={styles.modal} {...({ dataSet: { modalContainer: 'true' } } as any)}>
         <View style={styles.header}>
           <Text style={styles.title}>📡 Diffuser & Télécommande</Text>
-          <Pressable onPress={onClose} style={styles.closeBtn}><Text style={styles.closeText}>✕</Text></Pressable>
+          <Pressable
+            focusable={true}
+            onPress={onClose}
+            style={styles.closeBtn}
+            {...({ dataSet: { modalClose: 'true' } } as any)}
+          >
+            <Text style={styles.closeText}>✕</Text>
+          </Pressable>
         </View>
+
+        {/* Bouton Cast Natif Officiel (Chromecast, Smart TV, Android TV, AirPlay) */}
+        <Pressable ref={nativeBtnRef} focusable={true} style={styles.nativeCastBtn} onPress={handleNativeCast}>
+          <Text style={styles.nativeCastIcon}>📺</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.nativeCastTitle}>Caster sur ma Télévision</Text>
+            <Text style={styles.nativeCastSub}>Détecte votre TV locale via Google Cast / AirPlay (comme YouTube)</Text>
+          </View>
+        </Pressable>
 
         <View style={styles.localBox}>
           <View>
             <Text style={styles.localLabel}>Cet appareil :</Text>
             <Text style={styles.localName}>{myDeviceName}</Text>
           </View>
-          <Pressable style={styles.editBtn} onPress={handleRename}><Text style={styles.editBtnTxt}>✏️ Renommer</Text></Pressable>
+          <Pressable focusable={true} style={styles.editBtn} onPress={handleRename}>
+            <Text style={styles.editBtnTxt}>✏️ Renommer</Text>
+          </Pressable>
         </View>
 
-        <Text style={styles.sectionTitle}>Appareils UMS sur le réseau</Text>
+        <Text style={styles.sectionTitle}>Appareils UMS connectés</Text>
         <ScrollView style={{ maxHeight: 180 }}>
           {devices.length === 0 ? (
             <Text style={styles.emptyText}>Aucun autre écran UMS actif détecté sur le réseau local.</Text>
@@ -77,9 +111,13 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
                 </View>
                 <View style={styles.rowActions}>
                   {currentMedia && (
-                    <Pressable style={styles.castPill} onPress={() => handleSelect(d, true)}><Text style={styles.castText}>Caster</Text></Pressable>
+                    <Pressable focusable={true} style={styles.castPill} onPress={() => handleSelect(d, true)}>
+                      <Text style={styles.castText}>Caster</Text>
+                    </Pressable>
                   )}
-                  <Pressable style={styles.remotePill} onPress={() => handleSelect(d, false)}><Text style={styles.castText}>Contrôler</Text></Pressable>
+                  <Pressable focusable={true} style={styles.remotePill} onPress={() => handleSelect(d, false)}>
+                    <Text style={styles.castText}>Contrôler</Text>
+                  </Pressable>
                 </View>
               </View>
             ))

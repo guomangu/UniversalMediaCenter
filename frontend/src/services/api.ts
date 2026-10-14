@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
-import { getAuthHeaders } from './authStore';
+import { getAuthHeaders, getAuthToken } from './authStore';
 
 export function resolveImageUrl(uri?: string | null): string {
   if (!uri) return '';
@@ -10,7 +10,12 @@ export function resolveImageUrl(uri?: string | null): string {
 
 export function getVideoStreamUrl(id: string, shareToken?: string | null): string {
   const base = `${getApiBaseUrl()}/api/media/${id}/stream`;
-  return shareToken ? `${base}?share=${shareToken}` : base;
+  const token = getAuthToken();
+  const p = new URLSearchParams();
+  if (shareToken) p.set('share', shareToken);
+  else if (token) p.set('token', token);
+  const qs = p.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
 export async function fetchHomeLayout(): Promise<any> {
@@ -98,7 +103,7 @@ export async function fetchLiveChannels(params?: { q?: string; category?: string
     if (params?.category && params.category !== 'ALL') sp.set('category', params.category);
     if (params?.limit) sp.set('limit', String(params.limit));
     const qs = sp.toString();
-    const url = `${getApiBaseUrl()}/api/iptv/channels${qs ? `?${qs}` : ''}`;
+    const url = `${getApiBaseUrl()}/api/iptv/channels${qs ? `?${qs}` : ''}` ;
     const res = await fetch(url, {
       headers: getAuthHeaders(),
     });

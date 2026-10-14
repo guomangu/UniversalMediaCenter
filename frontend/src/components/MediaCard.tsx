@@ -17,8 +17,18 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
   const isLandscape = styleVariant === 'LANDSCAPE';
   const isLive = styleVariant === 'LIVE_CARD';
 
-  const cardWidth = isLandscape ? (isMobile ? 200 : 240) : isLive ? (isMobile ? 150 : 180) : (isMobile ? 125 : 150);
-  const cardHeight = isLandscape ? (isMobile ? 112 : 135) : isLive ? (isMobile ? 100 : 120) : (isMobile ? 188 : 225);
+  // Format 2 fois plus grand comme Kyoo, tout en préservant le ratio d'aspect cinéma (2:3 pour posters, 16:9 pour paysage)
+  const cardWidth = isLandscape
+    ? (isMobile ? 260 : 380)
+    : isLive
+    ? (isMobile ? 200 : 260)
+    : (isMobile ? 180 : 260);
+
+  const cardHeight = isLandscape
+    ? (isMobile ? 146 : 214)
+    : isLive
+    ? (isMobile ? 135 : 175)
+    : (isMobile ? 270 : 390);
 
   const rawUri = item.posterPath || item.thumbPath || item.clearlogoPath || item.fanartPath;
   const imageUri = resolveImageUrl(rawUri);

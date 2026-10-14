@@ -34,6 +34,7 @@ export const SearchBar: React.FC = () => {
         placeholderTextColor="#64748b"
         value={query}
         onChangeText={handleSearch}
+        returnKeyType="search"
       />
       {isOpen && (
         <View style={styles.dropdown}>
@@ -62,6 +63,7 @@ export const SearchBar: React.FC = () => {
                 {results.nodes.slice(0, 5).map((node) => (
                   <Pressable
                     key={node.id}
+                    focusable={true}
                     style={styles.resultRow}
                     onPress={() => {
                       setIsOpen(false);
