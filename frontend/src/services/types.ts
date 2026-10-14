@@ -14,6 +14,12 @@ export interface MediaNode {
   clearlogoPath?: string;
   thumbPath?: string;
   streamUrl?: string;
+  seasonEpisodeTag?: string | null;
+  displayBadge?: string | null;
+  positionSeconds?: number;
+  durationSeconds?: number;
+  progressPercent?: number;
+  isCompleted?: boolean;
 }
 
 export interface UiRailItem {

@@ -20,6 +20,8 @@ export interface MediaTileItem {
   releaseYear?: number;
   posterPath?: string;
   communityRating?: number;
+  displayBadge?: string | null;
+  seasonEpisodeTag?: string | null;
 }
 
 export interface TaxonomyMediasResult {

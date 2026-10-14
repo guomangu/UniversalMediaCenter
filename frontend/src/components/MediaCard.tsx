@@ -24,6 +24,9 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
   const imageUri = resolveImageUrl(rawUri);
   const targetHref = item.nodeType === 'LIVE_CHANNEL' ? `/player/${item.id}` : `/media/${item.id}`;
 
+  const seasonTag = item.displayBadge || item.seasonEpisodeTag;
+  const progressPercent = item.progressPercent ?? 0;
+
   return (
     <Link href={targetHref as any} asChild>
       <Pressable
@@ -41,9 +44,22 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
               <Text style={styles.placeholderText}>{item.title.slice(0, 2).toUpperCase()}</Text>
             </View>
           )}
+
+          {seasonTag ? (
+            <View style={styles.seasonBadge}>
+              <Text style={styles.seasonBadgeText}>{seasonTag}</Text>
+            </View>
+          ) : null}
+
           {item.communityRating ? (
             <View style={styles.ratingBadge}>
               <Text style={styles.ratingText}>★ {item.communityRating.toFixed(1)}</Text>
+            </View>
+          ) : null}
+
+          {progressPercent > 0 && progressPercent < 95 ? (
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
             </View>
           ) : null}
         </View>

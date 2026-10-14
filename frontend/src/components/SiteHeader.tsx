@@ -38,7 +38,10 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               <Text style={styles.tvBtnText}>📺 TV</Text>
             </Pressable>
             {currentUser ? (
-              <Pressable focusable={true} style={styles.profileBtn} onPress={() => setModalVisible(true)}>
+              <Pressable
+                focusable={true}
+                style={styles.profileBtn}
+                onPress={() => router.push('/user' as any)}>
                 <Text style={styles.profileBtnText}>
                   👤 {currentUser.displayName}{currentUser.isAdmin ? ' 👑' : ''}
                 </Text>
@@ -102,8 +105,8 @@ const styles = StyleSheet.create({
   tvBtnText: { color: '#c7d2fe', fontWeight: '800', fontSize: 11 },
   loginBtn: { backgroundColor: '#6366f1', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill },
   loginBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 11 },
-  profileBtn: { backgroundColor: 'rgba(99, 102, 241, 0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.35)' },
-  profileBtnText: { color: '#a5b4fc', fontWeight: '700', fontSize: 11 },
+  profileBtn: { backgroundColor: 'rgba(99, 102, 241, 0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.45)' },
+  profileBtnText: { color: '#c7d2fe', fontWeight: '800', fontSize: 11 },
   adminBtn: { backgroundColor: 'rgba(51, 65, 85, 0.6)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: Radius.pill },
   adminBtnText: { color: '#e2e8f0', fontWeight: '600', fontSize: 11 },
 });

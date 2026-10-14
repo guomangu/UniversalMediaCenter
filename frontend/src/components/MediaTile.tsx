@@ -9,7 +9,7 @@ export function MediaTile({ item }: { item: MediaTileItem }) {
   const router = useRouter();
   const poster = resolveImageUrl(item.posterPath);
   const isGroup = item.nodeType === 'SHOW' || item.nodeType === 'COLLECTION';
-  const badgeText = item.nodeType === 'SHOW' ? 'Série' : item.nodeType === 'COLLECTION' ? 'Saga' : 'Film';
+  const badgeText = item.displayBadge || item.seasonEpisodeTag || (item.nodeType === 'SHOW' ? 'Série' : item.nodeType === 'COLLECTION' ? 'Saga' : 'Film');
 
   const handleOpenMedia = () => {
     router.push(`/media/${item.id}` as any);
@@ -67,12 +67,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 5,
     left: 5,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    paddingHorizontal: 5,
+    backgroundColor: 'rgba(99, 102, 241, 0.95)',
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: Radius.pill,
   },
-  badgeTxt: { color: '#818cf8', fontSize: 9, fontWeight: '700' },
+  badgeTxt: { color: '#ffffff', fontSize: 9, fontWeight: '700' },
   yr: {
     position: 'absolute',
     bottom: 5,

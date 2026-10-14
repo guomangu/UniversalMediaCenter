@@ -24,6 +24,11 @@ export function AccountModal({ visible, onClose }: Props) {
     router.push('/login');
   };
 
+  const handleGoToUserSpace = () => {
+    onClose();
+    router.push('/user');
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
@@ -41,7 +46,7 @@ export function AccountModal({ visible, onClose }: Props) {
                 <View style={styles.userRow}>
                   <View style={[styles.avatar, { backgroundColor: currentUser.isAdmin ? '#4338ca' : '#334155' }]}>
                     <Text style={styles.avatarTxt}>
-                      {currentUser.displayName ? currentUser.displayName.slice(0, 1).toUpperCase() : 'U'}
+                      {currentUser.displayName ? currentUser.displayName.slice(0, 1).toUpperCase() : 'U'}\
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
@@ -64,11 +69,16 @@ export function AccountModal({ visible, onClose }: Props) {
                   <Text style={[styles.permPill, { color: currentUser.canWatchIptv ? '#38bdf8' : '#f87171' }]}>
                     📺 {currentUser.canWatchIptv ? 'IPTV autorisée' : 'IPTV interdite'}
                   </Text>
-                  <Text style={[styles.permPill, { color: '#fbbf24' }]}>
-                    🔞 {currentUser.maxCsaAgeLimit ? `CSA : -${currentUser.maxCsaAgeLimit} ans` : 'CSA : Tout public'}
-                  </Text>
                 </View>
               </View>
+
+              <Pressable
+                focusable={true}
+                style={styles.userSpaceBtn}
+                onPress={handleGoToUserSpace}
+              >
+                <Text style={styles.userSpaceBtnText}>🚀 Ouvrir Mon Espace Utilisateur (Stats, Amis, Favoris...)</Text>
+              </Pressable>
 
               <Pressable
                 focusable={true}
@@ -112,7 +122,6 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.35)',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
   },
   headerRow: {
     flexDirection: 'row',
@@ -206,6 +215,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radius.pill,
+  },
+  userSpaceBtn: {
+    backgroundColor: '#6366f1',
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  userSpaceBtnText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 13,
+    textAlign: 'center',
   },
   logoutBtn: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',

@@ -33,6 +33,7 @@ export async function createSecondaryTables(): Promise<void> {
       email TEXT NOT NULL UNIQUE,
       display_name TEXT NOT NULL,
       avatar_url TEXT,
+      bio TEXT,
       pin_hash TEXT,
       is_admin BOOLEAN DEFAULT FALSE NOT NULL,
       can_download BOOLEAN DEFAULT TRUE NOT NULL,
@@ -44,6 +45,7 @@ export async function createSecondaryTables(): Promise<void> {
       blocked_value_ids JSONB DEFAULT '[]'::jsonb,
       created_at TIMESTAMP DEFAULT NOW() NOT NULL
     );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
     CREATE TABLE IF NOT EXISTS watch_progress (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -53,6 +55,30 @@ export async function createSecondaryTables(): Promise<void> {
       is_completed BOOLEAN DEFAULT FALSE NOT NULL,
       updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
       CONSTRAINT idx_progress_user_node UNIQUE (user_id, node_id)
+    );
+    CREATE TABLE IF NOT EXISTS user_favorites (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_favorites_user_node UNIQUE (user_id, node_id)
+    );
+    CREATE TABLE IF NOT EXISTS user_friends (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      friend_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT DEFAULT 'PENDING' NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_friends_user_friend UNIQUE (user_id, friend_id)
+    );
+    CREATE TABLE IF NOT EXISTS media_reposts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      rating INTEGER,
+      comment TEXT,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL
     );
     CREATE TABLE IF NOT EXISTS iptv_sources (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

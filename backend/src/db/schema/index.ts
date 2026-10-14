@@ -6,3 +6,4 @@ export * from './rails.js';
 export * from './users.js';
 export * from './iptv.js';
 export * from './forum.js';
+export * from './social.js';

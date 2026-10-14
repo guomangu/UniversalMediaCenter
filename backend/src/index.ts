@@ -15,6 +15,9 @@ import { iptvRouter } from './routes/iptv.js';
 import { adminRouter } from './routes/admin.js';
 import { castRouter } from './routes/cast.js';
 import { forumRouter } from './routes/forumRoutes.js';
+import { userRouter } from './routes/userRoutes.js';
+import { friendRouter } from './routes/friendRoutes.js';
+import { repostRouter } from './routes/repostRoutes.js';
 
 const app = new Hono();
 
@@ -30,6 +33,9 @@ app.route('/api/iptv', iptvRouter);
 app.route('/api/admin', adminRouter);
 app.route('/api/cast', castRouter);
 app.route('/api/forum', forumRouter);
+app.route('/api/user', userRouter);
+app.route('/api/friends', friendRouter);
+app.route('/api/reposts', repostRouter);
 
 async function startServer() {
   const port = parseInt(process.env.API_PORT || '3000', 10);

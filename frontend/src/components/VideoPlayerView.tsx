@@ -18,13 +18,15 @@ interface VideoPlayerViewProps {
   onSkipIntro: () => void;
   onPlay: () => void;
   onPause: () => void;
+  onEnded?: () => void;
+  onNearEnd?: (remainingSec: number) => void;
   onLoadedMetadata?: () => void;
 }
 
 export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
   id, streamUrl, isPlaying, videoRef, showSkipIntro, intro,
   activeSubtitle = 'off', activeQuality = 'auto', activeAudio = 'auto', statusMessage,
-  initialTime, onSkipIntro, onPlay, onPause, onLoadedMetadata,
+  initialTime, onSkipIntro, onPlay, onPause, onEnded, onNearEnd, onLoadedMetadata,
 }) => {
   const [currentCue, setCurrentCue] = useState('');
   const [curTime, setCurTime] = useState(0);
@@ -40,7 +42,6 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
 
   useEffect(() => {
     resetMouse();
-    // Sélection par défaut de la vidéo au chargement pour télécommande / clavier
     const focusTimer = setTimeout(() => {
       if (Platform.OS === 'web' && videoRef.current) {
         videoRef.current.focus?.();
@@ -87,7 +88,16 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
           tabIndex={0} data-video-player="true"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
           onPlay={onPlay} onPause={onPause}
-          onTimeUpdate={() => { const t = videoRef.current?.currentTime || 0; if (t > 0) savedTimeRef.current = t; setCurTime(t); }}
+          onEnded={() => onEnded?.()}
+          onTimeUpdate={() => {
+            const t = videoRef.current?.currentTime || 0;
+            const d = videoRef.current?.duration || 0;
+            if (t > 0) savedTimeRef.current = t;
+            setCurTime(t);
+            if (d > 20 && d - t <= 15 && d - t > 0) {
+              onNearEnd?.(Math.ceil(d - t));
+            }
+          }}
           onLoadedMetadata={handleLoaded} onCanPlay={handleLoaded}>
           {subtitleUrl ? <track key={subtitleUrl} src={subtitleUrl} kind="subtitles" default srcLang="fr" label="Actif" /> : null}
         </video>

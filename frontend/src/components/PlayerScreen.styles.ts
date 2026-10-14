@@ -59,6 +59,37 @@ export const styles = StyleSheet.create({
     borderRadius: Radius.sm, maxWidth: '85%',
   },
   subtitleText: { color: '#ffffff', fontSize: 16, fontWeight: '700', textAlign: 'center', lineHeight: 22 },
+  // Netflix Binge-Watching Next Episode Overlay
+  nextOverlay: {
+    position: 'absolute', bottom: 30, right: 30, zIndex: 70,
+    backgroundColor: 'rgba(15, 23, 42, 0.96)', padding: 18,
+    borderRadius: 20, borderWidth: 1.5, borderColor: 'rgba(99, 102, 241, 0.6)',
+    maxWidth: 380, minWidth: 280,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6, shadowRadius: 16, elevation: 10,
+    backdropFilter: 'blur(16px)',
+  },
+  nextHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  nextCountdown: { color: '#818cf8', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  nextBadge: {
+    backgroundColor: '#4f46e5', paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: Radius.pill,
+  },
+  nextBadgeText: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
+  nextTitle: { color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 12, lineHeight: 20 },
+  nextActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  nextPlayBtn: {
+    flex: 1, backgroundColor: '#6366f1', paddingVertical: 10, paddingHorizontal: 14,
+    borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  nextPlayBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  nextCancelBtn: {
+    paddingVertical: 10, paddingHorizontal: 14, borderRadius: Radius.pill,
+    backgroundColor: 'rgba(51, 65, 85, 0.8)', alignItems: 'center', justifyContent: 'center',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  nextCancelBtnText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
   btn: {
     paddingHorizontal: 10, paddingVertical: 6,
     borderRadius: Radius.pill, backgroundColor: 'rgba(51, 65, 85, 0.6)',

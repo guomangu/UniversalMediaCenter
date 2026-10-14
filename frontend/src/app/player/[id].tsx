@@ -12,7 +12,7 @@ import { useCastReceiver } from '@/hooks/useCastReceiver';
 import { usePlayerControls } from '@/hooks/usePlayerControls';
 import { useActiveCastTarget } from '@/services/castState';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
-import { getVideoStreamUrl } from '@/services/api';
+import { getVideoStreamUrl, fetchNextMedia } from '@/services/api';
 import { styles } from '@/components/PlayerScreen.styles';
 
 export default function PlayerScreen() {
@@ -33,6 +33,10 @@ export default function PlayerScreen() {
   const [activeAudio, setActiveAudio] = useState('auto');
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
+  const [nextNode, setNextNode] = useState<any>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const countdownTimer = useRef<any>(null);
+  const isCancelledRef = useRef<boolean>(false);
 
   const mediaTitle = title || `Média #${id}`;
   const showToast = (msg: string) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); };
@@ -48,7 +52,57 @@ export default function PlayerScreen() {
     return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
   }, [id, activeAudio, activeQuality, share]);
 
-  useEffect(() => { if (id) fetchMediaTracks(String(id)).then(setTracks); }, [id]);
+  useEffect(() => {
+    if (id) {
+      fetchMediaTracks(String(id)).then(setTracks);
+      isCancelledRef.current = false;
+      setCountdown(null);
+      fetchNextMedia(String(id)).then(setNextNode);
+    }
+  }, [id]);
+
+  // Compte à rebours automatique Netflix
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      if (nextNode && !isCancelledRef.current) {
+        handlePlayNext();
+      }
+      return;
+    }
+    countdownTimer.current = setTimeout(() => {
+      setCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+    return () => clearTimeout(countdownTimer.current);
+  }, [countdown, nextNode]);
+
+  const handlePlayNext = () => {
+    if (!nextNode) return;
+    setCountdown(null);
+    router.replace({
+      pathname: `/player/${nextNode.id}`,
+      params: share ? { share } : undefined,
+    } as any);
+  };
+
+  const handleCancelNext = () => {
+    isCancelledRef.current = true;
+    setCountdown(null);
+    if (countdownTimer.current) clearTimeout(countdownTimer.current);
+    showToast('Enchaînement automatique annulé');
+  };
+
+  const handleNearEnd = (remainingSec: number) => {
+    if (nextNode && !isCancelledRef.current && countdown === null) {
+      setCountdown(Math.min(remainingSec, 8));
+    }
+  };
+
+  const handleVideoEnded = () => {
+    if (nextNode && !isCancelledRef.current) {
+      handlePlayNext();
+    }
+  };
 
   useCastReceiver({
     id: String(id), mediaTitle, isPlaying, videoRef, setIsPlaying, setActiveAudio, setActiveSubtitle,
@@ -83,6 +137,8 @@ export default function PlayerScreen() {
         onSkipIntro={() => { handleSeekDelta(85); setShowSkipIntro(false); }}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
+        onNearEnd={handleNearEnd}
+        onEnded={handleVideoEnded}
       />
 
       <View style={styles.topBar}>
@@ -108,6 +164,29 @@ export default function PlayerScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Netflix Binge-Watching Next Episode Overlay */}
+      {countdown !== null && nextNode && (
+        <View style={styles.nextOverlay}>
+          <View style={styles.nextHeader}>
+            <Text style={styles.nextCountdown}>Épisode suivant dans {countdown}s...</Text>
+            {nextNode.displayBadge || nextNode.seasonEpisodeTag ? (
+              <View style={styles.nextBadge}>
+                <Text style={styles.nextBadgeText}>{nextNode.displayBadge || nextNode.seasonEpisodeTag}</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.nextTitle} numberOfLines={2}>{nextNode.title}</Text>
+          <View style={styles.nextActions}>
+            <Pressable focusable={true} onPress={handlePlayNext} style={styles.nextPlayBtn}>
+              <Text style={styles.nextPlayBtnText}>▶ Regarder maintenant</Text>
+            </Pressable>
+            <Pressable focusable={true} onPress={handleCancelNext} style={styles.nextCancelBtn}>
+              <Text style={styles.nextCancelBtnText}>✕ Annuler</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       <PlayerAudioModal
         visible={showAudio}

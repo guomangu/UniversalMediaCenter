@@ -34,7 +34,20 @@ export async function fetchMediaDetail(id: string, shareToken?: string | null): 
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    return data.media || data.node || null;
+    return data;
+  } catch (err) {
+    return null;
+  }
+}
+
+export async function fetchNextMedia(id: string): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/media/${id}/next`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.nextNode || null;
   } catch (err) {
     return null;
   }

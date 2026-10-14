@@ -17,6 +17,7 @@ export const users = pgTable('users', {
   displayName: text('display_name').notNull(),
   passwordHash: text('password_hash'),
   avatarUrl: text('avatar_url'),
+  bio: text('bio'),
   pinHash: text('pin_hash'),
   isAdmin: boolean('is_admin').default(false).notNull(),
   canDownload: boolean('can_download').default(true).notNull(),
