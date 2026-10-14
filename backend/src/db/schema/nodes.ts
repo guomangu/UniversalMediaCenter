@@ -1,0 +1,69 @@
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  timestamp,
+  jsonb,
+  doublePrecision,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { nodeTypeEnum, nodeStateEnum } from './enums.js';
+import { geometryPoint } from './spatial.js';
+
+export interface Chapter {
+  title: string;
+  startSeconds: number;
+  endSeconds: number;
+  type?: 'INTRO' | 'OUTRO' | 'NORMAL';
+}
+
+export const mediaNodes = pgTable(
+  'media_nodes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    parentId: uuid('parent_id').references((): AnyPgColumn => mediaNodes.id, {
+      onDelete: 'cascade',
+    }),
+    nodeType: nodeTypeEnum('node_type').notNull(),
+    state: nodeStateEnum('state').default('DISCOVERED').notNull(),
+    title: text('title').notNull(),
+    originalTitle: text('original_title'),
+    sortTitle: text('sort_title').notNull(),
+    slug: text('slug').notNull().unique(),
+    tagline: text('tagline'),
+    overview: text('overview'),
+    orderIndex: integer('order_index').default(0).notNull(),
+    absoluteOrderIndex: integer('absolute_order_index'),
+    videoFilePath: text('video_file_path'),
+    nfoFilePath: text('nfo_file_path'),
+    nfoSha256: text('nfo_sha256'),
+    streamUrl: text('stream_url'),
+    posterPath: text('poster_path'),
+    fanartPath: text('fanart_path'),
+    clearlogoPath: text('clearlogo_path'),
+    thumbPath: text('thumb_path'),
+    releaseYear: integer('release_year'),
+    premieredDate: timestamp('premiered_date'),
+    runtimeSeconds: integer('runtime_seconds'),
+    communityRating: doublePrecision('community_rating'),
+    chaptersJson: jsonb('chapters_json').$type<Chapter[]>().default([]),
+    location: geometryPoint('location'),
+    searchVectorText: text('search_vector_text').default('').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    parentIdx: index('idx_media_nodes_parent').on(table.parentId),
+    typeIdx: index('idx_media_nodes_type').on(table.nodeType),
+    nfoPathIdx: uniqueIndex('idx_media_nodes_nfo_path').on(table.nfoFilePath),
+    trgmSearchIdx: index('idx_media_nodes_trgm_search').using(
+      'gin',
+      sql`${table.searchVectorText} gin_trgm_ops`
+    ),
+    spatialIdx: index('idx_media_nodes_spatial').using('gist', table.location),
+  })
+);

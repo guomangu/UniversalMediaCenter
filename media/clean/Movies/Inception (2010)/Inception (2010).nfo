@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<movie>
+    <title>Inception</title>
+    <originaltitle>Inception</originaltitle>
+    <sorttitle>Inception</sorttitle>
+    <year>2010</year>
+    <rating>8.8</rating>
+    <runtime>148</runtime>
+    <tagline>Votre esprit est le lieu du crime.</tagline>
+    <plot>Dom Cobb est un voleur expérimenté, le meilleur dans l'art périlleux de l'extraction : s'approprier les secrets précieux enfouis au plus profond de l'inconscient pendant la phase de rêve.</plot>
+    <genre>Science-Fiction</genre>
+    <genre>Action</genre>
+    <tag>Rêves lucides</tag>
+    <tag>Heist</tag>
+    <studio>Warner Bros. Pictures</studio>
+    <studio>Syncopy</studio>
+    <country>États-Unis</country>
+    <director>Christopher Nolan</director>
+    <writer>Christopher Nolan</writer>
+    <actor>
+        <name>Leonardo DiCaprio</name>
+        <role>Dom Cobb</role>
+    </actor>
+    <actor>
+        <name>Joseph Gordon-Levitt</name>
+        <role>Arthur</role>
+    </actor>
+    <actor>
+        <name>Elliot Page</name>
+        <role>Ariadne</role>
+    </actor>
+    <custom_aspectratio>2.39:1</custom_aspectratio>
+    <custom_edition>Director's Cut</custom_edition>
+</movie>
