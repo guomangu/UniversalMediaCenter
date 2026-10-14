@@ -72,21 +72,23 @@ userAdminRouter.post('/', async (c) => {
     ? hashPassword(password)
     : hashPassword('ums2026');
 
+  const isRoleAdmin = String(profileRole).toUpperCase() === 'ADMINISTRATEUR';
+
   const [newUser] = await db
     .insert(users)
     .values({
       email: userEmail,
       displayName: cleanName,
       passwordHash,
-      isAdmin: Boolean(isAdmin),
+      isAdmin: isRoleAdmin ? true : Boolean(isAdmin),
       profileRole: String(profileRole),
-      canDownload: Boolean(canDownload),
-      canTranscode: Boolean(canTranscode),
-      canWatchIptv: Boolean(canWatchIptv),
-      maxCsaAgeLimit: maxCsaAgeLimit !== null && maxCsaAgeLimit !== undefined && maxCsaAgeLimit !== '' ? Number(maxCsaAgeLimit) : null,
-      allowedTags: Array.isArray(allowedTags) ? allowedTags : [],
-      blockedTags: Array.isArray(blockedTags) ? blockedTags : [],
-      blockedFolders: Array.isArray(blockedFolders) ? blockedFolders : [],
+      canDownload: isRoleAdmin ? true : Boolean(canDownload),
+      canTranscode: isRoleAdmin ? true : Boolean(canTranscode),
+      canWatchIptv: isRoleAdmin ? true : Boolean(canWatchIptv),
+      maxCsaAgeLimit: isRoleAdmin ? null : (maxCsaAgeLimit !== null && maxCsaAgeLimit !== undefined && maxCsaAgeLimit !== '' ? Number(maxCsaAgeLimit) : null),
+      allowedTags: isRoleAdmin ? [] : (Array.isArray(allowedTags) ? allowedTags : []),
+      blockedTags: isRoleAdmin ? [] : (Array.isArray(blockedTags) ? blockedTags : []),
+      blockedFolders: isRoleAdmin ? [] : (Array.isArray(blockedFolders) ? blockedFolders : []),
     })
     .returning();
 
@@ -122,10 +124,22 @@ userAdminRouter.patch('/:id', async (c) => {
   });
   if (!targetUser) return c.json({ error: 'Utilisateur introuvable' }, 404);
 
-  if (targetUser.isAdmin && isAdmin === false) {
+  const targetRoleUpper = (profileRole !== undefined ? String(profileRole) : (targetUser.profileRole || '')).toUpperCase();
+  const willBeAdminRole = targetRoleUpper === 'ADMINISTRATEUR';
+
+  // Protection stricte : interdiction absolue de retirer le statut admin au type ADMINISTRATEUR
+  if (targetRoleUpper === 'ADMINISTRATEUR' && isAdmin === false) {
+    return c.json({
+      error: 'Le statut administrateur ne peut pas être retiré au type de compte Administrateur (tout autorisé obligatoirement).',
+    }, 400);
+  }
+
+  // Protection du dernier administrateur
+  const willBeAdmin = willBeAdminRole || (isAdmin !== undefined ? Boolean(isAdmin) : targetUser.isAdmin);
+  if (targetUser.isAdmin && !willBeAdmin) {
     const adminCount = await db.select({ val: count() }).from(users).where(eq(users.isAdmin, true));
     if ((adminCount[0]?.val ?? 0) <= 1) {
-      return c.json({ error: 'Impossible de retirer le dernier administrateur' }, 400);
+      return c.json({ error: 'Impossible de retirer le dernier administrateur de la plateforme' }, 400);
     }
   }
 
@@ -135,17 +149,33 @@ userAdminRouter.patch('/:id', async (c) => {
   if (password && typeof password === 'string' && password.length >= 4) {
     updatePayload.passwordHash = hashPassword(password);
   }
-  if (isAdmin !== undefined) updatePayload.isAdmin = Boolean(isAdmin);
-  if (profileRole !== undefined) updatePayload.profileRole = String(profileRole);
-  if (canDownload !== undefined) updatePayload.canDownload = Boolean(canDownload);
-  if (canTranscode !== undefined) updatePayload.canTranscode = Boolean(canTranscode);
-  if (canWatchIptv !== undefined) updatePayload.canWatchIptv = Boolean(canWatchIptv);
-  if (maxCsaAgeLimit !== undefined) {
-    updatePayload.maxCsaAgeLimit = maxCsaAgeLimit === '' || maxCsaAgeLimit === null ? null : Number(maxCsaAgeLimit);
+
+  if (profileRole !== undefined) {
+    updatePayload.profileRole = String(profileRole);
   }
-  if (allowedTags !== undefined) updatePayload.allowedTags = Array.isArray(allowedTags) ? allowedTags : [];
-  if (blockedTags !== undefined) updatePayload.blockedTags = Array.isArray(blockedTags) ? blockedTags : [];
-  if (blockedFolders !== undefined) updatePayload.blockedFolders = Array.isArray(blockedFolders) ? blockedFolders : [];
+
+  if (willBeAdminRole) {
+    // Le type Administrateur as tout autorisé obligatoirement
+    updatePayload.isAdmin = true;
+    updatePayload.canDownload = true;
+    updatePayload.canTranscode = true;
+    updatePayload.canWatchIptv = true;
+    updatePayload.maxCsaAgeLimit = null;
+    updatePayload.allowedTags = [];
+    updatePayload.blockedTags = [];
+    updatePayload.blockedFolders = [];
+  } else {
+    if (isAdmin !== undefined) updatePayload.isAdmin = Boolean(isAdmin);
+    if (canDownload !== undefined) updatePayload.canDownload = Boolean(canDownload);
+    if (canTranscode !== undefined) updatePayload.canTranscode = Boolean(canTranscode);
+    if (canWatchIptv !== undefined) updatePayload.canWatchIptv = Boolean(canWatchIptv);
+    if (maxCsaAgeLimit !== undefined) {
+      updatePayload.maxCsaAgeLimit = maxCsaAgeLimit === '' || maxCsaAgeLimit === null ? null : Number(maxCsaAgeLimit);
+    }
+    if (allowedTags !== undefined) updatePayload.allowedTags = Array.isArray(allowedTags) ? allowedTags : [];
+    if (blockedTags !== undefined) updatePayload.blockedTags = Array.isArray(blockedTags) ? blockedTags : [];
+    if (blockedFolders !== undefined) updatePayload.blockedFolders = Array.isArray(blockedFolders) ? blockedFolders : [];
+  }
 
   const updated = await db
     .update(users)
@@ -180,7 +210,6 @@ userAdminRouter.delete('/:id', async (c) => {
   const id = c.req.param('id');
   const currentUser = (c as any).get('user') as UserSession | null;
 
-  // Empêcher l'administrateur actif de supprimer son propre compte
   if (currentUser && currentUser.id === id) {
     return c.json({ error: 'Vous ne pouvez pas supprimer votre propre compte administrateur actif' }, 400);
   }
@@ -188,16 +217,15 @@ userAdminRouter.delete('/:id', async (c) => {
   const targetUser = await db.query.users.findFirst({
     where: (t, { eq }) => eq(t.id, id),
   });
-
   if (!targetUser) return c.json({ error: 'Utilisateur introuvable' }, 404);
 
   if (targetUser.isAdmin) {
     const adminCount = await db.select({ val: count() }).from(users).where(eq(users.isAdmin, true));
     if ((adminCount[0]?.val ?? 0) <= 1) {
-      return c.json({ error: 'Impossible de supprimer le dernier administrateur' }, 400);
+      return c.json({ error: 'Impossible de supprimer le dernier administrateur de la plateforme' }, 400);
     }
   }
 
   await db.delete(users).where(eq(users.id, id));
-  return c.json({ success: true, message: 'Utilisateur supprimé' });
+  return c.json({ success: true, message: `Utilisateur ${targetUser.displayName} supprimé` });
 });

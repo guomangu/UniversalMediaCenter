@@ -21,6 +21,9 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
     return () => clearInterval(interval);
   }, [target.id]);
 
+  const pos = device.positionSeconds ?? 0;
+  const dur = device.durationSeconds ?? 0;
+
   const togglePlay = async () => {
     const next = !device.isPlaying;
     setDevice((d) => ({ ...d, isPlaying: next }));
@@ -28,17 +31,17 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
   };
 
   const seekRelative = async (offset: number) => {
-    const nextPos = Math.max(0, Math.min(device.durationSeconds || 7200, device.positionSeconds + offset));
+    const nextPos = Math.max(0, Math.min(dur || 7200, pos + offset));
     setDevice((d) => ({ ...d, positionSeconds: nextPos }));
     await sendCastCommand(device.id, 'SEEK', { positionSeconds: nextPos });
   };
 
   const handleBarClick = (e: any) => {
-    if (Platform.OS !== 'web' || !device.durationSeconds) return;
+    if (Platform.OS !== 'web' || !dur) return;
     const rect = e.currentTarget?.getBoundingClientRect?.();
     if (!rect) return;
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const target = Math.floor(ratio * device.durationSeconds);
+    const target = Math.floor(ratio * dur);
     setDevice((d) => ({ ...d, positionSeconds: target }));
     sendCastCommand(device.id, 'SEEK', { positionSeconds: target });
   };
@@ -54,7 +57,7 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [device.positionSeconds, device.durationSeconds, device.isPlaying]);
+  }, [pos, dur, device.isPlaying]);
 
   const toggleMute = async () => {
     const nextMute = !device.isMuted;
@@ -68,7 +71,7 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
     onDisconnect?.();
   };
 
-  const pct = device.durationSeconds > 0 ? (device.positionSeconds / device.durationSeconds) * 100 : 0;
+  const pct = dur > 0 ? (pos / dur) * 100 : 0;
 
   return (
     <View style={styles.bar}>
@@ -78,7 +81,7 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
           <Text style={styles.deviceName} numberOfLines={1}>{device.name}</Text>
           <Text style={styles.mediaTitle} numberOfLines={1}>• {device.mediaTitle || 'Lecture en cours'}</Text>
         </View>
-        <Text style={styles.timeText}>{fmt(device.positionSeconds)} / {fmt(device.durationSeconds)}</Text>
+        <Text style={styles.timeText}>{fmt(pos)} / {fmt(dur)}</Text>
       </View>
       <Pressable style={styles.progressBarBg} onPress={handleBarClick as any}>
         <View style={[styles.progressBarFill, { width: `${Math.min(100, Math.max(0, pct))}%` }]} />

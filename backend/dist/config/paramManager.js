@@ -29,6 +29,10 @@ export function loadSiteParams() {
             security: { ...defaultSiteParams.security, ...parsed.security },
             ui: { ...defaultSiteParams.ui, ...parsed.ui },
             media: { ...defaultSiteParams.media, ...parsed.media },
+            profiles: { ...defaultSiteParams.profiles, ...parsed.profiles },
+            profileTypes: parsed.profileTypes && Array.isArray(parsed.profileTypes) && parsed.profileTypes.length > 0
+                ? parsed.profileTypes
+                : defaultSiteParams.profileTypes,
         };
     }
     catch (err) {
@@ -45,6 +49,8 @@ export function saveSiteParams(newParams) {
         security: { ...cachedParams.security, ...newParams.security },
         ui: { ...cachedParams.ui, ...newParams.ui },
         media: { ...cachedParams.media, ...newParams.media },
+        profiles: { ...cachedParams.profiles, ...newParams.profiles },
+        profileTypes: newParams.profileTypes || cachedParams.profileTypes,
     };
     const filePath = getParamFilePath();
     const yamlContent = YAML.stringify(merged);
@@ -60,7 +66,7 @@ export function validateInvitationCode(code) {
         return false;
     return params.security.invitationCodes.includes(code.trim());
 }
-// Initial load & lightweight watcher for AI or external changes
+// Initial load & lightweight watcher for external changes
 loadSiteParams();
 try {
     const target = getParamFilePath();

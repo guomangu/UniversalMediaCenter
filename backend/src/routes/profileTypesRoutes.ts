@@ -65,19 +65,30 @@ profileTypesRouter.put('/:id', async (c) => {
       return c.json({ error: 'Type de profil introuvable' }, 404);
     }
 
+    // Protection stricte du type ADMINISTRATEUR : tout autorisé obligatoirement, statut admin inviolable
+    if (id === 'ADMINISTRATEUR') {
+      if (body.isAdmin === false) {
+        return c.json({
+          error: 'Impossible de retirer le statut administrateur au type de compte Administrateur.',
+        }, 400);
+      }
+    }
+
     const prev = currentTypes[index];
+    const isIdAdmin = id === 'ADMINISTRATEUR';
+
     const updated: ProfileTypeDefinition = {
       ...prev,
       label: body.label !== undefined ? String(body.label).trim() : prev.label,
       description: body.description !== undefined ? String(body.description).trim() : prev.description,
-      isAdmin: body.isAdmin !== undefined ? Boolean(body.isAdmin) : prev.isAdmin,
-      canDownload: body.canDownload !== undefined ? Boolean(body.canDownload) : prev.canDownload,
-      canTranscode: body.canTranscode !== undefined ? Boolean(body.canTranscode) : prev.canTranscode,
-      canWatchIptv: body.canWatchIptv !== undefined ? Boolean(body.canWatchIptv) : prev.canWatchIptv,
-      maxCsaAgeLimit: body.maxCsaAgeLimit !== undefined ? (body.maxCsaAgeLimit === '' || body.maxCsaAgeLimit === null ? null : Number(body.maxCsaAgeLimit)) : prev.maxCsaAgeLimit,
-      allowedTags: body.allowedTags !== undefined ? (Array.isArray(body.allowedTags) ? body.allowedTags : []) : prev.allowedTags,
-      blockedTags: body.blockedTags !== undefined ? (Array.isArray(body.blockedTags) ? body.blockedTags : []) : prev.blockedTags,
-      blockedFolders: body.blockedFolders !== undefined ? (Array.isArray(body.blockedFolders) ? body.blockedFolders : []) : prev.blockedFolders,
+      isAdmin: isIdAdmin ? true : (body.isAdmin !== undefined ? Boolean(body.isAdmin) : prev.isAdmin),
+      canDownload: isIdAdmin ? true : (body.canDownload !== undefined ? Boolean(body.canDownload) : prev.canDownload),
+      canTranscode: isIdAdmin ? true : (body.canTranscode !== undefined ? Boolean(body.canTranscode) : prev.canTranscode),
+      canWatchIptv: isIdAdmin ? true : (body.canWatchIptv !== undefined ? Boolean(body.canWatchIptv) : prev.canWatchIptv),
+      maxCsaAgeLimit: isIdAdmin ? null : (body.maxCsaAgeLimit !== undefined ? (body.maxCsaAgeLimit === '' || body.maxCsaAgeLimit === null ? null : Number(body.maxCsaAgeLimit)) : prev.maxCsaAgeLimit),
+      allowedTags: isIdAdmin ? [] : (body.allowedTags !== undefined ? (Array.isArray(body.allowedTags) ? body.allowedTags : []) : prev.allowedTags),
+      blockedTags: isIdAdmin ? [] : (body.blockedTags !== undefined ? (Array.isArray(body.blockedTags) ? body.blockedTags : []) : prev.blockedTags),
+      blockedFolders: isIdAdmin ? [] : (body.blockedFolders !== undefined ? (Array.isArray(body.blockedFolders) ? body.blockedFolders : []) : prev.blockedFolders),
     };
 
     currentTypes[index] = updated;

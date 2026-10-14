@@ -1,8 +1,10 @@
 - `app/user.tsx` : Espace personnel tout-en-un avec onglets Reprendre, Favoris, Amis, Mes Salons et Fil d'actualité.
-- `components/VideoPlayerView.tsx` & `app/player/[id].tsx` : Lecteur vidéo avec streaming direct authentifié par jeton, overlay de fin d'épisode, gestion des erreurs HLS fatales et compte à rebours 8s.
+- `components/VideoPlayerView.tsx` & `app/player/[id].tsx` : Lecteur vidéo avec streaming direct authentifié par jeton, overlay de fin d'épisode, dissociation native/Hls.js, écran informatif de secours sur flux source 403/502 et compte à rebours 8s.
+- `backend/src/iptv/liveProxyService.ts` : Service proxy HLS live avec réécriture dynamique des URLs de manifestes .m3u8 en chemins absolus, en-têtes CORS universels et isolation des erreurs diffuseur source (403 Forbidden / 502 Bad Gateway) sans fuite console.
 - `components/MediaCard.tsx` & `MediaTile.tsx` : Gabarits doublés (style Kyoo : affiches 260x390px, tuiles 200x290px) avec badges saillants.
 - `components/MediaChildrenRow.tsx` & `utils/mediaHierarchy.ts` : Affichage structuré empilant verticalement les saisons et ordonnant horizontalement les épisodes par chronologie, avec gestion tolérante des saisons inconnues (reléguées en dernier) et épisodes inconnus (triés par ordre du système de fichiers).
 - `components/CastModal.tsx` & `services/castService.ts` : Détection immédiate des télévisions physiques via l'API standard W3C Remote Playback et le SDK Google Cast.
+- `components/CastControlBar.tsx` : Barre de contrôle multimédia Jellyfin-like synchronisée en temps réel avec typage strict et commandes à distance (Play/Pause, Seek, Mute, Stop).
 - `components/AdminProfileTypesTab.tsx` & `routes/profileTypesRoutes.ts` : Gestion complète des Types de Profils & Packs paramétrables (Enfant, Safezone, Marvel, etc.) avec filtrage ABAC déporté.
 - `components/AdminIptvTab.tsx` & `routes/iptvSources.ts` : Gestion complète des sources IPTV (liste, ajout, synchro, bascule active/inactive, suppression sécurisée).
 - `components/AdminUserTagManager.tsx` & `ConfirmModal.tsx` : Sécurité ABAC avec Whitelist/Blacklist de tags et exclusion de dossiers au sein des packs de profil.

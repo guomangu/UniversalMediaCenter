@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
 import { requireAuth } from '../middleware/access.js';
+import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 export const searchRouter = new Hono();
 searchRouter.use('*', requireAuth);
 searchRouter.get('/', async (c) => {
@@ -12,7 +13,7 @@ searchRouter.get('/', async (c) => {
     const cleanQuery = query.toLowerCase();
     // 1. Recherche floue sur media_nodes via pg_trgm et similarity
     const nodes = await db.execute(sql `
-    SELECT id, node_type, title, original_title, slug, release_year, poster_path,
+    SELECT id, node_type, title, original_title, slug, release_year, poster_path, order_index,
            similarity(unaccent(search_vector_text), unaccent(${cleanQuery})) AS score
     FROM media_nodes
     WHERE search_vector_text % ${cleanQuery}
@@ -21,6 +22,21 @@ searchRouter.get('/', async (c) => {
     ORDER BY score DESC, release_year DESC NULLS LAST
     LIMIT 20;
   `);
+    const formattedNodes = Array.from(nodes).map((n) => {
+        const info = parseSeasonEpisode(n.title, n.order_index);
+        return {
+            id: n.id,
+            nodeType: n.node_type,
+            title: n.title,
+            originalTitle: n.original_title,
+            slug: n.slug,
+            releaseYear: n.release_year,
+            posterPath: n.poster_path ? `/api/media/${n.id}/poster` : undefined,
+            seasonEpisodeTag: info?.seasonEpisodeTag ?? null,
+            displayBadge: info?.displayBadge ?? null,
+            score: n.score,
+        };
+    });
     // 2. Recherche sur les tags cliquables EAV
     const tags = await db.execute(sql `
     SELECT v.id, v.value_text, v.value_slug, a.code AS attribute_code, a.display_name,
@@ -49,7 +65,7 @@ searchRouter.get('/', async (c) => {
   `);
     return c.json({
         query,
-        nodes: Array.from(nodes),
+        nodes: formattedNodes,
         tags: Array.from(tags),
         people: Array.from(people),
     });

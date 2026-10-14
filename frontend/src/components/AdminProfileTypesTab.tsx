@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, Switch, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, ActivityIndicator, Switch, StyleSheet } from 'react-native';
 import { fetchProfileTypes, createProfileType, updateProfileType, deleteProfileType } from '@/services/adminApi';
 import { AdminUserTagManager } from './AdminUserTagManager';
 import { ConfirmModal } from './ConfirmModal';
@@ -55,23 +55,28 @@ export function AdminProfileTypesTab() {
     setBlockedFolders(pt.blockedFolders || []);
   };
 
+  const isEditingAdmin = editingId === 'ADMINISTRATEUR' || id === 'ADMINISTRATEUR';
+
   const handleSave = async () => {
     if (!id.trim() || !label.trim()) {
       setMsg('L’identifiant et le nom sont requis.');
       return;
     }
     setActionLoading(true);
+    const cleanId = id.trim().toUpperCase();
+    const isTargetAdmin = cleanId === 'ADMINISTRATEUR';
+
     const payload = {
-      id: id.trim().toUpperCase(),
+      id: cleanId,
       label: label.trim(),
       description: desc.trim() || undefined,
-      isAdmin,
-      canDownload,
-      canWatchIptv,
-      maxCsaAgeLimit: csaAge ? Number(csaAge) : null,
-      allowedTags,
-      blockedTags,
-      blockedFolders,
+      isAdmin: isTargetAdmin ? true : isAdmin,
+      canDownload: isTargetAdmin ? true : canDownload,
+      canWatchIptv: isTargetAdmin ? true : canWatchIptv,
+      maxCsaAgeLimit: isTargetAdmin ? null : (csaAge ? Number(csaAge) : null),
+      allowedTags: isTargetAdmin ? [] : allowedTags,
+      blockedTags: isTargetAdmin ? [] : blockedTags,
+      blockedFolders: isTargetAdmin ? [] : blockedFolders,
     };
 
     const res = editingId
@@ -110,46 +115,52 @@ export function AdminProfileTypesTab() {
       </Text>
 
       {/* Liste des Packs Existants */}
-      {loading ? <ActivityIndicator color="#6366f1" style={{ marginVertical: 16 }} /> : null}
-      <View style={{ gap: 10, marginBottom: 20 }}>
-        {types.map((pt) => (
-          <View key={pt.id} style={s.typeRow}>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <Text style={s.typeName}>{pt.label}</Text>
-                <Text style={s.typeCode}>[{pt.id}]</Text>
-                {pt.isAdmin && <Text style={[s.badge, { backgroundColor: '#6366f1' }]}>👑 Admin</Text>}
-                {pt.maxCsaAgeLimit && <Text style={[s.badge, { backgroundColor: '#f59e0b' }]}>🔞 -{pt.maxCsaAgeLimit}</Text>}
-                {pt.canWatchIptv && <Text style={[s.badge, { backgroundColor: '#0284c7' }]}>📺 TV</Text>}
-                {pt.canDownload && <Text style={[s.badge, { backgroundColor: '#059669' }]}>📥 DL</Text>}
-              </View>
-              {pt.description && <Text style={s.typeDesc}>{pt.description}</Text>}
+      {loading ? <ActivityIndicator color="#6366f1" style={{ marginVertical: 16 }} /> : null}\n      <View style={{ gap: 10, marginBottom: 20 }}>
+        {types.map((pt) => {
+          const isPtAdmin = pt.id === 'ADMINISTRATEUR' || pt.isAdmin;
+          return (
+            <View key={pt.id} style={s.typeRow}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Text style={s.typeName}>{pt.label}</Text>
+                  <Text style={s.typeCode}>[{pt.id}]</Text>
+                  {isPtAdmin && (
+                    <Text style={[s.badge, { backgroundColor: '#eab308', color: '#0f172a' }]}>
+                      👑 Tout Autorisé (Inviolable)
+                    </Text>
+                  )}
+                  {pt.maxCsaAgeLimit && <Text style={[s.badge, { backgroundColor: '#f59e0b' }]}>🔞 -{pt.maxCsaAgeLimit}</Text>}
+                  {pt.canWatchIptv && <Text style={[s.badge, { backgroundColor: '#0284c7' }]}>📺 TV</Text>}
+                  {pt.canDownload && <Text style={[s.badge, { backgroundColor: '#059669' }]}>📥 DL</Text>}
+                </View>
+                {pt.description && <Text style={s.typeDesc}>{pt.description}</Text>}
 
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                {(pt.allowedTags || []).map((t: string) => (
-                  <Text key={t} style={[s.tagMini, { borderColor: '#10b981', color: '#34d399' }]}>✓ {t}</Text>
-                ))}
-                {(pt.blockedTags || []).map((t: string) => (
-                  <Text key={t} style={[s.tagMini, { borderColor: '#ef4444', color: '#f87171' }]}>✕ {t}</Text>
-                ))}
-                {(pt.blockedFolders || []).map((f: string) => (
-                  <Text key={f} style={[s.tagMini, { borderColor: '#f59e0b', color: '#fbbf24' }]}>📁 {f}</Text>
-                ))}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                  {(pt.allowedTags || []).map((t: string) => (
+                    <Text key={t} style={[s.tagMini, { borderColor: '#10b981', color: '#34d399' }]}>✓ {t}</Text>
+                  ))}
+                  {(pt.blockedTags || []).map((t: string) => (
+                    <Text key={t} style={[s.tagMini, { borderColor: '#ef4444', color: '#f87171' }]}>✕ {t}</Text>
+                  ))}
+                  {(pt.blockedFolders || []).map((f: string) => (
+                    <Text key={f} style={[s.tagMini, { borderColor: '#f59e0b', color: '#fbbf24' }]}>📁 {f}</Text>
+                  ))}
+                </View>
               </View>
-            </View>
 
-            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-              <Pressable focusable={true} style={[s.btnSmall, { backgroundColor: '#4f46e5' }]} onPress={() => handleEdit(pt)}>
-                <Text style={s.btnText}>✏️ Modifier</Text>
-              </Pressable>
-              {pt.id !== 'ADMINISTRATEUR' && pt.id !== 'MEMBRE' && (
-                <Pressable focusable={true} style={[s.btnSmall, { backgroundColor: '#ef4444' }]} onPress={() => setTypeToDelete(pt)}>
-                  <Text style={s.btnText}>🗑️</Text>
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                <Pressable focusable={true} style={[s.btnSmall, { backgroundColor: '#4f46e5' }]} onPress={() => handleEdit(pt)}>
+                  <Text style={s.btnText}>✏️ Modifier</Text>
                 </Pressable>
-              )}
+                {pt.id !== 'ADMINISTRATEUR' && pt.id !== 'MEMBRE' && (
+                  <Pressable focusable={true} style={[s.btnSmall, { backgroundColor: '#ef4444' }]} onPress={() => setTypeToDelete(pt)}>
+                    <Text style={s.btnText}>🗑️</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
 
       {/* Éditeur de Pack de Profil */}
@@ -184,38 +195,71 @@ export function AdminProfileTypesTab() {
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <View style={s.switchItem}>
-            <Text style={s.switchLabel}>👑 Droits Admin</Text>
-            <Switch value={isAdmin} onValueChange={setIsAdmin} />
+            <Text style={s.switchLabel}>👑 Droits Admin {isEditingAdmin ? '(Inviolable)' : ''}</Text>
+            <Switch
+              value={isEditingAdmin ? true : isAdmin}
+              disabled={isEditingAdmin}
+              onValueChange={setIsAdmin}
+            />
           </View>
           <View style={s.switchItem}>
-            <Text style={s.switchLabel}>📺 Accès TV Live</Text>
-            <Switch value={canWatchIptv} onValueChange={setCanWatchIptv} />
+            <Text style={s.switchLabel}>📺 Accès TV Live {isEditingAdmin ? '(Obligatoire)' : ''}</Text>
+            <Switch
+              value={isEditingAdmin ? true : canWatchIptv}
+              disabled={isEditingAdmin}
+              onValueChange={setCanWatchIptv}
+            />
           </View>
           <View style={s.switchItem}>
-            <Text style={s.switchLabel}>📥 Téléchargements</Text>
-            <Switch value={canDownload} onValueChange={setCanDownload} />
+            <Text style={s.switchLabel}>📥 Téléchargements {isEditingAdmin ? '(Obligatoire)' : ''}</Text>
+            <Switch
+              value={isEditingAdmin ? true : canDownload}
+              disabled={isEditingAdmin}
+              onValueChange={setCanDownload}
+            />
           </View>
           <View style={{ flex: 1, minWidth: 120 }}>
-            <TextInput
-              style={s.input}
-              placeholder="Limite Âge CSA (ex: 10, 12, 16)"
-              placeholderTextColor="#64748b"
-              keyboardType="numeric"
-              value={csaAge}
-              onChangeText={setCsaAge}
-            />
+            {isEditingAdmin ? (
+              <TextInput
+                style={[s.input, { opacity: 0.6 }]}
+                value=""
+                editable={false}
+                placeholder="Illimité (Tout autorisé)"
+                placeholderTextColor="#fef08a"
+              />
+            ) : (
+              <TextInput
+                style={s.input}
+                placeholder="Limite Âge CSA (ex: 10, 12, 16)"
+                placeholderTextColor="#64748b"
+                keyboardType="numeric"
+                value={csaAge}
+                onChangeText={setCsaAge}
+              />
+            )}
           </View>
         </View>
 
         {/* Filtrage ABAC par tags et dossiers déporté dans ce pack */}
-        <AdminUserTagManager
-          allowedTags={allowedTags}
-          blockedTags={blockedTags}
-          blockedFolders={blockedFolders}
-          onChangeAllowedTags={setAllowedTags}
-          onChangeBlockedTags={setBlockedTags}
-          onChangeBlockedFolders={setBlockedFolders}
-        />
+        {isEditingAdmin ? (
+          <View style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)', borderWidth: 1, borderColor: '#eab308', borderRadius: 8, padding: 12, marginVertical: 6 }}>
+            <Text style={{ color: '#fef08a', fontWeight: '800', fontSize: 13, marginBottom: 2 }}>
+              👑 Droits Totaux Obligatoires
+            </Text>
+            <Text style={{ color: '#fef9c3', fontSize: 12, lineHeight: 18 }}>
+              Le type de compte Administrateur as tous les accès, tags, dossiers et flux TV obligatoirement et intégralement autorisés sans aucune restriction possible.
+            </Text>
+          </View>
+        ) : (
+          <AdminUserTagManager
+            allowedTags={allowedTags}
+            blockedTags={blockedTags}
+            blockedFolders={blockedFolders}
+            onChangeAllowedTags={setAllowedTags}
+            onChangeBlockedTags={setBlockedTags}
+            onChangeBlockedFolders={setBlockedFolders}
+          />
+        )}
 
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
           {editingId && (
@@ -258,7 +302,7 @@ const s = StyleSheet.create({
   switchItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   switchLabel: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   btn: { padding: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  btnSmall: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6 },
-  btnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  status: { color: '#38bdf8', fontSize: 13, marginTop: 6, textAlign: 'center' },
+  btnSmall: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  btnText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
+  status: { color: '#38bdf8', fontSize: 12, textAlign: 'center', marginTop: 4 },
 });

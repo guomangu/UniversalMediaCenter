@@ -52,6 +52,27 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
         (p) => p.id.toUpperCase() === currentRole || p.label.toUpperCase() === currentRole
       );
 
+      const isEffectiveAdmin = Boolean(user.isAdmin || matchedProfile?.isAdmin || currentRole === 'ADMINISTRATEUR');
+
+      // Le type de compte Administrateur as obligatoirement tout d'autorisé sans aucune restriction
+      if (isEffectiveAdmin) {
+        c.set('user', {
+          ...user,
+          isAdmin: true,
+          canDownload: true,
+          canTranscode: true,
+          canWatchIptv: true,
+          maxCsaAgeLimit: null,
+          allowedValueIds: [],
+          blockedValueIds: [],
+          allowedTags: [],
+          blockedTags: [],
+          blockedFolders: [],
+          profileRole: 'ADMINISTRATEUR',
+        });
+        return await next();
+      }
+
       const effectiveAllowedTags = (user.allowedTags && user.allowedTags.length > 0)
         ? user.allowedTags
         : (matchedProfile?.allowedTags || []);
@@ -72,7 +93,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
 
       c.set('user', {
         ...user,
-        isAdmin: user.isAdmin || Boolean(matchedProfile?.isAdmin),
+        isAdmin: false,
         canDownload: matchedProfile?.canDownload !== undefined ? (user.canDownload && matchedProfile.canDownload) : user.canDownload,
         canTranscode: matchedProfile?.canTranscode !== undefined ? (user.canTranscode && matchedProfile.canTranscode) : user.canTranscode,
         canWatchIptv: matchedProfile?.canWatchIptv !== undefined ? (user.canWatchIptv && matchedProfile.canWatchIptv) : user.canWatchIptv,
@@ -82,7 +103,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
         allowedTags: effectiveAllowedTags,
         blockedTags: effectiveBlockedTags,
         blockedFolders: effectiveBlockedFolders,
-        profileRole: user.profileRole || (user.isAdmin ? 'ADMINISTRATEUR' : 'MEMBRE'),
+        profileRole: user.profileRole || 'MEMBRE',
       });
       return await next();
     }

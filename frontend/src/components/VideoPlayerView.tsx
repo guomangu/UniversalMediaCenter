@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { View, Text, Platform, Pressable } from 'react-native';
 import { styles } from './PlayerScreen.styles';
 import { getApiBaseUrl } from '@/services/apiConfig';
@@ -67,6 +67,14 @@ export const VideoPlayerView: React.FC<Props> = ({
     };
   }, []);
 
+  const isHlsMode = useMemo(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return false;
+    const v = document.createElement('video');
+    const canPlayNative = Boolean(v.canPlayType('application/vnd.apple.mpegurl'));
+    const Hls = (window as any).Hls;
+    return Boolean(Hls?.isSupported() && !canPlayNative);
+  }, []);
+
   // Support HLS Live IPTV universel sur tous les navigateurs (Chrome, Firefox, Safari, Edge)
   useEffect(() => {
     if (Platform.OS !== 'web' || !videoRef.current || !streamUrl) return;
@@ -81,8 +89,8 @@ export const VideoPlayerView: React.FC<Props> = ({
       hls.on(Hls.Events.ERROR, (_: any, data: any) => {
         if (data.fatal) {
           const status = data.response?.code;
-          if (status === 403 || status === 404) {
-            setPlaybackError(`Flux en direct indisponible (Erreur HTTP ${status} : Le diffuseur source restreint ou a interrompu ce flux).`);
+          if (status === 403 || status === 404 || status === 502 || status === 504) {
+            setPlaybackError(`Flux en direct indisponible (${status === 502 || status === 403 ? 'Le diffuseur source a restreint ou interrompu ce flux' : `Erreur HTTP ${status}`}).`);
           } else {
             setPlaybackError(`Erreur réseau sur le flux en direct (${data.details || 'Diffuseur hors ligne'}).`);
           }
@@ -128,14 +136,21 @@ export const VideoPlayerView: React.FC<Props> = ({
     <View style={styles.videoPlaceholder} onPointerMove={resetMouse}>
       {Platform.OS === 'web' ? (
         <video
-          ref={videoRef} src={streamUrl} controls autoPlay playsInline crossOrigin="anonymous"
-          tabIndex={0} data-video-player="true"
+          ref={videoRef}
+          src={isHlsMode ? undefined : streamUrl}
+          controls
+          autoPlay
+          playsInline
+          crossOrigin="anonymous"
+          tabIndex={0}
+          data-video-player="true"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
-          onPlay={onPlay} onPause={onPause}
+          onPlay={onPlay}
+          onPause={onPause}
           onEnded={() => onEnded?.()}
           onError={() => {
             if (!playbackError) {
-              setPlaybackError('Flux multimédia temporairement indisponible (Erreur 403 ou diffuseur hors ligne).');
+              setPlaybackError('Flux multimédia temporairement indisponible (Erreur diffuseur ou lien expiré).');
             }
           }}
           onTimeUpdate={() => {

@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
 import type { UserSession } from '../middleware/access.js';
+import { proxyLiveStream } from '../iptv/liveProxyService.js';
 
 const execFileAsync = promisify(execFile);
 export const streamRouter = new Hono();
@@ -40,14 +41,17 @@ streamRouter.get('/:id/stream', async (c) => {
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
-  // 1. Chaînes TV en direct ou flux externes : accès universel garanti sans blocage 401
+  // 1. Chaînes TV en direct ou flux externes : proxy HLS direct avec gestion d'erreurs diffuseur
   if (media.nodeType === 'LIVE_CHANNEL' && media.streamUrl) {
-    c.header('Access-Control-Allow-Origin', '*');
-    c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    return c.redirect(media.streamUrl, 302);
+    return await proxyLiveStream(c, media.streamUrl);
   }
 
-  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, { videoFilePath: media.videoFilePath, nfoFilePath: media.nfoFilePath, searchVectorText: media.searchVectorText });
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
+    videoFilePath: media.videoFilePath,
+    nfoFilePath: media.nfoFilePath,
+    searchVectorText: media.searchVectorText,
+  });
+
   if (!isAuthorized) {
     return c.json({
       error: 'Connexion requise pour visionner cette vidéo ou lien expiré',
@@ -56,9 +60,7 @@ streamRouter.get('/:id/stream', async (c) => {
   }
 
   if (media.streamUrl) {
-    c.header('Access-Control-Allow-Origin', '*');
-    c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    return c.redirect(media.streamUrl, 302);
+    return await proxyLiveStream(c, media.streamUrl);
   }
 
   if (!media.videoFilePath) return c.json({ error: 'Fichier vidéo absent' }, 404);

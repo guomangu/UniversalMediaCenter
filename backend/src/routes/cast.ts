@@ -3,6 +3,15 @@ import { castRegistry } from '../cast/deviceRegistry.js';
 
 export const castRouter = new Hono();
 
+// En-têtes CORS stricts et immédiats sur tous les endpoints de Cast
+castRouter.use('*', async (c, next) => {
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  c.header('Access-Control-Allow-Headers', '*');
+  if (c.req.method === 'OPTIONS') return c.text('OK', 200);
+  return await next();
+});
+
 castRouter.get('/devices', (c) => c.json({ devices: castRegistry.listActive() }));
 
 castRouter.get('/device/:id', (c) => {
@@ -12,7 +21,7 @@ castRouter.get('/device/:id', (c) => {
 });
 
 castRouter.post('/register', async (c) => {
-  const b = await c.req.json();
+  const b = await c.req.json().catch(() => ({}));
   if (!b.id || !b.name) return c.json({ error: 'id and name required' }, 400);
   const device = castRegistry.register({
     id: b.id, name: b.name, deviceType: b.deviceType || 'BROWSER',
@@ -25,7 +34,7 @@ castRouter.post('/register', async (c) => {
 });
 
 castRouter.post('/heartbeat', async (c) => {
-  const { id, ...updates } = await c.req.json();
+  const { id, ...updates } = await c.req.json().catch(() => ({}));
   if (!id) return c.json({ error: 'id is required' }, 400);
   const updated = castRegistry.updateHeartbeat(id, updates);
   if (!updated) return c.json({ error: 'Device not found or expired' }, 404);
@@ -33,7 +42,7 @@ castRouter.post('/heartbeat', async (c) => {
 });
 
 castRouter.post('/command', async (c) => {
-  const { targetDeviceId, action, payload } = await c.req.json();
+  const { targetDeviceId, action, payload } = await c.req.json().catch(() => ({}));
   if (!targetDeviceId || !action) return c.json({ error: 'targetDeviceId and action required' }, 400);
   const cmd = castRegistry.queueCommand({ targetDeviceId, action, payload });
   return c.json({ success: true, command: cmd });

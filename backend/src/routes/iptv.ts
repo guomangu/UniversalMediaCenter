@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { mediaNodes, iptvSources, eavValues, eavAttributes } from '../db/schema/index.js';
-import { eq, and, or, ilike, asc } from 'drizzle-orm';
+import { eq, and, or, ilike, asc, not } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
 import { iptvSourcesRouter } from './iptvSources.js';
+import { proxyLiveStream } from '../iptv/liveProxyService.js';
 
 export const iptvRouter = new Hono();
 
@@ -17,7 +18,11 @@ iptvRouter.get('/channels', async (c) => {
   const category = c.req.query('category')?.trim();
   const limit = Math.min(parseInt(c.req.query('limit') || '300', 10), 500);
 
-  const conditions = [eq(mediaNodes.nodeType, 'LIVE_CHANNEL')];
+  const conditions = [
+    eq(mediaNodes.nodeType, 'LIVE_CHANNEL'),
+    not(ilike(mediaNodes.streamUrl, '%145.239.5.177%')),
+  ];
+
   if (q) {
     conditions.push(
       or(
@@ -86,7 +91,5 @@ iptvRouter.get('/stream/:channelId/live.m3u8', async (c) => {
     return c.text('Channel or stream not found', 404);
   }
 
-  c.header('Access-Control-Allow-Origin', '*');
-  c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  return c.redirect(channel.streamUrl, 302);
+  return await proxyLiveStream(c, channel.streamUrl);
 });

@@ -82,7 +82,7 @@ export function useCastReceiver({
           }
         }).catch?.(() => {});
       }
-    }, 1500);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [id, mediaTitle, isPlaying]);

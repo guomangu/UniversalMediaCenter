@@ -3,9 +3,16 @@ import { mediaNodes } from '../db/schema/index.js';
 import { generateSlug } from '../watcher/slugify.js';
 import { linkTagToNode } from '../watcher/tagExtractor.js';
 import { eq } from 'drizzle-orm';
+// Diffuseurs pirates obsolètes connus et serveurs coupés avec 403 deny_backend
+const BLOCKED_STREAM_PATTERNS = [
+    '145.239.5.177',
+];
 export async function ingestIptvChannels(channels) {
     let count = 0;
     for (const ch of channels) {
+        if (!ch.streamUrl || BLOCKED_STREAM_PATTERNS.some((p) => ch.streamUrl.includes(p))) {
+            continue;
+        }
         const slug = `tv-${generateSlug(ch.name || 'ch')}-${Date.now().toString().slice(-4)}`;
         const existing = await db.query.mediaNodes.findFirst({
             where: (t, { and, eq }) => and(eq(t.nodeType, 'LIVE_CHANNEL'), eq(t.title, ch.name)),

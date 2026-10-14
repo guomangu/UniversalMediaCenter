@@ -2,9 +2,70 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { mediaNodes } from '../db/schema/index.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
-import { eq, asc, gt, and } from 'drizzle-orm';
+import { eq, and, asc, ilike } from 'drizzle-orm';
+import path from 'node:path';
 
 export const mediaNextRouter = new Hono();
+
+function extractYear(str?: string | null): number {
+  if (!str) return 0;
+  const m = str.match(/\b(19\d{2}|20\d{2})\b/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function extractPartNumber(title?: string | null): number {
+  if (!title) return 0;
+  const numMatch = title.match(/(?:part|partie|vol|volume|épisode|episode|saga|\b)\s*0*(\d+)/i);
+  if (numMatch) return parseInt(numMatch[1], 10);
+  const romanMap: Record<string, number> = {
+    'i': 1, 'ii': 2, 'iii': 3, 'iv': 4, 'v': 5, 'vi': 6, 'vii': 7, 'viii': 8, 'ix': 9, 'x': 10,
+  };
+  const romanMatch = title.match(/\b([ivx]+)\b/i);
+  if (romanMatch && romanMap[romanMatch[1].toLowerCase()]) {
+    return romanMap[romanMatch[1].toLowerCase()];
+  }
+  return 0;
+}
+
+function extractSeasonNumber(title?: string | null, orderIndex?: number | null): number {
+  if (orderIndex && orderIndex > 0) return orderIndex;
+  if (!title) return 1;
+  const m = title.match(/S(?:aison|eason)?\s*0*(\d+)/i);
+  return m ? parseInt(m[1], 10) : 1;
+}
+
+async function findFirstPlayableChild(parentId: string): Promise<any> {
+  const children = await db.query.mediaNodes.findMany({
+    where: (t, { eq }) => eq(t.parentId, parentId),
+  });
+
+  if (children.length === 0) return null;
+
+  // Si enfants directs sont des épisodes ou des films
+  const playable = children.filter((c) => c.nodeType === 'EPISODE' || c.nodeType === 'MOVIE');
+  if (playable.length > 0) {
+    playable.sort((a, b) => {
+      const aRank = parseSeasonEpisode(a.title, a.orderIndex)?.sortRank ?? a.orderIndex;
+      const bRank = parseSeasonEpisode(b.title, b.orderIndex)?.sortRank ?? b.orderIndex;
+      if (aRank !== bRank) return aRank - bRank;
+      return a.title.localeCompare(b.title, undefined, { numeric: true });
+    });
+    return playable[0];
+  }
+
+  // Si enfants sont des saisons, chercher le premier épisode de la première saison
+  const seasons = children.filter((c) => c.nodeType === 'SEASON');
+  if (seasons.length > 0) {
+    seasons.sort((a, b) => {
+      const aNum = extractSeasonNumber(a.title, a.orderIndex);
+      const bNum = extractSeasonNumber(b.title, b.orderIndex);
+      return aNum - bNum;
+    });
+    return await findFirstPlayableChild(seasons[0].id);
+  }
+
+  return null;
+}
 
 mediaNextRouter.get('/:id/next', async (c) => {
   const id = c.req.param('id');
@@ -23,17 +84,27 @@ mediaNextRouter.get('/:id/next', async (c) => {
     });
 
     const currentParsed = parseSeasonEpisode(current.title, current.orderIndex);
-    const currentRank = currentParsed?.sortRank ?? current.orderIndex;
+    const currentRank = currentParsed?.sortRank ?? (current.orderIndex > 0 ? current.orderIndex : 0);
 
+    // 1A. Épisode suivant dans le même conteneur (même saison ou série directe)
     const futureSiblings = siblings
       .filter((s) => s.id !== current.id)
       .map((s) => ({
         node: s,
-        rank: parseSeasonEpisode(s.title, s.orderIndex)?.sortRank ?? s.orderIndex,
+        rank: parseSeasonEpisode(s.title, s.orderIndex)?.sortRank ?? (s.orderIndex > 0 ? s.orderIndex : 0),
         info: parseSeasonEpisode(s.title, s.orderIndex),
       }))
-      .filter((item) => item.rank > currentRank)
-      .sort((a, b) => a.rank - b.rank);
+      .filter((item) => {
+        if (item.rank > currentRank) return true;
+        if (item.rank === currentRank && currentRank === 0) {
+          return item.node.title.localeCompare(current.title, undefined, { numeric: true }) > 0;
+        }
+        return false;
+      })
+      .sort((a, b) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        return a.node.title.localeCompare(b.node.title, undefined, { numeric: true });
+      });
 
     if (futureSiblings.length > 0) {
       const next = futureSiblings[0].node;
@@ -46,29 +117,32 @@ mediaNextRouter.get('/:id/next', async (c) => {
           orderIndex: next.orderIndex,
           posterPath: next.posterPath ? `/api/media/${next.id}/poster` : `/api/media/${current.id}/poster`,
           runtimeSeconds: next.runtimeSeconds,
-          seasonEpisodeTag: info?.seasonEpisodeTag ?? `EP ${next.orderIndex}`,
-          displayBadge: info?.displayBadge ?? `EP ${next.orderIndex}`,
+          seasonEpisodeTag: info?.seasonEpisodeTag ?? `EP ${next.orderIndex || 1}`,
+          displayBadge: info?.displayBadge ?? `EP ${next.orderIndex || 1}`,
         },
       });
     }
 
-    // Si fin de saison, vérifier si le parent est une saison et chercher la suivante
+    // 1B. Fin de saison : passage automatique à la saison suivante de la série
     const parentNode = await db.query.mediaNodes.findFirst({
       where: (t, { eq }) => eq(t.id, current.parentId!),
     });
 
     if (parentNode?.nodeType === 'SEASON' && parentNode.parentId) {
-      const nextSeason = await db.query.mediaNodes.findFirst({
-        where: (t, { eq, and, gt }) =>
-          and(eq(t.parentId, parentNode.parentId!), eq(t.nodeType, 'SEASON'), gt(t.orderIndex, parentNode.orderIndex)),
-        orderBy: (t, { asc }) => [asc(t.orderIndex)],
+      const currentSeasonNum = extractSeasonNumber(parentNode.title, parentNode.orderIndex);
+      const allSeasons = await db.query.mediaNodes.findMany({
+        where: (t, { eq, and }) =>
+          and(eq(t.parentId, parentNode.parentId!), eq(t.nodeType, 'SEASON')),
       });
 
-      if (nextSeason) {
-        const firstEp = await db.query.mediaNodes.findFirst({
-          where: (t, { eq }) => eq(t.parentId, nextSeason.id),
-          orderBy: (t, { asc }) => [asc(t.orderIndex)],
-        });
+      const nextSeasons = allSeasons
+        .map((s) => ({ node: s, num: extractSeasonNumber(s.title, s.orderIndex) }))
+        .filter((item) => item.num > currentSeasonNum)
+        .sort((a, b) => a.num - b.num);
+
+      if (nextSeasons.length > 0) {
+        const nextSeason = nextSeasons[0].node;
+        const firstEp = await findFirstPlayableChild(nextSeason.id);
 
         if (firstEp) {
           const info = parseSeasonEpisode(firstEp.title, firstEp.orderIndex);
@@ -80,8 +154,49 @@ mediaNextRouter.get('/:id/next', async (c) => {
               orderIndex: firstEp.orderIndex,
               posterPath: firstEp.posterPath ? `/api/media/${firstEp.id}/poster` : `/api/media/${current.id}/poster`,
               runtimeSeconds: firstEp.runtimeSeconds,
-              seasonEpisodeTag: info?.seasonEpisodeTag ?? `EP ${firstEp.orderIndex}`,
-              displayBadge: info?.displayBadge ?? `EP ${firstEp.orderIndex}`,
+              seasonEpisodeTag: info?.seasonEpisodeTag ?? `S${nextSeasons[0].num}EP01`,
+              displayBadge: info?.displayBadge ?? `S${String(nextSeasons[0].num).padStart(2, '0')} • EP 01`,
+            },
+          });
+        }
+      }
+    }
+
+    // 1C. Fin de série complète : enchaînement sur la série ou saison suivante dans la saga
+    const showNode = parentNode?.nodeType === 'SHOW'
+      ? parentNode
+      : (parentNode?.parentId ? await db.query.mediaNodes.findFirst({ where: (t, { eq }) => eq(t.id, parentNode.parentId!) }) : null);
+
+    if (showNode?.parentId) {
+      const siblingShows = await db.query.mediaNodes.findMany({
+        where: (t, { eq, and }) =>
+          and(eq(t.parentId, showNode.parentId!), eq(t.nodeType, 'SHOW')),
+      });
+
+      siblingShows.sort((a, b) => {
+        if (a.orderIndex !== b.orderIndex) return a.orderIndex - b.orderIndex;
+        const aYear = a.releaseYear || extractYear(a.title);
+        const bYear = b.releaseYear || extractYear(b.title);
+        if (aYear !== bYear) return aYear - bYear;
+        return a.title.localeCompare(b.title, undefined, { numeric: true });
+      });
+
+      const curShowIdx = siblingShows.findIndex((s) => s.id === showNode.id);
+      if (curShowIdx !== -1 && curShowIdx + 1 < siblingShows.length) {
+        const nextShow = siblingShows[curShowIdx + 1];
+        const firstEp = await findFirstPlayableChild(nextShow.id);
+        if (firstEp) {
+          const info = parseSeasonEpisode(firstEp.title, firstEp.orderIndex);
+          return c.json({
+            nextNode: {
+              id: firstEp.id,
+              title: `${nextShow.title} - ${firstEp.title}`,
+              nodeType: firstEp.nodeType,
+              orderIndex: firstEp.orderIndex,
+              posterPath: firstEp.posterPath ? `/api/media/${firstEp.id}/poster` : `/api/media/${nextShow.id}/poster`,
+              runtimeSeconds: firstEp.runtimeSeconds,
+              seasonEpisodeTag: info?.seasonEpisodeTag ?? 'Saga EP 1',
+              displayBadge: `Saga: ${nextShow.title}`,
             },
           });
         }
@@ -89,27 +204,55 @@ mediaNextRouter.get('/:id/next', async (c) => {
     }
   }
 
-  // 2. Cas d'un film dans une collection / franchise
-  if (current.nodeType === 'MOVIE' && current.parentId) {
-    const nextMovie = await db.query.mediaNodes.findFirst({
-      where: (t, { eq, and, gt }) =>
-        and(eq(t.parentId, current.parentId!), eq(t.nodeType, 'MOVIE'), gt(t.orderIndex, current.orderIndex)),
-      orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.releaseYear)],
-    });
+  // 2. Cas d'un film dans une collection / franchise / saga
+  if (current.nodeType === 'MOVIE') {
+    let collectionMovies: any[] = [];
 
-    if (nextMovie) {
-      return c.json({
-        nextNode: {
-          id: nextMovie.id,
-          title: nextMovie.title,
-          nodeType: nextMovie.nodeType,
-          orderIndex: nextMovie.orderIndex,
-          posterPath: nextMovie.posterPath ? `/api/media/${nextMovie.id}/poster` : undefined,
-          runtimeSeconds: nextMovie.runtimeSeconds,
-          seasonEpisodeTag: null,
-          displayBadge: nextMovie.releaseYear ? `${nextMovie.releaseYear}` : 'Suite',
-        },
+    if (current.parentId) {
+      collectionMovies = await db.query.mediaNodes.findMany({
+        where: (t, { eq, and }) =>
+          and(eq(t.parentId, current.parentId!), eq(t.nodeType, 'MOVIE')),
       });
+    } else if (current.videoFilePath) {
+      const parentDir = path.dirname(current.videoFilePath);
+      collectionMovies = await db.query.mediaNodes.findMany({
+        where: (t, { eq, and, ilike }) =>
+          and(eq(t.nodeType, 'MOVIE'), ilike(t.videoFilePath, `${parentDir}/%`)),
+      });
+    }
+
+    if (collectionMovies.length > 1) {
+      const getMovieScore = (m: any) => {
+        if (m.orderIndex && m.orderIndex > 0) return m.orderIndex * 100000;
+        const y = m.releaseYear || extractYear(m.videoFilePath) || extractYear(m.title);
+        const p = extractPartNumber(m.title) || extractPartNumber(m.videoFilePath);
+        return (y ? y * 100 : 0) + p;
+      };
+
+      collectionMovies.sort((a, b) => {
+        const scoreA = getMovieScore(a);
+        const scoreB = getMovieScore(b);
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        return a.title.localeCompare(b.title, undefined, { numeric: true });
+      });
+
+      const currentIdx = collectionMovies.findIndex((m) => m.id === current.id);
+      if (currentIdx !== -1 && currentIdx + 1 < collectionMovies.length) {
+        const nextMovie = collectionMovies[currentIdx + 1];
+        const nextYear = nextMovie.releaseYear || extractYear(nextMovie.videoFilePath) || extractYear(nextMovie.title);
+        return c.json({
+          nextNode: {
+            id: nextMovie.id,
+            title: nextMovie.title,
+            nodeType: nextMovie.nodeType,
+            orderIndex: nextMovie.orderIndex,
+            posterPath: nextMovie.posterPath ? `/api/media/${nextMovie.id}/poster` : undefined,
+            runtimeSeconds: nextMovie.runtimeSeconds,
+            seasonEpisodeTag: null,
+            displayBadge: nextYear ? `Suite (${nextYear})` : 'Film suivant',
+          },
+        });
+      }
     }
   }
 

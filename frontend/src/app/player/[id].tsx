@@ -169,7 +169,9 @@ export default function PlayerScreen() {
       {countdown !== null && nextNode && (
         <View style={styles.nextOverlay}>
           <View style={styles.nextHeader}>
-            <Text style={styles.nextCountdown}>Épisode suivant dans {countdown}s...</Text>
+            <Text style={styles.nextCountdown}>
+              {nextNode.nodeType === 'MOVIE' ? 'Film suivant' : 'Épisode suivant'} dans {countdown}s...
+            </Text>
             {nextNode.displayBadge || nextNode.seasonEpisodeTag ? (
               <View style={styles.nextBadge}>
                 <Text style={styles.nextBadgeText}>{nextNode.displayBadge || nextNode.seasonEpisodeTag}</Text>

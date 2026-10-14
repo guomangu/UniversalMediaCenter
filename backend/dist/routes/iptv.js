@@ -1,17 +1,22 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { mediaNodes, iptvSources, eavValues, eavAttributes } from '../db/schema/index.js';
-import { parseM3uContent } from '../iptv/m3uParser.js';
-import { ingestIptvChannels } from '../iptv/channelIngester.js';
-import { eq, and, or, ilike, asc } from 'drizzle-orm';
+import { eq, and, or, ilike, asc, not } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
+import { iptvSourcesRouter } from './iptvSources.js';
+import { proxyLiveStream } from '../iptv/liveProxyService.js';
 export const iptvRouter = new Hono();
+// Déléguer la gestion des sources IPTV (Admin)
+iptvRouter.route('/sources', iptvSourcesRouter);
 iptvRouter.use('*', requireAuth);
 iptvRouter.get('/channels', async (c) => {
     const q = c.req.query('q')?.trim();
     const category = c.req.query('category')?.trim();
     const limit = Math.min(parseInt(c.req.query('limit') || '300', 10), 500);
-    const conditions = [eq(mediaNodes.nodeType, 'LIVE_CHANNEL')];
+    const conditions = [
+        eq(mediaNodes.nodeType, 'LIVE_CHANNEL'),
+        not(ilike(mediaNodes.streamUrl, '%145.239.5.177%')),
+    ];
     if (q) {
         conditions.push(or(ilike(mediaNodes.title, `%${q}%`), ilike(mediaNodes.searchVectorText, `%${q}%`)));
     }
@@ -41,31 +46,6 @@ iptvRouter.get('/categories', async (c) => {
         return c.json({ categories: [] });
     }
 });
-iptvRouter.post('/sources', async (c) => {
-    const body = await c.req.json();
-    const { name, m3uUrl, epgXmltvUrl } = body;
-    if (!name || !m3uUrl) {
-        return c.json({ error: 'Name and m3uUrl are required' }, 400);
-    }
-    const [source] = await db
-        .insert(iptvSources)
-        .values({ name, m3uUrl, epgXmltvUrl })
-        .returning();
-    try {
-        const res = await fetch(m3uUrl);
-        const content = await res.text();
-        const channels = parseM3uContent(content);
-        const importedCount = await ingestIptvChannels(channels);
-        await db
-            .update(iptvSources)
-            .set({ lastSyncedAt: new Date() })
-            .where(eq(iptvSources.id, source.id));
-        return c.json({ success: true, source, importedCount });
-    }
-    catch (err) {
-        return c.json({ success: false, error: err.message }, 500);
-    }
-});
 iptvRouter.post('/sync-epg', async (c) => {
     const sources = await db.query.iptvSources.findMany({
         where: (t, { eq }) => eq(t.isActive, true),
@@ -93,7 +73,5 @@ iptvRouter.get('/stream/:channelId/live.m3u8', async (c) => {
     if (!channel || !channel.streamUrl) {
         return c.text('Channel or stream not found', 404);
     }
-    c.header('Access-Control-Allow-Origin', '*');
-    c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    return c.redirect(channel.streamUrl, 302);
+    return await proxyLiveStream(c, channel.streamUrl);
 });

@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
+import { proxyLiveStream } from '../iptv/liveProxyService.js';
 const execFileAsync = promisify(execFile);
 export const streamRouter = new Hono();
 const MIME_MAP = {
@@ -33,15 +34,24 @@ streamRouter.get('/:id/stream', async (c) => {
     const media = await findMediaByIdOrSlug(id);
     if (!media)
         return c.json({ error: 'Média introuvable' }, 404);
-    const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId);
+    // 1. Chaînes TV en direct ou flux externes : proxy HLS direct avec gestion d'erreurs diffuseur
+    if (media.nodeType === 'LIVE_CHANNEL' && media.streamUrl) {
+        return await proxyLiveStream(c, media.streamUrl);
+    }
+    const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
+        videoFilePath: media.videoFilePath,
+        nfoFilePath: media.nfoFilePath,
+        searchVectorText: media.searchVectorText,
+    });
     if (!isAuthorized) {
         return c.json({
             error: 'Connexion requise pour visionner cette vidéo ou lien expiré',
             code: 'UNAUTHORIZED',
         }, 401);
     }
-    if (media.streamUrl)
-        return c.redirect(media.streamUrl);
+    if (media.streamUrl) {
+        return await proxyLiveStream(c, media.streamUrl);
+    }
     if (!media.videoFilePath)
         return c.json({ error: 'Fichier vidéo absent' }, 404);
     const audio = c.req.query('audio');

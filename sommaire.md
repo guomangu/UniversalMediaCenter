@@ -3,3 +3,5 @@
 - [`backend/src/watcher/externalMetadata.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/externalMetadata.ts) : Requêtes TVmaze et Wikipedia Opensearch / REST API sans clé payante.
 - [`backend/src/watcher/metadataEnricher.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/metadataEnricher.ts) : Moteur de priorisation par score de besoin (`needScore`) et enrichissement dynamique.
 - [`backend/src/watcher/index.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/index.ts) : Watcher temps réel Chokidar sur multi-dossiers et fonction `processNfoFile()`.
+- [`backend/src/routes/mediaNext.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaNext.ts) : Moteur d'enchaînement automatique type Netflix (Épisode suivant -> Saison suivante -> Série dans la franchise -> Sagas chronologiques).
+- [`frontend/src/app/player/[id].tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/player/[id].tsx) : Lecteur vidéo unifié intégrant l'overlay compte à rebours 8s Netflix et la transition automatique en fin de vidéo.

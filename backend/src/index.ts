@@ -21,8 +21,22 @@ import { repostRouter } from './routes/repostRoutes.js';
 
 const app = new Hono();
 
-app.use('*', cors());
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowHeaders: ['*'],
+  exposeHeaders: ['Content-Length', 'X-Total-Count', 'Content-Range'],
+}));
+
 app.use('*', authMiddleware);
+
+app.onError((err, c) => {
+  console.error('Unhandled API Error:', err);
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  c.header('Access-Control-Allow-Headers', '*');
+  return c.json({ success: false, error: err.message || 'Internal Server Error' }, 500);
+});
 
 app.get('/api/health', (c) => c.json({ status: 'ok', stack: 'Universal Media Stack v3.0' }));
 app.route('/api/auth', authRouter);

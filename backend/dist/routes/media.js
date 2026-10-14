@@ -7,8 +7,10 @@ import { streamRouter } from './mediaStream.js';
 import { statsRouter } from './mediaStats.js';
 import { subtitleRouter } from './mediaSubtitles.js';
 import { tracksRouter } from './mediaTracks.js';
+import { mediaNextRouter } from './mediaNext.js';
 import { processNfoFile } from '../watcher/index.js';
 import { getRelatedTagsForMedia } from './mediaRelated.js';
+import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 import { createShareToken } from '../auth/shareToken.js';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
 import { requireAuth } from '../middleware/access.js';
@@ -18,6 +20,7 @@ mediaRouter.route('/', streamRouter);
 mediaRouter.route('/', statsRouter);
 mediaRouter.route('/', subtitleRouter);
 mediaRouter.route('/', tracksRouter);
+mediaRouter.route('/', mediaNextRouter);
 const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 async function findMediaByIdOrSlug(idOrSlug) {
     if (!idOrSlug)
@@ -60,7 +63,7 @@ mediaRouter.get('/:id', async (c) => {
     const media = await findMediaByIdOrSlug(id);
     if (!media)
         return c.json({ error: 'Média introuvable' }, 404);
-    const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId);
+    const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, { videoFilePath: media.videoFilePath, nfoFilePath: media.nfoFilePath, searchVectorText: media.searchVectorText });
     if (!isAuthorized) {
         return c.json({
             error: 'Connexion requise pour accéder à ce contenu ou lien de partage expiré',
@@ -88,15 +91,23 @@ mediaRouter.get('/:id', async (c) => {
         orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.title)],
         limit: 150,
     });
+    const parsedInfo = parseSeasonEpisode(media.title, media.orderIndex);
     const formattedMedia = {
         ...media,
         posterPath: media.posterPath ? `/api/media/${media.id}/poster` : undefined,
         fanartPath: media.fanartPath ? `/api/media/${media.id}/fanart` : undefined,
+        seasonEpisodeTag: parsedInfo?.seasonEpisodeTag ?? null,
+        displayBadge: parsedInfo?.displayBadge ?? null,
     };
-    const children = childNodes.map((ch) => ({
-        ...ch,
-        posterPath: ch.posterPath ? `/api/media/${ch.id}/poster` : formattedMedia.posterPath,
-    }));
+    const children = childNodes.map((ch) => {
+        const chInfo = parseSeasonEpisode(ch.title, ch.orderIndex);
+        return {
+            ...ch,
+            posterPath: ch.posterPath ? `/api/media/${ch.id}/poster` : formattedMedia.posterPath,
+            seasonEpisodeTag: chInfo?.seasonEpisodeTag ?? null,
+            displayBadge: chInfo?.displayBadge ?? null,
+        };
+    });
     const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId);
     return c.json({
         media: formattedMedia,
