@@ -246,15 +246,43 @@ mediaRouter.get('/:id', async (c) => {
     );
   }
 
-  const linkedTags = await db.execute(sql`
-    SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme, a.icon_name,
-           v.value_text, v.value_slug, v.metadata_json, l.context_role, l.order_index
-    FROM node_eav_links l
-    JOIN eav_values v ON l.value_id = v.id
-    JOIN eav_attributes a ON v.attribute_id = a.id
-    WHERE l.node_id = ${media.id}::uuid
-    ORDER BY a.display_order ASC, l.order_index ASC
-  `);
+  // 1. Récupération des enfants (films d'une collection/saga ou épisodes d'une série)
+  const childNodes = await db.query.mediaNodes.findMany({
+    where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, false)),
+  });
+
+  const extraNodes = await db.query.mediaNodes.findMany({
+    where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, true)),
+  });
+
+  // 2. Fusion et héritage des métadonnées culturelles et techniques pour les sagas/collections
+  // Si le média possède des films ou épisodes enfants, on fusionne les tags de tous ses enfants
+  // ordonnés par fréquence d'apparition dans la saga (acteurs récurrents, réalisateurs, compositeurs, studios...)
+  const linkedTags = childNodes.length > 0
+    ? await db.execute(sql`
+        SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme, a.icon_name,
+               v.value_text, v.value_slug, v.metadata_json,
+               MAX(l.context_role) as context_role,
+               MIN(l.order_index) as order_index,
+               COUNT(DISTINCT l.node_id) as movie_occurrence_count
+        FROM node_eav_links l
+        JOIN eav_values v ON l.value_id = v.id
+        JOIN eav_attributes a ON v.attribute_id = a.id
+        WHERE l.node_id = ${media.id}::uuid
+           OR l.node_id IN (SELECT id FROM media_nodes WHERE parent_id = ${media.id}::uuid AND is_extra = false)
+        GROUP BY a.code, a.display_name, a.ui_zone, a.color_theme, a.icon_name,
+                 v.value_text, v.value_slug, v.metadata_json, a.display_order
+        ORDER BY a.display_order ASC, movie_occurrence_count DESC, MIN(l.order_index) ASC
+      `)
+    : await db.execute(sql`
+        SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme, a.icon_name,
+               v.value_text, v.value_slug, v.metadata_json, l.context_role, l.order_index
+        FROM node_eav_links l
+        JOIN eav_values v ON l.value_id = v.id
+        JOIN eav_attributes a ON v.attribute_id = a.id
+        WHERE l.node_id = ${media.id}::uuid
+        ORDER BY a.display_order ASC, l.order_index ASC
+      `);
 
   const tagsByZone: Record<string, any[]> = {
     HERO_BADGE: [],
@@ -301,13 +329,33 @@ mediaRouter.get('/:id', async (c) => {
     if (zone === 'TECHNICAL_DRAWER') tagsByZone.ACCORDION.push(item);
   }
 
-  const childNodes = await db.query.mediaNodes.findMany({
-    where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, false)),
-  });
+  // 3. Calcul ou héritage des métriques globales (Note spectateurs moyenne et plage d'années)
+  let effectiveCommunityRating = media.communityRating;
+  if ((!effectiveCommunityRating || Number(effectiveCommunityRating) === 0) && childNodes.length > 0) {
+    const validRatings = childNodes
+      .map((c) => Number(c.communityRating))
+      .filter((r) => !isNaN(r) && r > 0);
+    if (validRatings.length > 0) {
+      const avg = validRatings.reduce((sum, r) => sum + r, 0) / validRatings.length;
+      effectiveCommunityRating = Math.round(avg * 10) / 10;
+    }
+  }
 
-  const extraNodes = await db.query.mediaNodes.findMany({
-    where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, true)),
-  });
+  let effectiveReleaseYear: string | number | undefined = media.releaseYear ? media.releaseYear : undefined;
+  if (childNodes.length > 0) {
+    const years = childNodes
+      .map((c) => Number(c.releaseYear))
+      .filter((y) => !isNaN(y) && y > 1800 && y < 2100);
+    if (years.length > 0) {
+      const minYear = Math.min(...years);
+      const maxYear = Math.max(...years);
+      effectiveReleaseYear = minYear === maxYear ? minYear : `${minYear} - ${maxYear}`;
+    }
+  }
+
+  const effectiveOverview = media.overview || (media.nodeType === 'COLLECTION' && childNodes.length > 0
+    ? `Saga cinématographique regroupant ${childNodes.length} films et œuvres associées.`
+    : undefined);
 
   const info = parseSeasonEpisode(media.title, media.orderIndex);
 
@@ -379,6 +427,9 @@ mediaRouter.get('/:id', async (c) => {
     resumeEpisodeId: resumeEpisodeId || (childNodes.length > 0 ? childNodes[0].id : null),
     resumeTitle,
     resumePositionSeconds,
+    communityRating: effectiveCommunityRating,
+    releaseYear: effectiveReleaseYear ?? media.releaseYear,
+    overview: effectiveOverview,
   };
 
   const children = childNodes.map((ch) => {

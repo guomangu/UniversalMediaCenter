@@ -85,14 +85,15 @@ export default function MediaDetailScreen() {
     const tech = (tags.TECHNICAL_DRAWER || tags.ACCORDION || []) as any[];
     const heroes = (tags.HERO_BADGE || tags.HERO || []) as any[];
 
-    const actorsList = persons.filter((p: any) => p.attr_code === 'actor');
-    const directorsList = persons.filter((p: any) => p.attr_code === 'director');
-    const writersList = persons.filter((p: any) => p.attr_code === 'writer' || p.attr_code === 'credits');
-    const producersList = persons.filter((p: any) => p.attr_code === 'producer');
-    const composersList = persons.filter((p: any) => p.attr_code === 'composer' || p.attr_code === 'music');
+    const isCollection = media?.nodeType === 'COLLECTION';
+    const actorsList = persons.filter((p: any) => p.attr_code === 'actor').slice(0, 50);
+    const directorsList = persons.filter((p: any) => p.attr_code === 'director').slice(0, 20);
+    const writersList = persons.filter((p: any) => p.attr_code === 'writer' || p.attr_code === 'credits').slice(0, 20);
+    const producersList = persons.filter((p: any) => p.attr_code === 'producer').slice(0, 20);
+    const composersList = persons.filter((p: any) => p.attr_code === 'composer' || p.attr_code === 'music').slice(0, 20);
 
-    const studiosList = pills.filter((p: any) => p.attr_code === 'studio');
-    const countriesList = pills.filter((p: any) => p.attr_code === 'country' || p.attr_code === 'location');
+    const studiosList = pills.filter((p: any) => p.attr_code === 'studio').slice(0, 15);
+    const countriesList = pills.filter((p: any) => p.attr_code === 'country' || p.attr_code === 'location').slice(0, 15);
 
     // Spécifications techniques
     const techList = tech.filter(
@@ -105,7 +106,7 @@ export default function MediaDetailScreen() {
     const ratingList: { label: string; value: string; theme: string }[] = [];
     if (media?.communityRating) {
       ratingList.push({
-        label: 'Note spectateurs',
+        label: isCollection ? 'Note moyenne saga' : 'Note spectateurs',
         value: `${Number(media.communityRating).toFixed(1)} / 10`,
         theme: 'amber',
       });
@@ -349,7 +350,7 @@ export default function MediaDetailScreen() {
           {actors.length > 0 && (
             <View style={styles.metaSubSection}>
               <View style={styles.secHeaderRow}>
-                <Text style={styles.secTitle}>Casting & Artistes ({actors.length})</Text>
+                <Text style={styles.secTitle}>{media.nodeType === 'COLLECTION' ? 'Casting de la saga' : 'Casting & Artistes'} ({actors.length})</Text>
                 <Text style={styles.secHint}>Sélectionnez un artiste pour consulter sa filmographie</Text>
               </View>
               <ScrollView
@@ -470,8 +471,12 @@ export default function MediaDetailScreen() {
           )}
         </View>
 
-        {/* Genres & Thèmes exploratoires */}
-        <MediaGenreSection relatedTags={relatedTags} fallbackTags={tags.PRIMARY_PILL} />
+        {/* Genres & Thèmes exploratoires avec déduplication stricte inter-tags */}
+        <MediaGenreSection
+          currentMediaId={media.id}
+          relatedTags={relatedTags}
+          fallbackTags={tags.PRIMARY_PILL}
+        />
 
         {/* Section Avis & Reposts communautaires */}
         {reposts.length > 0 && (

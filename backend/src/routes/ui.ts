@@ -104,9 +104,9 @@ uiRouter.get('/layout', async (c) => {
         });
         const pMap = new Map(progresses.map((p) => [p.nodeId, p]));
 
-        // Pour les séries/saisons, vérifier également si des épisodes enfants ont une progression
+        // Pour les séries, saisons et collections de films, vérifier si des épisodes/films enfants ont une progression
         const showIds = filteredItems
-          .filter((it) => it.nodeType === 'SHOW' || it.nodeType === 'SEASON')
+          .filter((it) => it.nodeType === 'SHOW' || it.nodeType === 'SEASON' || it.nodeType === 'COLLECTION')
           .map((it) => it.id);
 
         if (showIds.length > 0) {

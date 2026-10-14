@@ -6,7 +6,7 @@ export interface MediaNode {
   slug: string;
   tagline?: string;
   overview?: string;
-  releaseYear?: number;
+  releaseYear?: number | string;
   runtimeSeconds?: number;
   communityRating?: number;
   posterPath?: string;

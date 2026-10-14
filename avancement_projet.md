@@ -1,3 +1,25 @@
+### 🎬 Fusion & Enrichissement Exhaustif des Sagas de Films (COLLECTION)
+- [x] **Agrégation Dynamique des Métadonnées Culturelles des Films Enfants ([media.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts), [mediaRelated.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaRelated.ts), [media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx)) :**
+  - Identification et résolution des 3 causes majeures expliquant le manque de métadonnées des sagas :
+    1. *Absence structurelle de NFO maître* : Contrairement aux séries/animés qui disposent d'un `tvshow.nfo` maître à la racine, les sagas de films étaient composées de NFOs enfants individuels sans NFO parent exhaustif.
+    2. *Cloisonnement de la requête EAV* : `GET /api/media/:id` interrogeait uniquement `node_id = media.id`, rendant le conteneur de saga aveugle aux centaines de métadonnées portées par ses films.
+    3. *Absence d'héritage des métriques* : Note communautaire inexistante sur le conteneur, absence de calcul de moyenne et année de sortie réduite à une seule date.
+  - Résolution complète :
+    - Fusion ascendante SQL de 100% des tags culturels (Casting complet, Réalisateurs, Scénaristes, Compositeurs, Producteurs, Studios, Caractéristiques techniques) ordonnés par récurrence dans la saga (`movie_occurrence_count DESC`).
+    - Calcul automatique de la note moyenne de la saga (ex: 7.3/10 pour Matrix, 7.4/10 pour Pixar) et badge dédié *"Note moyenne saga"*.
+    - Calcul dynamique de la plage temporelle de la saga (ex: *1995 - 2024* pour Pixar, *1999 - 2003* pour Matrix).
+    - Génération d'un résumé élégant automatique et affichage fluide dans le Hub de Métadonnées avec plafonnement anti-surcharge (50 acteurs principaux, 20 réalisateurs/auteurs/studios).
+    - Intégration dans `mediaRelated.ts` permettant à la saga d'alimenter pleinement la section *"Genres & Thématiques"* avec les œuvres connexes du catalogue.
+    - Prise en charge de la progression de lecture des collections dans les rails d'accueil (`ui.ts`).
+
+### 🎯 Déduplication Stricte Sans Doublons dans "Genres & Thématiques" (`/media/[id]`)
+- [x] **Déduplication Séquentielle Intra-Page Inter-Tags ([mediaRelated.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaRelated.ts) & [MediaGenreSection.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaGenreSection.tsx)) :**
+  - Application stricte de la règle d'accueil : un média déjà apparu dans un tag précédent sur la page ne réapparaît plus dans aucun tag suivant de la section "Genres & Thématiques".
+  - Côté backend : `getRelatedTagsForMedia` trie les tags par richesse de contenu, initialise `seenMediaIds` (avec `mediaId` et `parentId`), filtre chaque groupe séquentiellement et re-trie pour placer les tags avec œuvres uniques restantes en tête.
+  - Côté client : `MediaGenreSection` filtre réactivement les œuvres via un ensemble `seenMediaIds` en mémoire, excluant l'œuvre en cours de consultation (`currentMediaId`) et tout doublon inter-tags.
+  - Les tags dont toutes les œuvres ont déjà été affichées dans les sections précédentes basculent automatiquement dans le bloc épuré *"Autres tags associés (aucun média supplémentaire)"* sous forme de pastilles discrètes `TagPill`.
+  - Harmonisation visuelle : suppression de l'emoji `💬` au profit de `Forum • [Tag]` et intégration dans la nouvelle palette reposante (`#1d2127`, surfaces `rgba(38, 44, 54, 0.65)`).
+
 ### 🎬 Catégorie "Réalisateur", DA Sobre & Palette Reposante Mid-Tone (Sans Emojis)
 - [x] **Ajout de la Catégorie "Réalisateur" dans la Taxonomie d'Accueil ([taxonomyRoutes.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/taxonomyRoutes.ts)) :**
   - Requête d'agrégation SQL sur l'attribut EAV `code = 'director'` regroupant films, sagas et séries associées aux réalisateurs (Pete Docter, Brad Bird, Jonathan Cohen, Mark Andrews, etc.).
