@@ -16,6 +16,12 @@ export const styles = StyleSheet.create({
     borderRadius: Radius.pill, borderWidth: 1, borderColor: '#6366f1',
   },
   statusText: { color: '#c7d2fe', fontSize: 12, fontWeight: '700' },
+  subtitleOverlay: {
+    position: 'absolute', bottom: 60, alignSelf: 'center', zIndex: 45,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)', paddingHorizontal: 18, paddingVertical: 6,
+    borderRadius: Radius.sm, maxWidth: '85%',
+  },
+  subtitleText: { color: '#ffffff', fontSize: 16, fontWeight: '700', textAlign: 'center', lineHeight: 22 },
   skipBtn: {
     position: 'absolute', bottom: 84, right: 24, zIndex: 50,
     backgroundColor: 'rgba(99, 102, 241, 0.92)', paddingHorizontal: Spacing.three,

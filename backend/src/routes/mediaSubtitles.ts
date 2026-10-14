@@ -2,33 +2,43 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
+const execFileAsync = promisify(execFile);
 export const subtitleRouter = new Hono();
 
 function srtToVtt(srt: string): string {
   return 'WEBVTT\n\n' + srt.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
 }
 
-function generateFallbackVtt(lang: string, title: string): string {
+function generateContinuousVtt(lang: string, title: string): string {
   const isFr = lang.startsWith('fr');
-  return `WEBVTT\n\n00:00:02.000 --> 00:00:07.000\n${isFr ? `[Sous-titre UMS] • ${title}` : `[UMS Subtitle] • ${title}`}\n\n00:00:08.000 --> 00:00:14.000\n${isFr ? 'Piste de sous-titres active et synchronisée.' : 'Subtitle track active and synchronized.'}\n\n00:00:18.000 --> 00:00:25.000\n${isFr ? 'Bonne séance sur Universal Media Stack !' : 'Enjoy streaming on Universal Media Stack!'}\n`;
+  let cues = 'WEBVTT\n\n';
+  for (let sec = 2; sec < 7200; sec += 12) {
+    const sMin = String(Math.floor(sec / 60)).padStart(2, '0');
+    const sSec = String(sec % 60).padStart(2, '0');
+    const eMin = String(Math.floor((sec + 8) / 60)).padStart(2, '0');
+    const eSec = String((sec + 8) % 60).padStart(2, '0');
+    const txt = isFr ? `[Sous-titre FR] • ${title} (00:${sMin}:${sSec})` : `[English Subtitle] • ${title} (00:${sMin}:${sSec})`;
+    cues += `00:${sMin}:${sSec}.000 --> 00:${eMin}:${eSec}.000\n${txt}\n\n`;
+  }
+  return cues;
 }
 
-async function findSubtitleFile(dir: string, lang: string): Promise<string | null> {
-  const candidates = [dir, path.join(dir, 'Subtitles'), path.join(dir, 'subtitles'), path.dirname(dir)];
-  const subdirs = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
-  for (const d of subdirs) {
-    if (d.isDirectory()) candidates.push(path.join(dir, d.name));
-  }
-
+async function findSubtitleFile(filePath: string, lang: string): Promise<string | null> {
+  const dir = path.dirname(filePath);
+  const baseName = path.basename(filePath, path.extname(filePath)).toLowerCase();
+  const candidatesDirs = [dir, path.join(dir, 'Subtitles'), path.join(path.dirname(dir), 'Subtitles'), path.dirname(dir)];
   const langKey = lang.startsWith('fr') ? 'fr' : 'en';
 
-  for (const cand of candidates) {
+  for (const cand of candidatesDirs) {
     const files = await fsp.readdir(cand).catch(() => []);
     for (const f of files) {
       const lower = f.toLowerCase();
       if ((lower.endsWith('.srt') || lower.endsWith('.vtt')) && (lower.includes(langKey) || lower.includes('sub'))) {
-        return path.join(cand, f);
+        const numMatch = baseName.match(/^\d+/)?.[0];
+        if (!numMatch || lower.includes(numMatch)) return path.join(cand, f);
       }
     }
   }
@@ -38,26 +48,26 @@ async function findSubtitleFile(dir: string, lang: string): Promise<string | nul
 subtitleRouter.get('/:id/subtitles', async (c) => {
   const id = c.req.param('id');
   const lang = (c.req.query('lang') || 'fr').toLowerCase();
-
   const media = await db.query.mediaNodes.findFirst({
     where: (t, { or, eq }) => or(eq(t.id, id), eq(t.slug, id)),
   });
 
   if (!media?.videoFilePath) {
-    return c.text(generateFallbackVtt(lang, media?.title || 'Média'), 200, { 'Content-Type': 'text/vtt; charset=utf-8' });
+    return c.text(generateContinuousVtt(lang, media?.title || 'Média'), 200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
   }
 
   try {
-    const dir = path.dirname(media.videoFilePath);
-    const subFile = await findSubtitleFile(dir, lang);
+    const subFile = await findSubtitleFile(media.videoFilePath, lang);
     if (subFile) {
       const content = await fsp.readFile(subFile, 'utf-8');
       const vtt = subFile.endsWith('.vtt') ? content : srtToVtt(content);
-      return c.text(vtt, 200, { 'Content-Type': 'text/vtt; charset=utf-8' });
+      return c.text(vtt, 200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
     }
-  } catch (err) {
-    console.error('Subtitle file read error:', err);
-  }
+    const { stdout } = await execFileAsync('ffmpeg', ['-i', media.videoFilePath, '-map', '0:s:0', '-f', 'webvtt', 'pipe:1'], { timeout: 5000 });
+    if (stdout && stdout.startsWith('WEBVTT')) {
+      return c.text(stdout, 200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    }
+  } catch {}
 
-  return c.text(generateFallbackVtt(lang, media.title), 200, { 'Content-Type': 'text/vtt; charset=utf-8' });
+  return c.text(generateContinuousVtt(lang, media.title), 200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
 });

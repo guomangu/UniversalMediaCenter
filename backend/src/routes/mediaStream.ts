@@ -4,17 +4,13 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { getTranscodeStream } from './mediaTranscoder.js';
 
 export const streamRouter = new Hono();
 
 const MIME_MAP: Record<string, string> = {
-  '.mp4': 'video/mp4',
-  '.mkv': 'video/x-matroska',
-  '.webm': 'video/webm',
-  '.avi': 'video/x-msvideo',
-  '.mov': 'video/quicktime',
-  '.ts': 'video/mp2t',
-  '.m3u8': 'application/vnd.apple.mpegurl',
+  '.mp4': 'video/mp4', '.mkv': 'video/x-matroska', '.webm': 'video/webm',
+  '.avi': 'video/x-msvideo', '.mov': 'video/quicktime', '.ts': 'video/mp2t',
 };
 
 streamRouter.get('/:id/stream', async (c) => {
@@ -29,20 +25,31 @@ streamRouter.get('/:id/stream', async (c) => {
 
   try {
     const filePath = media.videoFilePath;
+    const quality = c.req.query('quality') || 'auto';
+    const audio = c.req.query('audio') || 'auto';
+    const startSec = parseFloat(c.req.query('start') || '0');
+
+    if ((quality !== 'auto' && quality !== '1080p') || (audio !== 'auto')) {
+      const transcodeStream = getTranscodeStream(filePath, { quality, audio, startSec });
+      const webStream = Readable.toWeb(transcodeStream);
+      return new Response(webStream as any, {
+        status: 200,
+        headers: { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
     const stat = await fsp.stat(filePath);
     const fileSize = stat.size;
     const ext = path.extname(filePath).toLowerCase();
     const mime = MIME_MAP[ext] || 'video/mp4';
-
     const range = c.req.header('range');
+
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
       const chunkSize = end - start + 1;
-
-      const fileStream = fs.createReadStream(filePath, { start, end });
-      const webStream = Readable.toWeb(fileStream);
+      const webStream = Readable.toWeb(fs.createReadStream(filePath, { start, end }));
 
       return new Response(webStream as any, {
         status: 206,
@@ -51,19 +58,15 @@ streamRouter.get('/:id/stream', async (c) => {
           'Accept-Ranges': 'bytes',
           'Content-Length': String(chunkSize),
           'Content-Type': mime,
+          'Access-Control-Allow-Origin': '*',
         },
       });
     }
 
-    const fileStream = fs.createReadStream(filePath);
-    const webStream = Readable.toWeb(fileStream);
+    const webStream = Readable.toWeb(fs.createReadStream(filePath));
     return new Response(webStream as any, {
       status: 200,
-      headers: {
-        'Content-Length': String(fileSize),
-        'Accept-Ranges': 'bytes',
-        'Content-Type': mime,
-      },
+      headers: { 'Content-Length': String(fileSize), 'Accept-Ranges': 'bytes', 'Content-Type': mime, 'Access-Control-Allow-Origin': '*' },
     });
   } catch (err) {
     console.error('Streaming error:', err);
