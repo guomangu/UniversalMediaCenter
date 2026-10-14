@@ -62,7 +62,7 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
       </View>
 
       {hasMore && !searchQuery ? (
-        <Pressable onPress={() => setTagLimit((prev) => prev + 10)} style={styles.moreBtn}>
+        <Pressable focusable={true} onPress={() => setTagLimit((prev) => prev + 10)} style={styles.moreBtn}>
           <Text style={styles.moreText}>
             ▼ Afficher plus (+10 tags) • {visibleTags.length}/{category.tags.length}
           </Text>

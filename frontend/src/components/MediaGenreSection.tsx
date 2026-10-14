@@ -33,6 +33,7 @@ export function MediaGenreSection({ relatedTags = [], fallbackTags = [] }: Props
               </View>
             </View>
             <Pressable
+              focusable={true}
               onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: t.slug, title: t.label } } as any)}
               style={styles.forumBtn}>
               <Text style={styles.forumTxt}>💬 Forum #{t.label}</Text>

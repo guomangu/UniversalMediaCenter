@@ -29,7 +29,7 @@ export function TagSearchBar({ searchQuery, onSearchChange, activeFilter, onFilt
           onChangeText={onSearchChange}
         />
         {searchQuery ? (
-          <Pressable onPress={() => onSearchChange('')} style={styles.clearBtn}>
+          <Pressable focusable={true} onPress={() => onSearchChange('')} style={styles.clearBtn}>
             <Text style={styles.clearText}>✕</Text>
           </Pressable>
         ) : null}
@@ -41,6 +41,7 @@ export function TagSearchBar({ searchQuery, onSearchChange, activeFilter, onFilt
           const isSelected = activeFilter === f;
           return (
             <Pressable
+              focusable={true}
               key={f}
               onPress={() => onFilterChange(f === activeFilter ? 'Tous' : f)}
               style={[styles.filterChip, isSelected && styles.activeChip]}>

@@ -24,6 +24,7 @@ export function ClickableTopicText({ text, topicSlug, topicTitle, style, numberO
 
   return (
     <Pressable
+      focusable={true}
       onPress={handlePress}
       style={({ pressed }) => [styles.box, pressed && styles.pressed]}>
       <Text style={[styles.defaultText, style]} numberOfLines={numberOfLines}>

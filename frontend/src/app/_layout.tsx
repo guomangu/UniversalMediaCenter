@@ -2,6 +2,7 @@ import { Stack, DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, Platform } from 'react-native';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { useTvNavigation } from '@/hooks/useTvNavigation';
 
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -9,6 +10,8 @@ if (Platform.OS !== 'web') {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  useTvNavigation();
+
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />

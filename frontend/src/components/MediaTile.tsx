@@ -17,6 +17,7 @@ export function MediaTile({ item }: { item: MediaTileItem }) {
 
   return (
     <Pressable
+      focusable={true}
       style={({ pressed }) => [styles.box, pressed && styles.pressed]}
       onPress={handleOpenMedia}>
       <View style={styles.imgWrap}>

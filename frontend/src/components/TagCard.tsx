@@ -50,7 +50,7 @@ export function TagCard({ categoryId, tag, activeFilter, searchQuery, onCountCha
             <Text style={styles.countText}>{medias.length}{hasMore ? '+' : ''} médias</Text>
           </View>
         </View>
-        <Pressable onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: tag.slug, title: tag.label } } as any)} style={styles.forumBtn}>
+        <Pressable focusable={true} onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: tag.slug, title: tag.label } } as any)} style={styles.forumBtn}>
           <Text style={styles.forumTxt}>💬 Forum #{tag.label}</Text>
         </Pressable>
       </View>
@@ -61,7 +61,7 @@ export function TagCard({ categoryId, tag, activeFilter, searchQuery, onCountCha
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
           {medias.map((m) => <MediaTile key={m.id} item={m} />)}
           {hasMore ? (
-            <Pressable onPress={() => setLimit((prev) => prev + 10)} style={styles.moreTile}>
+            <Pressable focusable={true} onPress={() => setLimit((prev) => prev + 10)} style={styles.moreTile}>
               <Text style={styles.morePlus}>+10</Text>
               <Text style={styles.moreTxt}>Afficher plus</Text>
             </Pressable>

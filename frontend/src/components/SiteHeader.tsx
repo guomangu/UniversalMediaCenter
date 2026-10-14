@@ -29,14 +29,14 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
     <View style={styles.fixedWrap}>
       <View style={styles.header}>
         <View style={styles.topRow}>
-          <Pressable onPress={onScrollToTop || (() => router.push('/'))} style={styles.logoBtn}>
+          <Pressable focusable={true} onPress={onScrollToTop || (() => router.push('/'))} style={styles.logoBtn}>
             <Text style={styles.logoText}>🎬 {isMobile ? 'UMS' : siteName}</Text>
           </Pressable>
           <View style={styles.actions}>
-            <Pressable style={styles.profileBtn} onPress={() => setModalVisible(true)}>
+            <Pressable focusable={true} style={styles.profileBtn} onPress={() => setModalVisible(true)}>
               <Text style={styles.profileBtnText}>{currentProfile ? `👤 ${currentProfile.displayName}` : '+ Profil'}</Text>
             </Pressable>
-            <Pressable style={styles.adminBtn} onPress={() => router.push('/admin' as any)}>
+            <Pressable focusable={true} style={styles.adminBtn} onPress={() => router.push('/admin' as any)}>
               <Text style={styles.adminBtnText}>⚙️ Admin</Text>
             </Pressable>
           </View>
@@ -46,12 +46,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
           <View style={styles.secondTierRow}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
               {onScrollToTop ? (
-                <Pressable onPress={onScrollToTop} style={styles.homeBtn}>
+                <Pressable focusable={true} onPress={onScrollToTop} style={styles.homeBtn}>
                   <Text style={styles.homeTxt}>🏠 Haut</Text>
                 </Pressable>
               ) : null}
               {categories.map((cat) => (
-                <Pressable key={cat.id} onPress={() => onSelectCategory(cat.id)} style={[styles.chip, activeCategoryId === cat.id && styles.actChip]}>
+                <Pressable focusable={true} key={cat.id} onPress={() => onSelectCategory(cat.id)} style={[styles.chip, activeCategoryId === cat.id && styles.actChip]}>
                   <Text style={[styles.chipTxt, activeCategoryId === cat.id && styles.actTxt]}>{cat.title}</Text>
                 </Pressable>
               ))}

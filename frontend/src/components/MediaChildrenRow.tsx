@@ -23,7 +23,7 @@ export function MediaChildrenRow({ parentType, parentPoster, children }: Props) 
         {children.map((c) => {
           const imgUri = resolveImageUrl(c.posterPath || parentPoster);
           return (
-            <Pressable key={c.id} onPress={() => router.push(`/player/${c.id}` as any)} style={styles.tile}>
+            <Pressable focusable={true} key={c.id} onPress={() => router.push(`/player/${c.id}` as any)} style={styles.tile}>
               <View style={styles.imgWrap}>
                 {imgUri ? (
                   <Image source={{ uri: imgUri }} style={styles.img} resizeMode="cover" />
