@@ -7,6 +7,7 @@ import { MediaDetailResponse } from '@/services/types';
 import { TagPill } from '@/components/TagPill';
 import { ClickableTopicText } from '@/components/ClickableTopicText';
 import { MediaChildrenRow } from '@/components/MediaChildrenRow';
+import { MediaGenreSection } from '@/components/MediaGenreSection';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function MediaDetailScreen() {
@@ -17,7 +18,7 @@ export default function MediaDetailScreen() {
   useEffect(() => { if (id) fetchMediaDetail(id).then(setData); }, [id]);
 
   if (!data) return <View style={styles.loading}><Text style={{ color: '#94a3b8' }}>Chargement...</Text></View>;
-  const { media, tags, children = [] } = data;
+  const { media, tags, children = [], relatedTags = [] } = data;
   const fanartUri = resolveImageUrl(media.fanartPath || media.posterPath);
   const playId = children.length > 0 ? children[0].id : media.id;
 
@@ -43,10 +44,7 @@ export default function MediaDetailScreen() {
 
         <MediaChildrenRow parentType={media.nodeType} parentPoster={media.posterPath} children={children} />
 
-        <View style={styles.section}>
-          <Text style={styles.secTitle}>Genres & Thématiques</Text>
-          <View style={styles.zoneRow}>{tags.PRIMARY_PILL.map((p, i) => <TagPill key={i} label={p.value_text} theme={p.color_theme || 'violet'} />)}</View>
-        </View>
+        <MediaGenreSection relatedTags={relatedTags} fallbackTags={tags.PRIMARY_PILL} />
 
         {tags.PERSON_CAROUSEL.length > 0 ? (
           <View style={styles.section}>
@@ -75,11 +73,4 @@ const styles = StyleSheet.create({
   btnText: { color: '#ffffff', fontWeight: '700' },
   section: { marginBottom: Spacing.four },
   secTitle: { fontSize: 14, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: Spacing.two },
-  childTile: { width: 114, marginRight: 6, cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
-  childImgWrap: { width: 114, height: 160, borderRadius: Radius.md, overflow: 'hidden', backgroundColor: 'rgba(30, 41, 59, 0.85)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.4)', position: 'relative', marginBottom: 5 },
-  childImg: { width: '100%', height: '100%' },
-  childEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  childPlayBadge: { position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(99, 102, 241, 0.9)', width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  childPlayTxt: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
-  childTitle: { color: '#f1f5f9', fontSize: 11, fontWeight: '600', lineHeight: 14, textAlign: 'center' },
 });

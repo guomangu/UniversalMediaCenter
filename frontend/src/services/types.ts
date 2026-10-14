@@ -36,6 +36,13 @@ export interface TagBadge {
   context_role?: string;
 }
 
+export interface RelatedTagGroup {
+  label: string;
+  slug: string;
+  colorTheme?: string;
+  medias: any[];
+}
+
 export interface MediaDetailResponse {
   media: MediaNode;
   tags: {
@@ -45,6 +52,7 @@ export interface MediaDetailResponse {
     TECHNICAL_DRAWER: TagBadge[];
   };
   children?: MediaNode[];
+  relatedTags?: RelatedTagGroup[];
 }
 
 export interface MediaStatsResponse {

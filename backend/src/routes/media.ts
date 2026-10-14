@@ -6,6 +6,7 @@ import { artworkRouter } from './mediaArtworks.js';
 import { streamRouter } from './mediaStream.js';
 import { statsRouter } from './mediaStats.js';
 import { processNfoFile } from '../watcher/index.js';
+import { getRelatedTagsForMedia } from './mediaRelated.js';
 
 export const mediaRouter = new Hono();
 
@@ -65,7 +66,9 @@ mediaRouter.get('/:id', async (c) => {
     posterPath: ch.posterPath ? `/api/media/${ch.id}/poster` : formattedMedia.posterPath,
   }));
 
-  return c.json({ media: formattedMedia, tags: tagsByZone, children });
+  const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId);
+
+  return c.json({ media: formattedMedia, tags: tagsByZone, children, relatedTags });
 });
 
 mediaRouter.post('/:id/progress', async (c) => {
