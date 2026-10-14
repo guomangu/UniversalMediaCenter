@@ -5,6 +5,7 @@ import { desc, asc, eq, and } from 'drizzle-orm';
 import { taxonomyRouter } from './taxonomyRoutes.js';
 import { requireAuth } from '../middleware/access.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
+import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 
 export const uiRouter = new Hono();
 
@@ -87,13 +88,15 @@ uiRouter.get('/layout', async (c) => {
         });
       }
 
+      const filteredItems = items.filter((item) => isMediaAllowedForUser(user, item));
+
       return {
         id: rail.id,
         title: rail.title,
         railType: rail.railType,
         cardStyle: rail.cardStyle,
         sortOrder: rail.sortOrder,
-        items: items.map(formatMediaItem),
+        items: filteredItems.map(formatMediaItem),
       };
     })
   );

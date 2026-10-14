@@ -3,5 +3,9 @@
 - `components/MediaCard.tsx` & `MediaTile.tsx` : Gabarits doublés (style Kyoo : affiches 260x390px, tuiles 200x290px) avec badges saillants.
 - `components/MediaChildrenRow.tsx` & `utils/mediaHierarchy.ts` : Affichage structuré empilant verticalement les saisons et ordonnant horizontalement les épisodes par chronologie, avec gestion tolérante des saisons inconnues (reléguées en dernier) et épisodes inconnus (triés par ordre du système de fichiers).
 - `components/CastModal.tsx` & `services/castService.ts` : Détection immédiate des télévisions physiques via l'API standard W3C Remote Playback et le SDK Google Cast.
+- `components/AdminIptvTab.tsx` & `routes/iptvSources.ts` : Gestion complète des sources IPTV (liste, ajout, synchro, bascule active/inactive, suppression sécurisée).
+- `components/AdminUserTagManager.tsx` & `ConfirmModal.tsx` : Sécurité ABAC avec Whitelist/Blacklist de tags et exclusion de dossiers par profil utilisateur, protégée par modale de confirmation.
+- `components/AdminUsersTab.tsx` : Barre de recherche multi-comptes et harmonisation terminologique complète avec mots de passe sécurisés.
+- `config/paramSchema.ts` & `paramManager.ts` : Paramètres globaux dynamiques dans `param.yaml` régissant serveur, sécurité, profils par défaut, lecteur et indexation.
 - `components/MediaRepostModal.tsx` : Modal progressive pour noter et reposter un média en 2 champs.
 - `app/+not-found.tsx` : Interception 404 et redirection automatique vers l'accueil.

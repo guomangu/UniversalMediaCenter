@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { users } from '../db/schema/index.js';
 import { eq, count } from 'drizzle-orm';
-import { requireAdmin } from '../middleware/access.js';
+import { requireAdmin, type UserSession } from '../middleware/access.js';
 import { hashPassword } from '../auth/password.js';
 
 export const userAdminRouter = new Hono();
@@ -19,10 +19,14 @@ userAdminRouter.get('/', async (c) => {
     displayName: u.displayName,
     avatarUrl: u.avatarUrl,
     isAdmin: u.isAdmin,
+    profileRole: u.profileRole || 'STANDARD',
     canDownload: u.canDownload,
     canTranscode: u.canTranscode,
     canWatchIptv: u.canWatchIptv,
     maxCsaAgeLimit: u.maxCsaAgeLimit,
+    allowedTags: u.allowedTags || [],
+    blockedTags: u.blockedTags || [],
+    blockedFolders: u.blockedFolders || [],
     hasPassword: !!(u.passwordHash && u.passwordHash.length > 0),
     createdAt: u.createdAt,
   }));
@@ -37,10 +41,14 @@ userAdminRouter.post('/', async (c) => {
     email,
     password,
     isAdmin = false,
+    profileRole = 'STANDARD',
     canDownload = true,
     canTranscode = true,
     canWatchIptv = true,
     maxCsaAgeLimit = null,
+    allowedTags = [],
+    blockedTags = [],
+    blockedFolders = [],
   } = body;
 
   if (!displayName || typeof displayName !== 'string' || !displayName.trim()) {
@@ -53,7 +61,6 @@ userAdminRouter.post('/', async (c) => {
     ? email.trim().toLowerCase()
     : `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${randomSuffix}@ums.local`;
 
-  // Vérifier unicité email
   const existing = await db.query.users.findFirst({
     where: (t, { eq }) => eq(t.email, userEmail),
   });
@@ -63,7 +70,7 @@ userAdminRouter.post('/', async (c) => {
 
   const passwordHash = password && typeof password === 'string' && password.length >= 4
     ? hashPassword(password)
-    : hashPassword('ums2026'); // Mot de passe initial par défaut si omis
+    : hashPassword('ums2026');
 
   const [newUser] = await db
     .insert(users)
@@ -72,27 +79,22 @@ userAdminRouter.post('/', async (c) => {
       displayName: cleanName,
       passwordHash,
       isAdmin: Boolean(isAdmin),
+      profileRole: String(profileRole),
       canDownload: Boolean(canDownload),
       canTranscode: Boolean(canTranscode),
       canWatchIptv: Boolean(canWatchIptv),
       maxCsaAgeLimit: maxCsaAgeLimit !== null && maxCsaAgeLimit !== undefined && maxCsaAgeLimit !== '' ? Number(maxCsaAgeLimit) : null,
+      allowedTags: Array.isArray(allowedTags) ? allowedTags : [],
+      blockedTags: Array.isArray(blockedTags) ? blockedTags : [],
+      blockedFolders: Array.isArray(blockedFolders) ? blockedFolders : [],
     })
     .returning();
 
   return c.json({
     success: true,
     user: {
-      id: newUser.id,
-      email: newUser.email,
-      displayName: newUser.displayName,
-      avatarUrl: newUser.avatarUrl,
-      isAdmin: newUser.isAdmin,
-      canDownload: newUser.canDownload,
-      canTranscode: newUser.canTranscode,
-      canWatchIptv: newUser.canWatchIptv,
-      maxCsaAgeLimit: newUser.maxCsaAgeLimit,
+      ...newUser,
       hasPassword: true,
-      createdAt: newUser.createdAt,
     },
   });
 });
@@ -105,10 +107,14 @@ userAdminRouter.patch('/:id', async (c) => {
     email,
     password,
     isAdmin,
+    profileRole,
     canDownload,
     canTranscode,
     canWatchIptv,
     maxCsaAgeLimit,
+    allowedTags,
+    blockedTags,
+    blockedFolders,
   } = body;
 
   const targetUser = await db.query.users.findFirst({
@@ -116,7 +122,6 @@ userAdminRouter.patch('/:id', async (c) => {
   });
   if (!targetUser) return c.json({ error: 'Utilisateur introuvable' }, 404);
 
-  // Garde-fou : si on retire les droits admin, s'assurer qu'il reste un autre admin
   if (targetUser.isAdmin && isAdmin === false) {
     const adminCount = await db.select({ val: count() }).from(users).where(eq(users.isAdmin, true));
     if ((adminCount[0]?.val ?? 0) <= 1) {
@@ -131,12 +136,16 @@ userAdminRouter.patch('/:id', async (c) => {
     updatePayload.passwordHash = hashPassword(password);
   }
   if (isAdmin !== undefined) updatePayload.isAdmin = Boolean(isAdmin);
+  if (profileRole !== undefined) updatePayload.profileRole = String(profileRole);
   if (canDownload !== undefined) updatePayload.canDownload = Boolean(canDownload);
   if (canTranscode !== undefined) updatePayload.canTranscode = Boolean(canTranscode);
   if (canWatchIptv !== undefined) updatePayload.canWatchIptv = Boolean(canWatchIptv);
   if (maxCsaAgeLimit !== undefined) {
     updatePayload.maxCsaAgeLimit = maxCsaAgeLimit === '' || maxCsaAgeLimit === null ? null : Number(maxCsaAgeLimit);
   }
+  if (allowedTags !== undefined) updatePayload.allowedTags = Array.isArray(allowedTags) ? allowedTags : [];
+  if (blockedTags !== undefined) updatePayload.blockedTags = Array.isArray(blockedTags) ? blockedTags : [];
+  if (blockedFolders !== undefined) updatePayload.blockedFolders = Array.isArray(blockedFolders) ? blockedFolders : [];
 
   const updated = await db
     .update(users)
@@ -153,10 +162,14 @@ userAdminRouter.patch('/:id', async (c) => {
       displayName: u.displayName,
       avatarUrl: u.avatarUrl,
       isAdmin: u.isAdmin,
+      profileRole: u.profileRole || 'STANDARD',
       canDownload: u.canDownload,
       canTranscode: u.canTranscode,
       canWatchIptv: u.canWatchIptv,
       maxCsaAgeLimit: u.maxCsaAgeLimit,
+      allowedTags: u.allowedTags || [],
+      blockedTags: u.blockedTags || [],
+      blockedFolders: u.blockedFolders || [],
       hasPassword: !!(u.passwordHash && u.passwordHash.length > 0),
       createdAt: u.createdAt,
     },
@@ -165,6 +178,13 @@ userAdminRouter.patch('/:id', async (c) => {
 
 userAdminRouter.delete('/:id', async (c) => {
   const id = c.req.param('id');
+  const currentUser = (c as any).get('user') as UserSession | null;
+
+  // Empêcher l'administrateur actif de supprimer son propre compte
+  if (currentUser && currentUser.id === id) {
+    return c.json({ error: 'Vous ne pouvez pas supprimer votre propre compte administrateur actif' }, 400);
+  }
+
   const targetUser = await db.query.users.findFirst({
     where: (t, { eq }) => eq(t.id, id),
   });

@@ -1,16 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, ActivityIndicator, Platform } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import { fetchAdminUsers, updateAdminUser, deleteAdminUser } from '@/services/adminApi';
 import { AdminUserRow } from './AdminUserRow';
 import { AdminCreateUserModal } from './AdminCreateUserModal';
+import { ConfirmModal } from './ConfirmModal';
 import { styles } from './AdminScreen.styles';
-import { Radius } from '@/constants/theme';
 
 export function AdminUsersTab() {
   const [userList, setUserList] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -24,27 +27,37 @@ export function AdminUsersTab() {
   const handleUpdate = async (id: string, updates: any) => {
     const res = await updateAdminUser(id, updates);
     if (res.success) {
-      setMsg('Compte mis à jour avec succès.');
+      setMsg('✅ Compte mis à jour.');
       loadUsers();
     } else {
-      setMsg(`Erreur : ${res.error}`);
+      setMsg(`❌ Erreur : ${res.error}`);
     }
   };
 
-  const handleDelete = async (user: any) => {
-    const confirm = Platform.OS === 'web'
-      ? window.confirm(`Supprimer définitivement l'utilisateur ${user.displayName} ?`)
-      : true;
-    if (!confirm) return;
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    setActionLoading(true);
+    const res = await deleteAdminUser(userToDelete.id);
+    setActionLoading(false);
+    setUserToDelete(null);
 
-    const res = await deleteAdminUser(user.id);
     if (res.success) {
-      setMsg(`Utilisateur ${user.displayName} supprimé.`);
+      setMsg(`✅ Utilisateur supprimé.`);
       loadUsers();
     } else {
-      setMsg(`Erreur : ${res.error}`);
+      setMsg(`❌ Erreur : ${res.error}`);
     }
   };
+
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return userList;
+    return userList.filter((u) =>
+      (u.displayName && u.displayName.toLowerCase().includes(q)) ||
+      (u.email && u.email.toLowerCase().includes(q)) ||
+      (u.profileRole && u.profileRole.toLowerCase().includes(q))
+    );
+  }, [userList, searchQuery]);
 
   const adminCount = userList.filter((u) => u.isAdmin).length;
 
@@ -68,15 +81,40 @@ export function AdminUsersTab() {
         </View>
       </View>
 
+      {/* Barre de recherche pour gérer un grand nombre de comptes */}
+      <TextInput
+        style={[styles.input, { marginBottom: 12 }]}
+        placeholder="🔍 Filtrer les comptes par nom, email ou profil..."
+        placeholderTextColor="#64748b"
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
+
       {loading ? <ActivityIndicator color="#6366f1" style={{ marginVertical: 20 }} /> : null}
 
-      {userList.map((u) => (
-        <AdminUserRow key={u.id} user={u} onUpdate={handleUpdate} onDelete={handleDelete} />
+      {filteredUsers.length === 0 && !loading ? (
+        <Text style={{ color: '#64748b', textAlign: 'center', marginVertical: 16 }}>
+          {searchQuery ? 'Aucun compte ne correspond à votre recherche.' : 'Aucun compte enregistré.'}
+        </Text>
+      ) : null}
+
+      {filteredUsers.map((u) => (
+        <AdminUserRow key={u.id} user={u} onUpdate={handleUpdate} onDelete={(target) => setUserToDelete(target)} />
       ))}
 
       {msg ? <Text style={styles.statusMsg}>{msg}</Text> : null}
 
       <AdminCreateUserModal visible={showCreate} onClose={() => setShowCreate(false)} onCreated={loadUsers} />
+
+      <ConfirmModal
+        visible={!!userToDelete}
+        title="Confirmation de suppression"
+        message={`Êtes-vous sûr de vouloir supprimer définitivement le compte "${userToDelete?.displayName}" (${userToDelete?.email}) ? Cette action est irréversible.`}
+        confirmText="Supprimer définitivement"
+        loading={actionLoading}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setUserToDelete(null)}
+      />
     </View>
   );
 }

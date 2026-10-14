@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SiteHeader } from '@/components/SiteHeader';
 import { AccountModal } from '@/components/AccountModal';
 import { useCurrentUser } from '@/services/authStore';
 import { triggerLibraryRefresh } from '@/services/api';
-import { getApiBaseUrl } from '@/services/apiConfig';
 import { styles } from '@/components/AdminScreen.styles';
 import { AdminConfigTab } from '@/components/AdminConfigTab';
 import { AdminUsersTab } from '@/components/AdminUsersTab';
-import { Radius } from '@/constants/theme';
+import { AdminIptvTab } from '@/components/AdminIptvTab';
 
 type Tab = 'CONFIG' | 'USERS' | 'LIBRARY' | 'IPTV';
 
@@ -18,8 +17,6 @@ export default function AdminScreen() {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const [tab, setTab] = useState<Tab>('CONFIG');
-  const [sourceName, setSourceName] = useState('');
-  const [m3uUrl, setM3uUrl] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -30,19 +27,6 @@ export default function AdminScreen() {
     const res = await triggerLibraryRefresh(50);
     setLoading(false);
     setStatusMsg(res.success ? `✅ ${res.message}` : `❌ Échec : ${res.error}`);
-  };
-
-  const handleAddIptv = async () => {
-    if (!sourceName || !m3uUrl) { setStatusMsg('Veuillez remplir les 2 champs.'); return; }
-    try {
-      const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: sourceName, m3uUrl }),
-      });
-      const data = await res.json();
-      setStatusMsg(data.success ? `✅ ${data.importedCount} chaînes synchronisées !` : `❌ ${data.error}`);
-      setSourceName(''); setM3uUrl('');
-    } catch (err: any) { setStatusMsg(`Erreur : ${err.message}`); }
   };
 
   // Garde de sécurité : seuls les administrateurs authentifiés peuvent voir et utiliser ce panneau
@@ -87,7 +71,7 @@ export default function AdminScreen() {
           {(['CONFIG', 'USERS', 'LIBRARY', 'IPTV'] as const).map((t) => (
             <Pressable key={t} style={[styles.tabBtn, tab === t && styles.activeTab]} onPress={() => setTab(t)}>
               <Text style={styles.tabText}>
-                {t === 'CONFIG' ? '⚙️ param.yaml' : t === 'USERS' ? '👥 Comptes' : t === 'LIBRARY' ? '🔄 Scan' : '📡 IPTV'}
+                {t === 'CONFIG' ? '⚙️ param.yaml' : t === 'USERS' ? '👥 Profils & Comptes' : t === 'LIBRARY' ? '🔄 Scan' : '📡 Sources IPTV'}
               </Text>
             </Pressable>
           ))}
@@ -107,18 +91,7 @@ export default function AdminScreen() {
           </View>
         )}
 
-        {tab === 'IPTV' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Ajouter un Fournisseur IPTV (.m3u)</Text>
-            <Text style={styles.cardSub}>Importation automatique des flux et des guides EPG XMLTV.</Text>
-            <TextInput style={styles.input} placeholder="Nom (ex: Freebox TV)" placeholderTextColor="#64748b" value={sourceName} onChangeText={setSourceName} />
-            <TextInput style={styles.input} placeholder="URL Playlist .m3u" placeholderTextColor="#64748b" value={m3uUrl} onChangeText={setM3uUrl} />
-            <Pressable style={styles.submitBtn} onPress={handleAddIptv}>
-              <Text style={styles.submitText}>📡 Synchroniser les Chaînes</Text>
-            </Pressable>
-            {statusMsg ? <Text style={styles.statusMsg}>{statusMsg}</Text> : null}
-          </View>
-        )}
+        {tab === 'IPTV' && <AdminIptvTab />}
       </ScrollView>
     </SafeAreaView>
   );

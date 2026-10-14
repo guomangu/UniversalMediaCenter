@@ -47,7 +47,7 @@ streamRouter.get('/:id/stream', async (c) => {
     return c.redirect(media.streamUrl, 302);
   }
 
-  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType);
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, { videoFilePath: media.videoFilePath, nfoFilePath: media.nfoFilePath, searchVectorText: media.searchVectorText });
   if (!isAuthorized) {
     return c.json({
       error: 'Connexion requise pour visionner cette vidéo ou lien expiré',

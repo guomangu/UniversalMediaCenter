@@ -31,6 +31,7 @@ export function loadSiteParams(): SiteParams {
       security: { ...defaultSiteParams.security, ...parsed.security },
       ui: { ...defaultSiteParams.ui, ...parsed.ui },
       media: { ...defaultSiteParams.media, ...parsed.media },
+      profiles: { ...defaultSiteParams.profiles, ...parsed.profiles },
     };
   } catch (err) {
     console.warn('[ParamManager] Error reading param.yaml, using defaults:', err);
@@ -48,6 +49,7 @@ export function saveSiteParams(newParams: Partial<SiteParams>): SiteParams {
     security: { ...cachedParams.security, ...newParams.security },
     ui: { ...cachedParams.ui, ...newParams.ui },
     media: { ...cachedParams.media, ...newParams.media },
+    profiles: { ...cachedParams.profiles, ...newParams.profiles },
   };
   const filePath = getParamFilePath();
   const yamlContent = YAML.stringify(merged);
@@ -63,7 +65,7 @@ export function validateInvitationCode(code?: string): boolean {
   return params.security.invitationCodes.includes(code.trim());
 }
 
-// Initial load & lightweight watcher for AI or external changes
+// Initial load & lightweight watcher for external changes
 loadSiteParams();
 try {
   const target = getParamFilePath();

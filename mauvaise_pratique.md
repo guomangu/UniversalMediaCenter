@@ -32,3 +32,14 @@
   - Autoriser immédiatement la diffusion des chaînes TV en direct (`LIVE_CHANNEL`) avec en-têtes CORS (`Access-Control-Allow-Origin: *`) et redirection 302 sans exiger de jeton de fichier privé.
   - Monter systématiquement les routes de configuration publique (`/api/auth/config`) directement dans le routeur principal `authRouter`.
   - Synchroniser automatiquement l'état de session client (`syncSessionWithServer`) avec le serveur PostgreSQL (`/api/auth/me`) pour actualiser instantanément le rôle `isAdmin: true` sans obliger l'utilisateur à se déconnecter manuellement.
+
+---
+
+## 🛑 28. Auto-Suppression Accidentelle du Compte Administrateur & Absence de Modale de Confirmation
+
+* **Problème / Symptôme :** L'administrateur pouvait cliquer par inadvertance sur "Supprimer" sur sa propre ligne de compte dans l'interface d'administration, détruisant son compte actif sans confirmation ni garde-fou côté serveur.
+* **Conséquences :** Perte immédiate de l'accès administrateur à l'instance, blocage de l'administration et obligation d'exécuter des requêtes SQL manuelles pour restaurer le compte.
+* **Mauvaise Pratique :** Supprimer un compte sur un simple clic sans modale d'avertissement explicite, et autoriser le backend à supprimer le compte de l'administrateur actuellement authentifié s'il existe un autre admin dans le système.
+* **Bonne Pratique :**
+  - **Garde-fou backend strict :** Vérifier systématiquement `if (currentUser && currentUser.id === id)` et rejeter l'auto-suppression avec un code HTTP 400 clair.
+  - **Confirmation obligatoire côté UI :** Utiliser un composant dédié (`ConfirmModal.tsx`) exigeant une action délibérée de l'utilisateur avec message d'avertissement avant toute suppression de compte, de source ou de ressource critique.

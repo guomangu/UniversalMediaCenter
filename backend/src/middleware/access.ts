@@ -8,12 +8,16 @@ export interface UserSession {
   displayName: string;
   avatarUrl: string | null;
   isAdmin: boolean;
+  profileRole: string;
   canDownload: boolean;
   canTranscode: boolean;
   canWatchIptv: boolean;
   maxCsaAgeLimit: number | null;
   allowedValueIds: string[];
   blockedValueIds: string[];
+  allowedTags: string[];
+  blockedTags: string[];
+  blockedFolders: string[];
 }
 
 export async function authMiddleware(c: Context, next: Next): Promise<Response | void> {
@@ -45,6 +49,10 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
         ...user,
         allowedValueIds: user.allowedValueIds || [],
         blockedValueIds: user.blockedValueIds || [],
+        allowedTags: user.allowedTags || [],
+        blockedTags: user.blockedTags || [],
+        blockedFolders: user.blockedFolders || [],
+        profileRole: user.profileRole || 'STANDARD',
       });
       return await next();
     }

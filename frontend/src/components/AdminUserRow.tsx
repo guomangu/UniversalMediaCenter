@@ -1,17 +1,27 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, Platform, TextInput } from 'react-native';
+import { View, Text, Pressable, TextInput } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
+import { AdminUserTagManager } from './AdminUserTagManager';
 
 interface Props {
   user: any;
   onUpdate: (id: string, updates: any) => Promise<void>;
-  onDelete: (user: any) => Promise<void>;
+  onDelete: (user: any) => void;
 }
+
+const ROLES = ['STANDARD', 'ENFANT', 'ADO', 'ADMIN'];
 
 export function AdminUserRow({ user, onUpdate, onDelete }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [newPin, setNewPin] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [csaAge, setCsaAge] = useState(user.maxCsaAgeLimit ? String(user.maxCsaAgeLimit) : '');
+
+  const cycleRole = () => {
+    const current = user.profileRole || 'STANDARD';
+    const nextIdx = (ROLES.indexOf(current) + 1) % ROLES.length;
+    const nextRole = ROLES[nextIdx];
+    onUpdate(user.id, { profileRole: nextRole, isAdmin: nextRole === 'ADMIN' });
+  };
 
   return (
     <View style={{ backgroundColor: 'rgba(30, 41, 59, 0.7)', borderRadius: Radius.lg, borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.35)', padding: Spacing.two, marginBottom: 8 }}>
@@ -19,7 +29,10 @@ export function AdminUserRow({ user, onUpdate, onDelete }: Props) {
         <View style={{ flex: 1, minWidth: 160 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ color: '#f8fafc', fontWeight: '700', fontSize: 14 }}>{user.displayName}</Text>
-            {user.hasPin ? <Text style={{ fontSize: 11 }}>🔒</Text> : null}
+            {user.hasPassword ? <Text style={{ fontSize: 11 }}>🔑</Text> : null}
+            <Pressable focusable={true} onPress={cycleRole} style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.sm, backgroundColor: 'rgba(99, 102, 241, 0.2)' }}>
+              <Text style={{ color: '#a5b4fc', fontSize: 10, fontWeight: '700' }}>{user.profileRole || 'STANDARD'}</Text>
+            </Pressable>
           </View>
           <Text style={{ color: '#64748b', fontSize: 11 }}>{user.email}</Text>
         </View>
@@ -56,7 +69,7 @@ export function AdminUserRow({ user, onUpdate, onDelete }: Props) {
           </Pressable>
 
           <Pressable focusable={true} onPress={() => setExpanded(!expanded)} style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.pill, backgroundColor: 'rgba(71, 85, 105, 0.5)' }}>
-            <Text style={{ color: '#cbd5e1', fontSize: 11, fontWeight: '700' }}>{expanded ? '▲ Masquer' : '▼ Détails'}</Text>
+            <Text style={{ color: '#cbd5e1', fontSize: 11, fontWeight: '700' }}>{expanded ? '▲ Masquer' : '▼ Permissions'}</Text>
           </Pressable>
         </View>
       </View>
@@ -70,20 +83,23 @@ export function AdminUserRow({ user, onUpdate, onDelete }: Props) {
             </View>
 
             <View style={{ flex: 1, minWidth: 140 }}>
-              <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>Modifier PIN (4 chiffres) :</Text>
-              <TextInput style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#f8fafc', paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.sm, fontSize: 12 }} placeholder={user.hasPin ? 'Modifier PIN...' : 'Définir un PIN...'} placeholderTextColor="#64748b" secureTextEntry maxLength={6} keyboardType="numeric" value={newPin} onChangeText={setNewPin} onBlur={() => { if (newPin) { onUpdate(user.id, { pin: newPin }); setNewPin(''); } }} />
+              <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>Nouveau Mot de Passe :</Text>
+              <TextInput style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#f8fafc', paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.sm, fontSize: 12 }} placeholder="Modifier mot de passe..." placeholderTextColor="#64748b" secureTextEntry value={newPassword} onChangeText={setNewPassword} onBlur={() => { if (newPassword && newPassword.length >= 4) { onUpdate(user.id, { password: newPassword }); setNewPassword(''); } }} />
             </View>
 
-            {user.hasPin && (
-              <Pressable focusable={true} onPress={() => onUpdate(user.id, { pin: null })} style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: Radius.sm, backgroundColor: 'rgba(239, 68, 68, 0.2)', marginTop: 14 }}>
-                <Text style={{ color: '#f87171', fontSize: 11, fontWeight: '700' }}>Supprimer PIN</Text>
-              </Pressable>
-            )}
-
             <Pressable focusable={true} onPress={() => onDelete(user)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.sm, backgroundColor: 'rgba(239, 68, 68, 0.25)', marginTop: 14, marginLeft: 'auto' }}>
-              <Text style={{ color: '#ef4444', fontSize: 11, fontWeight: '800' }}>🗑️ Supprimer le compte</Text>
+              <Text style={{ color: '#ef4444', fontSize: 11, fontWeight: '800' }}>🗑️ Supprimer</Text>
             </Pressable>
           </View>
+
+          <AdminUserTagManager
+            allowedTags={user.allowedTags || []}
+            blockedTags={user.blockedTags || []}
+            blockedFolders={user.blockedFolders || []}
+            onChangeAllowedTags={(tags) => onUpdate(user.id, { allowedTags: tags })}
+            onChangeBlockedTags={(tags) => onUpdate(user.id, { blockedTags: tags })}
+            onChangeBlockedFolders={(folders) => onUpdate(user.id, { blockedFolders: folders })}
+          />
         </View>
       )}
     </View>

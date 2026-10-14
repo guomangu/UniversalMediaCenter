@@ -20,6 +20,7 @@ export const users = pgTable('users', {
   bio: text('bio'),
   pinHash: text('pin_hash'),
   isAdmin: boolean('is_admin').default(false).notNull(),
+  profileRole: text('profile_role').default('STANDARD'),
   canDownload: boolean('can_download').default(true).notNull(),
   canTranscode: boolean('can_transcode').default(true).notNull(),
   canWatchIptv: boolean('can_watch_iptv').default(true).notNull(),
@@ -27,6 +28,9 @@ export const users = pgTable('users', {
   maxCsaAgeLimit: integer('max_csa_age_limit'),
   allowedValueIds: jsonb('allowed_value_ids').$type<string[]>().default([]),
   blockedValueIds: jsonb('blocked_value_ids').$type<string[]>().default([]),
+  allowedTags: jsonb('allowed_tags').$type<string[]>().default([]),
+  blockedTags: jsonb('blocked_tags').$type<string[]>().default([]),
+  blockedFolders: jsonb('blocked_folders').$type<string[]>().default([]),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

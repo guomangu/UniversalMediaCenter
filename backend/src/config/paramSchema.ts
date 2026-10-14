@@ -3,13 +3,27 @@ export interface ServerParams {
   siteTagline: string;
   locale: string;
   port: number;
+  corsOrigins?: string[];
+  publicBaseUrl?: string;
+}
+
+export interface ProfileDefaultsParams {
+  defaultRole: string;
+  defaultCanDownload: boolean;
+  defaultCanTranscode: boolean;
+  defaultCanWatchIptv: boolean;
+  defaultMaxCsaAge: number | null;
+  defaultBlockedTags: string[];
+  defaultAllowedTags: string[];
+  defaultBlockedFolders: string[];
 }
 
 export interface SecurityParams {
   invitationOnly: boolean;
   invitationCodes: string[];
   allowOnTheFlyCreation: boolean;
-  defaultPinRequired: boolean;
+  defaultPasswordRequired: boolean;
+  defaultPinRequired?: boolean;
   defaultMaxCsaAge: number | null;
 }
 
@@ -21,6 +35,7 @@ export interface UiParams {
   enableSkipIntro: boolean;
   skipIntroDurationSeconds: number;
   cardsPerRail: number;
+  bannerHeight?: number;
 }
 
 export interface MediaParams {
@@ -29,6 +44,9 @@ export interface MediaParams {
   autoReindexOnStart: boolean;
   enableLiveTvProxy: boolean;
   supportedVideoCodecs: string[];
+  globalExcludedFolders?: string[];
+  defaultAudioLanguage?: string;
+  defaultSubtitleLanguage?: string;
 }
 
 export interface SiteParams {
@@ -36,6 +54,7 @@ export interface SiteParams {
   security: SecurityParams;
   ui: UiParams;
   media: MediaParams;
+  profiles: ProfileDefaultsParams;
 }
 
 export const defaultSiteParams: SiteParams = {
@@ -44,13 +63,26 @@ export const defaultSiteParams: SiteParams = {
     siteTagline: 'Le hub multimédia zéro-config out-of-the-box',
     locale: 'fr-FR',
     port: 3000,
+    corsOrigins: ['*'],
+    publicBaseUrl: 'https://api.cool.sweaw.com',
   },
   security: {
     invitationOnly: false,
-    invitationCodes: ['UMS-WELCOME-2026'],
+    invitationCodes: ['UMS-WELCOME-2026', 'COOL-MEDIA-VIP'],
     allowOnTheFlyCreation: true,
+    defaultPasswordRequired: false,
     defaultPinRequired: false,
     defaultMaxCsaAge: null,
+  },
+  profiles: {
+    defaultRole: 'STANDARD',
+    defaultCanDownload: true,
+    defaultCanTranscode: true,
+    defaultCanWatchIptv: true,
+    defaultMaxCsaAge: null,
+    defaultBlockedTags: [],
+    defaultAllowedTags: [],
+    defaultBlockedFolders: [],
   },
   ui: {
     theme: 'dark',
@@ -60,6 +92,7 @@ export const defaultSiteParams: SiteParams = {
     enableSkipIntro: true,
     skipIntroDurationSeconds: 85,
     cardsPerRail: 15,
+    bannerHeight: 460,
   },
   media: {
     autoEnrichMetadata: true,
@@ -67,5 +100,8 @@ export const defaultSiteParams: SiteParams = {
     autoReindexOnStart: true,
     enableLiveTvProxy: true,
     supportedVideoCodecs: ['h264', 'hevc', 'vp9', 'av1'],
+    globalExcludedFolders: ['@eaDir', '#recycle', '.git', 'lost+found'],
+    defaultAudioLanguage: 'fra',
+    defaultSubtitleLanguage: 'fra',
   },
 };

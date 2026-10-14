@@ -73,7 +73,7 @@ mediaRouter.get('/:id', async (c) => {
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
-  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId);
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, { videoFilePath: media.videoFilePath, nfoFilePath: media.nfoFilePath, searchVectorText: media.searchVectorText });
   if (!isAuthorized) {
     return c.json({
       error: 'Connexion requise pour accéder à ce contenu ou lien de partage expiré',

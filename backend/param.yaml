@@ -1,16 +1,29 @@
 server:
-  siteName: The Universal Media Stack
+  siteName: Universal Media GUUU Stack
   siteTagline: Le hub multimédia zéro-config out-of-the-box
   locale: fr-FR
   port: 3000
+  corsOrigins:
+    - "*"
+  publicBaseUrl: https://api.cool.sweaw.com
 security:
   invitationOnly: false
   invitationCodes:
     - UMS-WELCOME-2026
     - COOL-MEDIA-VIP
   allowOnTheFlyCreation: true
+  defaultPasswordRequired: false
   defaultPinRequired: false
   defaultMaxCsaAge: null
+profiles:
+  defaultRole: STANDARD
+  defaultCanDownload: true
+  defaultCanTranscode: true
+  defaultCanWatchIptv: true
+  defaultMaxCsaAge: null
+  defaultBlockedTags: []
+  defaultAllowedTags: []
+  defaultBlockedFolders: []
 ui:
   theme: dark
   defaultView: HOME
@@ -19,6 +32,7 @@ ui:
   enableSkipIntro: true
   skipIntroDurationSeconds: 85
   cardsPerRail: 15
+  bannerHeight: 460
 media:
   autoEnrichMetadata: true
   enrichmentBatchSize: 30
@@ -29,3 +43,10 @@ media:
     - hevc
     - vp9
     - av1
+  globalExcludedFolders:
+    - "@eaDir"
+    - "#recycle"
+    - ".git"
+    - "lost+found"
+  defaultAudioLanguage: fra
+  defaultSubtitleLanguage: fra

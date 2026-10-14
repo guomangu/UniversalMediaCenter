@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { users } from '../db/schema/index.js';
-import { count, eq, sql } from 'drizzle-orm';
+import { sql, count } from 'drizzle-orm';
 import { createSessionToken } from '../auth/token.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { getSiteParams, validateInvitationCode } from '../config/paramManager.js';
@@ -9,19 +9,7 @@ import type { UserSession } from '../middleware/access.js';
 
 export const authRouter = new Hono();
 
-// Statut d'initialisation du serveur (y a-t-il déjà des utilisateurs ?)
-authRouter.get('/status', async (c) => {
-  const userCountResult = await db.select({ val: count() }).from(users);
-  const userCount = userCountResult[0]?.val ?? 0;
-  const params = getSiteParams();
-  return c.json({
-    hasUsers: userCount > 0,
-    siteName: params.server.siteName,
-    invitationOnly: params.security.invitationOnly,
-  });
-});
-
-// Configuration publique d'authentification
+// Configuration publique accessible pour le frontend (/api/auth/config)
 authRouter.get('/config', (c) => {
   const params = getSiteParams();
   return c.json({
@@ -29,8 +17,9 @@ authRouter.get('/config', (c) => {
     siteTagline: params.server.siteTagline,
     invitationOnly: params.security.invitationOnly,
     allowOnTheFlyCreation: params.security.allowOnTheFlyCreation,
-    defaultPinRequired: params.security.defaultPinRequired,
+    defaultPasswordRequired: params.security.defaultPasswordRequired ?? params.security.defaultPinRequired ?? false,
     defaultMaxCsaAge: params.security.defaultMaxCsaAge,
+    defaultProfileRole: params.profiles?.defaultRole ?? 'STANDARD',
   });
 });
 
@@ -47,10 +36,14 @@ authRouter.get('/me', async (c) => {
       displayName: user.displayName,
       avatarUrl: user.avatarUrl,
       isAdmin: user.isAdmin,
+      profileRole: user.profileRole || 'STANDARD',
       canDownload: user.canDownload,
       canTranscode: user.canTranscode,
       canWatchIptv: user.canWatchIptv,
       maxCsaAgeLimit: user.maxCsaAgeLimit,
+      allowedTags: user.allowedTags || [],
+      blockedTags: user.blockedTags || [],
+      blockedFolders: user.blockedFolders || [],
     },
   });
 });
@@ -86,7 +79,7 @@ authRouter.post('/login', async (c) => {
     }
   } else if (user.pinHash && pin) {
     if (user.pinHash !== String(pin).trim()) {
-      return c.json({ error: 'Code PIN incorrect' }, 401);
+      return c.json({ error: 'Mot de passe ou code incorrect' }, 401);
     }
   }
 
@@ -100,10 +93,14 @@ authRouter.post('/login', async (c) => {
       displayName: user.displayName,
       avatarUrl: user.avatarUrl,
       isAdmin: user.isAdmin,
+      profileRole: user.profileRole || 'STANDARD',
       canDownload: user.canDownload,
       canTranscode: user.canTranscode,
       canWatchIptv: user.canWatchIptv,
       maxCsaAgeLimit: user.maxCsaAgeLimit,
+      allowedTags: user.allowedTags || [],
+      blockedTags: user.blockedTags || [],
+      blockedFolders: user.blockedFolders || [],
     },
   });
 });
@@ -146,10 +143,15 @@ authRouter.post('/register', async (c) => {
       email: cleanEmail,
       displayName: String(displayName).trim(),
       passwordHash,
-      isAdmin: isFirstUser, // ✅ Le premier compte créé devient automatiquement l'Administrateur !
-      canDownload: true,
-      canTranscode: true,
-      canWatchIptv: true,
+      isAdmin: isFirstUser,
+      profileRole: isFirstUser ? 'ADMIN' : (params.profiles?.defaultRole || 'STANDARD'),
+      canDownload: params.profiles?.defaultCanDownload ?? true,
+      canTranscode: params.profiles?.defaultCanTranscode ?? true,
+      canWatchIptv: params.profiles?.defaultCanWatchIptv ?? true,
+      maxCsaAgeLimit: isFirstUser ? null : (params.profiles?.defaultMaxCsaAge ?? params.security.defaultMaxCsaAge ?? null),
+      allowedTags: params.profiles?.defaultAllowedTags ?? [],
+      blockedTags: params.profiles?.defaultBlockedTags ?? [],
+      blockedFolders: params.profiles?.defaultBlockedFolders ?? [],
     })
     .returning();
 
@@ -163,10 +165,14 @@ authRouter.post('/register', async (c) => {
       displayName: newUser.displayName,
       avatarUrl: newUser.avatarUrl,
       isAdmin: newUser.isAdmin,
+      profileRole: newUser.profileRole,
       canDownload: newUser.canDownload,
       canTranscode: newUser.canTranscode,
       canWatchIptv: newUser.canWatchIptv,
       maxCsaAgeLimit: newUser.maxCsaAgeLimit,
+      allowedTags: newUser.allowedTags,
+      blockedTags: newUser.blockedTags,
+      blockedFolders: newUser.blockedFolders,
     },
     message: isFirstUser
       ? 'Félicitations ! Vous êtes le premier utilisateur et Administrateur de cette instance.'

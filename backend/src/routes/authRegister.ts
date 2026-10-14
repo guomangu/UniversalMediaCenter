@@ -4,10 +4,11 @@ import { users } from '../db/schema/index.js';
 import { count } from 'drizzle-orm';
 import { getSiteParams, validateInvitationCode } from '../config/paramManager.js';
 import { createSessionToken } from '../auth/token.js';
+import { hashPassword } from '../auth/password.js';
 
 export const authRegisterRouter = new Hono();
 
-// Récupère la configuration publique du site (nom, tagline, mode invitation)
+// Récupère la configuration publique du site (nom, tagline, mode invitation, paramètres par défaut)
 authRegisterRouter.get('/config', (c) => {
   const params = getSiteParams();
   return c.json({
@@ -15,8 +16,9 @@ authRegisterRouter.get('/config', (c) => {
     siteTagline: params.server.siteTagline,
     invitationOnly: params.security.invitationOnly,
     allowOnTheFlyCreation: params.security.allowOnTheFlyCreation,
-    defaultPinRequired: params.security.defaultPinRequired,
+    defaultPasswordRequired: params.security.defaultPasswordRequired ?? params.security.defaultPinRequired ?? false,
     defaultMaxCsaAge: params.security.defaultMaxCsaAge,
+    defaultProfileRole: params.profiles?.defaultRole ?? 'STANDARD',
   });
 });
 
@@ -28,7 +30,7 @@ authRegisterRouter.post('/register-on-the-fly', async (c) => {
   }
 
   const body = await c.req.json().catch(() => ({}));
-  const { displayName, email, pin, invitationCode } = body;
+  const { displayName, email, password, pin, invitationCode } = body;
 
   if (!displayName || typeof displayName !== 'string' || !displayName.trim()) {
     return c.json({ error: 'Le pseudo / nom d’affichage est obligatoire' }, 400);
@@ -49,14 +51,27 @@ authRegisterRouter.post('/register-on-the-fly', async (c) => {
     ? email.trim().toLowerCase()
     : `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${randomSuffix}@ums.local`;
 
+  const rawSecret = (password && typeof password === 'string' && password.length >= 4)
+    ? password
+    : (pin ? String(pin) : null);
+  const passwordHash = rawSecret ? hashPassword(rawSecret) : null;
+
   const [newUser] = await db
     .insert(users)
     .values({
       email: userEmail,
       displayName: cleanName,
+      passwordHash,
+      pinHash: rawSecret ? String(rawSecret).trim() : null,
       isAdmin: isFirstUser,
-      pinHash: pin ? String(pin).trim() : null,
-      maxCsaAgeLimit: params.security.defaultMaxCsaAge,
+      profileRole: isFirstUser ? 'ADMIN' : (params.profiles?.defaultRole || 'STANDARD'),
+      canDownload: params.profiles?.defaultCanDownload ?? true,
+      canTranscode: params.profiles?.defaultCanTranscode ?? true,
+      canWatchIptv: params.profiles?.defaultCanWatchIptv ?? true,
+      maxCsaAgeLimit: isFirstUser ? null : (params.profiles?.defaultMaxCsaAge ?? params.security.defaultMaxCsaAge ?? null),
+      allowedTags: params.profiles?.defaultAllowedTags ?? [],
+      blockedTags: params.profiles?.defaultBlockedTags ?? [],
+      blockedFolders: params.profiles?.defaultBlockedFolders ?? [],
     })
     .returning();
 
@@ -71,14 +86,18 @@ authRegisterRouter.post('/register-on-the-fly', async (c) => {
       displayName: newUser.displayName,
       avatarUrl: newUser.avatarUrl,
       isAdmin: newUser.isAdmin,
+      profileRole: newUser.profileRole,
       canDownload: newUser.canDownload,
       canTranscode: newUser.canTranscode,
       canWatchIptv: newUser.canWatchIptv,
       maxCsaAgeLimit: newUser.maxCsaAgeLimit,
-      hasPin: !!(newUser.pinHash && newUser.pinHash.trim().length > 0),
+      allowedTags: newUser.allowedTags,
+      blockedTags: newUser.blockedTags,
+      blockedFolders: newUser.blockedFolders,
+      hasPassword: !!newUser.passwordHash,
     },
     message: isFirstUser
       ? 'Premier profil créé avec succès : vous êtes l’Administrateur du site !'
-      : 'Profil créé à la volée avec succès.',
+      : 'Profil créé avec succès.',
   });
 });

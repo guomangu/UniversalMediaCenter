@@ -1,12 +1,14 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { mediaNodes, iptvSources, eavValues, eavAttributes } from '../db/schema/index.js';
-import { parseM3uContent } from '../iptv/m3uParser.js';
-import { ingestIptvChannels } from '../iptv/channelIngester.js';
 import { eq, and, or, ilike, asc } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
+import { iptvSourcesRouter } from './iptvSources.js';
 
 export const iptvRouter = new Hono();
+
+// Déléguer la gestion des sources IPTV (Admin)
+iptvRouter.route('/sources', iptvSourcesRouter);
 
 iptvRouter.use('*', requireAuth);
 
@@ -51,34 +53,6 @@ iptvRouter.get('/categories', async (c) => {
     return c.json({ categories });
   } catch {
     return c.json({ categories: [] });
-  }
-});
-
-iptvRouter.post('/sources', async (c) => {
-  const body = await c.req.json();
-  const { name, m3uUrl, epgXmltvUrl } = body;
-  if (!name || !m3uUrl) {
-    return c.json({ error: 'Name and m3uUrl are required' }, 400);
-  }
-
-  const [source] = await db
-    .insert(iptvSources)
-    .values({ name, m3uUrl, epgXmltvUrl })
-    .returning();
-
-  try {
-    const res = await fetch(m3uUrl);
-    const content = await res.text();
-    const channels = parseM3uContent(content);
-    const importedCount = await ingestIptvChannels(channels);
-    await db
-      .update(iptvSources)
-      .set({ lastSyncedAt: new Date() })
-      .where(eq(iptvSources.id, source.id));
-
-    return c.json({ success: true, source, importedCount });
-  } catch (err: any) {
-    return c.json({ success: false, error: err.message }, 500);
   }
 });
 
