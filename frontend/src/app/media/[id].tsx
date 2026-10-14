@@ -8,15 +8,16 @@ import { TagPill } from '@/components/TagPill';
 import { ClickableTopicText } from '@/components/ClickableTopicText';
 import { MediaChildrenRow } from '@/components/MediaChildrenRow';
 import { MediaGenreSection } from '@/components/MediaGenreSection';
+import { CastModal } from '@/components/CastModal';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function MediaDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<MediaDetailResponse | null>(null);
+  const [showCast, setShowCast] = useState(false);
 
   useEffect(() => { if (id) fetchMediaDetail(id).then(setData); }, [id]);
-
   if (!data) return <View style={styles.loading}><Text style={{ color: '#94a3b8' }}>Chargement...</Text></View>;
   const { media, tags, children = [], relatedTags = [] } = data;
   const fanartUri = resolveImageUrl(media.fanartPath || media.posterPath);
@@ -26,26 +27,23 @@ export default function MediaDetailScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <Pressable onPress={() => router.push('/')} style={styles.backBtn}><Text style={styles.backTxt}>← Retour à l'accueil</Text></Pressable>
-
         <View style={styles.heroBox}>
           {fanartUri ? <Image source={{ uri: fanartUri }} style={styles.backdrop} /> : null}
           <View style={styles.heroContent}>
             <View style={styles.zoneRow}>{tags.HERO_BADGE.map((b, i) => <TagPill key={i} label={b.value_text} theme={b.color_theme || 'amber'} />)}</View>
             <ClickableTopicText text={media.title} topicSlug={media.slug || media.id} topicTitle={media.title} style={styles.title} />
             {media.overview ? <ClickableTopicText text={media.overview} topicSlug={media.slug || media.id} topicTitle={media.title} style={styles.overview} /> : null}
-            <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
               <Pressable onPress={() => router.push(`/player/${playId}` as any)} style={styles.playBtn}><Text style={styles.btnText}>▶ Regarder</Text></Pressable>
+              <Pressable onPress={() => setShowCast(true)} style={[styles.playBtn, { backgroundColor: '#4338ca' }]}><Text style={styles.btnText}>📡 Diffuser</Text></Pressable>
               <Pressable onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: media.slug || media.id, title: media.title } } as any)} style={[styles.playBtn, { backgroundColor: '#334155' }]}>
                 <Text style={styles.btnText}>💬 Forum WhatsApp</Text>
               </Pressable>
             </View>
           </View>
         </View>
-
         <MediaChildrenRow parentType={media.nodeType} parentPoster={media.posterPath} children={children} />
-
         <MediaGenreSection relatedTags={relatedTags} fallbackTags={tags.PRIMARY_PILL} />
-
         {tags.PERSON_CAROUSEL.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.secTitle}>Casting & Équipe</Text>
@@ -53,6 +51,7 @@ export default function MediaDetailScreen() {
           </View>
         ) : null}
       </ScrollView>
+      <CastModal visible={showCast} onClose={() => setShowCast(false)} currentMedia={{ id: String(playId), title: media.title, positionSeconds: 0 }} />
     </SafeAreaView>
   );
 }

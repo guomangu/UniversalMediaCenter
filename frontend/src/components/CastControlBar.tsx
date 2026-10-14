@@ -1,37 +1,78 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Radius, Spacing } from '@/constants/theme';
-import { sendCastCommand, CastDevice } from '@/services/castService';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { sendCastCommand, fetchDeviceStatus, CastDevice } from '@/services/castService';
+import { setActiveCastTarget } from '@/services/castState';
+import { styles } from './CastControlBar.styles';
 
-interface CastControlBarProps {
-  target: CastDevice;
-  onDisconnect: () => void;
-}
+const fmt = (s: number) => {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+};
 
-export const CastControlBar: React.FC<CastControlBarProps> = ({ target, onDisconnect }) => {
-  const [isPlaying, setIsPlaying] = useState(target.isPlaying);
+export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () => void }> = ({ target, onDisconnect }) => {
+  const [device, setDevice] = useState<CastDevice>(target);
+
+  useEffect(() => {
+    setDevice(target);
+    const interval = setInterval(async () => {
+      const live = await fetchDeviceStatus(target.id);
+      if (live) setDevice(live);
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [target.id]);
 
   const togglePlay = async () => {
-    const nextState = !isPlaying;
-    setIsPlaying(nextState);
-    await sendCastCommand(target.id, nextState ? 'PLAY' : 'PAUSE');
+    const next = !device.isPlaying;
+    setDevice((d) => ({ ...d, isPlaying: next }));
+    await sendCastCommand(device.id, next ? 'PLAY' : 'PAUSE');
+  };
+
+  const seekRelative = async (offset: number) => {
+    const nextPos = Math.max(0, Math.min(device.durationSeconds || 7200, device.positionSeconds + offset));
+    setDevice((d) => ({ ...d, positionSeconds: nextPos }));
+    await sendCastCommand(device.id, 'SEEK', { positionSeconds: nextPos });
+  };
+
+  const toggleMute = async () => {
+    const nextMute = !device.isMuted;
+    setDevice((d) => ({ ...d, isMuted: nextMute }));
+    await sendCastCommand(device.id, nextMute ? 'MUTE' : 'UNMUTE');
   };
 
   const handleStop = async () => {
-    await sendCastCommand(target.id, 'STOP');
-    onDisconnect();
+    await sendCastCommand(device.id, 'STOP');
+    setActiveCastTarget(null);
+    onDisconnect?.();
   };
+
+  const pct = device.durationSeconds > 0 ? (device.positionSeconds / device.durationSeconds) * 100 : 0;
 
   return (
     <View style={styles.bar}>
-      <View style={styles.info}>
-        <Text style={styles.badge}>📡 En diffusion</Text>
-        <Text style={styles.title} numberOfLines={1}>{target.name}</Text>
+      <View style={styles.topRow}>
+        <View style={styles.deviceInfo}>
+          <View style={styles.dot} />
+          <Text style={styles.deviceName} numberOfLines={1}>{device.name}</Text>
+          <Text style={styles.mediaTitle} numberOfLines={1}>• {device.mediaTitle || 'Lecture en cours'}</Text>
+        </View>
+        <Text style={styles.timeText}>{fmt(device.positionSeconds)} / {fmt(device.durationSeconds)}</Text>
       </View>
-      <View style={styles.controls}>
-        <Pressable style={styles.btn} onPress={togglePlay}>
-          <Text style={styles.btnText}>{isPlaying ? '⏸' : '▶'}</Text>
-        </Pressable>
+
+      <View style={styles.progressBarBg}>
+        <View style={[styles.progressBarFill, { width: `${Math.min(100, Math.max(0, pct))}%` }]} />
+      </View>
+
+      <View style={styles.controlsRow}>
+        <View style={styles.btnGroup}>
+          <Pressable style={styles.btn} onPress={() => seekRelative(-10)}><Text style={styles.btnText}>-10s</Text></Pressable>
+          <Pressable style={[styles.btn, styles.primaryBtn]} onPress={togglePlay}>
+            <Text style={[styles.btnText, { fontSize: 16 }]}>{device.isPlaying ? '⏸' : '▶'}</Text>
+          </Pressable>
+          <Pressable style={styles.btn} onPress={() => seekRelative(30)}><Text style={styles.btnText}>+30s</Text></Pressable>
+          <Pressable style={styles.btn} onPress={toggleMute}>
+            <Text style={styles.btnText}>{device.isMuted ? '🔇' : '🔊'}</Text>
+          </Pressable>
+        </View>
         <Pressable style={[styles.btn, styles.stopBtn]} onPress={handleStop}>
           <Text style={styles.stopText}>Arrêter</Text>
         </Pressable>
@@ -39,42 +80,3 @@ export const CastControlBar: React.FC<CastControlBarProps> = ({ target, onDiscon
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  bar: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    right: 24,
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    borderRadius: Radius.lg,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.5)',
-    zIndex: 9999,
-  },
-  info: { flex: 1, marginRight: Spacing.three },
-  badge: { fontSize: 11, fontWeight: '700', color: '#818cf8', marginBottom: 2 },
-  title: { fontSize: 14, fontWeight: '600', color: '#f8fafc' },
-  controls: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  btn: {
-    backgroundColor: '#6366f1',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
-  stopBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    width: 'auto',
-    paddingHorizontal: 12,
-    borderRadius: Radius.pill,
-  },
-  stopText: { color: '#f87171', fontSize: 12, fontWeight: '700' },
-});

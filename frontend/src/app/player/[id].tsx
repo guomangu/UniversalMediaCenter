@@ -3,19 +3,18 @@ import { View, Text, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CastModal } from '@/components/CastModal';
-import { CastControlBar } from '@/components/CastControlBar';
 import { VideoPlayerView } from '@/components/VideoPlayerView';
 import { PlayerQualityModal } from '@/components/PlayerQualityModal';
 import { PlayerSubtitleModal } from '@/components/PlayerSubtitleModal';
 import { PlayerAudioModal } from '@/components/PlayerAudioModal';
 import { PlayerShareModal } from '@/components/PlayerShareModal';
-import { registerAsReceiver, pollDeviceCommands, getLocalDeviceId, CastDevice } from '@/services/castService';
+import { useCastReceiver } from '@/hooks/useCastReceiver';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
 import { getVideoStreamUrl } from '@/services/api';
 import { styles } from '@/components/PlayerScreen.styles';
 
 export default function PlayerScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, title } = useLocalSearchParams<{ id: string; title?: string }>();
   const router = useRouter();
   const videoRef = useRef<any>(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -29,8 +28,9 @@ export default function PlayerScreen() {
   const [activeSubtitle, setActiveSubtitle] = useState('off');
   const [activeAudio, setActiveAudio] = useState('auto');
   const [statusMessage, setStatusMessage] = useState<string>('');
-  const [activeCastTarget, setActiveCastTarget] = useState<CastDevice | null>(null);
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
+
+  const mediaTitle = title || `Média #${id}`;
 
   const streamUrl = useMemo(() => {
     if (!id) return '';
@@ -46,17 +46,12 @@ export default function PlayerScreen() {
 
   useEffect(() => { if (id) fetchMediaTracks(String(id)).then(setTracks); }, [id]);
 
-  useEffect(() => {
-    registerAsReceiver(`Écran UMS (${id})`, { isPlaying, positionSeconds: 0, durationSeconds: 7200 });
-    const interval = setInterval(() => {
-      pollDeviceCommands(getLocalDeviceId(), (cmd) => {
-        if (cmd.action === 'PAUSE') { setIsPlaying(false); videoRef.current?.pause?.(); }
-        if (cmd.action === 'PLAY') { setIsPlaying(true); videoRef.current?.play?.(); }
-        if (cmd.action === 'STOP') { if (router.canGoBack()) router.back(); else router.push('/'); }
-      });
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [id, isPlaying]);
+  useCastReceiver({
+    id: String(id), mediaTitle, isPlaying, videoRef,
+    setIsPlaying, setActiveAudio, setActiveSubtitle,
+    onStop: () => { if (router.canGoBack()) router.back(); else router.push('/'); },
+    onLoad: (newId) => router.replace(`/player/${newId}`),
+  });
 
   const handleSkipIntro = () => {
     const end = tracks.intro?.end ?? 90.04;
@@ -90,8 +85,7 @@ export default function PlayerScreen() {
       <PlayerAudioModal visible={showAudio} activeAudio={activeAudio} tracks={tracks.audioTracks} onSelect={(a) => { setActiveAudio(a); showToast(`🔊 Piste audio : ${a}`); }} onClose={() => setShowAudio(false)} />
       <PlayerSubtitleModal visible={showSubtitles} activeSubtitle={activeSubtitle} tracks={tracks.subtitleTracks} onSelect={(s) => { setActiveSubtitle(s); showToast(s === 'off' ? '💬 Sous-titres désactivés' : '💬 Sous-titres activés'); }} onClose={() => setShowSubtitles(false)} />
       <PlayerShareModal visible={showShare} mediaId={String(id)} onClose={() => setShowShare(false)} />
-      <CastModal visible={showCast} onClose={() => setShowCast(false)} currentMedia={{ id: String(id), title: `Média #${id}`, positionSeconds: 120 }} onTargetSelected={(t) => { setActiveCastTarget(t); videoRef.current?.pause?.(); setIsPlaying(false); }} />
-      {activeCastTarget && <CastControlBar target={activeCastTarget} onDisconnect={() => setActiveCastTarget(null)} />}
+      <CastModal visible={showCast} onClose={() => setShowCast(false)} currentMedia={{ id: String(id), title: mediaTitle, positionSeconds: videoRef.current?.currentTime || 0 }} onTargetSelected={() => { videoRef.current?.pause?.(); setIsPlaying(false); }} />
     </SafeAreaView>
   );
 }

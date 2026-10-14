@@ -13,13 +13,16 @@ export interface CastDevice {
   durationSeconds: number;
   isPlaying: boolean;
   volume: number;
+  isMuted?: boolean;
+  audioTrack?: string;
+  subtitleTrack?: string;
   lastSeenAt: number;
 }
 
 export interface CastCommand {
   id: string;
   targetDeviceId: string;
-  action: 'LOAD' | 'PLAY' | 'PAUSE' | 'SEEK' | 'STOP' | 'SET_VOLUME';
+  action: 'LOAD' | 'PLAY' | 'PAUSE' | 'SEEK' | 'STOP' | 'SET_VOLUME' | 'MUTE' | 'UNMUTE' | 'SET_AUDIO' | 'SET_SUBTITLE';
   payload?: {
     mediaId?: string;
     title?: string;
@@ -27,6 +30,8 @@ export interface CastCommand {
     streamUrl?: string;
     positionSeconds?: number;
     volume?: number;
+    audioTrack?: string;
+    subtitleTrack?: string;
   };
   createdAt: number;
 }

@@ -3,32 +3,29 @@ import { castRegistry } from '../cast/deviceRegistry.js';
 
 export const castRouter = new Hono();
 
-castRouter.get('/devices', (c) => {
-  const devices = castRegistry.listActive();
-  return c.json({ devices });
+castRouter.get('/devices', (c) => c.json({ devices: castRegistry.listActive() }));
+
+castRouter.get('/device/:id', (c) => {
+  const dev = castRegistry.getDevice(c.req.param('id'));
+  if (!dev) return c.json({ error: 'Device not found' }, 404);
+  return c.json({ device: dev });
 });
 
 castRouter.post('/register', async (c) => {
-  const body = await c.req.json();
-  const { id, name, deviceType } = body;
-  if (!id || !name) {
-    return c.json({ error: 'id and name are required' }, 400);
-  }
+  const b = await c.req.json();
+  if (!b.id || !b.name) return c.json({ error: 'id and name required' }, 400);
   const device = castRegistry.register({
-    id,
-    name,
-    deviceType: deviceType || 'BROWSER',
-    positionSeconds: body.positionSeconds || 0,
-    durationSeconds: body.durationSeconds || 0,
-    isPlaying: body.isPlaying || false,
-    volume: body.volume ?? 1,
+    id: b.id, name: b.name, deviceType: b.deviceType || 'BROWSER',
+    currentMediaId: b.currentMediaId, mediaTitle: b.mediaTitle, posterUrl: b.posterUrl,
+    positionSeconds: b.positionSeconds || 0, durationSeconds: b.durationSeconds || 0,
+    isPlaying: b.isPlaying ?? false, volume: b.volume ?? 1, isMuted: b.isMuted ?? false,
+    audioTrack: b.audioTrack, subtitleTrack: b.subtitleTrack,
   });
   return c.json({ success: true, device });
 });
 
 castRouter.post('/heartbeat', async (c) => {
-  const body = await c.req.json();
-  const { id, ...updates } = body;
+  const { id, ...updates } = await c.req.json();
   if (!id) return c.json({ error: 'id is required' }, 400);
   const updated = castRegistry.updateHeartbeat(id, updates);
   if (!updated) return c.json({ error: 'Device not found or expired' }, 404);
@@ -36,11 +33,8 @@ castRouter.post('/heartbeat', async (c) => {
 });
 
 castRouter.post('/command', async (c) => {
-  const body = await c.req.json();
-  const { targetDeviceId, action, payload } = body;
-  if (!targetDeviceId || !action) {
-    return c.json({ error: 'targetDeviceId and action are required' }, 400);
-  }
+  const { targetDeviceId, action, payload } = await c.req.json();
+  if (!targetDeviceId || !action) return c.json({ error: 'targetDeviceId and action required' }, 400);
   const cmd = castRegistry.queueCommand({ targetDeviceId, action, payload });
   return c.json({ success: true, command: cmd });
 });

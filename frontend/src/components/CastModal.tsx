@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
-import { fetchCastDevices, sendCastCommand, getLocalDeviceId, CastDevice } from '@/services/castService';
+import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
+import { fetchCastDevices, sendCastCommand, getLocalDeviceId, getLocalDeviceName, setLocalDeviceName, registerAsReceiver, CastDevice } from '@/services/castService';
+import { setActiveCastTarget } from '@/services/castState';
 import { styles } from './CastModal.styles';
 
 interface CastModalProps {
@@ -10,38 +11,40 @@ interface CastModalProps {
   onTargetSelected?: (target: CastDevice) => void;
 }
 
-export const CastModal: React.FC<CastModalProps> = ({
-  visible,
-  onClose,
-  currentMedia,
-  onTargetSelected,
-}) => {
+export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentMedia, onTargetSelected }) => {
   const [devices, setDevices] = useState<CastDevice[]>([]);
+  const [myDeviceName, setMyDeviceName] = useState(getLocalDeviceName());
   const localId = getLocalDeviceId();
 
+  const refresh = () => fetchCastDevices().then((d) => setDevices(d.filter((x) => x.id !== localId)));
+
   useEffect(() => {
-    if (visible) {
-      fetchCastDevices().then((devs) => setDevices(devs.filter((d) => d.id !== localId)));
-    }
+    if (!visible) return;
+    refresh();
+    const interval = setInterval(refresh, 2500);
+    return () => clearInterval(interval);
   }, [visible, localId]);
 
   if (!visible) return null;
 
-  const handleCastToDevice = async (device: CastDevice) => {
-    if (currentMedia) {
-      await sendCastCommand(device.id, 'LOAD', {
-        mediaId: currentMedia.id,
-        title: currentMedia.title,
-        streamUrl: currentMedia.streamUrl,
-        positionSeconds: currentMedia.positionSeconds,
-      });
+  const handleRename = () => {
+    const next = Platform.OS === 'web' ? window.prompt('Nom de cet appareil :', myDeviceName) : null;
+    if (next?.trim()) {
+      setLocalDeviceName(next.trim());
+      setMyDeviceName(next.trim());
+      registerAsReceiver(next.trim(), {});
     }
-    if (onTargetSelected) onTargetSelected(device);
-    onClose();
   };
 
-  const handleNativeCast = () => {
-    alert('Diffusion Google Cast / AirPlay initialisée.');
+  const handleSelect = async (device: CastDevice, cast: boolean) => {
+    if (cast && currentMedia) {
+      await sendCastCommand(device.id, 'LOAD', {
+        mediaId: currentMedia.id, title: currentMedia.title,
+        streamUrl: currentMedia.streamUrl, positionSeconds: currentMedia.positionSeconds,
+      });
+    }
+    setActiveCastTarget(device);
+    onTargetSelected?.(device);
     onClose();
   };
 
@@ -49,45 +52,39 @@ export const CastModal: React.FC<CastModalProps> = ({
     <View style={styles.overlay}>
       <View style={styles.modal}>
         <View style={styles.header}>
-          <Text style={styles.title}>Diffuser sur un Écran</Text>
+          <Text style={styles.title}>📡 Diffuser & Télécommande</Text>
           <Pressable onPress={onClose} style={styles.closeBtn}><Text style={styles.closeText}>✕</Text></Pressable>
         </View>
 
-        <Text style={styles.sectionTitle}>Lecteurs UMS Disponibles</Text>
-        <ScrollView style={{ maxHeight: 200 }}>
+        <View style={styles.localBox}>
+          <View>
+            <Text style={styles.localLabel}>Cet appareil :</Text>
+            <Text style={styles.localName}>{myDeviceName}</Text>
+          </View>
+          <Pressable style={styles.editBtn} onPress={handleRename}><Text style={styles.editBtnTxt}>✏️ Renommer</Text></Pressable>
+        </View>
+
+        <Text style={styles.sectionTitle}>Appareils UMS sur le réseau</Text>
+        <ScrollView style={{ maxHeight: 180 }}>
           {devices.length === 0 ? (
-            <Text style={styles.emptyText}>Aucun autre écran UMS actif détecté.</Text>
+            <Text style={styles.emptyText}>Aucun autre écran UMS actif détecté sur le réseau local.</Text>
           ) : (
-            devices.map((dev) => (
-              <View key={dev.id} style={styles.deviceRow}>
-                <View>
-                  <Text style={styles.deviceName}>{dev.name}</Text>
-                  <Text style={styles.deviceSub}>{dev.deviceType} • {dev.isPlaying ? 'Lecture' : 'Veille'}</Text>
+            devices.map((d) => (
+              <View key={d.id} style={styles.deviceRow}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.deviceName} numberOfLines={1}>{d.name}</Text>
+                  <Text style={styles.deviceSub} numberOfLines={1}>{d.isPlaying ? `🟢 ${d.mediaTitle || 'Lecture'}` : '⚪ En veille'}</Text>
                 </View>
-                <Pressable style={styles.castPill} onPress={() => handleCastToDevice(dev)}>
-                  <Text style={styles.castText}>Caster</Text>
-                </Pressable>
+                <View style={styles.rowActions}>
+                  {currentMedia && (
+                    <Pressable style={styles.castPill} onPress={() => handleSelect(d, true)}><Text style={styles.castText}>Caster</Text></Pressable>
+                  )}
+                  <Pressable style={styles.remotePill} onPress={() => handleSelect(d, false)}><Text style={styles.castText}>Contrôler</Text></Pressable>
+                </View>
               </View>
             ))
           )}
         </ScrollView>
-
-        <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Protocoles Standards</Text>
-        <Pressable style={styles.deviceRow} onPress={handleNativeCast}>
-          <View>
-            <Text style={styles.deviceName}>Chromecast / Google Cast</Text>
-            <Text style={styles.deviceSub}>Diffuseur matériel ou TV compatible</Text>
-          </View>
-          <View style={styles.castPill}><Text style={styles.castText}>Connecter</Text></View>
-        </Pressable>
-
-        <Pressable style={styles.deviceRow} onPress={handleNativeCast}>
-          <View>
-            <Text style={styles.deviceName}>AirPlay (Apple TV / Mac)</Text>
-            <Text style={styles.deviceSub}>Sans fil via navigateur ou iOS</Text>
-          </View>
-          <View style={styles.castPill}><Text style={styles.castText}>Connecter</Text></View>
-        </Pressable>
       </View>
     </View>
   );

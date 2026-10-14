@@ -6,6 +6,23 @@ Dernière mise à jour : 14 Octobre 2026
 
 ## 🟢 1. Fonctionnalités Réalisées & Validées
 
+### 📡 Système de Cast & Télécommande Réseau Universel (Style Jellyfin Amélioré)
+- [x] **Registre Réseau et Découverte Bidirectionnelle (`backend/src/cast/`) :**
+  - Enregistrement des appareils (`/api/cast/register`, `/api/cast/devices`, `/api/cast/device/:id`).
+  - Heartbeat live avec transmission d'état complète (titre en cours, position temporelle, durée totale, statut lecture/pause, volume, mute, pistes audio/sous-titres).
+  - File d'attente de commandes découplée (`/api/cast/command`, `/api/cast/poll/:deviceId`) pour un contrôle à distance sans latence.
+- [x] **Barre de Contrôle Flottante & Télécommande Globale (`CastControlBar.tsx`, `castState.ts`) :**
+  - Affichage permanent de l'état du lecteur distant (nom de l'écran, titre, timecode précis `mm:ss / mm:ss`, barre de progression synchronisée).
+  - Contrôles directs : Recul rapide (-10s), Lecture / Pause, Avance rapide (+30s), Muet / Volume, Arrêt de la diffusion.
+  - Persistance globale sur toutes les pages de l'application via le layout racine (`_layout.tsx`).
+- [x] **Gestionnaire d'Appareils & Personnalisation (`CastModal.tsx`, `castService.ts`) :**
+  - Détection automatique des écrans UMS du réseau local avec affichage du statut en temps réel (🟢 En lecture vs ⚪ En veille).
+  - Renommage à la volée de son propre appareil ("TV Salon", "PC Bureau", "Mobile").
+  - Mode double action : "Caster" (lancer le média sur l'écran cible) ou "Contrôler" (télécommande sans perturber le média en cours).
+  - Bouton direct "📡 Diffuser" intégré sur la fiche détail média (`/media/[id]`).
+- [x] **Récepteur Intégré dans le Lecteur Vidéo (`useCastReceiver.ts`, `player/[id].tsx`) :**
+  - Synchronisation automatique de la lecture, de la mise en pause, de la recherche temporelle (seek), du volume, des pistes audio et des sous-titres sur réception de commandes réseau.
+
 ### 🎮 Navigation Télévision, Télécommande & Manette (Spatial Navigation)
 - [x] **Moteur de navigation spatiale 2D universel (`useTvNavigation.ts`) :**
   - Actif sur toutes les pages du site via le layout racine (`_layout.tsx`).
