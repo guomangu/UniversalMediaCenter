@@ -1,21 +1,20 @@
 import { UiRailItem, MediaDetailResponse, MediaStatsResponse } from './types';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+import { getApiBaseUrl } from './apiConfig';
 
 export function resolveImageUrl(uri?: string): string | undefined {
   if (!uri) return undefined;
   if (uri.startsWith('http://') || uri.startsWith('https://')) return uri;
-  if (uri.startsWith('/')) return `${API_BASE}${uri}`;
+  if (uri.startsWith('/')) return `${getApiBaseUrl()}${uri}`;
   return uri;
 }
 
 export function getVideoStreamUrl(id: string): string {
-  return `${API_BASE}/api/media/${id}/stream`;
+  return `${getApiBaseUrl()}/api/media/${id}/stream`;
 }
 
 export async function fetchHomeLayout(): Promise<UiRailItem[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/ui/layout?page=HOME`);
+    const res = await fetch(`${getApiBaseUrl()}/api/ui/layout?page=HOME`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data.rails || [];
@@ -26,7 +25,7 @@ export async function fetchHomeLayout(): Promise<UiRailItem[]> {
 
 export async function fetchMediaDetail(id: string): Promise<MediaDetailResponse | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/media/${id}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/media/${id}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
@@ -36,7 +35,7 @@ export async function fetchMediaDetail(id: string): Promise<MediaDetailResponse 
 
 export async function fetchMediaStats(): Promise<MediaStatsResponse | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/media/stats`);
+    const res = await fetch(`${getApiBaseUrl()}/api/media/stats`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
@@ -46,7 +45,7 @@ export async function fetchMediaStats(): Promise<MediaStatsResponse | null> {
 
 export async function triggerLibraryRefresh(limit = 40): Promise<any> {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/library/refresh`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/library/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ limit }),
@@ -59,7 +58,7 @@ export async function triggerLibraryRefresh(limit = 40): Promise<any> {
 
 export async function searchCatalog(query: string): Promise<any> {
   try {
-    const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(query)}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/search?q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
@@ -69,7 +68,7 @@ export async function searchCatalog(query: string): Promise<any> {
 
 export async function fetchLiveChannels(): Promise<any[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/iptv/channels`);
+    const res = await fetch(`${getApiBaseUrl()}/api/iptv/channels`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data.channels || [];
@@ -85,7 +84,7 @@ export async function saveWatchProgress(
   durationSeconds: number
 ): Promise<void> {
   try {
-    await fetch(`${API_BASE}/api/media/${nodeId}/progress`, {
+    await fetch(`${getApiBaseUrl()}/api/media/${nodeId}/progress`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, positionSeconds, durationSeconds }),

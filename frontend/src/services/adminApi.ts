@@ -1,4 +1,4 @@
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+import { getApiBaseUrl } from './apiConfig';
 
 const ADMIN_HEADERS = {
   'Content-Type': 'application/json',
@@ -7,7 +7,7 @@ const ADMIN_HEADERS = {
 
 export async function fetchPublicConfig(): Promise<any> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/config`);
+    const res = await fetch(`${getApiBaseUrl()}/api/auth/config`);
     return await res.json();
   } catch {
     return { siteName: 'UMS', invitationOnly: false, allowOnTheFlyCreation: true };
@@ -21,7 +21,7 @@ export async function registerOnTheFly(payload: {
   invitationCode?: string;
 }): Promise<any> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/register-on-the-fly`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/auth/register-on-the-fly`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -34,7 +34,7 @@ export async function registerOnTheFly(payload: {
 
 export async function fetchSiteConfig(): Promise<any> {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/config`, { headers: ADMIN_HEADERS });
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/config`, { headers: ADMIN_HEADERS });
     const data = await res.json();
     return data.params || null;
   } catch {
@@ -44,7 +44,7 @@ export async function fetchSiteConfig(): Promise<any> {
 
 export async function updateSiteConfig(partial: any): Promise<any> {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/config`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/config`, {
       method: 'PUT',
       headers: ADMIN_HEADERS,
       body: JSON.stringify(partial),
@@ -57,7 +57,7 @@ export async function updateSiteConfig(partial: any): Promise<any> {
 
 export async function fetchAdminUsers(): Promise<any[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/users`, { headers: ADMIN_HEADERS });
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/users`, { headers: ADMIN_HEADERS });
     const data = await res.json();
     return data.users || [];
   } catch {
@@ -67,7 +67,7 @@ export async function fetchAdminUsers(): Promise<any[]> {
 
 export async function updateAdminUser(id: string, updates: any): Promise<any> {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/users/${id}`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/users/${id}`, {
       method: 'PATCH',
       headers: ADMIN_HEADERS,
       body: JSON.stringify(updates),
@@ -80,7 +80,7 @@ export async function updateAdminUser(id: string, updates: any): Promise<any> {
 
 export async function deleteAdminUser(id: string): Promise<any> {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/users/${id}`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/users/${id}`, {
       method: 'DELETE',
       headers: ADMIN_HEADERS,
     });

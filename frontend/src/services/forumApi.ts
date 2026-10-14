@@ -1,4 +1,4 @@
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+import { getApiBaseUrl } from './apiConfig';
 
 export interface ForumMessage {
   id: string;
@@ -19,7 +19,7 @@ export interface ForumMessage {
 export async function fetchTopicMessages(topicSlug: string): Promise<ForumMessage[]> {
   try {
     const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
-    const res = await fetch(`${API_BASE}/api/forum/topics/${slug}/messages`);
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/messages`);
     if (!res.ok) return [];
     const data = await res.json();
     return data.messages || [];
@@ -44,7 +44,7 @@ export async function postTopicMessage(
 ): Promise<ForumMessage | null> {
   try {
     const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
-    const res = await fetch(`${API_BASE}/api/forum/topics/${slug}/messages`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

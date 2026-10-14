@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, Pressable, Platform } from 'react-native';
 import { styles } from '@/components/PlayerScreen.styles';
+import { getApiBaseUrl } from '@/services/apiConfig';
 
 interface VideoPlayerViewProps {
   id: string;
@@ -30,33 +31,21 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
   onPause,
 }) => {
   useEffect(() => {
-    if (Platform.OS === 'web' && videoRef.current) {
+    if (Platform.OS === 'web' && videoRef.current?.textTracks) {
       const tracks = videoRef.current.textTracks;
-      if (tracks) {
-        for (let i = 0; i < tracks.length; i++) {
-          const tr = tracks[i];
-          if (!activeSubtitle || activeSubtitle === 'off') {
-            tr.mode = 'disabled';
-          } else if (tr.language && activeSubtitle.toLowerCase().startsWith(tr.language.toLowerCase())) {
-            tr.mode = 'showing';
-          } else {
-            tr.mode = 'disabled';
-          }
-        }
+      for (let i = 0; i < tracks.length; i++) {
+        const isMatch = activeSubtitle && activeSubtitle !== 'off' &&
+          tracks[i].language && activeSubtitle.toLowerCase().startsWith(tracks[i].language.toLowerCase());
+        tracks[i].mode = isMatch ? 'showing' : 'disabled';
       }
     }
   }, [activeSubtitle]);
 
   return (
     <View style={styles.videoPlaceholder}>
-      {statusMessage ? (
-        <View style={styles.statusToast}><Text style={styles.statusText}>{statusMessage}</Text></View>
-      ) : null}
-
-      {Platform.OS === 'web' && streamUrl ? (
+      {Platform.OS === 'web' ? (
         <video
           ref={videoRef}
-          key={`${streamUrl}-${activeQuality}`}
           src={streamUrl}
           controls
           autoPlay
@@ -66,14 +55,14 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
           onPlay={onPlay}
           onPause={onPause}>
           <track
-            src={`http://localhost:3000/api/media/${id}/subtitles?lang=fr`}
+            src={`${getApiBaseUrl()}/api/media/${id}/subtitles?lang=fr`}
             kind="subtitles"
             srcLang="fr"
             label="Français"
             default={activeSubtitle.startsWith('fr')}
           />
           <track
-            src={`http://localhost:3000/api/media/${id}/subtitles?lang=en`}
+            src={`${getApiBaseUrl()}/api/media/${id}/subtitles?lang=en`}
             kind="subtitles"
             srcLang="en"
             label="English"
@@ -83,13 +72,21 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       ) : (
         <>
           <Text style={styles.videoText}>🎬 Flux de Lecture Active</Text>
-          <Text style={styles.subText}>Média ID : {id} • {isPlaying ? '▶ En cours' : '⏸ Pause'}</Text>
+          <Text style={styles.subText}>
+            {isPlaying ? 'Lecture en cours...' : 'En pause'} ({activeQuality.toUpperCase()})
+          </Text>
         </>
       )}
 
+      {statusMessage ? (
+        <View style={styles.statusToast}>
+          <Text style={styles.statusText}>{statusMessage}</Text>
+        </View>
+      ) : null}
+
       {showSkipIntro && (
         <Pressable style={styles.skipBtn} onPress={onSkipIntro}>
-          <Text style={styles.skipText}>⏩ Passer l'Introduction (+85s)</Text>
+          <Text style={styles.skipText}>⏭ Passer l'introduction (+85s)</Text>
         </Pressable>
       )}
     </View>

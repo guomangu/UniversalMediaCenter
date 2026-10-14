@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { triggerLibraryRefresh } from '@/services/api';
+import { getApiBaseUrl } from '@/services/apiConfig';
 import { styles } from '@/components/AdminScreen.styles';
 import { AdminConfigTab } from '@/components/AdminConfigTab';
 import { AdminUsersTab } from '@/components/AdminUsersTab';
@@ -26,7 +27,7 @@ export default function AdminScreen() {
   const handleAddIptv = async () => {
     if (!sourceName || !m3uUrl) { setStatusMsg('Veuillez remplir les 2 champs.'); return; }
     try {
-      const res = await fetch('http://localhost:3000/api/iptv/sources', {
+      const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: sourceName, m3uUrl }),
       });

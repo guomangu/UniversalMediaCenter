@@ -1,4 +1,4 @@
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+import { getApiBaseUrl } from './apiConfig';
 
 export interface TaxonomyTag {
   label: string;
@@ -29,7 +29,7 @@ export interface TaxonomyMediasResult {
 
 export async function fetchTaxonomy(): Promise<TaxonomyCategory[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/ui/taxonomy`);
+    const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy`);
     if (!res.ok) return [];
     const data = await res.json();
     return data.categories || [];
@@ -53,7 +53,7 @@ export async function fetchTaxonomyMedias(params: {
       q: params.q || '',
       limit: String(params.limit || 15),
     }).toString();
-    const res = await fetch(`${API_BASE}/api/ui/taxonomy/medias?${query}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy/medias?${query}`);
     if (!res.ok) return { items: [], hasMore: false, totalReturned: 0 };
     const data = await res.json();
     return {

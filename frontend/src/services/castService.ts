@@ -1,4 +1,4 @@
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+import { getApiBaseUrl } from './apiConfig';
 
 export interface CastDevice {
   id: string;
@@ -25,7 +25,7 @@ export function getLocalDeviceId(): string {
 
 export async function fetchCastDevices(): Promise<CastDevice[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/cast/devices`);
+    const res = await fetch(`${getApiBaseUrl()}/api/cast/devices`);
     if (!res.ok) return [];
     const data = await res.json();
     return data.devices || [];
@@ -40,7 +40,7 @@ export async function registerAsReceiver(
 ): Promise<void> {
   const id = getLocalDeviceId();
   try {
-    await fetch(`${API_BASE}/api/cast/register`, {
+    await fetch(`${getApiBaseUrl()}/api/cast/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, name, deviceType: 'BROWSER', ...state }),
@@ -56,7 +56,7 @@ export async function sendCastCommand(
   payload?: any
 ): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/api/cast/command`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/cast/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targetDeviceId, action, payload }),
@@ -72,7 +72,7 @@ export async function pollDeviceCommands(
   onCommand: (cmd: any) => void
 ): Promise<void> {
   try {
-    const res = await fetch(`${API_BASE}/api/cast/poll/${deviceId}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/cast/poll/${deviceId}`);
     if (res.ok) {
       const data = await res.json();
       for (const cmd of data.commands || []) {
