@@ -13,10 +13,11 @@ export const styles = StyleSheet.create({
   topBar: {
     position: 'absolute', top: 12, left: 16, right: 16, zIndex: 50,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)', paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)', paddingHorizontal: 12, paddingVertical: 8,
     borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)',
+    gap: 8,
   },
-  headerTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '700', flex: 1, marginHorizontal: 10 },
+  headerTitle: { color: '#f8fafc', fontSize: 13, fontWeight: '700', flex: 1, marginHorizontal: 6 },
   rightActions: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   topBtn: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill,
@@ -24,6 +25,13 @@ export const styles = StyleSheet.create({
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   topBtnText: { color: '#f8fafc', fontWeight: '600', fontSize: 11 },
+  voiceBtn: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill,
+    marginLeft: 6, cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  voiceBtnActive: { backgroundColor: '#10b981' },
+  voiceBtnMuted: { backgroundColor: '#475569' },
+  voiceBtnTxt: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
   castActiveBtn: { backgroundColor: 'rgba(99, 102, 241, 0.4)', borderWidth: 1, borderColor: '#818cf8' },
   toast: {
     position: 'absolute', top: 70, alignSelf: 'center', zIndex: 60,
@@ -59,7 +67,6 @@ export const styles = StyleSheet.create({
     borderRadius: Radius.sm, maxWidth: '85%',
   },
   subtitleText: { color: '#ffffff', fontSize: 16, fontWeight: '700', textAlign: 'center', lineHeight: 22 },
-  // Netflix Binge-Watching Next Episode Overlay
   nextOverlay: {
     position: 'absolute', bottom: 30, right: 30, zIndex: 70,
     backgroundColor: 'rgba(15, 23, 42, 0.96)', padding: 18,

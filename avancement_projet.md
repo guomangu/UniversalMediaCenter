@@ -1,3 +1,31 @@
+### 🍿 Moteur de Séances Ciné, Co-Visionnage, Forums Enrichis, Audio & Mode Discret
+- [x] **Déduplication Stricte dans l'Accueil par Catégorie de Tags :**
+  - Ajout du paramètre `excludeIds` dans l'API backend [`taxonomyRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/taxonomyRoutes.ts) filtrant directement les identifiants déjà distribués.
+  - Coordination dynamique dans [`CategorySection.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/CategorySection.tsx) et [`TagCard.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/TagCard.tsx) garantissant qu'aucun média n'est dupliqué à travers les différents tags d'une même catégorie (ex: Genres, Années, Thèmes).
+- [x] **Casting Cliquable & Passerelle Forums ([`media/[id].tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx)) :**
+  - Cartes d'acteurs transformées en composants interactifs focusables avec badge tag et navigation directe vers l'espace forum et œuvres de l'acteur (`/forum/[topic]?category=actor`).
+- [x] **Rail de 10 Médias Uniques au-dessus du Forum ([`ForumTopMediasRail.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumTopMediasRail.tsx)) :**
+  - Affichage horizontal de 10 œuvres uniques associées au tag/sujet sans doublons.
+  - Actions immédiates : navigation vers la fiche média, bouton de citation pour séance et badge de séance active.
+- [x] **Module Forum Enrichi & Salle d'Attente de Visionnage en Groupe ([`MediaForumSection.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaForumSection.tsx)) :**
+  - Intégration sur la page [`/media/[id]`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx) directement sous la section Casting, et sur les pages [`/forum/[topic]`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/forum/[topic].tsx).
+  - Possibilité de citer des éléments enfants de la page (épisodes, saisons) ou des médias suggérés.
+  - Système de vote (upvote) avec persistance en base dans la table `forum_message_votes`.
+  - Propositions de séances avec modale progressive [`ProposeSessionModal.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ProposeSessionModal.tsx) et inscription des spectateurs.
+  - Système d'évaluation et de notation des utilisateurs et du gérant de séance (étoiles 1 à 5 + commentaires) via [`UserRatingModal.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/UserRatingModal.tsx) et [`ratingRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/ratingRoutes.ts).
+  - Rafraîchissement asynchrone intelligent toutes les 3 secondes dès que l'utilisateur est à proximité (IntersectionObserver).
+- [x] **Conversation Vocale Différée & Appel en Direct ([`LiveVoiceRoomBar.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/LiveVoiceRoomBar.tsx)) :**
+  - Enregistreur vocal intégré dans [`ForumInputBar.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumInputBar.tsx) pour envoyer des messages vocaux différés.
+  - Salon d'appel audio en direct avec suivi des participants connectés, ping de présence et bascule Mode Silence / Entendre la discussion.
+- [x] **Badges de Séances Actives & Lecteur Vidéo Collaboratif ([`MediaTile.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaTile.tsx), [`MediaCard.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [`player/[id].tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/player/[id].tsx)) :**
+  - Badge rouge `🍿 SÉANCE` et bandeau inférieur `🍿 X en séance` sur les affiches des médias.
+  - Résolution dynamique du vrai titre du média dans le lecteur au lieu du libellé générique `Média #id`.
+  - Contrôle d'appel direct et bascule Mode Silence / Entendre la discussion directement dans la barre supérieure du lecteur dès que 2 spectateurs ou plus regardent le contenu.
+- [x] **Mode Discret / Incognito activable depuis son Compte ([`AccountModal.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/AccountModal.tsx), [`UserProfileCard.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/user/UserProfileCard.tsx)) :**
+  - Interrupteur un clic permettant de masquer sa présence dans le lecteur sans apparaître dans les compteurs publics ni sur la page /media.
+
+---
+
   - Bouton `⏹ Stop` ajouté juste à côté du bouton d'envoi (`➤`), focusable à la télécommande (`focusable={true}`), permettant de désactiver immédiatement la saisie et de reprendre la navigation sur les messages ou l'en-tête.
 - [x] **Téléversement Réel de Fichiers & Pièces Jointes dans les Forums :**
   - Endpoint backend modulaire `POST /api/forum/upload` et `GET /api/forum/attachments/:filename` dans [`forumUpload.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/forumUpload.ts).

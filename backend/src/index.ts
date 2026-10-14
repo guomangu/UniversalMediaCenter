@@ -18,6 +18,8 @@ import { forumRouter } from './routes/forumRoutes.js';
 import { userRouter } from './routes/userRoutes.js';
 import { friendRouter } from './routes/friendRoutes.js';
 import { repostRouter } from './routes/repostRoutes.js';
+import { sessionRouter } from './routes/sessionRoutes.js';
+import { ratingRouter } from './routes/ratingRoutes.js';
 
 const app = new Hono();
 
@@ -50,6 +52,8 @@ app.route('/api/forum', forumRouter);
 app.route('/api/user', userRouter);
 app.route('/api/friends', friendRouter);
 app.route('/api/reposts', repostRouter);
+app.route('/api/sessions', sessionRouter);
+app.route('/api/ratings', ratingRouter);
 
 async function startServer() {
   const port = parseInt(process.env.API_PORT || '3000', 10);

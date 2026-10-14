@@ -22,6 +22,8 @@ export interface MediaTileItem {
   communityRating?: number;
   displayBadge?: string | null;
   seasonEpisodeTag?: string | null;
+  activeSessionsCount?: number;
+  activeViewersCount?: number;
 }
 
 export interface TaxonomyMediasResult {
@@ -49,15 +51,20 @@ export async function fetchTaxonomyMedias(params: {
   filter?: string;
   q?: string;
   limit?: number;
+  excludeIds?: string[];
 }): Promise<TaxonomyMediasResult> {
   try {
-    const query = new URLSearchParams({
+    const p: Record<string, string> = {
       category: params.category,
       tag: params.tag,
       filter: params.filter || '',
       q: params.q || '',
       limit: String(params.limit || 15),
-    }).toString();
+    };
+    if (params.excludeIds && params.excludeIds.length > 0) {
+      p.excludeIds = params.excludeIds.join(',');
+    }
+    const query = new URLSearchParams(p).toString();
     const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy/medias?${query}`, {
       headers: getAuthHeaders(),
     });

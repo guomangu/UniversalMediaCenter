@@ -5,28 +5,51 @@ import { Radius } from '@/constants/theme';
 
 interface Props {
   replyMsg: ForumMessage | null;
+  quotedMedia?: { id: string; title: string; poster?: string } | null;
   onCancelReply: () => void;
-  onSend: (payload: { content: string; mediaType: string; mediaUrl?: string; fileName?: string }) => void;
+  onCancelQuote?: () => void;
+  onSend: (payload: {
+    content: string;
+    mediaType: string;
+    mediaUrl?: string;
+    fileName?: string;
+    quotedMediaId?: string;
+    quotedMediaTitle?: string;
+    quotedMediaPoster?: string;
+  }) => void;
 }
 
-export function ForumInputBar({ replyMsg, onCancelReply, onSend }: Props) {
+export function ForumInputBar({
+  replyMsg,
+  quotedMedia,
+  onCancelReply,
+  onCancelQuote,
+  onSend,
+}: Props) {
   const [text, setText] = useState('');
   const [activeMedia, setActiveMedia] = useState<{ type: string; url?: string; name?: string } | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const inputRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [targetType, setTargetType] = useState<string>('IMAGE');
+  const mediaRecorderRef = useRef<any>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const handleSend = () => {
-    if (!text.trim() && !activeMedia) return;
+    if (!text.trim() && !activeMedia && !quotedMedia) return;
     onSend({
       content: text.trim(),
       mediaType: activeMedia?.type || 'TEXT',
       mediaUrl: activeMedia?.url,
       fileName: activeMedia?.name,
+      quotedMediaId: quotedMedia?.id,
+      quotedMediaTitle: quotedMedia?.title,
+      quotedMediaPoster: quotedMedia?.poster,
     });
     setText('');
     setActiveMedia(null);
+    onCancelQuote?.();
   };
 
   const handleStop = () => {
@@ -60,6 +83,49 @@ export function ForumInputBar({ replyMsg, onCancelReply, onSend }: Props) {
     e.target.value = '';
   };
 
+  const toggleVoiceRecording = async () => {
+    if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !navigator.mediaDevices) {
+      triggerPicker('AUDIO', 'audio/*');
+      return;
+    }
+
+    if (isRecording) {
+      // Arrêter l'enregistrement et téléverser
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+    } else {
+      // Démarrer l'enregistrement vocal
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunksRef.current = [];
+        const recorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        };
+
+        recorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          stream.getTracks().forEach((track) => track.stop());
+          setUploading(true);
+          const res = await uploadForumMedia(audioBlob, `vocal-${Date.now()}.webm`, 'AUDIO');
+          setUploading(false);
+          if (res.success && res.url) {
+            setActiveMedia({ type: 'AUDIO', url: res.url, name: 'Message vocal 🎙️' });
+          }
+        };
+
+        recorder.start();
+        setIsRecording(true);
+      } catch {
+        triggerPicker('AUDIO', 'audio/*');
+      }
+    }
+  };
+
   return (
     <View style={styles.container}>
       {Platform.OS === 'web' ? (
@@ -78,6 +144,13 @@ export function ForumInputBar({ replyMsg, onCancelReply, onSend }: Props) {
         </View>
       )}
 
+      {quotedMedia && (
+        <View style={styles.quoteBar}>
+          <Text style={styles.quoteTxt} numberOfLines={1}>🍿 Œuvre citée pour la séance : {quotedMedia.title}</Text>
+          <Pressable focusable={true} onPress={onCancelQuote}><Text style={styles.cancelTxt}>✕</Text></Pressable>
+        </View>
+      )}
+
       {activeMedia && (
         <View style={styles.mediaTag}>
           <Text style={styles.mediaTagTxt}>📎 Pièce jointe prête : [{activeMedia.type}] {activeMedia.name}</Text>
@@ -88,19 +161,25 @@ export function ForumInputBar({ replyMsg, onCancelReply, onSend }: Props) {
       {uploading && (
         <View style={styles.uploadingBar}>
           <ActivityIndicator size="small" color="#6366f1" />
-          <Text style={styles.uploadingTxt}>Téléversement du fichier en cours...</Text>
+          <Text style={styles.uploadingTxt}>Téléversement du fichier / vocal en cours...</Text>
         </View>
       )}
 
       <View style={styles.actionRow}>
+        <Pressable
+          focusable={true}
+          onPress={toggleVoiceRecording}
+          style={[styles.mediaBtn, isRecording && styles.recordingBtn]}
+        >
+          <Text style={[styles.mediaEmoji, isRecording && styles.recordingTxt]}>
+            {isRecording ? '⏹️ Terminer Vocal' : '🎙️ Vocal différé'}
+          </Text>
+        </Pressable>
         <Pressable focusable={true} onPress={() => triggerPicker('IMAGE', 'image/*')} style={styles.mediaBtn}>
           <Text style={styles.mediaEmoji}>📷 Image</Text>
         </Pressable>
         <Pressable focusable={true} onPress={() => triggerPicker('VIDEO', 'video/*')} style={styles.mediaBtn}>
           <Text style={styles.mediaEmoji}>🎬 Vidéo</Text>
-        </Pressable>
-        <Pressable focusable={true} onPress={() => triggerPicker('AUDIO', 'audio/*')} style={styles.mediaBtn}>
-          <Text style={styles.mediaEmoji}>🎙️ Audio</Text>
         </Pressable>
         <Pressable focusable={true} onPress={() => triggerPicker('DOCUMENT', '*/*')} style={styles.mediaBtn}>
           <Text style={styles.mediaEmoji}>📎 Fichier</Text>
@@ -122,7 +201,6 @@ export function ForumInputBar({ replyMsg, onCancelReply, onSend }: Props) {
           value={text}
           onChangeText={setText}
         />
-        {/* Touche Stop demandée pour libérer le focus immédiatement */}
         <Pressable
           focusable={true}
           style={[styles.btn, styles.stopBtn]}
@@ -131,7 +209,6 @@ export function ForumInputBar({ replyMsg, onCancelReply, onSend }: Props) {
         >
           <Text style={styles.stopTxt}>⏹</Text>
         </Pressable>
-        {/* Touche Envoyer */}
         <Pressable
           focusable={true}
           style={[styles.btn, styles.sendBtn]}
@@ -149,6 +226,8 @@ const styles = StyleSheet.create({
   container: { backgroundColor: '#1e293b', padding: 8, borderTopWidth: 1, borderTopColor: 'rgba(71, 85, 105, 0.4)' },
   replyBar: { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: Radius.sm, marginBottom: 6 },
   replyTxt: { color: '#a5b4fc', fontSize: 11, flex: 1 },
+  quoteBar: { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: 'rgba(245, 158, 11, 0.2)', borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.5)', borderRadius: Radius.sm, marginBottom: 6 },
+  quoteTxt: { color: '#fbbf24', fontSize: 11, fontWeight: '700', flex: 1 },
   cancelTxt: { color: '#f87171', fontWeight: 'bold', paddingHorizontal: 6 },
   mediaTag: { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: 'rgba(79, 70, 229, 0.25)', borderRadius: Radius.sm, marginBottom: 6, borderWidth: 1, borderColor: '#6366f1' },
   mediaTagTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '700' },
@@ -156,7 +235,9 @@ const styles = StyleSheet.create({
   uploadingTxt: { color: '#818cf8', fontSize: 12 },
   actionRow: { flexDirection: 'row', gap: 6, marginBottom: 6, flexWrap: 'wrap' },
   mediaBtn: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: Radius.sm, backgroundColor: 'rgba(51, 65, 85, 0.7)' },
+  recordingBtn: { backgroundColor: '#dc2626' },
   mediaEmoji: { fontSize: 11, color: '#e2e8f0', fontWeight: '600' },
+  recordingTxt: { color: '#ffffff', fontWeight: '800' },
   inputRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   input: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.8)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.5)', borderRadius: Radius.pill, paddingHorizontal: 14, paddingVertical: 8, color: '#f8fafc', fontSize: 13 },
   btn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },

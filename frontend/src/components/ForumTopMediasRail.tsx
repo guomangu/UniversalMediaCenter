@@ -1,0 +1,260 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, Pressable, Image, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
+import { fetchTaxonomyMedias, MediaTileItem } from '@/services/taxonomyApi';
+import { resolveImageUrl } from '@/services/api';
+import { useActiveSessionsMap } from '@/services/sessionStore';
+import { Radius, Spacing } from '@/constants/theme';
+
+interface Props {
+  topic: string;
+  topicTitle: string;
+  category?: string;
+  onCiteMedia?: (media: MediaTileItem) => void;
+  onProposeSession?: (media: MediaTileItem) => void;
+}
+
+export function ForumTopMediasRail({
+  topic,
+  topicTitle,
+  category = 'genres',
+  onCiteMedia,
+  onProposeSession,
+}: Props) {
+  const router = useRouter();
+  const sessionsMap = useActiveSessionsMap();
+  const [medias, setMedias] = useState<MediaTileItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchTaxonomyMedias({
+      category: category || 'genres',
+      tag: topic,
+      limit: 10,
+    })
+      .then((res) => {
+        // Déduplication stricte sans doublons au sein de la page
+        const seen = new Set<string>();
+        const unique = res.items.filter((m) => {
+          if (seen.has(m.id)) return false;
+          seen.add(m.id);
+          return true;
+        }).slice(0, 10);
+        setMedias(unique);
+        setLoading(false);
+      })
+      .catch(() => {
+        setMedias([]);
+        setLoading(false);
+      });
+  }, [topic, category]);
+
+  if (!loading && medias.length === 0) return null;
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.headerRow}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.secIcon}>🎬</Text>
+          <Text style={styles.secTitle}>Médias associés à #{topicTitle}</Text>
+          <View style={styles.countPill}>
+            <Text style={styles.countTxt}>{medias.length} sélectionné{medias.length > 1 ? 's' : ''}</Text>
+          </View>
+        </View>
+        <Text style={styles.hintTxt}>Cliquez pour voir ou citez pour proposer une séance</Text>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator color="#6366f1" style={{ marginVertical: 20 }} />
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollList}
+        >
+          {medias.map((item) => {
+            const activeSession = sessionsMap[item.id];
+            const poster = resolveImageUrl(item.posterPath);
+
+            return (
+              <View key={item.id} style={styles.mediaCard}>
+                <Pressable
+                  focusable={true}
+                  onPress={() => router.push(`/media/${item.id}` as any)}
+                  style={({ pressed }) => [styles.posterWrap, pressed && styles.pressed]}
+                >
+                  {poster ? (
+                    <Image source={{ uri: poster }} style={styles.poster} resizeMode="cover" />
+                  ) : (
+                    <View style={styles.posterPlaceholder}>
+                      <Text style={{ fontSize: 28 }}>📺</Text>
+                    </View>
+                  )}
+
+                  {activeSession ? (
+                    <View style={styles.sessionBadge}>
+                      <Text style={styles.sessionBadgeTxt}>🍿 SÉANCE</Text>
+                    </View>
+                  ) : null}
+
+                  {activeSession ? (
+                    <View style={styles.sessionBottomInfo}>
+                      <Text style={styles.sessionBottomTxt}>
+                        🍿 {activeSession.count} en séance
+                      </Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+
+                <Text style={styles.mediaTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+
+                <View style={styles.actionBtnsRow}>
+                  {onCiteMedia ? (
+                    <Pressable
+                      focusable={true}
+                      onPress={() => onCiteMedia(item)}
+                      style={styles.citeBtn}
+                    >
+                      <Text style={styles.citeBtnTxt}>💬 Citer</Text>
+                    </Pressable>
+                  ) : null}
+
+                  {onProposeSession ? (
+                    <Pressable
+                      focusable={true}
+                      onPress={() => onProposeSession(item)}
+                      style={styles.sessionBtn}
+                    >
+                      <Text style={styles.sessionBtnTxt}>🍿 Séance</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: 'rgba(30, 41, 59, 0.75)',
+    borderRadius: Radius.lg,
+    padding: Spacing.three,
+    marginBottom: Spacing.three,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: Spacing.two,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  secIcon: { fontSize: 18 },
+  secTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#f8fafc',
+  },
+  countPill: {
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+  },
+  countTxt: {
+    color: '#a5b4fc',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  hintTxt: {
+    color: '#94a3b8',
+    fontSize: 11,
+  },
+  scrollList: {
+    paddingVertical: 6,
+    gap: 12,
+  },
+  mediaCard: {
+    width: 130,
+    alignItems: 'center',
+  },
+  posterWrap: {
+    width: 130,
+    height: 190,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
+    position: 'relative',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  poster: { width: '100%', height: '100%' },
+  posterPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  sessionBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+  },
+  sessionBadgeTxt: { color: '#ffffff', fontSize: 9, fontWeight: '900' },
+  sessionBottomInfo: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(220, 38, 38, 0.94)',
+    paddingVertical: 3,
+    alignItems: 'center',
+  },
+  sessionBottomTxt: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
+  mediaTitle: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    textAlign: 'center',
+    width: '100%',
+  },
+  actionBtnsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
+  },
+  citeBtn: {
+    backgroundColor: 'rgba(51, 65, 85, 0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  citeBtnTxt: { color: '#cbd5e1', fontSize: 10, fontWeight: '700' },
+  sessionBtn: {
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  sessionBtnTxt: { color: '#c7d2fe', fontSize: 10, fontWeight: '700' },
+  pressed: { opacity: 0.8, transform: [{ scale: 0.97 }] },
+});

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
-import { forumMessages, userFriends, users } from '../db/schema/index.js';
-import { eq, asc, desc, count, sql, and, or } from 'drizzle-orm';
+import { forumMessages, forumMessageVotes, userFriends, users } from '../db/schema/index.js';
+import { eq, asc, desc, count, sql, and } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
 import { forumUploadRouter } from './forumUpload.js';
 
@@ -27,7 +27,7 @@ async function canAccessPrivateForum(userId: string, ownerId: string): Promise<b
   return Boolean(friendship);
 }
 
-// Récupère la liste des messages pour un sujet / texte précis
+// Récupère la liste des messages pour un sujet / slug précis
 forumRouter.get('/topics/:slug/messages', async (c) => {
   const slug = c.req.param('slug').toLowerCase();
   const user = (c as any).get('user') as any;
@@ -46,13 +46,27 @@ forumRouter.get('/topics/:slug/messages', async (c) => {
   const messages = await db.query.forumMessages.findMany({
     where: (t, { eq }) => eq(t.topicSlug, slug),
     orderBy: [asc(forumMessages.createdAt)],
-    limit: 100,
+    limit: 150,
   });
 
-  return c.json({ success: true, messages });
+  // Récupérer les votes de l'utilisateur courant pour ce salon
+  const myVotes = user?.id
+    ? await db
+        .select({ messageId: forumMessageVotes.messageId })
+        .from(forumMessageVotes)
+        .where(eq(forumMessageVotes.userId, user.id))
+    : [];
+  const votedSet = new Set(myVotes.map((v) => v.messageId));
+
+  const enriched = messages.map((m) => ({
+    ...m,
+    hasVoted: votedSet.has(m.id),
+  }));
+
+  return c.json({ success: true, messages: enriched });
 });
 
-// Publie un message (texte, image, vidéo, vocal, document, gif, citation)
+// Publie un message (texte, image, vidéo, vocal, document, gif, citation d'un média)
 forumRouter.post('/topics/:slug/messages', async (c) => {
   const slug = c.req.param('slug').toLowerCase();
   const user = (c as any).get('user') as any;
@@ -78,10 +92,13 @@ forumRouter.post('/topics/:slug/messages', async (c) => {
     replyToId,
     replyToText,
     replyToAuthor,
+    quotedMediaId,
+    quotedMediaTitle,
+    quotedMediaPoster,
   } = body;
 
-  if (!content && !mediaUrl) {
-    return c.json({ error: 'Le message ou un élément média est requis' }, 400);
+  if (!content && !mediaUrl && !quotedMediaId) {
+    return c.json({ error: 'Le message, un élément média ou une citation est requis' }, 400);
   }
 
   let finalTitle = topicTitle || slug;
@@ -105,10 +122,51 @@ forumRouter.post('/topics/:slug/messages', async (c) => {
       replyToId: replyToId || null,
       replyToText: replyToText || null,
       replyToAuthor: replyToAuthor || null,
+      quotedMediaId: quotedMediaId || null,
+      quotedMediaTitle: quotedMediaTitle || null,
+      quotedMediaPoster: quotedMediaPoster || null,
     })
     .returning();
 
-  return c.json({ success: true, message: newMessage });
+  return c.json({ success: true, message: { ...newMessage, hasVoted: false } });
+});
+
+// Voter pour un message (Upvote toggle)
+forumRouter.post('/messages/:id/vote', async (c) => {
+  const messageId = c.req.param('id');
+  const user = (c as any).get('user') as any;
+  if (!user?.id) return c.json({ error: 'Non autorisé' }, 401);
+
+  const existingVote = await db.query.forumMessageVotes.findFirst({
+    where: (t, { and, eq }) => and(eq(t.messageId, messageId), eq(t.userId, user.id)),
+  });
+
+  let hasVoted = false;
+  if (existingVote) {
+    await db.delete(forumMessageVotes).where(eq(forumMessageVotes.id, existingVote.id));
+    await db
+      .update(forumMessages)
+      .set({ voteCount: sql`GREATEST(0, ${forumMessages.voteCount} - 1)` })
+      .where(eq(forumMessages.id, messageId));
+    hasVoted = false;
+  } else {
+    await db.insert(forumMessageVotes).values({ messageId, userId: user.id });
+    await db
+      .update(forumMessages)
+      .set({ voteCount: sql`${forumMessages.voteCount} + 1` })
+      .where(eq(forumMessages.id, messageId));
+    hasVoted = true;
+  }
+
+  const updatedMsg = await db.query.forumMessages.findFirst({
+    where: (t, { eq }) => eq(t.id, messageId),
+  });
+
+  return c.json({
+    success: true,
+    voteCount: updatedMsg?.voteCount ?? 0,
+    hasVoted,
+  });
 });
 
 // Sujets les plus actifs (exclut les salons privés)

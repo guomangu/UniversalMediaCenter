@@ -7,3 +7,5 @@ export * from './users.js';
 export * from './iptv.js';
 export * from './forum.js';
 export * from './social.js';
+export * from './sessions.js';
+export * from './ratings.js';

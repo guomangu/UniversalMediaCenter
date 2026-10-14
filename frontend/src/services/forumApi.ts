@@ -14,6 +14,11 @@ export interface ForumMessage {
   replyToId?: string | null;
   replyToText?: string | null;
   replyToAuthor?: string | null;
+  voteCount?: number;
+  hasVoted?: boolean;
+  quotedMediaId?: string | null;
+  quotedMediaTitle?: string | null;
+  quotedMediaPoster?: string | null;
   createdAt: string;
 }
 
@@ -43,6 +48,9 @@ export async function postTopicMessage(
     replyToId?: string;
     replyToText?: string;
     replyToAuthor?: string;
+    quotedMediaId?: string;
+    quotedMediaTitle?: string;
+    quotedMediaPoster?: string;
   }
 ): Promise<ForumMessage | null> {
   try {
@@ -56,6 +64,21 @@ export async function postTopicMessage(
     return data.message || null;
   } catch {
     return null;
+  }
+}
+
+export async function voteForumMessage(
+  messageId: string
+): Promise<{ success: boolean; voteCount: number; hasVoted: boolean }> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/messages/${messageId}/vote`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return { success: false, voteCount: 0, hasVoted: false };
+    return await res.json();
+  } catch {
+    return { success: false, voteCount: 0, hasVoted: false };
   }
 }
 

@@ -12,7 +12,8 @@ import { useCastReceiver } from '@/hooks/useCastReceiver';
 import { usePlayerControls } from '@/hooks/usePlayerControls';
 import { useActiveCastTarget } from '@/services/castState';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
-import { getVideoStreamUrl, fetchNextMedia } from '@/services/api';
+import { getVideoStreamUrl, fetchNextMedia, fetchMediaDetail } from '@/services/api';
+import { fetchMediaSessions, pingSession, MediaSession } from '@/services/sessionApi';
 import { styles } from '@/components/PlayerScreen.styles';
 
 export default function PlayerScreen() {
@@ -38,7 +39,26 @@ export default function PlayerScreen() {
   const countdownTimer = useRef<any>(null);
   const isCancelledRef = useRef<boolean>(false);
 
-  const mediaTitle = title || `Média #${id}`;
+  // Amélioration gestion du titre réel du média
+  const [resolvedTitle, setResolvedTitle] = useState<string>(title || '');
+
+  // Gestion de la discussion en direct, appel vocal & mode silence
+  const [viewersCount, setViewersCount] = useState<number>(1);
+  const [activeSession, setActiveSession] = useState<MediaSession | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+
+  useEffect(() => {
+    if (id && (!title || title.startsWith('Média #'))) {
+      fetchMediaDetail(String(id), share).then((res) => {
+        if (res?.media?.title) {
+          const badge = res.media.displayBadge || res.media.seasonEpisodeTag;
+          setResolvedTitle(badge ? `${res.media.title} (${badge})` : res.media.title);
+        }
+      });
+    }
+  }, [id, title, share]);
+
+  const mediaTitle = resolvedTitle || title || `Média #${id}`;
   const showToast = (msg: string) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); };
 
   const streamUrl = useMemo(() => {
@@ -61,6 +81,23 @@ export default function PlayerScreen() {
     }
   }, [id]);
 
+  // Surveillance de la présence et des spectateurs en séance (rafraîchi toutes les 3s)
+  useEffect(() => {
+    if (!id) return;
+    const updatePresence = async () => {
+      const res = await fetchMediaSessions(String(id));
+      setViewersCount(Math.max(1, res.totalViewers));
+      if (res.sessions.length > 0) {
+        setActiveSession(res.sessions[0]);
+        // Ping l'état vocal si une séance existe
+        pingSession(res.sessions[0].id, { isMuted });
+      }
+    };
+    updatePresence();
+    const timer = setInterval(updatePresence, 3000);
+    return () => clearInterval(timer);
+  }, [id, isMuted]);
+
   // Compte à rebours automatique Netflix
   useEffect(() => {
     if (countdown === null) return;
@@ -81,7 +118,7 @@ export default function PlayerScreen() {
     setCountdown(null);
     router.replace({
       pathname: `/player/${nextNode.id}`,
-      params: share ? { share } : undefined,
+      params: share ? { share, title: nextNode.title } : { title: nextNode.title },
     } as any);
   };
 
@@ -145,7 +182,26 @@ export default function PlayerScreen() {
         <Pressable focusable={true} onPress={() => { if (router.canGoBack()) router.back(); else router.push('/'); }} style={styles.topBtn}>
           <Text style={styles.topBtnText}>← Retour</Text>
         </Pressable>
+
+        {/* Contrôles d'appel en direct ou vocal dès qu'au moins 2 spectateurs regardent un contenu */}
+        {viewersCount >= 2 || activeSession ? (
+          <Pressable
+            focusable={true}
+            onPress={() => {
+              const nextMute = !isMuted;
+              setIsMuted(nextMute);
+              showToast(nextMute ? 'Mode Silence activé' : 'Discussion en direct activée 🎙️');
+            }}
+            style={[styles.voiceBtn, isMuted ? styles.voiceBtnMuted : styles.voiceBtnActive]}
+          >
+            <Text style={styles.voiceBtnTxt}>
+              {isMuted ? '🔇 Mode Silence' : '🎙️ Entendre la discussion'} ({viewersCount} spectateur{viewersCount > 1 ? 's' : ''})
+            </Text>
+          </Pressable>
+        ) : null}
+
         <Text numberOfLines={1} style={styles.headerTitle}>{mediaTitle}</Text>
+
         <View style={styles.rightActions}>
           <Pressable focusable={true} onPress={() => setShowShare(true)} style={styles.topBtn}>
             <Text style={styles.topBtnText}>🔗 Partager</Text>
@@ -223,8 +279,8 @@ export default function PlayerScreen() {
 
       <CastModal
         visible={showCast}
-        onClose={() => setShowCast(false)}
         currentMedia={{ id: String(id), title: mediaTitle, positionSeconds: savedPosRef.current }}
+        onClose={() => setShowCast(false)}
       />
     </SafeAreaView>
   );

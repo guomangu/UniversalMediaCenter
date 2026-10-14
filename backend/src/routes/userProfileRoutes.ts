@@ -19,6 +19,7 @@ userProfileRouter.get('/profile', async (c) => {
     avatarUrl: user.avatarUrl,
     bio: user.bio,
     isAdmin: user.isAdmin,
+    isIncognito: user.isIncognito,
     createdAt: user.createdAt,
   });
 });
@@ -26,7 +27,7 @@ userProfileRouter.get('/profile', async (c) => {
 userProfileRouter.put('/profile', async (c) => {
   const sessionUser = (c as any).get('user');
   const body = await c.req.json().catch(() => ({}));
-  const { displayName, bio, avatarUrl } = body;
+  const { displayName, bio, avatarUrl, isIncognito } = body;
 
   const updates: Record<string, any> = {};
   if (displayName && typeof displayName === 'string' && displayName.trim()) {
@@ -34,6 +35,7 @@ userProfileRouter.put('/profile', async (c) => {
   }
   if (typeof bio === 'string') updates.bio = bio.trim();
   if (typeof avatarUrl === 'string') updates.avatarUrl = avatarUrl.trim();
+  if (typeof isIncognito === 'boolean') updates.isIncognito = isIncognito;
 
   if (Object.keys(updates).length === 0) {
     return c.json({ error: 'Aucune donnée à mettre à jour' }, 400);
@@ -54,6 +56,26 @@ userProfileRouter.put('/profile', async (c) => {
       avatarUrl: updated.avatarUrl,
       bio: updated.bio,
       isAdmin: updated.isAdmin,
+      isIncognito: updated.isIncognito,
     },
   });
+});
+
+// Bascule rapide du mode discret (incognito)
+userProfileRouter.post('/incognito', async (c) => {
+  const sessionUser = (c as any).get('user');
+  const body = await c.req.json().catch(() => ({}));
+  
+  const currentUser = await db.query.users.findFirst({
+    where: (t, { eq }) => eq(t.id, sessionUser.id),
+  });
+  const nextVal = typeof body.enabled === 'boolean' ? body.enabled : !currentUser?.isIncognito;
+
+  const [updated] = await db
+    .update(users)
+    .set({ isIncognito: nextVal })
+    .where(eq(users.id, sessionUser.id))
+    .returning();
+
+  return c.json({ success: true, isIncognito: updated.isIncognito });
 });

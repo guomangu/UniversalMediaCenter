@@ -3,6 +3,7 @@ import { View, Text, Pressable, Image, useWindowDimensions } from 'react-native'
 import { Link, useRouter } from 'expo-router';
 import { MediaNode } from '@/services/types';
 import { resolveImageUrl } from '@/services/api';
+import { useActiveSessionsMap } from '@/services/sessionStore';
 import { styles } from './MediaCard.styles';
 
 interface MediaCardProps {
@@ -16,6 +17,8 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
   const isMobile = width < 640;
   const isLandscape = styleVariant === 'LANDSCAPE';
   const isLive = styleVariant === 'LIVE_CARD';
+  const sessionsMap = useActiveSessionsMap();
+  const activeSession = sessionsMap[item.id];
 
   // Format 2 fois plus grand comme Kyoo, tout en préservant le ratio d'aspect cinéma (2:3 pour posters, 16:9 pour paysage)
   const cardWidth = isLandscape
@@ -61,6 +64,12 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
             </View>
           ) : null}
 
+          {activeSession ? (
+            <View style={[styles.ratingBadge, { backgroundColor: '#dc2626', left: 8, right: undefined }]}>
+              <Text style={[styles.ratingText, { color: '#ffffff', fontWeight: '900' }]}>🍿 SÉANCE</Text>
+            </View>
+          ) : null}
+
           {item.communityRating ? (
             <View style={styles.ratingBadge}>
               <Text style={styles.ratingText}>★ {item.communityRating.toFixed(1)}</Text>
@@ -70,6 +79,22 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
           {progressPercent > 0 && progressPercent < 95 ? (
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+            </View>
+          ) : null}
+
+          {activeSession ? (
+            <View style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: 'rgba(220, 38, 38, 0.94)',
+              paddingVertical: 5,
+              alignItems: 'center',
+            }}>
+              <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '800' }}>
+                🍿 {activeSession.count} en séance
+              </Text>
             </View>
           ) : null}
         </View>

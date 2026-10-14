@@ -1,94 +1,90 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { fetchTopicMessages, postTopicMessage, ForumMessage } from '@/services/forumApi';
-import { useCurrentUser } from '@/services/authStore';
-import { ForumMessageBubble } from '@/components/ForumMessageBubble';
-import { ForumInputBar } from '@/components/ForumInputBar';
-import { MaxContentWidth } from '@/constants/theme';
+import { ForumTopMediasRail } from '@/components/ForumTopMediasRail';
+import { MediaForumSection } from '@/components/MediaForumSection';
+import { MediaTileItem } from '@/services/taxonomyApi';
+import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 
 export default function ForumTopicScreen() {
   const router = useRouter();
-  const currentUser = useCurrentUser();
-  const { topic, title } = useLocalSearchParams<{ topic: string; title?: string }>();
-  const [messages, setMessages] = useState<ForumMessage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [replyMsg, setReplyMsg] = useState<ForumMessage | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
-  const topicTitle = title || (typeof topic === 'string' ? topic : 'Sujet');
+  const { topic, title, category } = useLocalSearchParams<{
+    topic: string;
+    title?: string;
+    category?: string;
+  }>();
 
-  const loadMessages = async () => {
-    if (!topic) return;
-    const list = await fetchTopicMessages(String(topic));
-    setMessages(list);
-    setLoading(false);
-  };
+  const topicSlug = typeof topic === 'string' ? topic : 'sujet';
+  const topicTitle = title || topicSlug;
+  const catSlug = typeof category === 'string' ? category : 'genres';
 
-  useEffect(() => { loadMessages(); }, [topic]);
+  const [quotedMedia, setQuotedMedia] = useState<{ id: string; title: string; poster?: string } | null>(null);
 
-  const handleSend = async (payload: { content: string; mediaType: string; mediaUrl?: string; fileName?: string }) => {
-    if (!topic) return;
-    const myName = currentUser?.displayName || 'Visiteur';
-    await postTopicMessage(String(topic), {
-      topicTitle,
-      content: payload.content,
-      authorName: myName,
-      authorId: currentUser?.id || undefined,
-      mediaType: payload.mediaType,
-      mediaUrl: payload.mediaUrl,
-      fileName: payload.fileName,
-      replyToId: replyMsg?.id,
-      replyToText: replyMsg?.content,
-      replyToAuthor: replyMsg?.authorName,
+  const handleCiteMedia = (item: MediaTileItem) => {
+    setQuotedMedia({
+      id: item.id,
+      title: item.title,
+      poster: item.posterPath,
     });
-    setReplyMsg(null);
-    await loadMessages();
-    scrollRef.current?.scrollToEnd({ animated: true });
   };
-
-  const myName = currentUser?.displayName || 'Moi';
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}><Text style={styles.backTxt}>←</Text></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={styles.backTxt}>←</Text>
+        </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.topicName} numberOfLines={1}>💬 #{topicTitle}</Text>
-          <Text style={styles.subTxt}>{messages.length} message(s) • WhatsApp Style</Text>
+          <Text style={styles.topicName} numberOfLines={1}>
+            💬 #{topicTitle}
+          </Text>
+          <Text style={styles.subTxt}>Forum communautaire • Séances & Vocal</Text>
         </View>
       </View>
 
-      <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        {loading ? (
-          <ActivityIndicator color="#6366f1" style={{ marginVertical: 30 }} />
-        ) : messages.length === 0 ? (
-          <Text style={styles.emptyTxt}>Aucun message dans ce forum. Soyez le premier à partager !</Text>
-        ) : (
-          messages.map((m) => (
-            <ForumMessageBubble
-              key={m.id}
-              msg={m}
-              isMe={(currentUser?.id && m.authorId === currentUser.id) || m.authorName === myName || m.authorName === 'Moi'}
-              onReply={(msg) => setReplyMsg(msg)}
-            />
-          ))
-        )}
-      </ScrollView>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        {/* Rail des 10 médias au-dessus du forum (sans doublons) */}
+        <ForumTopMediasRail
+          topic={topicSlug}
+          topicTitle={topicTitle}
+          category={catSlug}
+          onCiteMedia={handleCiteMedia}
+          onProposeSession={handleCiteMedia}
+        />
 
-      <ForumInputBar replyMsg={replyMsg} onCancelReply={() => setReplyMsg(null)} onSend={handleSend} />
+        {/* Espace Forum unifié & Salle d'attente de Séance */}
+        <MediaForumSection
+          topicSlug={topicSlug}
+          topicTitle={topicTitle}
+          externalQuotedMedia={quotedMedia}
+          onClearExternalQuote={() => setQuotedMedia(null)}
+        />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#1e293b', borderBottomWidth: 1, borderBottomColor: 'rgba(71,85,105,0.4)' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(71,85,105,0.4)',
+  },
   backBtn: { paddingRight: 12, paddingVertical: 4 },
   backTxt: { color: '#818cf8', fontSize: 20, fontWeight: 'bold' },
   topicName: { color: '#f8fafc', fontSize: 16, fontWeight: '800' },
   subTxt: { color: '#94a3b8', fontSize: 11 },
   scroll: { flex: 1 },
-  scrollContent: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', padding: 12, paddingBottom: 20 },
-  emptyTxt: { color: '#64748b', textAlign: 'center', marginVertical: 40, fontStyle: 'italic' },
+  scrollContent: {
+    maxWidth: MaxContentWidth,
+    width: '100%',
+    alignSelf: 'center',
+    padding: 12,
+    paddingBottom: 40,
+  },
 });

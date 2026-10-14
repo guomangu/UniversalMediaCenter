@@ -11,6 +11,7 @@ import { ClickableTopicText } from '@/components/ClickableTopicText';
 import { MediaChildrenRow } from '@/components/MediaChildrenRow';
 import { MediaGenreSection } from '@/components/MediaGenreSection';
 import { MediaRepostModal } from '@/components/MediaRepostModal';
+import { MediaForumSection } from '@/components/MediaForumSection';
 import { CastModal } from '@/components/CastModal';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
@@ -86,7 +87,19 @@ export default function MediaDetailScreen() {
   const handlePlay = () => {
     router.push({
       pathname: `/player/${playId}`,
-      params: share ? { share } : undefined,
+      params: share ? { share, title: media.title } : { title: media.title },
+    } as any);
+  };
+
+  const handleActorPress = (actor: any) => {
+    const actorSlug = (actor.value_slug || actor.value_text.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-'));
+    router.push({
+      pathname: '/forum/[topic]',
+      params: {
+        topic: actorSlug,
+        title: actor.value_text,
+        category: 'actor',
+      },
     } as any);
   };
 
@@ -144,15 +157,13 @@ export default function MediaDetailScreen() {
               <Pressable
                 focusable={true}
                 onPress={() => setShowRepostModal(true)}
-                style={[styles.playBtn, { backgroundColor: '#0284c7' }]}
-              >
+                style={[styles.playBtn, { backgroundColor: '#0284c7' }]}>
                 <Text style={styles.btnText}>🔄 Avis & Repost</Text>
               </Pressable>
               <Pressable
                 focusable={true}
                 onPress={() => setShowCast(true)}
-                style={[styles.playBtn, { backgroundColor: '#4338ca' }]}
-              >
+                style={[styles.playBtn, { backgroundColor: '#4338ca' }]}>
                 <Text style={styles.btnText}>📡 Diffuser</Text>
               </Pressable>
               <Pressable
@@ -163,8 +174,7 @@ export default function MediaDetailScreen() {
                     params: { topic: media.slug || media.id, title: media.title },
                   } as any)
                 }
-                style={[styles.playBtn, { backgroundColor: '#334155' }]}
-              >
+                style={[styles.playBtn, { backgroundColor: '#334155' }]}>
                 <Text style={styles.btnText}>💬 Forum WhatsApp</Text>
               </Pressable>
             </View>
@@ -205,10 +215,13 @@ export default function MediaDetailScreen() {
           </View>
         )}
 
-        {/* Casting des Acteurs avec Photos de profil et Rôles */}
+        {/* Casting des Acteurs avec Photos de profil et Rôles - Cliquables comme des tags */}
         {actors.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.secTitle}>Casting ({actors.length})</Text>
+            <View style={styles.secHeaderRow}>
+              <Text style={styles.secTitle}>Casting ({actors.length})</Text>
+              <Text style={styles.secHint}>Cliquez sur un acteur pour ouvrir son espace forum & œuvres</Text>
+            </View>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -217,7 +230,12 @@ export default function MediaDetailScreen() {
               {actors.map((actor: any, idx: number) => {
                 const thumb = actor.metadata_json?.thumbUrl;
                 return (
-                  <View key={idx} style={styles.actorCard}>
+                  <Pressable
+                    key={idx}
+                    focusable={true}
+                    onPress={() => handleActorPress(actor)}
+                    style={({ pressed }) => [styles.actorCard, pressed && styles.actorCardPressed]}
+                  >
                     <View style={styles.actorAvatarWrap}>
                       {thumb ? (
                         <Image source={{ uri: thumb }} style={styles.actorAvatar} />
@@ -235,12 +253,27 @@ export default function MediaDetailScreen() {
                         {actor.context_role}
                       </Text>
                     ) : null}
-                  </View>
+                    <View style={styles.actorTagBadge}>
+                      <Text style={styles.actorTagBadgeTxt}>Tag</Text>
+                    </View>
+                  </Pressable>
                 );
               })}
             </ScrollView>
           </View>
         )}
+
+        {/* Module Forum & Salle d'attente de Séance de Visionnage en Groupe (Sous Casting) */}
+        <MediaForumSection
+          topicSlug={media.slug || media.id}
+          topicTitle={media.title}
+          mediaId={media.id}
+          childItems={children.map((c: any) => ({
+            id: c.id,
+            title: c.title,
+            posterPath: c.posterPath || media.posterPath,
+          }))}
+        />
 
         {/* Caractéristiques Techniques & Pistes de Flux */}
         {technicalSpecs.length > 0 && (
@@ -324,12 +357,32 @@ const styles = StyleSheet.create({
   },
   btnText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
   section: { padding: Spacing.four },
-  secTitle: { fontSize: 18, fontWeight: '800', color: '#f8fafc', marginBottom: 12 },
+  secHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  secTitle: { fontSize: 18, fontWeight: '800', color: '#f8fafc' },
+  secHint: { fontSize: 11, color: '#94a3b8' },
   actorsScroll: { gap: 14, paddingVertical: 4 },
   actorCard: {
-    width: 105,
+    width: 108,
     alignItems: 'center',
     gap: 4,
+    padding: 6,
+    borderRadius: Radius.lg,
+    backgroundColor: 'rgba(30, 41, 59, 0.4)',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  actorCardPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.96 }],
+    borderColor: 'rgba(99, 102, 241, 0.6)',
   },
   actorAvatarWrap: {
     width: 80,
@@ -345,15 +398,23 @@ const styles = StyleSheet.create({
   actorAvatarPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   actorName: { color: '#f1f5f9', fontSize: 12, fontWeight: '700', textAlign: 'center' },
   actorRole: { color: '#94a3b8', fontSize: 10, fontWeight: '500', textAlign: 'center', lineHeight: 13 },
+  actorTagBadge: {
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: Radius.pill,
+    marginTop: 2,
+  },
+  actorTagBadgeTxt: { color: '#a5b4fc', fontSize: 9, fontWeight: '800' },
   repostCard: {
     backgroundColor: 'rgba(30, 41, 59, 0.7)',
     borderRadius: 16,
-    padding: 12,
+    padding: Spacing.three,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderColor: 'rgba(71, 85, 105, 0.3)',
   },
-  repostHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  repostAuthor: { color: '#818cf8', fontWeight: '700', fontSize: 13 },
+  repostHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  repostAuthor: { color: '#cbd5e1', fontWeight: '700', fontSize: 13 },
   repostRating: { color: '#fbbf24', fontSize: 14 },
-  repostComment: { color: '#e2e8f0', fontSize: 13, lineHeight: 18 },
+  repostComment: { color: '#f8fafc', fontSize: 13, lineHeight: 18 },
 });

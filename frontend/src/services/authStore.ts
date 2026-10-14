@@ -7,6 +7,7 @@ export interface UserProfile {
   displayName: string;
   avatarUrl?: string | null;
   isAdmin: boolean;
+  isIncognito?: boolean;
   canDownload: boolean;
   canTranscode: boolean;
   canWatchIptv: boolean;
@@ -49,6 +50,13 @@ function notify() {
 export function getCurrentUser(): UserProfile | null { return memoryUser; }
 export function getAuthToken(): string | null { return memoryToken; }
 
+export function updateCurrentUser(partial: Partial<UserProfile>): void {
+  if (memoryUser) {
+    memoryUser = { ...memoryUser, ...partial };
+    notify();
+  }
+}
+
 export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (memoryToken) headers['Authorization'] = `Bearer ${memoryToken}`;
@@ -64,7 +72,7 @@ export function logout(): void {
 
 /**
  * Synchronise immédiatement la session locale avec le serveur PostgreSQL (/api/auth/me)
- * Garantit que les privilèges (notamment isAdmin) sont à jour sans forcer une reconnexion
+ * Garantit que les privilèges (notamment isAdmin, isIncognito) sont à jour sans forcer une reconnexion
  */
 export async function syncSessionWithServer(): Promise<UserProfile | null> {
   if (!memoryToken) return null;

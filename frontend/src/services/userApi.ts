@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
-import { getAuthHeaders } from './authStore';
+import { getAuthHeaders, updateCurrentUser } from './authStore';
 
 export async function fetchUserStats(): Promise<any> {
   try {
@@ -104,15 +104,35 @@ export async function fetchUserProfile(): Promise<any> {
   }
 }
 
-export async function updateUserProfile(data: { displayName?: string; bio?: string; avatarUrl?: string }): Promise<any> {
+export async function updateUserProfile(data: { displayName?: string; bio?: string; avatarUrl?: string; isIncognito?: boolean }): Promise<any> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/user/profile`, {
       method: 'PUT',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    return await res.json();
+    const body = await res.json();
+    if (body.success && body.user) {
+      updateCurrentUser(body.user);
+    }
+    return body;
   } catch {
     return { error: 'Erreur réseau' };
+  }
+}
+
+export async function toggleIncognitoMode(enabled?: boolean): Promise<boolean> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/user/incognito`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    updateCurrentUser({ isIncognito: data.isIncognito });
+    return Boolean(data.isIncognito);
+  } catch {
+    return false;
   }
 }

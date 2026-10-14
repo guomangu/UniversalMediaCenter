@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { TaxonomyTag, MediaTileItem, fetchTaxonomyMedias } from '@/services/taxonomyApi';
@@ -11,30 +11,53 @@ interface Props {
   tag: TaxonomyTag;
   activeFilter?: string;
   searchQuery?: string;
+  excludeIds?: string[];
   onCountChange?: (slug: string, count: number) => void;
+  onMediasLoaded?: (slug: string, ids: string[]) => void;
 }
 
-export function TagCard({ categoryId, tag, activeFilter, searchQuery, onCountChange }: Props) {
+export function TagCard({
+  categoryId,
+  tag,
+  activeFilter,
+  searchQuery,
+  excludeIds = [],
+  onCountChange,
+  onMediasLoaded,
+}: Props) {
   const router = useRouter();
   const [medias, setMedias] = useState<MediaTileItem[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(15);
 
+  const excludeKey = useMemo(() => excludeIds.slice().sort().join(','), [excludeIds]);
+
   useEffect(() => {
     setLoading(true);
-    fetchTaxonomyMedias({ category: categoryId, tag: tag.slug, filter: activeFilter, q: searchQuery, limit })
+    fetchTaxonomyMedias({
+      category: categoryId,
+      tag: tag.slug,
+      filter: activeFilter,
+      q: searchQuery,
+      limit,
+      excludeIds,
+    })
       .then((res) => {
-        setMedias(res.items);
+        // Déduplication de sécurité côté client
+        const excludeSet = new Set(excludeIds);
+        const uniqueItems = res.items.filter((m) => !excludeSet.has(m.id));
+        setMedias(uniqueItems);
         setHasMore(res.hasMore);
         setLoading(false);
-        onCountChange?.(tag.slug, res.items.length);
+        onCountChange?.(tag.slug, uniqueItems.length);
+        onMediasLoaded?.(tag.slug, uniqueItems.map((m) => m.id));
       })
       .catch(() => {
         setLoading(false);
         onCountChange?.(tag.slug, 0);
       });
-  }, [categoryId, tag.slug, activeFilter, searchQuery, limit]);
+  }, [categoryId, tag.slug, activeFilter, searchQuery, limit, excludeKey]);
 
   if (medias.length === 0) {
     if (!loading) return null;
@@ -50,7 +73,11 @@ export function TagCard({ categoryId, tag, activeFilter, searchQuery, onCountCha
             <Text style={styles.countText}>{medias.length}{hasMore ? '+' : ''} médias</Text>
           </View>
         </View>
-        <Pressable focusable={true} onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: tag.slug, title: tag.label } } as any)} style={styles.forumBtn}>
+        <Pressable
+          focusable={true}
+          onPress={() => router.push({ pathname: '/forum/[topic]', params: { topic: tag.slug, title: tag.label } } as any)}
+          style={styles.forumBtn}
+        >
           <Text style={styles.forumTxt}>💬 Forum #{tag.label}</Text>
         </Pressable>
       </View>

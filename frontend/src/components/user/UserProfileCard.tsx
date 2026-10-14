@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Radius, Spacing } from '@/constants/theme';
 import { ProfileEditModal } from './ProfileEditModal';
+import { toggleIncognitoMode } from '@/services/userApi';
 
 interface Props {
   user: {
@@ -12,6 +13,7 @@ interface Props {
     avatarUrl?: string;
     bio?: string;
     isAdmin?: boolean;
+    isIncognito?: boolean;
   };
   onProfileUpdated: (updated: any) => void;
 }
@@ -19,7 +21,15 @@ interface Props {
 export function UserProfileCard({ user, onProfileUpdated }: Props) {
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
+  const [isIncognito, setIsIncognito] = useState(user.isIncognito ?? false);
   const privateTopic = `private-user-${user.id}`;
+
+  const handleToggleIncognito = async () => {
+    const nextVal = !isIncognito;
+    setIsIncognito(nextVal);
+    await toggleIncognitoMode(nextVal);
+    onProfileUpdated({ ...user, isIncognito: nextVal });
+  };
 
   return (
     <View style={styles.card}>
@@ -33,6 +43,11 @@ export function UserProfileCard({ user, onProfileUpdated }: Props) {
             {user.isAdmin ? (
               <View style={styles.adminBadge}>
                 <Text style={styles.adminTxt}>ADMIN</Text>
+              </View>
+            ) : null}
+            {isIncognito ? (
+              <View style={styles.incognitoBadge}>
+                <Text style={styles.incognitoBadgeTxt}>🕶️ MODE DISCRET</Text>
               </View>
             ) : null}
           </View>
@@ -55,6 +70,16 @@ export function UserProfileCard({ user, onProfileUpdated }: Props) {
           }
           style={styles.privateForumBtn}>
           <Text style={styles.privateForumTxt}>🔒 Mon Salon Privé (Amis Uniquement)</Text>
+        </Pressable>
+
+        <Pressable
+          focusable={true}
+          onPress={handleToggleIncognito}
+          style={[styles.incognitoBtn, isIncognito ? styles.incognitoActive : styles.incognitoInactive]}
+        >
+          <Text style={styles.incognitoBtnTxt}>
+            {isIncognito ? '🕶️ Mode Discret : ACTIF' : '👁️ Mode Discret : DÉSACTIVÉ'}
+          </Text>
         </Pressable>
 
         <Pressable
@@ -97,7 +122,7 @@ const styles = StyleSheet.create({
   },
   avatarTxt: { fontSize: 32 },
   identity: { flex: 1 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   name: { fontSize: 20, fontWeight: '900', color: '#f8fafc' },
   adminBadge: {
     backgroundColor: '#818cf8',
@@ -106,6 +131,15 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
   },
   adminTxt: { color: '#0f172a', fontSize: 10, fontWeight: '800' },
+  incognitoBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderWidth: 1,
+    borderColor: '#10b981',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+  },
+  incognitoBadgeTxt: { color: '#34d399', fontSize: 10, fontWeight: '800' },
   email: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
   bio: { color: '#cbd5e1', fontSize: 13, marginTop: 6, fontStyle: 'italic' },
   actions: { flexDirection: 'row', gap: 10, marginTop: 14, flexWrap: 'wrap' },
@@ -116,6 +150,21 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
   },
   privateForumTxt: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  incognitoBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+  },
+  incognitoActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderColor: '#10b981',
+  },
+  incognitoInactive: {
+    backgroundColor: 'rgba(51, 65, 85, 0.6)',
+    borderColor: 'rgba(71, 85, 105, 0.4)',
+  },
+  incognitoBtnTxt: { color: '#f8fafc', fontWeight: '800', fontSize: 12 },
   editBtn: {
     backgroundColor: '#334155',
     paddingHorizontal: 14,

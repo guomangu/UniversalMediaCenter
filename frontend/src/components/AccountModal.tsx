@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useCurrentUser, logout } from '@/services/authStore';
+import { toggleIncognitoMode } from '@/services/userApi';
 import { Radius, Spacing } from '@/constants/theme';
 
 interface Props {
@@ -13,6 +14,13 @@ export function AccountModal({ visible, onClose }: Props) {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const closeBtnRef = useRef<any>(null);
+  const [isIncognito, setIsIncognito] = useState(currentUser?.isIncognito ?? false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setIsIncognito(currentUser.isIncognito ?? false);
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     if (visible) {
@@ -22,6 +30,12 @@ export function AccountModal({ visible, onClose }: Props) {
       return () => clearTimeout(timer);
     }
   }, [visible]);
+
+  const handleToggleIncognito = async () => {
+    const nextVal = !isIncognito;
+    setIsIncognito(nextVal);
+    await toggleIncognitoMode(nextVal);
+  };
 
   const handleLogout = () => {
     logout();
@@ -78,6 +92,25 @@ export function AccountModal({ visible, onClose }: Props) {
                   </View>
                 </View>
 
+                {/* Mode Discret activable depuis son compte */}
+                <View style={styles.incognitoRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.incognitoTitle}>🕶️ Mode Discret (Incognito)</Text>
+                    <Text style={styles.incognitoDesc}>
+                      {isIncognito
+                        ? 'Actif : vous regardez dans le lecteur sans apparaître sur /media ni dans les séances'
+                        : 'Inactif : vos amis voient votre présence sur les médias'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    focusable={true}
+                    onPress={handleToggleIncognito}
+                    style={[styles.incognitoToggle, isIncognito ? styles.incognitoOn : styles.incognitoOff]}
+                  >
+                    <Text style={styles.incognitoToggleTxt}>{isIncognito ? 'ACTIVÉ' : 'DÉSACTIVÉ'}</Text>
+                  </Pressable>
+                </View>
+
                 <View style={styles.permsRow}>
                   <Text style={[styles.permPill, { color: currentUser.canDownload ? '#34d399' : '#f87171' }]}>
                     📥 {currentUser.canDownload ? 'Téléchargement actif' : 'Téléchargement interdit'}
@@ -132,7 +165,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 440,
     backgroundColor: '#1e293b',
     borderRadius: Radius.xl,
     padding: Spacing.four,
@@ -217,6 +250,28 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 2,
   },
+  incognitoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    borderRadius: Radius.md,
+    padding: 10,
+    marginTop: 10,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+  },
+  incognitoTitle: { color: '#f8fafc', fontSize: 12, fontWeight: '800' },
+  incognitoDesc: { color: '#94a3b8', fontSize: 10, marginTop: 2, lineHeight: 14 },
+  incognitoToggle: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+  },
+  incognitoOn: { backgroundColor: '#10b981' },
+  incognitoOff: { backgroundColor: '#475569' },
+  incognitoToggleTxt: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
   permsRow: {
     flexDirection: 'row',
     gap: 12,
