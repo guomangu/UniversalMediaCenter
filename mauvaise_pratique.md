@@ -55,3 +55,14 @@
   - **D-Pad Universel :** Configurer les flèches directionnelles (`ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`) dans `useTvNavigation.ts` pour toujours transférer le focus spatial vers les éléments voisins sans bloquer le curseur dans le texte.
   - **Touche Stop Dédiée :** Ajouter un bouton visible `⏹ Stop` à côté du bouton d'envoi pour libérer instantanément le focus (`blur()`) en un clic télécommande.
   - **Téléversement Réel :** Fournir une route de téléversement backend (`/api/forum/upload` et `/api/forum/attachments/:filename`) connectée au sélecteur de fichiers natif de l'OS hôte (`<input type="file">`).
+
+---
+
+## 🛑 30. Blocage des CDNs Privés d'Opérateurs (Oqee) & Écran Noir Silencieux sur Erreurs TV 403
+
+* **Problème / Symptôme :** Lors de l'importation de playlists IPTV incluant des logos hébergés sur des domaines d'opérateurs privés (`img1.dc2.oqee.net`), le navigateur client subissait une erreur `net::ERR_CONNECTION_RESET` car le serveur distant rejette les poignées de main TLS non autorisées. De plus, lorsqu'un flux TV en direct retournait un code `HTTP 403 Forbidden` (source coupée par le diffuseur ou stream OVH expiré), le lecteur vidéo restait bloqué sur un écran noir sans explication pour l'utilisateur.
+* **Conséquences :** Console polluée d'erreurs de connexion réseau, logos cassés sur la grille TV et sentiment d'un lecteur vidéo planté.
+* **Mauvaise Pratique :** Injecter aveuglément des URLs d'images sans détection de CDN privé et laisser le lecteur vidéo échouer silencieusement sans interception d'erreur HLS fatale.
+* **Bonne Pratique :**
+  - **Filtrage des CDNs Inaccessibles :** Détecter les domaines d'opérateurs fermés (`dc2.oqee.net`) dans `TvChannelCard.tsx` et basculer immédiatement vers le logo vectoriel de substitution généré dynamiquement à partir du titre.
+  - **Gestionnaire d'Erreurs HLS/Vidéo :** Écouter `Hls.Events.ERROR` (avec détection de `data.fatal` et codes HTTP 403/404) et afficher un overlay explicite bienveillant informant l'utilisateur que le diffuseur a suspendu le flux, avec un bouton direct pour choisir une autre chaîne.

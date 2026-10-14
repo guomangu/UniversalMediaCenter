@@ -6,13 +6,15 @@ import { requireAdmin } from '../middleware/access.js';
 import { enrichLibraryMetadata } from '../watcher/metadataEnricher.js';
 import { configRouter } from './configRoutes.js';
 import { userAdminRouter } from './userAdminRoutes.js';
+import { profileTypesRouter } from './profileTypesRoutes.js';
 
 export const adminRouter = new Hono();
 adminRouter.use('*', requireAdmin);
 
-// Sous-routeurs modulaires pour la configuration param.yaml et la gestion des utilisateurs
+// Sous-routeurs modulaires pour la configuration, les utilisateurs et les types de profils (Packs)
 adminRouter.route('/config', configRouter);
 adminRouter.route('/users', userAdminRouter);
+adminRouter.route('/profile-types', profileTypesRouter);
 
 adminRouter.post('/library/refresh', async (c) => {
   const body = await c.req.json().catch(() => ({}));

@@ -18,6 +18,20 @@ export interface ProfileDefaultsParams {
   defaultBlockedFolders: string[];
 }
 
+export interface ProfileTypeDefinition {
+  id: string;
+  label: string;
+  description?: string;
+  isAdmin?: boolean;
+  canDownload?: boolean;
+  canTranscode?: boolean;
+  canWatchIptv?: boolean;
+  maxCsaAgeLimit?: number | null;
+  allowedTags?: string[];
+  blockedTags?: string[];
+  blockedFolders?: string[];
+}
+
 export interface SecurityParams {
   invitationOnly: boolean;
   invitationCodes: string[];
@@ -55,7 +69,76 @@ export interface SiteParams {
   ui: UiParams;
   media: MediaParams;
   profiles: ProfileDefaultsParams;
+  profileTypes: ProfileTypeDefinition[];
 }
+
+export const defaultProfileTypes: ProfileTypeDefinition[] = [
+  {
+    id: 'ADMINISTRATEUR',
+    label: 'Administrateur',
+    description: 'Accès complet sans restriction, gestion de la plateforme',
+    isAdmin: true,
+    canDownload: true,
+    canTranscode: true,
+    canWatchIptv: true,
+    maxCsaAgeLimit: null,
+    allowedTags: [],
+    blockedTags: [],
+    blockedFolders: [],
+  },
+  {
+    id: 'MEMBRE',
+    label: 'Membre Standard',
+    description: 'Accès standard à l’ensemble de la médiathèque',
+    isAdmin: false,
+    canDownload: true,
+    canTranscode: true,
+    canWatchIptv: true,
+    maxCsaAgeLimit: null,
+    allowedTags: [],
+    blockedTags: [],
+    blockedFolders: [],
+  },
+  {
+    id: 'ENFANT',
+    label: 'Enfant (Jeunesse)',
+    description: 'Dessins animés & famille, CSA -10, blocage violence et horreur',
+    isAdmin: false,
+    canDownload: false,
+    canTranscode: true,
+    canWatchIptv: false,
+    maxCsaAgeLimit: 10,
+    allowedTags: ['Animation', 'Jeunesse', 'Famille', 'Kids'],
+    blockedTags: ['Horreur', '+18', 'Gore', 'Violence', 'Thriller'],
+    blockedFolders: ['/Films/Horreur', '/Films/Adultes', 'Horreur'],
+  },
+  {
+    id: 'SAFEZONE',
+    label: 'Safezone',
+    description: 'Tous publics et adolescents (CSA -12), blocage contenus violents et adultes',
+    isAdmin: false,
+    canDownload: true,
+    canTranscode: true,
+    canWatchIptv: true,
+    maxCsaAgeLimit: 12,
+    allowedTags: [],
+    blockedTags: ['Horreur', '+18', 'Gore', 'Épouvante'],
+    blockedFolders: ['/Films/Adultes', 'Horreur'],
+  },
+  {
+    id: 'SEULEMENT_DES_MARVEL',
+    label: 'Seulement des Marvel',
+    description: 'Pack spécialisé restreint exclusivement aux contenus Marvel & Super-héros',
+    isAdmin: false,
+    canDownload: true,
+    canTranscode: true,
+    canWatchIptv: false,
+    maxCsaAgeLimit: null,
+    allowedTags: ['Marvel', 'Super-héros', 'MCU', 'Avengers'],
+    blockedTags: [],
+    blockedFolders: [],
+  },
+];
 
 export const defaultSiteParams: SiteParams = {
   server: {
@@ -75,7 +158,7 @@ export const defaultSiteParams: SiteParams = {
     defaultMaxCsaAge: null,
   },
   profiles: {
-    defaultRole: 'STANDARD',
+    defaultRole: 'MEMBRE',
     defaultCanDownload: true,
     defaultCanTranscode: true,
     defaultCanWatchIptv: true,
@@ -84,6 +167,7 @@ export const defaultSiteParams: SiteParams = {
     defaultAllowedTags: [],
     defaultBlockedFolders: [],
   },
+  profileTypes: defaultProfileTypes,
   ui: {
     theme: 'dark',
     defaultView: 'HOME',

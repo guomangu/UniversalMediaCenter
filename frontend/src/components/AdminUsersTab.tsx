@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator } from 'react-native';
-import { fetchAdminUsers, updateAdminUser, deleteAdminUser } from '@/services/adminApi';
+import { fetchAdminUsers, updateAdminUser, deleteAdminUser, fetchProfileTypes } from '@/services/adminApi';
 import { AdminUserRow } from './AdminUserRow';
 import { AdminCreateUserModal } from './AdminCreateUserModal';
 import { ConfirmModal } from './ConfirmModal';
@@ -8,6 +8,7 @@ import { styles } from './AdminScreen.styles';
 
 export function AdminUsersTab() {
   const [userList, setUserList] = useState<any[]>([]);
+  const [profileTypes, setProfileTypes] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -15,20 +16,24 @@ export function AdminUsersTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
 
-  const loadUsers = async () => {
+  const loadData = async () => {
     setLoading(true);
-    const list = await fetchAdminUsers();
-    setUserList(list);
+    const [users, types] = await Promise.all([
+      fetchAdminUsers(),
+      fetchProfileTypes(),
+    ]);
+    setUserList(users);
+    setProfileTypes(types);
     setLoading(false);
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadData(); }, []);
 
   const handleUpdate = async (id: string, updates: any) => {
     const res = await updateAdminUser(id, updates);
     if (res.success) {
       setMsg('✅ Compte mis à jour.');
-      loadUsers();
+      loadData();
     } else {
       setMsg(`❌ Erreur : ${res.error}`);
     }
@@ -43,7 +48,7 @@ export function AdminUsersTab() {
 
     if (res.success) {
       setMsg(`✅ Utilisateur supprimé.`);
-      loadUsers();
+      loadData();
     } else {
       setMsg(`❌ Erreur : ${res.error}`);
     }
@@ -65,7 +70,7 @@ export function AdminUsersTab() {
     <View style={styles.card}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <View>
-          <Text style={styles.cardTitle}>👥 Gestion des Profils & Permissions</Text>
+          <Text style={styles.cardTitle}>👥 Gestion des Comptes & Attribution des Profils</Text>
           <Text style={{ color: '#94a3b8', fontSize: 12 }}>
             {userList.length} compte{userList.length > 1 ? 's' : ''} ({adminCount} admin{adminCount > 1 ? 's' : ''})
           </Text>
@@ -75,7 +80,7 @@ export function AdminUsersTab() {
           <Pressable focusable={true} onPress={() => setShowCreate(true)} style={[styles.statusPill, { backgroundColor: '#6366f1' }]}>
             <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 11 }}>+ Créer</Text>
           </Pressable>
-          <Pressable focusable={true} onPress={loadUsers} style={[styles.statusPill, { backgroundColor: 'rgba(99, 102, 241, 0.2)' }]}>
+          <Pressable focusable={true} onPress={loadData} style={[styles.statusPill, { backgroundColor: 'rgba(99, 102, 241, 0.2)' }]}>
             <Text style={[styles.statusText, { color: '#818cf8' }]}>🔄</Text>
           </Pressable>
         </View>
@@ -84,7 +89,7 @@ export function AdminUsersTab() {
       {/* Barre de recherche pour gérer un grand nombre de comptes */}
       <TextInput
         style={[styles.input, { marginBottom: 12 }]}
-        placeholder="🔍 Filtrer les comptes par nom, email ou profil..."
+        placeholder="🔍 Filtrer les comptes par nom, email ou pack..."
         placeholderTextColor="#64748b"
         value={searchQuery}
         onChangeText={setSearchQuery}
@@ -99,12 +104,18 @@ export function AdminUsersTab() {
       ) : null}
 
       {filteredUsers.map((u) => (
-        <AdminUserRow key={u.id} user={u} onUpdate={handleUpdate} onDelete={(target) => setUserToDelete(target)} />
+        <AdminUserRow
+          key={u.id}
+          user={u}
+          profileTypes={profileTypes}
+          onUpdate={handleUpdate}
+          onDelete={(target) => setUserToDelete(target)}
+        />
       ))}
 
       {msg ? <Text style={styles.statusMsg}>{msg}</Text> : null}
 
-      <AdminCreateUserModal visible={showCreate} onClose={() => setShowCreate(false)} onCreated={loadUsers} />
+      <AdminCreateUserModal visible={showCreate} onClose={() => setShowCreate(false)} onCreated={loadData} />
 
       <ConfirmModal
         visible={!!userToDelete}

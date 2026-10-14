@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Image, Pressable, Platform, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Radius, Spacing } from '@/constants/theme';
@@ -9,11 +9,12 @@ interface Props {
 
 export function TvChannelCard({ channel }: Props) {
   const router = useRouter();
+  const [imgError, setImgError] = useState(false);
   const title = channel.title || 'Chaîne Live';
   const logo = channel.clearlogoPath;
   const topicSlug = channel.slug || `tv-${channel.id}`;
 
-  // Déduit une catégorie propre depuis searchVectorText si disponible
+  const isBrokenCdn = !logo || logo.includes('dc2.oqee.net');
   const category = (channel.searchVectorText?.replace(title, '') || '').trim().split(';')[0]?.trim() || 'Direct';
 
   const handlePlay = () => {
@@ -33,8 +34,13 @@ export function TvChannelCard({ channel }: Props) {
         </View>
 
         <View style={styles.logoWrap}>
-          {logo ? (
-            <Image source={{ uri: logo }} style={styles.logoImg} resizeMode="contain" />
+          {!isBrokenCdn && !imgError ? (
+            <Image
+              source={{ uri: logo }}
+              style={styles.logoImg}
+              resizeMode="contain"
+              onError={() => setImgError(true)}
+            />
           ) : (
             <View style={styles.fallbackLogo}>
               <Text style={styles.fallbackTxt}>{title.slice(0, 2).toUpperCase()}</Text>

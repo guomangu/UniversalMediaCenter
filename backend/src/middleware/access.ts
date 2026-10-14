@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { db } from '../db/connection.js';
 import { verifySessionToken } from '../auth/token.js';
+import { getSiteParams } from '../config/paramManager.js';
 
 export interface UserSession {
   id: string;
@@ -45,14 +46,43 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
       where: (t, { eq }) => eq(t.id, userId),
     });
     if (user) {
+      const siteParams = getSiteParams();
+      const currentRole = (user.profileRole || (user.isAdmin ? 'ADMINISTRATEUR' : 'MEMBRE')).toUpperCase();
+      const matchedProfile = (siteParams.profileTypes || []).find(
+        (p) => p.id.toUpperCase() === currentRole || p.label.toUpperCase() === currentRole
+      );
+
+      const effectiveAllowedTags = (user.allowedTags && user.allowedTags.length > 0)
+        ? user.allowedTags
+        : (matchedProfile?.allowedTags || []);
+
+      const effectiveBlockedTags = Array.from(new Set([
+        ...(user.blockedTags || []),
+        ...(matchedProfile?.blockedTags || []),
+      ]));
+
+      const effectiveBlockedFolders = Array.from(new Set([
+        ...(user.blockedFolders || []),
+        ...(matchedProfile?.blockedFolders || []),
+      ]));
+
+      const effectiveCsa = user.maxCsaAgeLimit !== null && user.maxCsaAgeLimit !== undefined
+        ? user.maxCsaAgeLimit
+        : (matchedProfile?.maxCsaAgeLimit ?? null);
+
       c.set('user', {
         ...user,
+        isAdmin: user.isAdmin || Boolean(matchedProfile?.isAdmin),
+        canDownload: matchedProfile?.canDownload !== undefined ? (user.canDownload && matchedProfile.canDownload) : user.canDownload,
+        canTranscode: matchedProfile?.canTranscode !== undefined ? (user.canTranscode && matchedProfile.canTranscode) : user.canTranscode,
+        canWatchIptv: matchedProfile?.canWatchIptv !== undefined ? (user.canWatchIptv && matchedProfile.canWatchIptv) : user.canWatchIptv,
+        maxCsaAgeLimit: effectiveCsa,
         allowedValueIds: user.allowedValueIds || [],
         blockedValueIds: user.blockedValueIds || [],
-        allowedTags: user.allowedTags || [],
-        blockedTags: user.blockedTags || [],
-        blockedFolders: user.blockedFolders || [],
-        profileRole: user.profileRole || 'STANDARD',
+        allowedTags: effectiveAllowedTags,
+        blockedTags: effectiveBlockedTags,
+        blockedFolders: effectiveBlockedFolders,
+        profileRole: user.profileRole || (user.isAdmin ? 'ADMINISTRATEUR' : 'MEMBRE'),
       });
       return await next();
     }

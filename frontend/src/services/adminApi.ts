@@ -94,6 +94,54 @@ export async function deleteAdminUser(id: string): Promise<any> {
   }
 }
 
+export async function fetchProfileTypes(): Promise<any[]> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/profile-types`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    return data.profileTypes || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function createProfileType(payload: any): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/profile-types`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateProfileType(id: string, updates: any): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/profile-types/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteProfileType(id: string): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/profile-types/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function fetchIptvSources(): Promise<any[]> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources`, { headers: getAuthHeaders() });

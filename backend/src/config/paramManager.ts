@@ -32,6 +32,9 @@ export function loadSiteParams(): SiteParams {
       ui: { ...defaultSiteParams.ui, ...parsed.ui },
       media: { ...defaultSiteParams.media, ...parsed.media },
       profiles: { ...defaultSiteParams.profiles, ...parsed.profiles },
+      profileTypes: parsed.profileTypes && Array.isArray(parsed.profileTypes) && parsed.profileTypes.length > 0
+        ? parsed.profileTypes
+        : defaultSiteParams.profileTypes,
     };
   } catch (err) {
     console.warn('[ParamManager] Error reading param.yaml, using defaults:', err);
@@ -50,6 +53,7 @@ export function saveSiteParams(newParams: Partial<SiteParams>): SiteParams {
     ui: { ...cachedParams.ui, ...newParams.ui },
     media: { ...cachedParams.media, ...newParams.media },
     profiles: { ...cachedParams.profiles, ...newParams.profiles },
+    profileTypes: newParams.profileTypes || cachedParams.profileTypes,
   };
   const filePath = getParamFilePath();
   const yamlContent = YAML.stringify(merged);

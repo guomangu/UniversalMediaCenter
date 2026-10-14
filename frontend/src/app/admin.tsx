@@ -8,15 +8,16 @@ import { useCurrentUser } from '@/services/authStore';
 import { triggerLibraryRefresh } from '@/services/api';
 import { styles } from '@/components/AdminScreen.styles';
 import { AdminConfigTab } from '@/components/AdminConfigTab';
+import { AdminProfileTypesTab } from '@/components/AdminProfileTypesTab';
 import { AdminUsersTab } from '@/components/AdminUsersTab';
 import { AdminIptvTab } from '@/components/AdminIptvTab';
 
-type Tab = 'CONFIG' | 'USERS' | 'LIBRARY' | 'IPTV';
+type Tab = 'CONFIG' | 'PROFILE_TYPES' | 'USERS' | 'LIBRARY' | 'IPTV';
 
 export default function AdminScreen() {
   const router = useRouter();
   const currentUser = useCurrentUser();
-  const [tab, setTab] = useState<Tab>('CONFIG');
+  const [tab, setTab] = useState<Tab>('PROFILE_TYPES');
   const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -68,17 +69,26 @@ export default function AdminScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.heading}>Panneau d’Administration Centralisé</Text>
         <View style={styles.tabRow}>
-          {(['CONFIG', 'USERS', 'LIBRARY', 'IPTV'] as const).map((t) => (
+          {(['PROFILE_TYPES', 'USERS', 'CONFIG', 'LIBRARY', 'IPTV'] as const).map((t) => (
             <Pressable key={t} style={[styles.tabBtn, tab === t && styles.activeTab]} onPress={() => setTab(t)}>
               <Text style={styles.tabText}>
-                {t === 'CONFIG' ? '⚙️ param.yaml' : t === 'USERS' ? '👥 Profils & Comptes' : t === 'LIBRARY' ? '🔄 Scan' : '📡 Sources IPTV'}
+                {t === 'PROFILE_TYPES'
+                  ? '🏷️ Types de Profils'
+                  : t === 'USERS'
+                  ? '👥 Comptes'
+                  : t === 'CONFIG'
+                  ? '⚙️ param.yaml'
+                  : t === 'LIBRARY'
+                  ? '🔄 Scan'
+                  : '📡 Sources IPTV'}
               </Text>
             </Pressable>
           ))}
         </View>
 
-        {tab === 'CONFIG' && <AdminConfigTab />}
+        {tab === 'PROFILE_TYPES' && <AdminProfileTypesTab />}
         {tab === 'USERS' && <AdminUsersTab />}
+        {tab === 'CONFIG' && <AdminConfigTab />}
 
         {tab === 'LIBRARY' && (
           <View style={styles.card}>
