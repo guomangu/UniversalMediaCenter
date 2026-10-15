@@ -1,4 +1,4 @@
-import { extractCanonicalShowTitle } from './titleCleaner.js';
+import { extractCanonicalShowTitle, normalizePhoneticSpelling } from './titleCleaner.js';
 
 export interface ExternalActor {
   name: string;
@@ -223,6 +223,80 @@ export async function fetchTmdbCollection(collectionName: string): Promise<Exter
   };
 }
 
+
+async function queryTmdbSearchId(query: string, endpoint: 'search/tv' | 'search/movie'): Promise<number | null> {
+  const searchUrl = `https://api.themoviedb.org/3/${endpoint}?query=${encodeURIComponent(
+    query
+  )}&language=fr-FR`;
+  try {
+    const searchRes = await fetch(searchUrl, {
+      headers: { Authorization: `Bearer ${TMDB_TOKEN}`, 'User-Agent': UA },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json();
+    if (searchData.results?.length > 0 && searchData.results[0]?.id) {
+      return searchData.results[0].id;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Moteur de résolution tolérant aux fautes pour TMDb (Loi n°2 White Paper)
+ * Résout le problème des orthographes fautives (ex: "Peacky Blinders", "Breking Bad")
+ * sans aucun dictionnaire en dur.
+ */
+async function resolveFuzzyTmdbId(rawTitle: string, endpoint: 'search/tv' | 'search/movie'): Promise<number | null> {
+  const clean = cleanShowTitle(rawTitle);
+  if (!clean) return null;
+
+  // 1. Recherche directe avec le titre nettoyé
+  const exactId = await queryTmdbSearchId(clean, endpoint);
+  if (exactId) return exactId;
+
+  // 2. Recherche avec normalisation phonétique (dé-doublement des consonnes, ck->k, ph->f)
+  const phonetic = normalizePhoneticSpelling(clean);
+  if (phonetic && phonetic.toLowerCase() !== clean.toLowerCase()) {
+    const phoneticId = await queryTmdbSearchId(phonetic, endpoint);
+    if (phoneticId) return phoneticId;
+  }
+
+  // 3. Autocorrection linguistique universelle via Wikipedia OpenSearch (Did You Mean)
+  try {
+    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(
+      clean
+    )}&limit=3&namespace=0&format=json`;
+    const wikiRes = await fetch(wikiUrl, {
+      headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (wikiRes.ok) {
+      const wikiData = await wikiRes.json();
+      const suggestions: string[] = Array.isArray(wikiData[1]) ? wikiData[1] : [];
+      for (const suggestion of suggestions) {
+        const sanitized = suggestion.replace(/\s*\((?:tv series|film|série télévisée|série|franchise|miniseries)\)/gi, '').trim();
+        if (sanitized && sanitized.toLowerCase() !== clean.toLowerCase()) {
+          const wikiTmdbId = await queryTmdbSearchId(sanitized, endpoint);
+          if (wikiTmdbId) return wikiTmdbId;
+        }
+      }
+    }
+  } catch {}
+
+  // 4. Fallback sur les deux premiers tokens signifiants si le titre comporte plus de 2 mots
+  const tokens = clean.split(/\s+/).filter((t) => t.length > 2);
+  if (tokens.length >= 2) {
+    const truncated = tokens.slice(0, 2).join(' ');
+    if (truncated.toLowerCase() !== clean.toLowerCase()) {
+      const truncId = await queryTmdbSearchId(truncated, endpoint);
+      if (truncId) return truncId;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Récupère les métadonnées complètes d'une série TV via TMDB (avec cast, crew, certification, tags, network)
  */
@@ -230,17 +304,8 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
   let tvId: number | null = typeof tmdbIdOrTitle === 'number' ? tmdbIdOrTitle : null;
 
   if (!tvId) {
-    const searchUrl = `https://api.themoviedb.org/3/search/tv?query=${encodeURIComponent(
-      tmdbIdOrTitle
-    )}&language=fr-FR`;
-    const searchRes = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${TMDB_TOKEN}`, 'User-Agent': UA },
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!searchRes.ok) return null;
-    const searchData = await searchRes.json();
-    if (!searchData.results?.length) return null;
-    tvId = searchData.results[0].id;
+    tvId = await resolveFuzzyTmdbId(String(tmdbIdOrTitle), 'search/tv');
+    if (!tvId) return null;
   }
 
   // Requête française pour le synopsis et les genres
@@ -388,17 +453,8 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
   let movieId: number | null = typeof tmdbIdOrTitle === 'number' ? tmdbIdOrTitle : null;
 
   if (!movieId) {
-    const searchUrl = `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(
-      tmdbIdOrTitle
-    )}&language=fr-FR`;
-    const searchRes = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${TMDB_TOKEN}`, 'User-Agent': UA },
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!searchRes.ok) return null;
-    const searchData = await searchRes.json();
-    if (!searchData.results?.length) return null;
-    movieId = searchData.results[0].id;
+    movieId = await resolveFuzzyTmdbId(String(tmdbIdOrTitle), 'search/movie');
+    if (!movieId) return null;
   }
 
   // Requête française principale

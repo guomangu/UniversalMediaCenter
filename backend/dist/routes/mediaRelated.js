@@ -94,3 +94,70 @@ export async function getRelatedTagsForMedia(mediaId, parentId) {
     }
     return activeGroups.filter((g) => g.medias.length > 0);
 }
+/**
+ * Moteur de Recommandation Algorithmique par TF-IDF / BM25 SQL
+ * Pondère chaque tag partagé par sa rareté documentaire globale (IDF)
+ * et par un coefficient de catégorie (Réalisateur > Franchise > Auteur > Acteur > Genre).
+ */
+export async function getTfIdfSimilarMedias(mediaId, limit = 12) {
+    try {
+        const res = await db.execute(sql `
+      WITH target_tags AS (
+        SELECT l.value_id, a.code as attr_code
+        FROM node_eav_links l
+        JOIN eav_values v ON v.id = l.value_id
+        JOIN eav_attributes a ON a.id = v.attribute_id
+        WHERE l.node_id = ${mediaId}::uuid
+      ),
+      doc_freqs AS (
+        SELECT value_id, count(DISTINCT node_id)::float AS df
+        FROM node_eav_links
+        GROUP BY value_id
+      ),
+      scored_nodes AS (
+        SELECT 
+          l.node_id,
+          ROUND(SUM(
+            ln(1.0 + ((SELECT count(*)::float FROM media_nodes WHERE node_type IN ('MOVIE', 'SHOW')) / nullif(df.df, 0)))
+            * (CASE 
+                WHEN tt.attr_code = 'director' THEN 3.0
+                WHEN tt.attr_code = 'franchise' THEN 3.5
+                WHEN tt.attr_code = 'writer' THEN 2.0
+                WHEN tt.attr_code = 'actor' THEN 1.8
+                WHEN tt.attr_code = 'genre' THEN 1.0
+                ELSE 1.2
+              END)
+          )::numeric, 2) AS relevance_score,
+          count(l.value_id) AS shared_tags_count
+        FROM node_eav_links l
+        JOIN target_tags tt ON tt.value_id = l.value_id
+        JOIN doc_freqs df ON df.value_id = l.value_id
+        WHERE l.node_id != ${mediaId}::uuid
+        GROUP BY l.node_id
+      )
+      SELECT m.id, m.title, m.node_type, m.release_year, m.poster_path, m.community_rating,
+             s.relevance_score, s.shared_tags_count
+      FROM scored_nodes s
+      JOIN media_nodes m ON m.id = s.node_id
+      WHERE m.node_type IN ('MOVIE', 'SHOW', 'COLLECTION')
+        AND m.is_extra = false
+      ORDER BY s.relevance_score DESC, m.community_rating DESC NULLS LAST
+      LIMIT ${limit};
+    `);
+        const rows = Array.isArray(res) ? res : res.rows || [];
+        return rows.map((r) => ({
+            id: r.id,
+            title: r.title,
+            nodeType: r.node_type,
+            releaseYear: r.release_year,
+            posterPath: r.poster_path ? `/api/media/${r.id}/poster` : undefined,
+            communityRating: r.community_rating,
+            relevanceScore: parseFloat(r.relevance_score) || 0,
+            sharedTagsCount: parseInt(r.shared_tags_count, 10) || 0,
+        }));
+    }
+    catch (err) {
+        console.error('Error in getTfIdfSimilarMedias:', err);
+        return [];
+    }
+}

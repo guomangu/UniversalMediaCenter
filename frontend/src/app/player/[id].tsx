@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CastModal } from '@/components/CastModal';
 import { VideoPlayerView } from '@/components/VideoPlayerView';
-import { PlayerQualityModal } from '@/components/PlayerQualityModal';
 import { PlayerSubtitleModal } from '@/components/PlayerSubtitleModal';
 import { PlayerAudioModal } from '@/components/PlayerAudioModal';
 import { PlayerShareModal } from '@/components/PlayerShareModal';
@@ -25,20 +24,19 @@ import { styles } from '@/components/PlayerScreen.styles';
 import { toggleFullscreen, isFullscreenActive } from '@/utils/fullscreen';
 
 export default function PlayerScreen() {
-  const { id, title, share } = useLocalSearchParams<{ id: string; title?: string; share?: string }>();
+  const { id, title, share, isLive: queryIsLive } = useLocalSearchParams<{ id: string; title?: string; share?: string; isLive?: string }>();
   const router = useRouter();
   const videoRef = useRef<any>(null);
   const savedPosRef = useRef<number>(0);
   const activeCastTarget = useActiveCastTarget();
   const [isPlaying, setIsPlaying] = useState(true);
   const [initialTime, setInitialTime] = useState<number>(0);
-  const [showSkipIntro, setShowSkipIntro] = useState(true);
+  const isDirectLive = queryIsLive === '1' || queryIsLive === 'true';
+  const [showSkipIntro, setShowSkipIntro] = useState(!isDirectLive);
   const [showCast, setShowCast] = useState(false);
-  const [showQuality, setShowQuality] = useState(false);
   const [showSubtitles, setShowSubtitles] = useState(false);
   const [showAudio, setShowAudio] = useState(false);
   const [showShare, setShowShare] = useState(false);
-  const [activeQuality, setActiveQuality] = useState('auto');
   const [activeSubtitle, setActiveSubtitle] = useState('off');
   const [activeAudio, setActiveAudio] = useState('auto');
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -60,7 +58,7 @@ export default function PlayerScreen() {
     };
   }, []);
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
-  const [isLive, setIsLive] = useState(false);
+  const [isLive, setIsLive] = useState(isDirectLive);
   const [nextNode, setNextNode] = useState<any>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const countdownTimer = useRef<any>(null);
@@ -82,16 +80,24 @@ export default function PlayerScreen() {
         if (res?.media) {
           const badge = res.media.displayBadge || res.media.seasonEpisodeTag;
           setResolvedTitle(badge ? `${res.media.title} (${badge})` : res.media.title);
-          const isChannel = res.media.nodeType === 'LIVE_CHANNEL' || Boolean(res.media.streamUrl);
+          const isChannel = res.media.nodeType === 'LIVE_CHANNEL' || Boolean(res.media.streamUrl) || isDirectLive;
           setIsLive(isChannel);
 
-          const chapters = res.media.chaptersJson || [];
-          const foundIntro = chapters.find((ch: any) => ch.type === 'INTRO');
-          if (foundIntro) {
-            setIntroChapter({ start: foundIntro.startSeconds, end: foundIntro.endSeconds });
+          if (isChannel) {
+            setShowSkipIntro(false);
+            setIntroChapter(null);
+          } else {
+            const chapters = res.media.chaptersJson || [];
+            const foundIntro = chapters.find((ch: any) => ch.type === 'INTRO');
+            if (foundIntro) {
+              setIntroChapter({ start: foundIntro.startSeconds, end: foundIntro.endSeconds });
+              setShowSkipIntro(true);
+            } else {
+              setIntroChapter(null);
+            }
           }
 
-          if (res.media.positionSeconds && res.media.positionSeconds > 10 && !res.media.isCompleted) {
+          if (res.media.positionSeconds && res.media.positionSeconds > 10 && !res.media.isCompleted && !isChannel) {
             savedPosRef.current = res.media.positionSeconds;
             setInitialTime(res.media.positionSeconds);
             const m = Math.floor(res.media.positionSeconds / 60);
@@ -111,11 +117,10 @@ export default function PlayerScreen() {
     const base = getVideoStreamUrl(id, share);
     const p = new URLSearchParams();
     if (activeAudio && activeAudio !== 'auto') p.set('audio', activeAudio);
-    if (activeQuality && activeQuality !== 'auto') p.set('quality', activeQuality);
     if (share) p.set('share', share);
     const qs = p.toString();
     return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
-  }, [id, activeAudio, activeQuality, share]);
+  }, [id, activeAudio, share]);
 
   useEffect(() => {
     if (id) {
@@ -224,7 +229,7 @@ export default function PlayerScreen() {
     onLoad: (newId) => router.replace(`/player/${newId}`),
   });
 
-  const isModalOpen = showQuality || showAudio || showSubtitles || showShare || showCast;
+  const isModalOpen = showAudio || showSubtitles || showShare || showCast;
   usePlayerControls({ videoRef, isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast });
 
   return (
@@ -236,14 +241,14 @@ export default function PlayerScreen() {
         isPlaying={isPlaying}
         isLive={isLive}
         videoRef={videoRef}
-        showSkipIntro={showSkipIntro}
-        intro={introChapter}
+        showSkipIntro={!isLive && showSkipIntro}
+        intro={isLive ? null : introChapter}
         activeSubtitle={activeSubtitle}
-        activeQuality={activeQuality}
         activeAudio={activeAudio}
         statusMessage={statusMessage}
         isFullscreen={isFullscreen}
         onSkipIntro={() => {
+          if (isLive) return;
           const target = introChapter ? introChapter.end : (videoRef.current?.currentTime || 0) + 85;
           if (videoRef.current) videoRef.current.currentTime = target;
           setShowSkipIntro(false);
@@ -333,14 +338,6 @@ export default function PlayerScreen() {
           <Pressable
             focusable={true}
             accessibilityRole="button"
-            onPress={() => setShowQuality(true)}
-            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-          >
-            <Text style={styles.topBtnText}>⚙️ Qualité</Text>
-          </Pressable>
-          <Pressable
-            focusable={true}
-            accessibilityRole="button"
             accessibilityLabel="Plein écran"
             onPress={() => {
               const el = typeof document !== 'undefined' ? (document.querySelector('[data-player-container="true"]') as HTMLElement) || document.documentElement : null;
@@ -405,15 +402,6 @@ export default function PlayerScreen() {
         onSelect={(val) => { setActiveSubtitle(val); setShowSubtitles(false); }}
         onClose={() => setShowSubtitles(false)}
       />
-
-      <PlayerQualityModal
-        visible={showQuality}
-        qualities={tracks.qualities}
-        activeQuality={activeQuality}
-        onSelect={(val) => { setActiveQuality(val); setShowQuality(false); }}
-        onClose={() => setShowQuality(false)}
-      />
-
       <PlayerShareModal
         visible={showShare}
         mediaId={String(id)}

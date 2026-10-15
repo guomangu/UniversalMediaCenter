@@ -1,3 +1,40 @@
+
+// Mapping Chiffres Romains <-> Arabes (jusqu'à 30)
+const ROMAN_TO_ARABIC: Record<string, number> = {
+  I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10,
+  XI: 11, XII: 12, XIII: 13, XIV: 14, XV: 15, XVI: 16, XVII: 17, XVIII: 18, XIX: 19, XX: 20,
+  XXI: 21, XXII: 22, XXIII: 23, XXIV: 24, XXV: 25, XXVI: 26, XXVII: 27, XXVIII: 28, XXIX: 29, XXX: 30,
+};
+
+/**
+ * Normalisation Unicode (NFKC), décomposition des ligatures et standardisation des caractères pleines chasses.
+ */
+export function normalizeUnicodeAndLigatures(raw: string): string {
+  if (!raw) return '';
+  let s = String(raw).normalize('NFKC');
+  // Ligatures françaises et latines
+  s = s.replace(/œ/g, 'oe').replace(/Œ/g, 'Oe');
+  s = s.replace(/æ/g, 'ae').replace(/Æ/g, 'Ae');
+  // Deux-points pleine chasse Windows/NTFS (： U+FF1A) et tirets cadratins
+  s = s.replace(/：/g, ':');
+  s = s.replace(/[—–]/g, '-');
+  // Apostrophes courbes
+  s = s.replace(/[`'’]/g, "'");
+  return s;
+}
+
+/**
+ * Convertit les chiffres romains terminaux ou isolés en chiffres arabes
+ * Ex: "Rocky III" -> "Rocky 3", "Star Wars Episode IV" -> "Star Wars Episode 4"
+ */
+export function normalizeRomanNumerals(title: string): string {
+  if (!title) return '';
+  return title.replace(/\b(X{0,3}(?:IX|IV|V?I{1,3}))\b$/i, (match) => {
+    const upper = match.toUpperCase();
+    return ROMAN_TO_ARABIC[upper] ? String(ROMAN_TO_ARABIC[upper]) : match;
+  });
+}
+
 /**
  * titleCleaner.ts - Normalisation et nettoyage des titres de fichiers multimédias
  * Supprime les bruits de release (1080p, x264, MULTi...), préserve le titre réel des épisodes,
@@ -95,7 +132,7 @@ export function sanitizeReleaseTags(raw: string | number): string {
  * - Les fautes de frappe courantes (ex: "peacky blinders" -> "Peaky Blinders")
  */
 export function extractCanonicalShowTitle(raw: string | number): string {
-  let s = String(raw ?? '').trim();
+  let s = normalizeUnicodeAndLigatures(String(raw ?? '')).trim();
   if (!s) return '';
 
   // 1. Extraire le nom de base si c'est un chemin complet
@@ -133,30 +170,13 @@ export function extractCanonicalShowTitle(raw: string | number): string {
   s = s.replace(/`/g, "'");
   s = s.replace(/\s{2,}/g, ' ').trim();
 
-  // 9. Dictionnaire des fautes de frappe et variantes courantes
-  if (/^peac?ky\s+blinders$/i.test(s)) {
-    return 'Peaky Blinders';
-  }
-  if (/^breaking\s+bad$/i.test(s)) {
-    return 'Breaking Bad';
-  }
-  if (/^prison\s+break$/i.test(s)) {
-    return 'Prison Break';
-  }
-  if (/^american\s+dad$/i.test(s)) {
-    return 'American Dad';
-  }
-  if (/^mr\s*robot$/i.test(s)) {
-    return 'Mr. Robot';
-  }
-  if (/^fullmetal\s+alch[ie]mist$/i.test(s)) {
-    return 'Fullmetal Alchemist';
-  }
-
-  // 10. Capitalisation soignée si tout est en minuscules
+  // 9. Capitalisation soignée si tout est en minuscules
   if (s === s.toLowerCase() && s.length > 2) {
     s = s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
   }
+
+  // 10. Normalisation des chiffres romains terminaux (Rocky III -> Rocky 3)
+  s = normalizeRomanNumerals(s);
 
   return s;
 }
@@ -177,4 +197,23 @@ export function extractYearFromText(text?: string | null): number | undefined {
     if (yr >= 1890 && yr <= 2099) return yr;
   }
   return undefined;
+}
+
+/**
+ * Normalisation phonétique et réduction des diphtongues/consonnes redoublées.
+ * Permet de rapprocher automatiquement des orthographes alternatives ou fautives
+ * (ex: "peacky blinders" -> "peaky blinders", "vikinggs" -> "vikings") sans dictionnaire en dur.
+ */
+export function normalizePhoneticSpelling(raw: string): string {
+  if (!raw) return '';
+  let s = raw.trim();
+  // 1. Équivalence ck -> k (ex: peacky -> peaky)
+  s = s.replace(/ck/gi, 'k');
+  // 2. Équivalence ph -> f (ex: telephon -> telefon)
+  s = s.replace(/ph/gi, 'f');
+  // 3. Dédoublement des consonnes répétées (ex: 'vikinggs' -> 'vikings', 'stopp' -> 'stop')
+  s = s.replace(/([b-df-hj-np-tv-z])\1+/gi, '$1');
+  // 4. Normalisation des apostrophes
+  s = s.replace(/[`'’]/g, "'");
+  return s.replace(/\s{2,}/g, ' ').trim();
 }

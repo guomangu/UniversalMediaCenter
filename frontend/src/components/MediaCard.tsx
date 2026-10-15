@@ -36,7 +36,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
 
   const rawUri = item.posterPath || item.thumbPath || item.clearlogoPath || item.fanartPath;
   const imageUri = resolveImageUrl(rawUri);
-  const targetHref = item.nodeType === 'LIVE_CHANNEL' ? `/player/${item.id}` : `/media/${item.id}`;
+  const targetHref = item.nodeType === 'LIVE_CHANNEL' ? `/player/${item.id}?isLive=1` : `/media/${item.id}`;
 
   const seasonTag = item.displayBadge || item.seasonEpisodeTag;
   const progressPercent = item.progressPercent ?? 0;

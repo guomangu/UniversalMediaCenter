@@ -39,7 +39,7 @@ export interface ParsedStreamDetails {
 }
 
 export interface ParsedNfo {
-  type: 'COLLECTION' | 'SHOW' | 'SEASON' | 'MOVIE' | 'EPISODE';
+  type: 'COLLECTION' | 'SHOW' | 'SEASON' | 'MOVIE' | 'EPISODE' | 'EXTRA';
   title: string;
   originalTitle?: string;
   sortTitle?: string;

@@ -170,6 +170,11 @@ function moveFocus(dir: Direction): boolean {
     (current.getAttribute('data-player-topbar') === 'true' || !!current.closest('[data-player-topbar="true"]'));
 
   if (isTopBar && dir === 'down') {
+    const playerContainer = document.querySelector<HTMLElement>('[data-player-container="true"]');
+    if (playerContainer && isElementVisibleAndActive(playerContainer)) {
+      playerContainer.focus();
+      return true;
+    }
     const skipBtn = document.querySelector<HTMLElement>('[data-skip-intro="true"]');
     if (skipBtn && isElementVisibleAndActive(skipBtn)) {
       skipBtn.focus();

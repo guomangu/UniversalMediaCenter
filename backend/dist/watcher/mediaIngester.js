@@ -13,13 +13,13 @@ import { parseLexicalFilename } from './pipeline/lexicalParser.js';
 import { identifyVideoFile } from './pipeline/universalScanner.js';
 import { detectAdjacentFiles } from './mediaFileDetector.js';
 import { resolveSeriesRoot, resolveParentShowNodeId, findOrCreateCollectionNode, detectSagaNameFromFolder } from './hierarchyResolver.js';
-import { analyzeFolderGrouping } from './folderGrouper.js';
-import { sanitizeReleaseTags, extractYearFromText } from './titleCleaner.js';
+import { analyzeFolderGrouping, isExtraMediaFile } from './folderGrouper.js';
+import { sanitizeReleaseTags, extractYearFromText, extractCanonicalShowTitle } from './titleCleaner.js';
 import { parsePathWithGuessit } from './pipeline/guessitParser.js';
 import { isAnimeMedia, resolveAnimeSeasonEpisode } from './pipeline/animeMapping.js';
 export async function ingestMediaNode(nfoPath, parsed, sha256) {
     const adjacent = await detectAdjacentFiles(nfoPath);
-    const slug = `${generateSlug(parsed.title)}-${parsed.year || 'media'}`; //
+    const slug = `${generateSlug(parsed.title)}-${parsed.year || 'media'}`;
     const sortTitle = parsed.sortTitle || parsed.title;
     let parentId = null;
     let isExtra = false;
@@ -29,11 +29,19 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
     if (parsed.type !== 'SHOW' && parsed.type !== 'COLLECTION') {
         parentId = await resolveParentShowNodeId(nfoPath);
         if (!parentId && parsed.showTitle) {
+            const canonicalShow = extractCanonicalShowTitle(parsed.showTitle);
             const showByTitle = await db.query.mediaNodes.findFirst({
-                where: (t, { and: aOp, eq: eOp, or: oOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(eOp(t.title, parsed.showTitle), eOp(t.sortTitle, parsed.showTitle))),
+                where: (t, { and: aOp, eq: eOp, or: oOp, ilike: iOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(iOp(t.title, canonicalShow), iOp(t.sortTitle, canonicalShow), eOp(t.title, parsed.showTitle), eOp(t.sortTitle, parsed.showTitle))),
             });
             if (showByTitle)
                 parentId = showByTitle.id;
+        }
+        const filePathToCheck = adjacent.videoFilePath || nfoPath;
+        if (isExtraMediaFile(filePathToCheck)) {
+            isExtra = true;
+            effectiveType = 'EXTRA';
+            const grouping = analyzeFolderGrouping(filePathToCheck, path.dirname(filePathToCheck));
+            extraType = grouping.extraType || 'featurette';
         }
         const seriesCtx = await resolveSeriesRoot(nfoPath);
         if (seriesCtx) {
@@ -42,7 +50,7 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
                 isExtra = true;
                 extraType = grouping.extraType;
             }
-            if (grouping.isMovie) {
+            if (grouping.isMovie && !parsed.episodeNumber && effectiveType !== 'EPISODE') {
                 effectiveType = 'MOVIE';
             }
             if (grouping.groupTitle && !folderArcTitle) {
@@ -67,8 +75,14 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
     let absoluteOrderIndex = null;
     // 1. Parsing heuristique GuessIt avec validation stricte Kyoo
     const guess = await parsePathWithGuessit(adjacent.videoFilePath || nfoPath);
-    if (guess.type === 'movie' && effectiveType !== 'COLLECTION') {
+    if (guess.type === 'movie' && effectiveType !== 'COLLECTION' && effectiveType !== 'EPISODE' && !parsed.episodeNumber) {
         effectiveType = 'MOVIE';
+    }
+    else if (guess.type === 'episode' && effectiveType !== 'SHOW' && effectiveType !== 'COLLECTION') {
+        effectiveType = 'EPISODE';
+    }
+    if (effectiveType === 'EPISODE' && !parentId) {
+        parentId = await resolveParentShowNodeId(adjacent.videoFilePath || nfoPath);
     }
     let effYear = parsed.year || guess.year;
     if (guess.year && (!effYear || Math.abs(effYear - guess.year) > 1)) {
@@ -98,31 +112,27 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
                 orderIndex = parsed.absoluteEpisodeNumber;
                 absoluteOrderIndex = parsed.absoluteEpisodeNumber;
             }
-            else if (parsed.episodeNumber != null && parsed.episodeNumber > 0) {
-                if (parsed.seasonNumber && parsed.seasonNumber > 1) {
-                    orderIndex = parsed.seasonNumber * 1000 + parsed.episodeNumber;
-                    absoluteOrderIndex = parsed.seasonNumber * 1000 + parsed.episodeNumber;
+            else {
+                const effSeason = parsed.seasonNumber || guess.season || (guess.episode && guess.episode > 1000 ? Math.floor(guess.episode / 1000) : 1);
+                const effEpisode = parsed.episodeNumber || (guess.episode && guess.episode > 1000 ? guess.episode % 1000 : guess.episode) || 1;
+                if (effSeason > 1 && effSeason < 990 && effEpisode > 0) {
+                    orderIndex = effSeason * 1000 + effEpisode;
+                    absoluteOrderIndex = effEpisode;
                 }
-                else {
-                    orderIndex = parsed.episodeNumber;
-                    absoluteOrderIndex = parsed.episodeNumber;
+                else if (effSeason === 1 && effEpisode > 0) {
+                    orderIndex = effEpisode;
+                    absoluteOrderIndex = effEpisode;
                 }
-            }
-            else if (guess.episode) {
-                orderIndex = (guess.season ? guess.season * 1000 : 1000) + guess.episode;
-                absoluteOrderIndex = guess.absoluteEpisode || guess.episode;
+                else if (effSeason === 998 && effEpisode > 0) {
+                    orderIndex = 998000 + effEpisode;
+                    absoluteOrderIndex = effEpisode;
+                }
+                else if (effEpisode > 0) {
+                    orderIndex = effEpisode;
+                    absoluteOrderIndex = effEpisode;
+                }
             }
         }
-    }
-    else if (parsed.seasonNumber != null && parsed.seasonNumber > 0) {
-        orderIndex = parsed.seasonNumber;
-    }
-    let durationSeconds;
-    if (parsed.streamDetails?.durationSeconds) {
-        durationSeconds = parsed.streamDetails.durationSeconds;
-    }
-    else if (parsed.runtime) {
-        durationSeconds = parsed.runtime * 60;
     }
     let premieredDate;
     if (parsed.premiered) {
@@ -130,23 +140,22 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
         if (!isNaN(d.getTime()))
             premieredDate = d;
     }
+    let durationSeconds = parsed.streamDetails?.durationSeconds;
+    let chapters = parsed.chapters;
+    let probedQuality;
+    let probedCodec;
     let oshash;
     let crc32;
     let edition;
-    let chapters = parsed.chapters || [];
-    let probedQuality;
-    let probedCodec;
     if (adjacent.videoFilePath) {
-        const [binaryFootprint, containerMeta, subtitleNlp, probed] = await Promise.all([
+        const [footprint, probed, lexical] = await Promise.all([
             computeBinaryFootprint(adjacent.videoFilePath),
-            inspectContainerMetadata(adjacent.videoFilePath),
-            analyzeSubtitlesNlp(adjacent.videoFilePath, parsed.title),
             probeMediaFile(adjacent.videoFilePath),
+            Promise.resolve(parseLexicalFilename(adjacent.videoFilePath)),
         ]);
-        oshash = binaryFootprint.oshash;
-        crc32 = binaryFootprint.crc32 || extractCrc32(adjacent.videoFilePath) || undefined;
-        const lexical = parseLexicalFilename(adjacent.videoFilePath);
-        edition = containerMeta.edition || lexical.edition;
+        oshash = footprint.oshash || undefined;
+        crc32 = (footprint.crc32 || extractCrc32(adjacent.videoFilePath)) || undefined;
+        edition = lexical.edition;
         if (lexical.isExtra) {
             isExtra = true;
             extraType = lexical.extraType || extraType;
@@ -163,15 +172,18 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
         }
     }
     let nodeId;
+    const canonicalTitle = effectiveType === 'SHOW'
+        ? extractCanonicalShowTitle(parsed.title || path.basename(path.dirname(nfoPath)))
+        : sanitizeReleaseTags(parsed.title);
     const payload = {
-        parentId: parentId || (existing?.parentId ?? undefined),
+        parentId: (parentId || existing?.parentId) ? String(parentId || existing?.parentId) : undefined,
         nodeType: effectiveType,
         state: 'READY',
-        title: sanitizeReleaseTags(parsed.title),
+        title: canonicalTitle,
         originalTitle: parsed.originalTitle ? sanitizeReleaseTags(parsed.originalTitle) : undefined,
-        sortTitle: sanitizeReleaseTags(sortTitle),
+        sortTitle: effectiveType === 'SHOW' ? canonicalTitle : sanitizeReleaseTags(sortTitle),
         tagline: parsed.tagline,
-        overview: parsed.plot || parsed.plot || parsed.outline,
+        overview: parsed.plot || parsed.outline,
         orderIndex,
         absoluteOrderIndex,
         releaseYear: effYear,
@@ -320,42 +332,23 @@ export async function ingestStandaloneVideoFile(videoPath) {
     const sortTitle = meta.title;
     let parentId = await resolveParentShowNodeId(videoPath);
     const seriesCtx = await resolveSeriesRoot(videoPath);
-    // Rattachement automatique au SHOW parent déterministe
-    if (!parentId && seriesCtx) {
-        const showByTitle = await db.query.mediaNodes.findFirst({
-            where: (t, { and: aOp, eq: eOp, or: oOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(eOp(t.title, seriesCtx.showTitleCandidate), eOp(t.sortTitle, seriesCtx.showTitleCandidate))),
-        });
-        if (showByTitle) {
-            parentId = showByTitle.id;
-        }
-        else {
-            const showSlug = `${generateSlug(seriesCtx.showTitleCandidate)}-show`;
-            const [newShow] = await db
-                .insert(mediaNodes)
-                .values({
-                nodeType: 'SHOW',
-                title: seriesCtx.showTitleCandidate,
-                sortTitle: seriesCtx.showTitleCandidate,
-                slug: `${showSlug}-${Date.now().toString().slice(-4)}`,
-                state: 'READY',
-                confidenceScore: 0.95,
-                updatedAt: new Date(),
-            })
-                .returning();
-            parentId = newShow.id;
-        }
-    }
     let isExtra = meta.isExtra;
     let extraType = meta.extraType;
     let nodeType = meta.nodeType;
     let arcTitle;
+    if (isExtraMediaFile(videoPath)) {
+        isExtra = true;
+        nodeType = 'EXTRA';
+        const extraGrouping = analyzeFolderGrouping(videoPath, path.dirname(videoPath));
+        extraType = extraGrouping.extraType || extraType || 'featurette';
+    }
     if (seriesCtx) {
         const grouping = analyzeFolderGrouping(videoPath, seriesCtx.showDir);
         if (grouping.isExtra) {
             isExtra = true;
             extraType = grouping.extraType || extraType;
         }
-        if (grouping.isMovie) {
+        if (grouping.isMovie && !meta.episodeNumber && !meta.seasonNumber) {
             nodeType = 'MOVIE';
         }
         if (grouping.groupTitle) {
@@ -385,12 +378,15 @@ export async function ingestStandaloneVideoFile(videoPath) {
     else if (meta.seasonNumber != null && meta.seasonNumber > 0) {
         orderIndex = meta.seasonNumber;
     }
+    const canonicalTitle = nodeType === 'SHOW'
+        ? extractCanonicalShowTitle(meta.title)
+        : meta.title;
     const payload = {
-        parentId: parentId || (existing?.parentId ?? undefined),
+        parentId: (parentId || existing?.parentId) ? String(parentId || existing?.parentId) : undefined,
         nodeType,
-        title: meta.title,
+        title: canonicalTitle,
         originalTitle: meta.originalTitle,
-        sortTitle,
+        sortTitle: nodeType === 'SHOW' ? canonicalTitle : sortTitle,
         orderIndex,
         absoluteOrderIndex,
         releaseYear: meta.releaseYear,
@@ -421,51 +417,5 @@ export async function ingestStandaloneVideoFile(videoPath) {
             .returning();
         nodeId = inserted.id;
     }
-    if (meta.edition)
-        await linkTagToNode(nodeId, 'edition', meta.edition);
-    if (isExtra)
-        await linkTagToNode(nodeId, 'extra', extraType || 'bonus');
-    if (arcTitle)
-        await linkTagToNode(nodeId, 'arc', arcTitle);
-    if (meta.videoQuality)
-        await linkTagToNode(nodeId, 'video_quality', meta.videoQuality);
-    if (meta.videoCodec)
-        await linkTagToNode(nodeId, 'video_codec', meta.videoCodec.toUpperCase());
-    for (const audio of meta.audioTracks) {
-        if (audio.language)
-            await linkTagToNode(nodeId, 'audio_language', audio.language.toUpperCase());
-        if (audio.codec)
-            await linkTagToNode(nodeId, 'audio_codec', audio.codec.toUpperCase());
-        if (audio.channels) {
-            const ch = audio.channels >= 6 ? (audio.channels === 8 ? '7.1' : '5.1') : `${audio.channels}.0`;
-            await linkTagToNode(nodeId, 'audio_channels', ch);
-        }
-    }
-    for (const sub of meta.subtitleTracks) {
-        if (sub.language)
-            await linkTagToNode(nodeId, 'subtitle_language', sub.language.toUpperCase());
-        if (sub.codec)
-            await linkTagToNode(nodeId, 'subtitle_codec', sub.codec.toUpperCase());
-        if (sub.forced)
-            await linkTagToNode(nodeId, 'subtitle_forced', 'Forcé');
-        if (sub.sdh)
-            await linkTagToNode(nodeId, 'subtitle_sdh', 'SDH');
-    }
-    if (meta.confidenceScore < 0.90) {
-        await linkTagToNode(nodeId, 'status', 'À vérifier');
-    }
-    const searchVector = [
-        meta.title,
-        meta.originalTitle || '',
-        meta.edition || '',
-        arcTitle || '',
-        meta.videoQuality || '',
-        meta.videoCodec || '',
-        ...meta.audioTracks.map((a) => a.language || ''),
-        ...meta.subtitleTracks.map((s) => s.language || ''),
-    ]
-        .filter(Boolean)
-        .join(' ');
-    await db.update(mediaNodes).set({ searchVectorText: searchVector }).where(eq(mediaNodes.id, nodeId));
     return nodeId;
 }

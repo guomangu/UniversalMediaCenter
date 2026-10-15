@@ -46,6 +46,7 @@ export const VideoPlayerView: React.FC<Props> = ({
   isFullscreen = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<any>(null);
   const userPausedRef = useRef(false);
   const [curTime, setCurTime] = useState(0);
   const [mouseActive, setMouseActive] = useState(true);
@@ -189,12 +190,24 @@ export const VideoPlayerView: React.FC<Props> = ({
   };
 
   const introEnd = intro?.end ?? 90.04;
-  // Le bouton "Passer l'intro" reste accessible pendant toute la durée du générique,
-  // y compris lors de la navigation au clavier ou à la télécommande sans souris
-  const showBtn = !isFullscreen && showSkipIntro && curTime >= (intro?.start ?? 0) && curTime < introEnd;
+  // Le bouton "Passer l'intro" ne doit JAMAIS apparaître sur les médias IPTV / directs (isLive)
+  // ni en mode plein écran, et uniquement si showSkipIntro est actif
+  const showBtn = !isLive && !isFullscreen && showSkipIntro && curTime >= (intro?.start ?? 0) && curTime < introEnd;
 
   return (
-    <View style={styles.videoPlaceholder} onPointerMove={resetMouse} data-player-container="true">
+    <Pressable
+      ref={containerRef as any}
+      focusable={true}
+      accessibilityRole="none"
+      accessibilityLabel="Lecteur vidéo (Flèches gauche/droite pour avancer/reculer)"
+      data-player-container="true"
+      data-focusable="true"
+      style={({ focused }: any) => [
+        styles.videoPlaceholder,
+        focused && styles.videoPlaceholderFocused,
+      ]}
+      onPointerMove={resetMouse}
+    >
       {Platform.OS === 'web' ? (
         <video
           ref={videoRef}
@@ -206,6 +219,9 @@ export const VideoPlayerView: React.FC<Props> = ({
           tabIndex={-1}
           data-video-player="true"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
+          onFocus={() => {
+            containerRef.current?.focus?.();
+          }}
           onPlay={() => {
             userPausedRef.current = false;
             setPlaybackError(null);
@@ -302,6 +318,6 @@ export const VideoPlayerView: React.FC<Props> = ({
           <Text style={styles.skipText}>Passer l'intro ⏩</Text>
         </Pressable>
       )}
-    </View>
+    </Pressable>
   );
 };

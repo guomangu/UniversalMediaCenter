@@ -3,14 +3,11 @@ import { db } from '../db/connection.js';
 import { uiRails, mediaNodes, eavAttributes, watchProgress } from '../db/schema/index.js';
 import { desc, asc, eq, and, inArray } from 'drizzle-orm';
 import { taxonomyRouter } from './taxonomyRoutes.js';
-import { requireAuth } from '../middleware/access.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 import { localizeMediaNode, extractRequestLanguage } from '../watcher/pipeline/localizationHelper.js';
 import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 export const uiRouter = new Hono();
-// Toutes les requêtes UI (listes, rails, tags, taxonomie) exigent d'être authentifié
-uiRouter.use('*', requireAuth);
-// Taxonomie hiérarchique Catégories < Tags < Médias
+// Taxonomie hiérarchique Catégories < Tags < Médias (accessible publiquement)
 uiRouter.route('/taxonomy', taxonomyRouter);
 function formatMediaItem(item, lang = "fr") {
     const localized = localizeMediaNode(item, lang);
@@ -125,17 +122,18 @@ uiRouter.get('/layout', async (c) => {
                     }
                 }
             }
-            filteredItems = filteredItems.map((it) => {
-                const p = pMap.get(it.id);
-                const dur = p?.durationSeconds || it.durationSeconds || it.runtimeSeconds || 0;
-                const pos = p?.positionSeconds || it.positionSeconds || 0;
-                const progressPercent = dur > 0 ? Math.round((pos / dur) * 100) : (p?.isCompleted ? 100 : (it.progressPercent || 0));
+            filteredItems = filteredItems.map((item) => {
+                const prog = pMap.get(item.id);
+                if (!prog)
+                    return item;
                 return {
-                    ...it,
-                    positionSeconds: pos,
-                    durationSeconds: dur,
-                    progressPercent,
-                    isCompleted: p?.isCompleted ?? it.isCompleted ?? false,
+                    ...item,
+                    positionSeconds: prog.positionSeconds,
+                    durationSeconds: prog.durationSeconds,
+                    progressPercent: prog.durationSeconds > 0
+                        ? Math.round((prog.positionSeconds / prog.durationSeconds) * 100)
+                        : 0,
+                    isCompleted: prog.isCompleted,
                 };
             });
         }
@@ -145,8 +143,11 @@ uiRouter.get('/layout', async (c) => {
             railType: rail.railType,
             cardStyle: rail.cardStyle,
             sortOrder: rail.sortOrder,
-            items: filteredItems.map((it) => formatMediaItem(it, userLang)),
+            items: filteredItems.map((item) => formatMediaItem(item, userLang)),
         };
     }));
-    return c.json(hydratedRails);
+    return c.json({
+        pageTarget,
+        rails: hydratedRails,
+    });
 });

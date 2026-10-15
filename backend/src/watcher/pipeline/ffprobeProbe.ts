@@ -1,3 +1,59 @@
+
+/**
+ * Échantillonne des frames non-noires (à 25%, 50%, 75% du film) via ffmpeg cropdetect
+ * Détecte si le flux 16:9 (1920x1080 ou 3840x2160) contient des bandes noires Scope (2.39:1 / 2.40:1) encodées en dur.
+ */
+async function detectActualActiveVisualRatio(
+  filePath: string,
+  durationSeconds: number,
+  containerWidth: number,
+  containerHeight: number
+): Promise<{ isScope: boolean; activeRatio?: string; detectedHeight?: number }> {
+  try {
+    const points = [
+      Math.floor(durationSeconds * 0.25),
+      Math.floor(durationSeconds * 0.5),
+      Math.floor(durationSeconds * 0.75),
+    ];
+    const detectedHeights: number[] = [];
+
+    for (const ss of points) {
+      try {
+        const { stderr } = await execFileAsync(
+          'ffmpeg',
+          ['-ss', String(ss), '-i', filePath, '-vframes', '2', '-vf', 'cropdetect=24:16:0', '-f', 'null', '-'],
+          { timeout: 1200 }
+        );
+        const matches = Array.from(stderr.matchAll(/crop=\d+:(\d+):\d+:\d+/g));
+        for (const m of matches) {
+          const h = parseInt(m[1], 10);
+          if (h > 200 && h <= containerHeight) {
+            detectedHeights.push(h);
+          }
+        }
+      } catch {}
+    }
+
+    if (detectedHeights.length === 0) return { isScope: false };
+
+    // Médiane des hauteurs détectées pour neutraliser les fondus au noir
+    detectedHeights.sort((a, b) => a - b);
+    const medianH = detectedHeights[Math.floor(detectedHeights.length / 2)];
+
+    // Si la hauteur utile est inférieure ou égale à 80% du conteneur (ex: <= 864 pour 1080p)
+    const scopeThreshold = containerHeight * 0.80;
+    if (medianH <= scopeThreshold) {
+      const ratio = (containerWidth / medianH).toFixed(2);
+      return {
+        isScope: true,
+        activeRatio: `${ratio}:1`,
+        detectedHeight: medianH,
+      };
+    }
+  } catch {}
+  return { isScope: false };
+}
+
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Chapter } from '../../db/schema/nodes.js';
@@ -62,6 +118,15 @@ export async function probeMediaFile(filePath: string): Promise<ProbedStreamData
           else if (w >= 1200 || h >= 700) videoQuality = '720p HD';
           else if (h >= 480 || w >= 600) videoQuality = '480p SD';
           else videoQuality = 'SD';
+
+          // Détection heuristique non-bloquante du CinémaScope réel (bandes noires encodées en dur)
+          if ((videoQuality === '1080p FHD' || videoQuality === '4K UHD') && duration && duration > 180) {
+            const actual = await detectActualActiveVisualRatio(filePath, duration, w, h);
+            if (actual.isScope) {
+              videoQuality = w >= 3800 ? '4K Scope' : '1080p Scope';
+              aspectRatio = actual.activeRatio || '2.39:1';
+            }
+          }
         }
       } else if (st.codec_type === 'audio') {
         const lang = st.tags?.language || st.tags?.LANGUAGE;

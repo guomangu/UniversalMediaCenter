@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import { cleanMediaTitle, sanitizeReleaseTags } from './titleCleaner.js';
+import { cleanMediaTitle, sanitizeReleaseTags, extractCanonicalShowTitle } from './titleCleaner.js';
 const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
@@ -41,15 +41,21 @@ export function parseNfoXml(xmlContent, filePath) {
     let folderTitle;
     let filenameEpNum;
     let filenameEpTitle;
+    let filenameShowTitle;
     if (filePath) {
         const norm = filePath.replace(/\\/g, '/');
         const parts = norm.split('/');
         const fileName = parts.pop() || '';
         const parentFolder = parts.pop() || '';
-        // Détection dossier arc/saison (ex: "01- Soul Society", "02- The Bount", "Season 02", "Saison 1", "Films")
+        // Détection dossier arc/saison (ex: "Peaky Blinders - Saison 4 (2017)", "Season 02", "01- Soul Society")
+        const showSeasonMatch = parentFolder.match(/^(.*?)[-_\s]+(?:season|saison)\s*0*(\d{1,2})/i);
         const arcMatch = parentFolder.match(/^0*(\d{1,2})\s*[-_ ]\s*(.+)$/);
-        const seasonMatch = parentFolder.match(/^(?:season|saison)\s*0*(\d{1,2})/i);
-        if (arcMatch) {
+        const seasonMatch = parentFolder.match(/(?:^|[-_ ]+)(?:season|saison)\s*0*(\d{1,2})/i);
+        if (showSeasonMatch) {
+            folderSeason = parseInt(showSeasonMatch[2], 10);
+            folderTitle = extractCanonicalShowTitle(showSeasonMatch[1]);
+        }
+        else if (arcMatch) {
             folderSeason = parseInt(arcMatch[1], 10);
             folderTitle = arcMatch[2].trim();
         }
@@ -62,18 +68,21 @@ export function parseNfoXml(xmlContent, filePath) {
             folderTitle = 'Films & Spéciaux';
         }
         // Détection numéro absolu et titre dans le nom de fichier
-        // ex: "Bleach - 102 - Le dernier Quincy ! L`explosion du pouvoir.nfo" ou "Bleach - 1 - Memories of Nobody.nfo"
+        // ex: "Bleach - 102 - Le dernier Quincy ! L`explosion du pouvoir.nfo"
         const animeEpMatch = fileName.match(/^[^-]+-\s*0*(\d{1,4})\s*-\s*(.+?)(?:\.[a-z0-9]+)?$/i);
-        const sxxExxMatch = fileName.match(/S(\d+)E(\d+)(?:[.\s-_]+(.*))?$/i);
+        const sxxExxMatch = fileName.match(/(.*?)[.\s-_]*S(\d+)E(\d+)(?:[.\s-_]+(.*))?$/i);
         if (animeEpMatch) {
             filenameEpNum = parseInt(animeEpMatch[1], 10);
             filenameEpTitle = animeEpMatch[2].replace(/\.[a-z0-9]+$/i, '').trim();
         }
         else if (sxxExxMatch) {
+            if (sxxExxMatch[1]?.trim()) {
+                filenameShowTitle = extractCanonicalShowTitle(sxxExxMatch[1]);
+            }
             if (!folderSeason)
-                folderSeason = parseInt(sxxExxMatch[1], 10);
-            filenameEpNum = parseInt(sxxExxMatch[2], 10);
-            filenameEpTitle = (sxxExxMatch[3] || '').replace(/\.[a-z0-9]+$/i, '').replace(/[._]/g, ' ').trim();
+                folderSeason = parseInt(sxxExxMatch[2], 10);
+            filenameEpNum = parseInt(sxxExxMatch[3], 10);
+            filenameEpTitle = (sxxExxMatch[4] || '').replace(/\.[a-z0-9]+$/i, '').replace(/[._]/g, ' ').trim();
         }
     }
     // 2. Détermination de la Saison et de l'Épisode
@@ -99,7 +108,7 @@ export function parseNfoXml(xmlContent, filePath) {
     // 3. Titre propre et distinct
     const rawTitle = root.title || filenameEpTitle || '';
     const originalTitle = root.originaltitle;
-    const showTitle = root.showtitle;
+    const showTitle = root.showtitle || filenameShowTitle || folderTitle;
     const cleanedTitle = cleanMediaTitle(rawTitle, originalTitle, showTitle, finalSeasonNumber, finalEpisodeNumber);
     // 4. Casting & Équipes (Humain & Artistique)
     const actors = (root.actor || []).map((a) => ({
@@ -232,6 +241,11 @@ export function parseNfoXml(xmlContent, filePath) {
             customFields[k] = typeof v === 'object' ? JSON.stringify(v) : String(v);
         }
     }
+    // Détection infaillible du type de média
+    // Même si le NFO porte une balise <movie> accidentelle, la présence formelle d'un épisode ou code SxxExx qualifie un EPISODE
+    const hasEpisodePattern = isEpisode ||
+        (finalEpisodeNumber !== undefined && finalEpisodeNumber > 0) ||
+        Boolean(filePath && /S\d+[\s._-]*E\d+|\b\d+x\d+\b/i.test(filePath));
     const nodeType = isShow
         ? 'SHOW'
         : isSet
@@ -240,7 +254,7 @@ export function parseNfoXml(xmlContent, filePath) {
                 ? 'SEASON'
                 : isFilmsFolder && !isShow
                     ? 'MOVIE'
-                    : isEpisode
+                    : hasEpisodePattern
                         ? 'EPISODE'
                         : 'MOVIE';
     return {
@@ -261,7 +275,6 @@ export function parseNfoXml(xmlContent, filePath) {
         premiered: root.premiered || root.releasedate,
         runtime,
         rating,
-        certification: typeof certification === 'string' ? certification.trim() : undefined,
         genres,
         tags,
         studios,
@@ -273,6 +286,7 @@ export function parseNfoXml(xmlContent, filePath) {
         actors,
         chapters,
         streamDetails,
+        certification,
         customFields,
     };
 }

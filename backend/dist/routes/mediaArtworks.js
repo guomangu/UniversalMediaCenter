@@ -4,9 +4,28 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 export const artworkRouter = new Hono();
 async function sendArtworkFile(filePath, c) {
+    // 1. Image distante (TMDb, TVmaze, etc.) : Proxy transparent avec en-têtes CORS universels
     if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-        return c.redirect(filePath);
+        try {
+            const upstream = await fetch(filePath);
+            if (!upstream.ok)
+                return c.notFound();
+            const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+            const arrayBuf = await upstream.arrayBuffer();
+            return new Response(arrayBuf, {
+                headers: {
+                    'Content-Type': contentType,
+                    'Cache-Control': 'public, max-age=31536000, immutable',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                },
+            });
+        }
+        catch {
+            return c.notFound();
+        }
     }
+    // 2. Image locale physique
     try {
         const data = await fs.readFile(filePath);
         const ext = path.extname(filePath).toLowerCase();
@@ -14,7 +33,9 @@ async function sendArtworkFile(filePath, c) {
         return new Response(data, {
             headers: {
                 'Content-Type': contentType,
-                'Cache-Control': 'public, max-age=86400, immutable',
+                'Cache-Control': 'public, max-age=31536000, immutable',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
             },
         });
     }

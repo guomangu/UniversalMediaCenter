@@ -18,7 +18,7 @@ export function TvChannelCard({ channel }: Props) {
   const category = (channel.searchVectorText?.replace(title, '') || '').trim().split(';')[0]?.trim() || 'Direct';
 
   const handlePlay = () => {
-    router.push({ pathname: '/player/[id]', params: { id: channel.id, title } } as any);
+    router.push({ pathname: '/player/[id]', params: { id: channel.id, title, isLive: '1' } } as any);
   };
 
   const handleForum = () => {

@@ -7,6 +7,11 @@ export const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#0f172a', margin: Spacing.two, borderRadius: Radius.lg,
     position: 'relative', overflow: 'hidden',
+    borderWidth: 2, borderColor: 'transparent',
+  },
+  videoPlaceholderFocused: {
+    borderColor: '#6366f1',
+    borderWidth: 2,
   },
   videoText: { fontSize: 22, fontWeight: '700', color: '#f8fafc' },
   subText: { fontSize: 13, color: '#94a3b8', marginTop: 4 },

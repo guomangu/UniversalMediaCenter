@@ -4,9 +4,9 @@ import { db } from '../db/connection.js';
 import { mediaNodes, nodeEavLinks } from '../db/schema/index.js';
 import { eq, and, ne, isNull, sql, inArray } from 'drizzle-orm';
 import { resolveParentShowNodeId, resolveSeriesRoot, findOrCreateCollectionNode, cleanShowFolderName, detectSagaNameFromFolder } from './hierarchyResolver.js';
-import { analyzeFolderGrouping } from './folderGrouper.js';
+import { analyzeFolderGrouping, isExtraMediaFile } from './folderGrouper.js';
 import { parseSeasonEpisode } from './seasonEpisodeHelper.js';
-import { sanitizeReleaseTags, extractYearFromText, extractCanonicalShowTitle } from './titleCleaner.js';
+import { sanitizeReleaseTags, extractYearFromText, extractCanonicalShowTitle, normalizePhoneticSpelling } from './titleCleaner.js';
 import { fetchExternalMetadata } from './externalMetadata.js';
 import { generateSlug } from './slugify.js';
 import { linkTagToNode } from './tagExtractor.js';
@@ -155,19 +155,21 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
   const showGroups = new Map<string, typeof allShows>();
   for (const show of allShows) {
     const canonical = extractCanonicalShowTitle(show.title);
-    const key = canonical.toLowerCase().trim();
-    if (!showGroups.has(key)) showGroups.set(key, []);
-    showGroups.get(key)!.push(show);
+    const phoneticKey = normalizePhoneticSpelling(canonical).toLowerCase().trim() || canonical.toLowerCase().trim();
+    if (!showGroups.has(phoneticKey)) showGroups.set(phoneticKey, []);
+    showGroups.get(phoneticKey)!.push(show);
   }
 
   for (const [key, group] of showGroups.entries()) {
     if (group.length === 0) continue;
     const canonicalTitle = extractCanonicalShowTitle(group[0].title) || group[0].title;
 
-    // Déterminer ou promouvoir le Master SHOW
-    let masterShow = group.find((s) => s.title.toLowerCase().trim() === canonicalTitle.toLowerCase().trim());
+    // Déterminer ou promouvoir le Master SHOW (priorité au show avec poster TMDb officiel ou titre canonique propre)
+    let masterShow = group.find((s) => s.posterPath && s.communityRating);
     if (!masterShow) {
-      // Choisir le premier et le promouvoir
+      masterShow = group.find((s) => s.title.toLowerCase().trim() === canonicalTitle.toLowerCase().trim());
+    }
+    if (!masterShow) {
       masterShow = group[0];
       await db
         .update(mediaNodes)
@@ -250,6 +252,20 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
     const filePath = node.nfoFilePath || node.videoFilePath;
     if (!filePath || filePath.startsWith('http://') || filePath.startsWith('https://')) {
       continue;
+    }
+
+    // Requalification des bonus / coulisses / samples en EXTRA
+    if (isExtraMediaFile(filePath) && (node.nodeType !== 'EXTRA' || !node.isExtra)) {
+      await db
+        .update(mediaNodes)
+        .set({
+          nodeType: 'EXTRA',
+          isExtra: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(mediaNodes.id, node.id));
+      node.nodeType = 'EXTRA';
+      node.isExtra = true;
     }
 
     // Ignorer les fichiers de trickplay résiduels

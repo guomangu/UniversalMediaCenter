@@ -1,8 +1,7 @@
 import { sqlClient } from './connection.js';
 export async function createSecondaryTables() {
     await sqlClient.unsafe(`
-    CREATE TABLE IF NOT EXISTS eav_values (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    CREATE TABLE IF NOT EXISTS eav_values (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       attribute_id UUID NOT NULL REFERENCES eav_attributes(id) ON DELETE CASCADE,
       value_text TEXT NOT NULL,
       value_slug TEXT NOT NULL,
@@ -63,31 +62,14 @@ export async function createSecondaryTables() {
       created_at TIMESTAMP DEFAULT NOW() NOT NULL,
       CONSTRAINT idx_favorites_user_node UNIQUE (user_id, node_id)
     );
-    CREATE TABLE IF NOT EXISTS user_friends (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      friend_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      status TEXT DEFAULT 'PENDING' NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-      updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
-      CONSTRAINT idx_friends_user_friend UNIQUE (user_id, friend_id)
-    );
-    CREATE TABLE IF NOT EXISTS media_reposts (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
-      rating INTEGER,
-      comment TEXT,
-      created_at TIMESTAMP DEFAULT NOW() NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS iptv_sources (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       name TEXT NOT NULL,
       m3u_url TEXT NOT NULL,
       epg_xmltv_url TEXT,
-      refresh_interval_hours INTEGER DEFAULT 6 NOT NULL,
+      refresh_interval_hours INTEGER DEFAULT 24 NOT NULL,
       is_active BOOLEAN DEFAULT TRUE NOT NULL,
-      user_agent TEXT DEFAULT 'UniversalMediaStack/3.0',
+      user_agent TEXT,
       last_synced_at TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS epg_programs (
@@ -97,44 +79,67 @@ export async function createSecondaryTables() {
       subtitle TEXT,
       description TEXT,
       category TEXT,
-      icon_url TEXT,
+      thumbnail_url TEXT,
       start_time TIMESTAMP NOT NULL,
       end_time TIMESTAMP NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS user_devices (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_id TEXT NOT NULL,
+      device_name TEXT NOT NULL,
+      device_type TEXT DEFAULT 'BROWSER' NOT NULL,
+      last_active_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      ip_address TEXT,
+      is_current BOOLEAN DEFAULT FALSE NOT NULL,
+      CONSTRAINT idx_user_device_unique UNIQUE (user_id, device_id)
     );
     CREATE TABLE IF NOT EXISTS forum_messages (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       topic_slug TEXT NOT NULL,
-      topic_title TEXT NOT NULL,
       author_id UUID,
       author_name TEXT DEFAULT 'Visiteur' NOT NULL,
+      author_avatar TEXT,
       content TEXT NOT NULL,
-      media_type TEXT DEFAULT 'TEXT' NOT NULL,
-      media_url TEXT,
-      file_name TEXT,
+      media_attachment_json JSONB,
+      quoted_media_json JSONB,
       reply_to_id UUID,
-      reply_to_text TEXT,
       reply_to_author TEXT,
-      vote_count INTEGER DEFAULT 0 NOT NULL,
-      quoted_media_id UUID,
-      quoted_media_title TEXT,
-      quoted_media_poster TEXT,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+      reply_to_content TEXT,
+      upvotes INTEGER DEFAULT 0 NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL
     );
-    ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS vote_count INTEGER DEFAULT 0 NOT NULL;
-    ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_id UUID;
-    ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_title TEXT;
-    ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS quoted_media_poster TEXT;
-    CREATE TABLE IF NOT EXISTS forum_message_votes (
+    CREATE TABLE IF NOT EXISTS forum_voice_participants (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      message_id UUID NOT NULL REFERENCES forum_messages(id) ON DELETE CASCADE,
+      topic_slug TEXT NOT NULL,
+      user_id UUID,
+      display_name TEXT NOT NULL,
+      avatar_url TEXT,
+      is_speaking BOOLEAN DEFAULT FALSE NOT NULL,
+      is_muted BOOLEAN DEFAULT FALSE NOT NULL,
+      last_ping_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      joined_at TIMESTAMP DEFAULT NOW() NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS user_friendships (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      friend_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT DEFAULT 'ACCEPTED' NOT NULL,
       created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-      CONSTRAINT idx_forum_msg_user_vote UNIQUE (message_id, user_id)
+      CONSTRAINT idx_friendship_unique UNIQUE (user_id, friend_id)
+    );
+    CREATE TABLE IF NOT EXISTS media_reposts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
+      comment TEXT,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      CONSTRAINT idx_repost_user_node UNIQUE (user_id, node_id)
     );
     CREATE TABLE IF NOT EXISTS media_sessions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      node_id UUID NOT NULL REFERENCES media_nodes(id) ON DELETE CASCADE,
-      topic_slug TEXT NOT NULL,
+      node_id UUID REFERENCES media_nodes(id) ON DELETE SET NULL,
+      topic_slug TEXT,
       host_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       host_display_name TEXT NOT NULL,
       title TEXT NOT NULL,
@@ -164,6 +169,18 @@ export async function createSecondaryTables() {
       created_at TIMESTAMP DEFAULT NOW() NOT NULL,
       CONSTRAINT idx_user_rating_unique UNIQUE (target_user_id, rated_by_user_id)
     );
+    CREATE TABLE IF NOT EXISTS user_invitations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      token TEXT NOT NULL UNIQUE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      display_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      raw_password TEXT NOT NULL,
+      profile_role TEXT DEFAULT 'STANDARD' NOT NULL,
+      clicks_count INTEGER DEFAULT 0 NOT NULL,
+      last_used_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL
+    );
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS confidence_score DOUBLE PRECISION DEFAULT 1.0 NOT NULL;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS oshash TEXT;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS crc32 TEXT;
@@ -171,13 +188,13 @@ export async function createSecondaryTables() {
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS is_extra BOOLEAN DEFAULT FALSE NOT NULL;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS extra_type TEXT;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS translations_json JSONB DEFAULT '{}'::jsonb;
-    CREATE INDEX IF NOT EXISTS idx_media_nodes_confidence ON media_nodes (confidence_score);
-    CREATE INDEX IF NOT EXISTS idx_media_nodes_is_extra ON media_nodes (is_extra);
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_confidence ON media_nodes (confidence_score);\n    CREATE INDEX IF NOT EXISTS idx_media_nodes_is_extra ON media_nodes (is_extra);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_oshash ON media_nodes (oshash);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_trgm ON media_nodes USING gin (search_vector_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_eav_values_trgm ON eav_values USING gin (value_text gin_trgm_ops);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_node_val_role_coalesce ON node_eav_links (node_id, value_id, COALESCE(context_role, ''));
     CREATE INDEX IF NOT EXISTS idx_media_sessions_node ON media_sessions (node_id);
     CREATE INDEX IF NOT EXISTS idx_media_sessions_topic ON media_sessions (topic_slug);
+    CREATE INDEX IF NOT EXISTS idx_user_invitations_token ON user_invitations (token);
   `);
 }

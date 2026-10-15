@@ -4,7 +4,7 @@ import { db } from '../db/connection.js';
 import { mediaNodes } from '../db/schema/index.js';
 import { eq, and, or, sql } from 'drizzle-orm';
 import { generateSlug } from './slugify.js';
-import { extractCanonicalShowTitle } from './titleCleaner.js';
+import { extractCanonicalShowTitle, normalizePhoneticSpelling } from './titleCleaner.js';
 
 export interface SeriesContext {
   showDir: string;
@@ -18,6 +18,12 @@ export function cleanShowFolderName(folder: string): string {
 
 const SERIES_ROOT_CATEGORIES = new Set([
   'animes', 'anime', 'series', 'séries', 'serie', 'série', 'tv', 'shows', 'show',
+]);
+
+const GENRE_OR_INTERMEDIATE_CATEGORIES = new Set([
+  'crime', 'action', 'drame', 'drama', 'comedie', 'comedy', 'animation', 'thriller',
+  'sci-fi', 'horreur', 'horror', 'documentaire', 'aventure', 'fantastique', 'romance',
+  'western', 'films', 'film', 'partaged', 'telechargement', 'downloads', 'partage',
 ]);
 
 /**
@@ -80,7 +86,10 @@ export async function resolveSeriesRoot(filePath: string): Promise<SeriesContext
  */
 export async function resolveParentShowNodeId(filePath: string): Promise<string | null> {
   const seriesCtx = await resolveSeriesRoot(filePath);
-  const rawCandidate = seriesCtx ? seriesCtx.showTitleCandidate : path.basename(filePath);
+  let rawCandidate = seriesCtx ? seriesCtx.showTitleCandidate : path.basename(filePath);
+  if (GENRE_OR_INTERMEDIATE_CATEGORIES.has(rawCandidate.toLowerCase().trim())) {
+    rawCandidate = path.basename(filePath);
+  }
   const cleanedTitle = extractCanonicalShowTitle(rawCandidate);
   if (!cleanedTitle || cleanedTitle.length < 2) return null;
 
@@ -136,19 +145,46 @@ export async function resolveParentShowNodeId(filePath: string): Promise<string 
     return showByPrefix.id;
   }
 
-  // 4. Recherche par similarité trigramme PostgreSQL (tolérance aux fautes de frappe comme "peacky blinders")
+  // 4. Recherche hybride Phonétique + Trigrammes + Levenshtein (Loi n°2 White Paper)
+  const phoneticCandidate = normalizePhoneticSpelling(cleanedTitle);
   try {
     const fuzzyShows = await db.execute(sql`
-      SELECT id, title FROM media_nodes
-      WHERE node_type = 'SHOW' AND similarity(title, ${cleanedTitle}) > 0.65
-      ORDER BY similarity(title, ${cleanedTitle}) DESC
+      SELECT id, title,
+             similarity(title, ${cleanedTitle}) AS trgm_sim,
+             levenshtein(lower(title), lower(${cleanedTitle})) AS lev_dist,
+             CASE WHEN dmetaphone(title) = dmetaphone(${cleanedTitle}) THEN 1 ELSE 0 END AS dm_match
+      FROM media_nodes
+      WHERE node_type = 'SHOW'
+        AND (
+          similarity(title, ${cleanedTitle}) >= 0.65
+          OR dmetaphone(title) = dmetaphone(${cleanedTitle})
+          OR (length(${cleanedTitle}) >= 4 AND levenshtein(lower(title), lower(${cleanedTitle})) <= 2 AND similarity(title, ${cleanedTitle}) >= 0.50)
+          ${phoneticCandidate !== cleanedTitle ? sql`OR similarity(title, ${phoneticCandidate}) >= 0.70 OR dmetaphone(title) = dmetaphone(${phoneticCandidate})` : sql``}
+        )
+      ORDER BY
+        dm_match DESC,
+        trgm_sim DESC,
+        lev_dist ASC
       LIMIT 1;
     `);
     const fuzzyRows = Array.isArray(fuzzyShows) ? fuzzyShows : (fuzzyShows as any).rows || [];
     if (fuzzyRows.length > 0 && fuzzyRows[0]?.id) {
       return fuzzyRows[0].id;
     }
-  } catch {}
+  } catch (err) {
+    try {
+      const fallbackShows = await db.execute(sql`
+        SELECT id FROM media_nodes
+        WHERE node_type = 'SHOW' AND similarity(title, ${cleanedTitle}) >= 0.65
+        ORDER BY similarity(title, ${cleanedTitle}) DESC
+        LIMIT 1;
+      `);
+      const fbRows = Array.isArray(fallbackShows) ? fallbackShows : (fallbackShows as any).rows || [];
+      if (fbRows.length > 0 && fbRows[0]?.id) {
+        return fbRows[0].id;
+      }
+    } catch {}
+  }
 
   // 5. Si aucun SHOW n'existe pour cette série, créer le SHOW canonique unique
   const cleanSort = cleanedTitle.replace(/^(le|la|les|the|l')\s+/i, '').trim() || cleanedTitle;

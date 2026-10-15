@@ -10,7 +10,11 @@ export async function parsePathWithGuessit(filePath) {
     const normPath = filePath.replace(/\\/g, '/');
     const filename = normPath.split('/').pop() || '';
     const isFilmsPath = /\/(films|movies|marvel|action|comedy|drame|drama|spectacle)\//i.test(normPath);
-    const isSeriesPath = /\/(series|séries|anime|animes|tv|shows)\//i.test(normPath);
+    const isSeriesPath = /\/(series|séries|serie|série|anime|animes|tv|shows|show)\//i.test(normPath);
+    // Détection d'un motif explicite d'épisode dans le nom de fichier ou le dossier immédiat
+    const hasExplicitEpisodePattern = /S\d+[\s._-]*E\d+|\b\d+x\d+\b|\b(?:saison|season)\s*\d+[-_\s]+(?:ep|episode|e)?\s*\d+/i.test(filename) ||
+        /S\d+[\s._-]*E\d+|\b\d+x\d+\b/i.test(normPath) ||
+        /(?:saison|season)\s*\d+/i.test(normPath);
     let rawGuess = null;
     try {
         const { stdout } = await execFileAsync('guessit', ['-j', normPath], { timeout: 5000 });
@@ -29,12 +33,17 @@ export async function parsePathWithGuessit(filePath) {
         year = extractYearFromText(filename) || extractYearFromText(normPath);
     }
     // 2. Détection du type de média
+    // RÈGLE CARDINALE : Un fichier portant un motif formel d'épisode (ex: S04E05) est TOUJOURS un épisode,
+    // même s'il réside par inadvertance dans un sous-dossier contenant le mot 'films' ou 'crime'.
     let mediaType = 'movie';
-    if (isFilmsPath && !isSeriesPath) {
-        mediaType = 'movie';
-    }
-    else if (rawGuess?.type === 'episode' || isSeriesPath) {
+    if (hasExplicitEpisodePattern || rawGuess?.type === 'episode') {
         mediaType = 'episode';
+    }
+    else if (isSeriesPath) {
+        mediaType = 'episode';
+    }
+    else if (isFilmsPath) {
+        mediaType = 'movie';
     }
     else if (rawGuess?.type === 'movie') {
         mediaType = 'movie';
@@ -53,7 +62,7 @@ export async function parsePathWithGuessit(filePath) {
         const epNum = typeof rawEp === 'number' ? rawEp : parseInt(String(rawEp || ''), 10);
         // ANTI-FAUX-POSITIF : Si l'épisode est une année (1990-2099) ou une résolution (480, 576, 720, 1080, 2160)
         const isAbsurdEp = !isNaN(epNum) &&
-            ((epNum >= 1880 && epNum <= 2100) || [480, 576, 720, 1080, 2160].includes(epNum));
+            ((epNum >= 1880 && epNum <= 2100) || [360, 480, 576, 720, 1080, 2160].includes(epNum));
         if (!isAbsurdEp && !isNaN(epNum) && epNum > 0) {
             if (epNum > 24 && !rawGuess?.season) {
                 // Numérotation continue d'anime
@@ -67,6 +76,25 @@ export async function parsePathWithGuessit(filePath) {
             const sNum = parseInt(String(rawGuess.season), 10);
             if (!isNaN(sNum) && sNum > 0 && sNum < 200)
                 season = sNum;
+        }
+        // Extraction de secours depuis la regex si Guessit a manqué season/episode
+        if (season === undefined || episode === undefined) {
+            const sxxExxMatch = filename.match(/S(\d+)[\s._-]*E(\d+)/i) || normPath.match(/S(\d+)[\s._-]*E(\d+)/i);
+            if (sxxExxMatch) {
+                if (season === undefined)
+                    season = parseInt(sxxExxMatch[1], 10);
+                if (episode === undefined)
+                    episode = parseInt(sxxExxMatch[2], 10);
+            }
+            else {
+                const xMatch = filename.match(/\b(\d{1,2})x(\d{1,3})\b/i);
+                if (xMatch) {
+                    if (season === undefined)
+                        season = parseInt(xMatch[1], 10);
+                    if (episode === undefined)
+                        episode = parseInt(xMatch[2], 10);
+                }
+            }
         }
         // Extraction CRC32 pour animes
         const crcMatch = filename.match(/\[([A-Fa-f0-9]{8})\]/);
@@ -94,6 +122,8 @@ export async function parsePathWithGuessit(filePath) {
         videoQuality = '720p HD';
     else if (rawSize.includes('480'))
         videoQuality = '480p SD';
+    else if (rawSize.includes('360'))
+        videoQuality = '360p SD';
     // 6. Extraction CRC32
     const crcMatch = filename.match(/\[([A-Fa-f0-9]{8})\]/);
     const crc32 = crcMatch ? crcMatch[1].toUpperCase() : undefined;

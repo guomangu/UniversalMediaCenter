@@ -14,7 +14,7 @@ import { identifyVideoFile } from './pipeline/universalScanner.js';
 import type { UnifiedMediaMetadata } from './pipeline/universalScanner.js';
 import { detectAdjacentFiles } from './mediaFileDetector.js';
 import { resolveSeriesRoot, resolveParentShowNodeId, findOrCreateCollectionNode, detectSagaNameFromFolder } from './hierarchyResolver.js';
-import { analyzeFolderGrouping } from './folderGrouper.js';
+import { analyzeFolderGrouping, isExtraMediaFile } from './folderGrouper.js';
 import type { ParsedNfo } from './types.js';
 import { sanitizeReleaseTags, extractYearFromText, extractCanonicalShowTitle } from './titleCleaner.js';
 import { parsePathWithGuessit } from './pipeline/guessitParser.js';
@@ -32,7 +32,7 @@ export async function ingestMediaNode(
   let parentId: string | null = null;
   let isExtra = false;
   let extraType: string | undefined;
-  let effectiveType = parsed.type;
+  let effectiveType: 'COLLECTION' | 'SHOW' | 'SEASON' | 'MOVIE' | 'EPISODE' | 'EXTRA' = parsed.type;
   let folderArcTitle = parsed.folderTitle;
 
   if (parsed.type !== 'SHOW' && parsed.type !== 'COLLECTION') {
@@ -53,6 +53,14 @@ export async function ingestMediaNode(
           ),
       });
       if (showByTitle) parentId = showByTitle.id;
+    }
+
+    const filePathToCheck = adjacent.videoFilePath || nfoPath;
+    if (isExtraMediaFile(filePathToCheck)) {
+      isExtra = true;
+      effectiveType = 'EXTRA';
+      const grouping = analyzeFolderGrouping(filePathToCheck, path.dirname(filePathToCheck));
+      extraType = grouping.extraType || 'featurette';
     }
 
     const seriesCtx = await resolveSeriesRoot(nfoPath);
@@ -356,8 +364,15 @@ export async function ingestStandaloneVideoFile(videoPath: string): Promise<stri
 
   let isExtra = meta.isExtra;
   let extraType = meta.extraType;
-  let nodeType = meta.nodeType;
+  let nodeType: 'MOVIE' | 'SHOW' | 'EPISODE' | 'EXTRA' = meta.nodeType;
   let arcTitle: string | undefined;
+
+  if (isExtraMediaFile(videoPath)) {
+    isExtra = true;
+    nodeType = 'EXTRA';
+    const extraGrouping = analyzeFolderGrouping(videoPath, path.dirname(videoPath));
+    extraType = extraGrouping.extraType || extraType || 'featurette';
+  }
 
   if (seriesCtx) {
     const grouping = analyzeFolderGrouping(videoPath, seriesCtx.showDir);

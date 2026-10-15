@@ -1,3 +1,38 @@
+// Mapping Chiffres Romains <-> Arabes (jusqu'à 30)
+const ROMAN_TO_ARABIC = {
+    I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10,
+    XI: 11, XII: 12, XIII: 13, XIV: 14, XV: 15, XVI: 16, XVII: 17, XVIII: 18, XIX: 19, XX: 20,
+    XXI: 21, XXII: 22, XXIII: 23, XXIV: 24, XXV: 25, XXVI: 26, XXVII: 27, XXVIII: 28, XXIX: 29, XXX: 30,
+};
+/**
+ * Normalisation Unicode (NFKC), décomposition des ligatures et standardisation des caractères pleines chasses.
+ */
+export function normalizeUnicodeAndLigatures(raw) {
+    if (!raw)
+        return '';
+    let s = String(raw).normalize('NFKC');
+    // Ligatures françaises et latines
+    s = s.replace(/œ/g, 'oe').replace(/Œ/g, 'Oe');
+    s = s.replace(/æ/g, 'ae').replace(/Æ/g, 'Ae');
+    // Deux-points pleine chasse Windows/NTFS (： U+FF1A) et tirets cadratins
+    s = s.replace(/：/g, ':');
+    s = s.replace(/[—–]/g, '-');
+    // Apostrophes courbes
+    s = s.replace(/[`'’]/g, "'");
+    return s;
+}
+/**
+ * Convertit les chiffres romains terminaux ou isolés en chiffres arabes
+ * Ex: "Rocky III" -> "Rocky 3", "Star Wars Episode IV" -> "Star Wars Episode 4"
+ */
+export function normalizeRomanNumerals(title) {
+    if (!title)
+        return '';
+    return title.replace(/\b(X{0,3}(?:IX|IV|V?I{1,3}))\b$/i, (match) => {
+        const upper = match.toUpperCase();
+        return ROMAN_TO_ARABIC[upper] ? String(ROMAN_TO_ARABIC[upper]) : match;
+    });
+}
 /**
  * titleCleaner.ts - Normalisation et nettoyage des titres de fichiers multimédias
  * Supprime les bruits de release (1080p, x264, MULTi...), préserve le titre réel des épisodes,
@@ -56,7 +91,7 @@ export function sanitizeReleaseTags(raw) {
     t = t.replace(/[\s._]\d{3,4}x\d{3,4}.*$/i, '');
     t = t.replace(/\s*[–-]\s*(Action|Comedy|Drama|Aventure)?\s*\d{4}\s*.*$/i, '');
     t = t.replace(/\s*\(?\d{4}\)?\s*(VFF|VF|VOSTFR|MULTi|ENG|FRENCH|AC3|DTS|BluRay|BDRip|1080p|720p|x264|x265|WEB).*$/i, '');
-    t = t.replace(/\b(MULTi|VFF|VF|VOSTFR|FRENCH|TRUEFRENCH|1080p|720p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|web-dl|webrip|web|h264|h265|x264|x265|hevc|dts-hd|dts|truehd|ac3|aac|proper|repack|remastered|extended|1920x\d+|1280x\d+)\b.*$/i, '');
+    t = t.replace(/\b(MULTi|VFF|VF|VOSTFR|FRENCH|TRUEFRENCH|FASTSUB|SUBITA|LD|FiNAL|1080p|720p|480p|576p|360p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|h264|h265|x264|x265|xvid|divx|hevc|dts-hd|dts|truehd|ac3|aac|flac|mp3|proper|repack|remastered|extended|1920x\d+|1280x\d+)\b.*$/i, '');
     t = t.replace(/(?<=[a-zA-Z0-9]{2,})\.|\.(?=[a-zA-Z0-9]{2,})/g, ' ');
     t = t.replace(/_/g, ' ');
     t = t.replace(/\[.*?\]/g, '');
@@ -65,6 +100,52 @@ export function sanitizeReleaseTags(raw) {
     t = t.replace(/`/g, "'");
     const cleaned = t.replace(/\s{2,}/g, ' ').trim();
     return cleaned || t || '';
+}
+/**
+ * Extrait le titre canonique pur d'une série télévisée ou anime en éliminant :
+ * - Les mentions de saison (ex: " - Saison 4 (2017)", " - Saison 1 360p", " Season 2", " S02")
+ * - Les résolutions (360p, 720p, 1080p...) et formats (HDTV, WEBRip, XviD...)
+ * - Les équipes et domaines de téléchargement (Zone-Telechargement, Cpasbien...)
+ * - Les fautes de frappe courantes (ex: "peacky blinders" -> "Peaky Blinders")
+ */
+export function extractCanonicalShowTitle(raw) {
+    let s = normalizeUnicodeAndLigatures(String(raw ?? '')).trim();
+    if (!s)
+        return '';
+    // 1. Extraire le nom de base si c'est un chemin complet
+    if (s.includes('/') || s.includes('\\')) {
+        s = s.replace(/\\/g, '/').split('/').filter(Boolean).pop() || s;
+    }
+    // 2. Nettoyer les extensions de fichiers
+    s = s.replace(/\.(mkv|mp4|avi|mov|ts|m4v|webm|nfo)$/i, '');
+    // 3. Nettoyer les tags entre crochets ou domaines web
+    s = s.replace(/^\s*\[.*?\]\s*/g, '');
+    s = s.replace(/\s*\[.*?\]/g, '');
+    s = s.replace(/\b(?:w+w\.)?[a-zA-Z0-9-]+\.(?:ws|com|pw|cm|org|to|me|cx|net)\b/gi, '');
+    // 4. Nettoyer les codes d'épisodes s'ils sont dans le nom
+    s = s.replace(/\s*[-_–]\s*S\d+.*$/i, '');
+    s = s.replace(/\s+S\d+E\d+.*$/i, '');
+    s = s.replace(/\s+S\d+\b.*$/i, '');
+    s = s.replace(/\b\d+x\d+\b.*$/i, '');
+    // 5. Supprimer les mentions de saison françaises et anglaises
+    s = s.replace(/\s*[-_–]\s*(?:saison|season|séries?|series?|part|partie|cour|vol|volume)\s*0*\d+.*$/i, '');
+    s = s.replace(/\s+\b(?:saison|season|séries?|series?|part|partie|cour|vol|volume)\s*0*\d+.*$/i, '');
+    // 6. Supprimer les années résiduelles (2017) ou (1990)
+    s = s.replace(/\s*\((?:19|20)\d{2}\)\s*$/i, '');
+    s = s.replace(/\s+-\s+(?:19|20)\d{2}\s*$/i, '');
+    // 7. Supprimer les résolutions, formats, qualités, langues
+    s = s.replace(/\b(360p|480p|576p|720p|1080p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|xvid|divx|x264|x265|hevc|h264|h265|vostfr|vff|vf|french|truefrench|multi|fastsub|subita|ld|final|repack|proper|remastered|extended)\b.*$/i, '');
+    // 8. Remplacer les points et underscores par des espaces
+    s = s.replace(/[._]/g, ' ');
+    s = s.replace(/`/g, "'");
+    s = s.replace(/\s{2,}/g, ' ').trim();
+    // 9. Capitalisation soignée si tout est en minuscules
+    if (s === s.toLowerCase() && s.length > 2) {
+        s = s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+    }
+    // 10. Normalisation des chiffres romains terminaux (Rocky III -> Rocky 3)
+    s = normalizeRomanNumerals(s);
+    return s;
 }
 /**
  * Extrait l'année cinématographique d'une chaîne ou d'un nom de fichier
@@ -84,4 +165,23 @@ export function extractYearFromText(text) {
             return yr;
     }
     return undefined;
+}
+/**
+ * Normalisation phonétique et réduction des diphtongues/consonnes redoublées.
+ * Permet de rapprocher automatiquement des orthographes alternatives ou fautives
+ * (ex: "peacky blinders" -> "peaky blinders", "vikinggs" -> "vikings") sans dictionnaire en dur.
+ */
+export function normalizePhoneticSpelling(raw) {
+    if (!raw)
+        return '';
+    let s = raw.trim();
+    // 1. Équivalence ck -> k (ex: peacky -> peaky)
+    s = s.replace(/ck/gi, 'k');
+    // 2. Équivalence ph -> f (ex: telephon -> telefon)
+    s = s.replace(/ph/gi, 'f');
+    // 3. Dédoublement des consonnes répétées (ex: 'vikinggs' -> 'vikings', 'stopp' -> 'stop')
+    s = s.replace(/([b-df-hj-np-tv-z])\1+/gi, '$1');
+    // 4. Normalisation des apostrophes
+    s = s.replace(/[`'’]/g, "'");
+    return s.replace(/\s{2,}/g, ' ').trim();
 }

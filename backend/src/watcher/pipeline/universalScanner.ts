@@ -15,7 +15,7 @@ export interface UnifiedMediaMetadata {
   title: string;
   showTitle?: string;
   originalTitle?: string;
-  nodeType: 'MOVIE' | 'SHOW' | 'EPISODE';
+  nodeType: 'MOVIE' | 'SHOW' | 'EPISODE' | 'EXTRA';
   releaseYear?: number;
   seasonNumber?: number;
   episodeNumber?: number;

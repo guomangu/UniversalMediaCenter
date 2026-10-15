@@ -2,60 +2,81 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { db } from '../db/connection.js';
 import { mediaNodes } from '../db/schema/index.js';
-import { eq, and, or, like } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 import { generateSlug } from './slugify.js';
+import { extractCanonicalShowTitle, normalizePhoneticSpelling } from './titleCleaner.js';
 export function cleanShowFolderName(folder) {
-    return folder
-        .replace(/^\s*\[.*?\]/g, '')
-        .replace(/\[.*?\]/g, '')
-        .replace(/\(.*?\)/g, '')
-        .replace(/\b(1080p|720p|2160p|4k|bluray|remux|hevc|x265|x264|vff|vostfr|multi|proper|repack|web-dl|web|aac|ac3|dts|flac|intégral|integrale)\b/gi, '')
-        .replace(/[._]/g, ' ')
-        .replace(/\s{2,}/g, ' ')
-        .trim();
+    return extractCanonicalShowTitle(folder);
 }
+const SERIES_ROOT_CATEGORIES = new Set([
+    'animes', 'anime', 'series', 'séries', 'serie', 'série', 'tv', 'shows', 'show',
+]);
+const GENRE_OR_INTERMEDIATE_CATEGORIES = new Set([
+    'crime', 'action', 'drame', 'drama', 'comedie', 'comedy', 'animation', 'thriller',
+    'sci-fi', 'horreur', 'horror', 'documentaire', 'aventure', 'fantastique', 'romance',
+    'western', 'films', 'film', 'partaged', 'telechargement', 'downloads', 'partage',
+]);
 /**
  * Détermine le dossier racine d'une série pour n'importe quel fichier
+ * Supporte les catégories singulières/plurielles (series/serie), les dossiers de saisons orphelins (ex: Peaky Blinders - Saison 4 dans FILMS)
  */
 export async function resolveSeriesRoot(filePath) {
     let currentDir = path.dirname(filePath);
     const rootLimit = path.parse(currentDir).root;
-    // 1. Remonter l'arborescence pour chercher un tvshow.nfo
+    // 1. Remonter l'arborescence pour chercher un tvshow.nfo ou un conteneur de série
     let checkDir = currentDir;
     while (checkDir && checkDir !== rootLimit && checkDir !== path.dirname(checkDir)) {
         const parent = path.dirname(checkDir);
         const parentName = path.basename(parent).toLowerCase();
-        // Arrêt si on a atteint la racine de catégorie (ex: Series, Animes)
-        if (['animes', 'anime', 'series', 'séries', 'tv', 'shows'].includes(parentName)) {
-            const candidateNfo = path.join(checkDir, 'tvshow.nfo');
-            try {
-                await fs.access(candidateNfo);
-                return { showDir: checkDir, tvshowNfoPath: candidateNfo, showTitleCandidate: path.basename(checkDir) };
-            }
-            catch {
-                return { showDir: checkDir, tvshowNfoPath: null, showTitleCandidate: path.basename(checkDir) };
-            }
-        }
+        const currentName = path.basename(checkDir);
+        // Détection immédiate d'un tvshow.nfo
         const candidateNfo = path.join(checkDir, 'tvshow.nfo');
         try {
             await fs.access(candidateNfo);
-            return { showDir: checkDir, tvshowNfoPath: candidateNfo, showTitleCandidate: path.basename(checkDir) };
+            return { showDir: checkDir, tvshowNfoPath: candidateNfo, showTitleCandidate: currentName };
         }
         catch { }
+        // Arrêt si on a atteint la racine de catégorie (ex: Series, Saisons, Anime, Serie au singulier)
+        if (SERIES_ROOT_CATEGORIES.has(parentName)) {
+            return { showDir: checkDir, tvshowNfoPath: null, showTitleCandidate: currentName };
+        }
+        // Détection d'un dossier intermédiaire de série parente (ex: /serie/peacky blinders/peaky blinders - saison 1)
+        const grandParent = path.dirname(parent);
+        const grandParentName = path.basename(grandParent).toLowerCase();
+        if (SERIES_ROOT_CATEGORIES.has(grandParentName)) {
+            return { showDir: parent, tvshowNfoPath: null, showTitleCandidate: path.basename(parent) };
+        }
+        // Détection d'un dossier de saison autonome (ex: "Peaky Blinders - Saison 4 (2017)")
+        if (/(?:^|[-_ ])(?:saison|season|s)\s*0*\d+/i.test(currentName)) {
+            return { showDir: checkDir, tvshowNfoPath: null, showTitleCandidate: currentName };
+        }
         checkDir = parent;
+    }
+    // 2. Si aucun répertoire parent formel n'a été trouvé mais que le fichier porte un code SxxExx
+    const fileName = path.basename(filePath);
+    if (/S\d+[\s._-]*E\d+|\b\d+x\d+\b/i.test(fileName)) {
+        const candidate = extractCanonicalShowTitle(fileName) || extractCanonicalShowTitle(path.basename(currentDir));
+        if (candidate && candidate.length > 2) {
+            return { showDir: currentDir, tvshowNfoPath: null, showTitleCandidate: candidate };
+        }
     }
     return null;
 }
 /**
- * Résout le SHOW parent id de manière déterministe pour n'importe quel fichier (trouve ou crée si absent)
+ * Résout le SHOW parent id de manière déterministe pour n'importe quel fichier
+ * Consolide canoniquement vers un SHOW unique même avec variations orthographiques ("peacky blinders" -> "Peaky Blinders")
  */
 export async function resolveParentShowNodeId(filePath) {
     const seriesCtx = await resolveSeriesRoot(filePath);
-    if (!seriesCtx)
+    let rawCandidate = seriesCtx ? seriesCtx.showTitleCandidate : path.basename(filePath);
+    if (GENRE_OR_INTERMEDIATE_CATEGORIES.has(rawCandidate.toLowerCase().trim())) {
+        rawCandidate = path.basename(filePath);
+    }
+    const cleanedTitle = extractCanonicalShowTitle(rawCandidate);
+    if (!cleanedTitle || cleanedTitle.length < 2)
         return null;
-    const cleanedTitle = cleanShowFolderName(seriesCtx.showTitleCandidate);
-    // 1. Recherche par tvshowNfoPath exact (avec compatibilité /var/home <=> /home)
-    if (seriesCtx.tvshowNfoPath) {
+    // 1. Recherche par tvshowNfoPath exact si disponible
+    if (seriesCtx?.tvshowNfoPath) {
         const altPath = seriesCtx.tvshowNfoPath.startsWith('/var/home/')
             ? seriesCtx.tvshowNfoPath.replace('/var/home/', '/home/')
             : seriesCtx.tvshowNfoPath.replace('/home/', '/var/home/');
@@ -65,20 +86,79 @@ export async function resolveParentShowNodeId(filePath) {
         if (showByNfo)
             return showByNfo.id;
     }
-    // 2. Recherche par nom de dossier ou titre nettoyé
+    // 2. Recherche directe par titre canonique exact ou insensible à la casse
     const showByName = await db.query.mediaNodes.findFirst({
-        where: (t, { and: aOp, eq: eOp, or: oOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(eOp(t.title, seriesCtx.showTitleCandidate), eOp(t.sortTitle, seriesCtx.showTitleCandidate), eOp(t.title, cleanedTitle), eOp(t.sortTitle, cleanedTitle))),
+        where: (t, { and: aOp, eq: eOp, or: oOp, ilike: iOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(iOp(t.title, cleanedTitle), iOp(t.sortTitle, cleanedTitle), eOp(t.title, rawCandidate), eOp(t.sortTitle, rawCandidate))),
     });
     if (showByName)
         return showByName.id;
-    // 3. Si aucun SHOW n'existe pour cette série (ex: Lain sans tvshow.nfo), le créer proprement
-    const slug = `${generateSlug(cleanedTitle || seriesCtx.showTitleCandidate)}-show`;
+    // 3. Recherche par racine si un SHOW préexistant porte un suffixe de saison (ex: "Peaky Blinders - Saison 1 360p")
+    const showByPrefix = await db.query.mediaNodes.findFirst({
+        where: (t, { and: aOp, eq: eOp, ilike: iOp }) => aOp(eOp(t.nodeType, 'SHOW'), iOp(t.title, `${cleanedTitle}%`)),
+    });
+    if (showByPrefix) {
+        // Promouvoir ce SHOW au titre canonique propre
+        await db
+            .update(mediaNodes)
+            .set({
+            title: cleanedTitle,
+            sortTitle: cleanedTitle,
+            updatedAt: new Date(),
+        })
+            .where(eq(mediaNodes.id, showByPrefix.id));
+        return showByPrefix.id;
+    }
+    // 4. Recherche hybride Phonétique + Trigrammes + Levenshtein (Loi n°2 White Paper)
+    const phoneticCandidate = normalizePhoneticSpelling(cleanedTitle);
+    try {
+        const fuzzyShows = await db.execute(sql `
+      SELECT id, title,
+             similarity(title, ${cleanedTitle}) AS trgm_sim,
+             levenshtein(lower(title), lower(${cleanedTitle})) AS lev_dist,
+             CASE WHEN dmetaphone(title) = dmetaphone(${cleanedTitle}) THEN 1 ELSE 0 END AS dm_match
+      FROM media_nodes
+      WHERE node_type = 'SHOW'
+        AND (
+          similarity(title, ${cleanedTitle}) >= 0.65
+          OR dmetaphone(title) = dmetaphone(${cleanedTitle})
+          OR (length(${cleanedTitle}) >= 4 AND levenshtein(lower(title), lower(${cleanedTitle})) <= 2 AND similarity(title, ${cleanedTitle}) >= 0.50)
+          ${phoneticCandidate !== cleanedTitle ? sql `OR similarity(title, ${phoneticCandidate}) >= 0.70 OR dmetaphone(title) = dmetaphone(${phoneticCandidate})` : sql ``}
+        )
+      ORDER BY
+        dm_match DESC,
+        trgm_sim DESC,
+        lev_dist ASC
+      LIMIT 1;
+    `);
+        const fuzzyRows = Array.isArray(fuzzyShows) ? fuzzyShows : fuzzyShows.rows || [];
+        if (fuzzyRows.length > 0 && fuzzyRows[0]?.id) {
+            return fuzzyRows[0].id;
+        }
+    }
+    catch (err) {
+        try {
+            const fallbackShows = await db.execute(sql `
+        SELECT id FROM media_nodes
+        WHERE node_type = 'SHOW' AND similarity(title, ${cleanedTitle}) >= 0.65
+        ORDER BY similarity(title, ${cleanedTitle}) DESC
+        LIMIT 1;
+      `);
+            const fbRows = Array.isArray(fallbackShows) ? fallbackShows : fallbackShows.rows || [];
+            if (fbRows.length > 0 && fbRows[0]?.id) {
+                return fbRows[0].id;
+            }
+        }
+        catch { }
+    }
+    // 5. Si aucun SHOW n'existe pour cette série, créer le SHOW canonique unique
+    const cleanSort = cleanedTitle.replace(/^(le|la|les|the|l')\s+/i, '').trim() || cleanedTitle;
+    const slug = `${generateSlug(cleanedTitle)}-show`;
     const [createdShow] = await db
         .insert(mediaNodes)
         .values({
         nodeType: 'SHOW',
-        title: cleanedTitle || seriesCtx.showTitleCandidate,
-        sortTitle: cleanedTitle || seriesCtx.showTitleCandidate,
+        title: cleanedTitle,
+        sortTitle: cleanSort,
         slug: `${slug}-${Date.now().toString().slice(-4)}`,
         state: 'READY',
         confidenceScore: 0.95,

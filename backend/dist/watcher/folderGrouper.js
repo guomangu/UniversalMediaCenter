@@ -12,13 +12,20 @@ export function analyzeFolderGrouping(filePath, showDir) {
     let isMovie = false;
     let seasonNumber;
     let groupTitle;
-    // 1. Détection des bonus / coulisses dans les sous-dossiers stricts (ex: "Featurettes", "Bonus", "Extras")
-    if (/(?:^|\/)(?:featurettes|extras|bonus|deleted scenes|interviews)(?:$|\/)/i.test(relPath)) {
+    // 1. Détection universelle des bonus / coulisses / trailers / samples (dossiers et noms de fichiers)
+    if (/(?:^|\/)(?:featurettes|extras|bonus|deleted[\s._-]?scenes|behind[\s._-]?the[\s._-]?scenes|interviews|samples|trailers|teasers|making[\s._-]?of)(?:$|\/)/i.test(relPath) ||
+        /(?:[-._ ]|\b)(?:trailer|teaser|sample|featurette|behind[\s._-]?the[\s._-]?scenes|deleted[\s._-]?scenes|making[\s._-]?of|ncop\d*|nced\d*|pv\d*|cm\d*)(?:[-._ ]|\.|$)/i.test(fileName)) {
         isExtra = true;
         if (/behind|making|stunt|wall/i.test(normFile))
             extraType = 'behindthescenes';
         else if (/deleted/i.test(normFile))
             extraType = 'deleted';
+        else if (/trailer|teaser/i.test(normFile))
+            extraType = 'trailer';
+        else if (/sample/i.test(normFile))
+            extraType = 'other';
+        else if (/ncop|nced|pv|cm/i.test(normFile))
+            extraType = 'other';
         else
             extraType = 'featurette';
         return { isExtra, extraType, groupTitle: 'Bonus & Coulisses' };
@@ -50,14 +57,21 @@ export function analyzeFolderGrouping(filePath, showDir) {
         seasonNumber = arcNum;
         return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
     }
-    // 6. Détection d'un dossier Saison standard (ex: "Season 1", "Saison 2", "S01", "Part 1", "Cour 1")
+    // 6. Détection d'un dossier Saison standard dans relPath (ex: "Season 1", "Saison 2", "S01", "Part 1", "Cour 1")
     const seasonMatch = /(?:^|\/)(?:Season|Saison|Part|Cour|S)[-_ ]*(\d{1,2})(?:$|\/)/i.exec(relPath);
     if (seasonMatch) {
         seasonNumber = parseInt(seasonMatch[1], 10);
         groupTitle = `Saison ${seasonNumber}`;
         return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
     }
-    // 7. Fallback sur le nom de fichier lui-même (ex: "Code Geass S02E01")
+    // 7. Détection d'un dossier Saison dans le chemin complet (ex: "Peaky Blinders - Saison 4 (2017)")
+    const fullPathSeasonMatch = /(?:^|\/|[ _-])(?:Season|Saison|Part|Cour)[-_ ]*0*(\d{1,2})\b/i.exec(normFile);
+    if (fullPathSeasonMatch) {
+        seasonNumber = parseInt(fullPathSeasonMatch[1], 10);
+        groupTitle = `Saison ${seasonNumber}`;
+        return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
+    }
+    // 8. Fallback sur le nom de fichier lui-même (ex: "Code Geass S02E01")
     const fileSeasonMatch = /S(\d+)[\s._-]*E(\d+)/i.exec(fileName);
     if (fileSeasonMatch) {
         seasonNumber = parseInt(fileSeasonMatch[1], 10);
@@ -65,4 +79,13 @@ export function analyzeFolderGrouping(filePath, showDir) {
         return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
     }
     return { isExtra: false, isMovie: false };
+}
+/**
+ * Teste immédiatement si un chemin de fichier ou de dossier correspond à un extra/bonus/trailer
+ */
+export function isExtraMediaFile(filePath) {
+    const norm = filePath.replace(/\\/g, '/');
+    const base = path.basename(norm);
+    return (/(?:^|\/)(?:featurettes|extras|bonus|deleted[\s._-]?scenes|behind[\s._-]?the[\s._-]?scenes|interviews|samples|trailers|teasers|making[\s._-]?of)(?:$|\/)/i.test(norm) ||
+        /(?:[-._ ]|\b)(?:trailer|teaser|sample|featurette|behind[\s._-]?the[\s._-]?scenes|deleted[\s._-]?scenes|making[\s._-]?of|ncop\d*|nced\d*|pv\d*|cm\d*)(?:[-._ ]|\.|$)/i.test(base));
 }

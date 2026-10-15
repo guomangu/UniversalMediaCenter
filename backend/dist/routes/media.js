@@ -9,7 +9,7 @@ import { subtitleRouter } from './mediaSubtitles.js';
 import { tracksRouter } from './mediaTracks.js';
 import { mediaNextRouter } from './mediaNext.js';
 import { processNfoFile } from '../watcher/index.js';
-import { getRelatedTagsForMedia } from './mediaRelated.js';
+import { getRelatedTagsForMedia, getTfIdfSimilarMedias } from './mediaRelated.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 import { localizeMediaNode, extractRequestLanguage } from '../watcher/pipeline/localizationHelper.js';
 import { fetchExternalMetadata, cleanShowTitle } from '../watcher/externalMetadata.js';
@@ -291,6 +291,161 @@ mediaRouter.get('/:id', async (c) => {
         if (zone === 'TECHNICAL_DRAWER')
             tagsByZone.ACCORDION.push(item);
     }
+    // 2.5 Enrichissement à la volée du Casting & Équipe Créative pour les Films et Séries
+    // Si le média n'a pas encore de tags dans PERSON_CAROUSEL, on interroge TMDb pour récupérer
+    // le casting complet (acteurs avec photos, rôles), réalisateurs, scénaristes, compositeurs et producteurs
+    if (tagsByZone.PERSON_CAROUSEL.length === 0 &&
+        (media.nodeType === 'MOVIE' || media.nodeType === 'SHOW')) {
+        try {
+            const searchTitle = cleanShowTitle(media.title);
+            const ext = await fetchExternalMetadata(searchTitle, media.nodeType);
+            if (ext) {
+                for (const a of ext.actors || []) {
+                    const item = {
+                        attr_code: 'actor',
+                        attributeCode: 'actor',
+                        display_name: 'Acteurs',
+                        displayName: 'Acteurs',
+                        ui_zone: 'PERSON_CAROUSEL',
+                        uiZone: 'PERSON_CAROUSEL',
+                        color_theme: 'violet',
+                        colorTheme: 'violet',
+                        icon_name: 'Users',
+                        iconName: 'Users',
+                        value_text: a.name,
+                        value: a.name,
+                        value_slug: a.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        slug: a.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        context_role: a.role,
+                        contextRole: a.role,
+                        metadata_json: a.thumb ? { thumbUrl: a.thumb } : {},
+                        metadata: a.thumb ? { thumbUrl: a.thumb } : {},
+                        order_index: 0,
+                        orderIndex: 0,
+                    };
+                    tagsByZone.PERSON_CAROUSEL.push(item);
+                    linkTagToNode(media.id, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {}).catch(() => null);
+                }
+                for (const d of ext.directors || []) {
+                    const item = {
+                        attr_code: 'director',
+                        attributeCode: 'director',
+                        display_name: 'Réalisateur',
+                        displayName: 'Réalisateur',
+                        ui_zone: 'PERSON_CAROUSEL',
+                        uiZone: 'PERSON_CAROUSEL',
+                        color_theme: 'amber',
+                        colorTheme: 'amber',
+                        icon_name: 'Clapperboard',
+                        iconName: 'Clapperboard',
+                        value_text: d,
+                        value: d,
+                        value_slug: d.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        slug: d.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        context_role: 'Réalisateur',
+                        contextRole: 'Réalisateur',
+                        metadata_json: {},
+                        metadata: {},
+                        order_index: 0,
+                        orderIndex: 0,
+                    };
+                    tagsByZone.PERSON_CAROUSEL.push(item);
+                    linkTagToNode(media.id, 'director', d).catch(() => null);
+                }
+                for (const w of ext.writers || []) {
+                    const item = {
+                        attr_code: 'writer',
+                        attributeCode: 'writer',
+                        display_name: 'Scénariste / Auteur',
+                        displayName: 'Scénariste / Auteur',
+                        ui_zone: 'PERSON_CAROUSEL',
+                        uiZone: 'PERSON_CAROUSEL',
+                        color_theme: 'emerald',
+                        colorTheme: 'emerald',
+                        icon_name: 'FileEdit',
+                        iconName: 'FileEdit',
+                        value_text: w,
+                        value: w,
+                        value_slug: w.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        slug: w.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        context_role: 'Scénariste',
+                        contextRole: 'Scénariste',
+                        metadata_json: {},
+                        metadata: {},
+                        order_index: 0,
+                        orderIndex: 0,
+                    };
+                    tagsByZone.PERSON_CAROUSEL.push(item);
+                    linkTagToNode(media.id, 'writer', w).catch(() => null);
+                }
+                for (const m of ext.composers || []) {
+                    const item = {
+                        attr_code: 'composer',
+                        attributeCode: 'composer',
+                        display_name: 'Musique',
+                        displayName: 'Musique',
+                        ui_zone: 'PERSON_CAROUSEL',
+                        uiZone: 'PERSON_CAROUSEL',
+                        color_theme: 'rose',
+                        colorTheme: 'rose',
+                        icon_name: 'Music',
+                        iconName: 'Music',
+                        value_text: m,
+                        value: m,
+                        value_slug: m.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        slug: m.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        context_role: 'Compositeur',
+                        contextRole: 'Compositeur',
+                        metadata_json: {},
+                        metadata: {},
+                        order_index: 0,
+                        orderIndex: 0,
+                    };
+                    tagsByZone.PERSON_CAROUSEL.push(item);
+                    linkTagToNode(media.id, 'composer', m).catch(() => null);
+                }
+                for (const p of ext.producers || []) {
+                    const item = {
+                        attr_code: 'producer',
+                        attributeCode: 'producer',
+                        display_name: 'Producteur',
+                        displayName: 'Producteur',
+                        ui_zone: 'PERSON_CAROUSEL',
+                        uiZone: 'PERSON_CAROUSEL',
+                        color_theme: 'cyan',
+                        colorTheme: 'cyan',
+                        icon_name: 'Briefcase',
+                        iconName: 'Briefcase',
+                        value_text: p,
+                        value: p,
+                        value_slug: p.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        slug: p.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                        context_role: 'Producteur',
+                        contextRole: 'Producteur',
+                        metadata_json: {},
+                        metadata: {},
+                        order_index: 0,
+                        orderIndex: 0,
+                    };
+                    tagsByZone.PERSON_CAROUSEL.push(item);
+                    linkTagToNode(media.id, 'producer', p).catch(() => null);
+                }
+                const updates = {};
+                if (!media.overview && ext.overview)
+                    updates.overview = ext.overview;
+                if (!media.tagline && ext.tagline)
+                    updates.tagline = ext.tagline;
+                if (!media.releaseYear && ext.releaseYear)
+                    updates.releaseYear = ext.releaseYear;
+                if (media.communityRating == null && ext.communityRating)
+                    updates.communityRating = ext.communityRating;
+                if (Object.keys(updates).length > 0) {
+                    db.update(mediaNodes).set(updates).where(eq(mediaNodes.id, media.id)).catch(() => null);
+                }
+            }
+        }
+        catch { }
+    }
     // 3. Calcul ou héritage des métriques globales (Note spectateurs moyenne et plage d'années)
     let effectiveCommunityRating = media.communityRating;
     if ((!effectiveCommunityRating || Number(effectiveCommunityRating) === 0) && childNodes.length > 0) {
@@ -541,6 +696,7 @@ mediaRouter.get('/:id', async (c) => {
         medias,
     }));
     const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId);
+    const similarMedias = await getTfIdfSimilarMedias(media.id, 12);
     return c.json({
         media: formattedMedia,
         tags: tagsByZone,
@@ -549,7 +705,14 @@ mediaRouter.get('/:id', async (c) => {
         parentSaga,
         studioMedias,
         relatedTags,
+        similarMedias,
     });
+});
+mediaRouter.get('/:id/similar', async (c) => {
+    const id = c.req.param('id');
+    const limit = parseInt(c.req.query('limit') || '12', 10);
+    const similar = await getTfIdfSimilarMedias(id, limit);
+    return c.json({ similar });
 });
 export async function processSingleNfo(filePath) {
     return await processNfoFile(filePath);

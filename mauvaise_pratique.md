@@ -93,3 +93,50 @@
 * **Bonnes Pratiques de Remédiation :**
   - **Élargissement Exhaustif des Catégories Racines :** Inclure systématiquement les formes singulières et plurielles (`serie`, `series`, `série`, `séries`, `shows`, `tv shows`, `emission`, `emissions`).
   - **Résolution Floue Trigramme de Secours :** En l'absence de répertoire parent direct de type série, utiliser une recherche trigramme floue (`similarity > 0.4`) sur le titre canonique de l'épisode pour le raccrocher automatiquement au nœud `SHOW` existant le plus pertinent.
+
+---
+
+## 🛑 65. Piège de Focus dans le Shadow DOM du Lecteur Vidéo Natif (`<video controls>`) et Rétention des Touches Directionnelles
+
+* **Problème / Symptôme :** Lors de la navigation au clavier ou à la télécommande dans la page `/player`, dès que l'utilisateur clique sur la vidéo ou active la barre de progression, le focus système est capturé par l'élément interne `<input type="range">` du Shadow DOM natif du navigateur. Dès lors, les flèches directionnelles Haut/Bas ne permettent plus d'atteindre les boutons de la barre supérieure (Retour, Audio, Sous-titres, Plein Écran) et l'utilisateur se retrouve prisonnier de la barre de lecture.
+* **Conséquences :** Rupture de l'accessibilité TV/manette (D-Pad), impossibilité de remonter vers les contrôles supérieurs sans souris physique, et dégradation de l'expérience utilisateur.
+* **Causes Racines :**
+  - **Focus Direct sur l'Élément Vidéo (`tabIndex={0}` implicite avec `controls`) :** Laisser le focus natif s'établir directement sur la balise `<video>` permet au moteur de rendu du navigateur (Blink/Gecko) de transférer le focus sur les sous-composants non stylables du Shadow DOM (scrubber, volume).
+  - **Absence de Conteneur Focusable Intermédiaire :** Sans conteneur parent explicite interceptant les événements, l'arbre d'accessibilité DOM ne peut pas diriger la navigation spatiale vers le niveau hiérarchique supérieur.
+  - **Sélecteur de Qualité Factice :** Présence d'un menu de sélection de qualité vidéo (`PlayerQualityModal`) n'ayant aucun effet sur le flux HLS DirectPlay sous-jacent, induisant l'utilisateur en erreur.
+* **Bonnes Pratiques de Remédiation :**
+  - **Délégation de Focus vers un Conteneur Spatial (`VideoPlayerView.tsx`) :**
+    - Assigner `tabIndex={-1}` à la balise `<video>` et rediriger son événement `onFocus` vers un conteneur parent focusable (`Pressable` avec `data-player-container="true"` et `tabIndex={0}`).
+    - Ainsi, les touches Gauche / Droite pilotent la progression temporelle (-10s / +10s) au niveau applicatif sans jamais piéger le focus dans le Shadow DOM.
+  - **Liaison Spatiale Bidirectionnelle Déterministe (`useTvNavigation.ts`) :**
+    - Relier explicitement la touche Haut du conteneur lecteur vers les boutons de la barre supérieure (`[data-player-topbar="true"]`).
+    - Relier la touche Bas de la barre supérieure directement au conteneur lecteur ou au bouton « Passer l'intro ».
+  - **Élimination des Contrôles Inopérants :**
+    - Supprimer tout bouton d'action décoratif (comme le choix de qualité statique) pour ne conserver que les fonctionnalités réellement actives et adaptatives du lecteur.
+
+---
+
+## 🛑 66. Présence Incongrue du Bouton « Passer l'intro » sur des Flux Télévisés et Médias IPTV en Direct
+
+* **Problème / Symptôme :** Lors du visionnage d'une chaîne de télévision en direct (IPTV) dans `/player`, le bouton « Passer l'intro » apparaissait pendant les 90 premières secondes de visionnage ou lors du zapping, alors qu'un flux en direct continu ne comporte par définition aucun générique skippable et qu'un saut temporel (+85s) brise la synchronisation du flux live.
+* **Conséquences :** Confusion ergonomique majeure pour l'utilisateur, pollution visuelle inutile sur l'écran TV et risque de sauter en avant au-delà du buffer direct, provoquant des erreurs de lecture.
+* **Causes Racines :**
+  - **Calcul d'Intro Fallback Non Conditionné au Type de Contenu (`VideoPlayerView.tsx`) :** L'expression calculant la visibilité du bouton se basait uniquement sur `curTime < (intro?.end ?? 90.04)` sans vérifier si le média était en direct (`isLive = true`).
+  - **Délai d'Acquisition de l'Attribut `isLive` (`player/[id].tsx`) :** L'état `isLive` était initialisé à `false` par défaut et n'était mis à jour qu'asynchronement après résolution de la promesse `fetchMediaDetail`, laissant une fenêtre d'affichage parasite au montage du composant.
+* **Bonnes Pratiques de Remédiation :**
+  - **Garde `!isLive` Absolue sur l'Affichage de l'Intro (`VideoPlayerView.tsx`) :** Interdire formellement le rendu du composant avec `const showBtn = !isLive && !isFullscreen && showSkipIntro && ...`.
+  - **Propagation Synchrone de l'Origine Direct (`TvChannelCard.tsx`, `MediaCard.tsx`) :** Transmettre le paramètre `isLive=1` dès la navigation vers `/player/[id]` afin que le lecteur sache immédiatement, avant même le premier appel réseau, qu'il s'agit d'un flux direct.
+  - **Neutralisation des États et Handlers d'Intro (`player/[id].tsx`) :** Forcer `showSkipIntro={false}` et `intro={null}` pour tout flux identifié comme `isLive` ou `LIVE_CHANNEL`.
+
+---
+
+## 🛑 67. Dictionnaires de Fautes de Frappe Codés en Dur dans le Nettoyeur de Titre
+
+* **Problème / Symptôme :** Tentative de corriger des fautes de frappe de releases (ex: `Peacky Blinders` -> `Peaky Blinders`, `Breking Bad` -> `Breaking Bad`) par des conditions régulières hardcodées `if (/^peac?ky/i) return 'Peaky Blinders'`.
+* **Conséquences :** Dette technique incontrôlable, impossibilité de passer à l'échelle sur des milliers de séries et films, fragilité aux variantes orthographiques imprévues et maintenance manuelle permanente.
+* **Causes Racines :**
+  - **Absence de Pipeline Phonétique et Algorithmique Universel :** Le recours à un dictionnaire statique résulte du manque d'un moteur de réconciliation floue in-database et de fallback tolérant aux fautes lors des requêtes distantes.
+* **Bonnes Pratiques de Remédiation :**
+  - **Normalisation Phonétique Graphématique Universelle (`normalizePhoneticSpelling`) :** Dé-doubler les consonnes répétées (`vikinggs` -> `vikings`), normaliser les digraphes courants (`ck` -> `k`, `ph` -> `f`) de façon purement algorithmique sans dictionnaire statique.
+  - **Résolution Hybride PostgreSQL Locale (`pg_trgm` + `dmetaphone` + `levenshtein`) :** Rapprocher les variantes d'un média à la volée en base locale dès lors que `dmetaphone(title) = dmetaphone(query)` ou `similarity(title, query) >= 0.65`.
+  - **Cascade de Repli TMDb Résiliente (`resolveFuzzyTmdbId`) :** Si la recherche exacte TMDb échoue, déclencher la recherche phonétique puis l'API d'autocorrection linguistique Wikipedia OpenSearch ("Did you mean") pour obtenir le titre propre officiel.

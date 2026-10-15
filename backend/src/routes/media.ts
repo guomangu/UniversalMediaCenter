@@ -9,7 +9,7 @@ import { subtitleRouter } from './mediaSubtitles.js';
 import { tracksRouter } from './mediaTracks.js';
 import { mediaNextRouter } from './mediaNext.js';
 import { processNfoFile } from '../watcher/index.js';
-import { getRelatedTagsForMedia } from './mediaRelated.js';
+import { getRelatedTagsForMedia, getTfIdfSimilarMedias } from './mediaRelated.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 import { localizeMediaNode, extractRequestLanguage } from '../watcher/pipeline/localizationHelper.js';
 import { fetchExternalMetadata, cleanShowTitle } from '../watcher/externalMetadata.js';
@@ -764,6 +764,7 @@ mediaRouter.get('/:id', async (c) => {
   }));
 
   const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId);
+  const similarMedias = await getTfIdfSimilarMedias(media.id, 12);
 
   return c.json({
     media: formattedMedia,
@@ -773,7 +774,15 @@ mediaRouter.get('/:id', async (c) => {
     parentSaga,
     studioMedias,
     relatedTags,
+    similarMedias,
   });
+});
+
+mediaRouter.get('/:id/similar', async (c) => {
+  const id = c.req.param('id');
+  const limit = parseInt(c.req.query('limit') || '12', 10);
+  const similar = await getTfIdfSimilarMedias(id, limit);
+  return c.json({ similar });
 });
 
 export async function processSingleNfo(filePath: string) {

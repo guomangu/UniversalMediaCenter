@@ -1,12 +1,13 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { db } from '../db/connection.js';
-import { mediaNodes } from '../db/schema/index.js';
-import { eq, and, ne, isNull, sql } from 'drizzle-orm';
+import { mediaNodes, nodeEavLinks } from '../db/schema/index.js';
+import { eq, and, ne, isNull, sql, inArray } from 'drizzle-orm';
 import { resolveParentShowNodeId, resolveSeriesRoot, findOrCreateCollectionNode, cleanShowFolderName, detectSagaNameFromFolder } from './hierarchyResolver.js';
-import { analyzeFolderGrouping } from './folderGrouper.js';
+import { analyzeFolderGrouping, isExtraMediaFile } from './folderGrouper.js';
 import { parseSeasonEpisode } from './seasonEpisodeHelper.js';
-import { sanitizeReleaseTags, extractYearFromText } from './titleCleaner.js';
+import { sanitizeReleaseTags, extractYearFromText, extractCanonicalShowTitle, normalizePhoneticSpelling } from './titleCleaner.js';
+import { fetchExternalMetadata } from './externalMetadata.js';
 import { generateSlug } from './slugify.js';
 import { linkTagToNode } from './tagExtractor.js';
 /**
@@ -21,6 +22,8 @@ export async function repairAllMediaHierarchy() {
         cleanedOrphans: 0,
         healedShows: 0,
         moviesLinkedToSagas: 0,
+        requalifiedEpisodes: 0,
+        consolidatedShows: 0,
     };
     // 1. Nettoyer les noeuds de type SEASON (qui proviennent de season.nfo et ne sont pas des médias jouables)
     // et retirer tout videoFilePath erroné sur les SHOWs
@@ -62,7 +65,150 @@ export async function repairAllMediaHierarchy() {
             report.healedShows++;
         }
     }
-    // 3. Récupérer tous les noeuds médias locaux non-LIVE
+    // 3. Requalification des faux films (MOVIE) portant des codes formels d'épisodes (SxxExx, Saison X)
+    const misclassifiedMovies = await db.query.mediaNodes.findMany({
+        where: (t, { eq: eOp }) => eOp(t.nodeType, 'MOVIE'),
+    });
+    for (const movieNode of misclassifiedMovies) {
+        const filePath = movieNode.videoFilePath || movieNode.nfoFilePath || '';
+        const fileName = path.basename(filePath);
+        const hasEpCode = /S\d+[\s._-]*E\d+|\b\d+x\d+\b/i.test(movieNode.title) ||
+            /S\d+[\s._-]*E\d+|\b\d+x\d+\b/i.test(fileName) ||
+            /(?:^|\/|[ _-])(?:saison|season)\s*\d+/i.test(filePath);
+        if (hasEpCode) {
+            // Extraction saison et épisode
+            const seMatch = movieNode.title.match(/S(\d+)[\s._-]*E(\d+)/i) ||
+                fileName.match(/S(\d+)[\s._-]*E(\d+)/i) ||
+                filePath.match(/S(\d+)[\s._-]*E(\d+)/i);
+            let effSeason = seMatch ? parseInt(seMatch[1], 10) : undefined;
+            let effEpisode = seMatch ? parseInt(seMatch[2], 10) : undefined;
+            if (effSeason === undefined || effEpisode === undefined) {
+                const xMatch = movieNode.title.match(/\b(\d{1,2})x(\d{1,3})\b/i) || fileName.match(/\b(\d{1,2})x(\d{1,3})\b/i);
+                if (xMatch) {
+                    effSeason = parseInt(xMatch[1], 10);
+                    effEpisode = parseInt(xMatch[2], 10);
+                }
+            }
+            if (effSeason === undefined) {
+                const sFolderMatch = filePath.match(/(?:saison|season)\s*0*(\d{1,2})/i);
+                if (sFolderMatch)
+                    effSeason = parseInt(sFolderMatch[1], 10);
+            }
+            effSeason = effSeason || 1;
+            effEpisode = effEpisode || 1;
+            const orderIndex = effSeason > 1 ? effSeason * 1000 + effEpisode : effEpisode;
+            const targetParentId = await resolveParentShowNodeId(filePath);
+            await db
+                .update(mediaNodes)
+                .set({
+                nodeType: 'EPISODE',
+                parentId: targetParentId,
+                orderIndex,
+                absoluteOrderIndex: effEpisode,
+                title: sanitizeReleaseTags(movieNode.title),
+                sortTitle: sanitizeReleaseTags(movieNode.title),
+                updatedAt: new Date(),
+            })
+                .where(eq(mediaNodes.id, movieNode.id));
+            movieNode.nodeType = 'EPISODE';
+            movieNode.parentId = targetParentId;
+            movieNode.orderIndex = orderIndex;
+            report.requalifiedEpisodes++;
+            report.reparented++;
+        }
+    }
+    // 4. Déduplication et consolidation canonique des SHOWs fragmentés ("Peaky Blinders - Saison 1 360p", etc.)
+    const allShows = await db.query.mediaNodes.findMany({
+        where: (t, { eq: eOp }) => eOp(t.nodeType, 'SHOW'),
+    });
+    const showGroups = new Map();
+    for (const show of allShows) {
+        const canonical = extractCanonicalShowTitle(show.title);
+        const phoneticKey = normalizePhoneticSpelling(canonical).toLowerCase().trim() || canonical.toLowerCase().trim();
+        if (!showGroups.has(phoneticKey))
+            showGroups.set(phoneticKey, []);
+        showGroups.get(phoneticKey).push(show);
+    }
+    for (const [key, group] of showGroups.entries()) {
+        if (group.length === 0)
+            continue;
+        const canonicalTitle = extractCanonicalShowTitle(group[0].title) || group[0].title;
+        // Déterminer ou promouvoir le Master SHOW (priorité au show avec poster TMDb officiel ou titre canonique propre)
+        let masterShow = group.find((s) => s.posterPath && s.communityRating);
+        if (!masterShow) {
+            masterShow = group.find((s) => s.title.toLowerCase().trim() === canonicalTitle.toLowerCase().trim());
+        }
+        if (!masterShow) {
+            masterShow = group[0];
+            await db
+                .update(mediaNodes)
+                .set({
+                title: canonicalTitle,
+                sortTitle: canonicalTitle,
+                updatedAt: new Date(),
+            })
+                .where(eq(mediaNodes.id, masterShow.id));
+            masterShow.title = canonicalTitle;
+            masterShow.sortTitle = canonicalTitle;
+        }
+        // Reparenter tous les enfants des faux SHOWs secondaires vers le master
+        for (const otherShow of group) {
+            if (otherShow.id === masterShow.id)
+                continue;
+            // Déplacer les épisodes
+            await db
+                .update(mediaNodes)
+                .set({ parentId: masterShow.id, updatedAt: new Date() })
+                .where(eq(mediaNodes.parentId, otherShow.id));
+            // Migrer les liens EAV sans violer la contrainte unique
+            await db.execute(sql `
+        UPDATE node_eav_links SET node_id = ${masterShow.id}::uuid
+        WHERE node_id = ${otherShow.id}::uuid
+        AND value_id NOT IN (
+          SELECT value_id FROM node_eav_links WHERE node_id = ${masterShow.id}::uuid
+        )
+      `);
+            await db.execute(sql `
+        DELETE FROM node_eav_links WHERE node_id = ${otherShow.id}::uuid
+      `);
+            // Supprimer le pseudo-show devenu redondant
+            await db.delete(mediaNodes).where(eq(mediaNodes.id, otherShow.id));
+            report.consolidatedShows++;
+        }
+        // Enrichir le master SHOW avec TMDb s'il manque de métadonnées visuelles ou narratives
+        if (!masterShow.posterPath || !masterShow.overview) {
+            try {
+                const ext = await fetchExternalMetadata(canonicalTitle, 'SHOW');
+                if (ext) {
+                    const updates = { updatedAt: new Date() };
+                    if (!masterShow.posterPath && ext.posterUrl)
+                        updates.posterPath = ext.posterUrl;
+                    if (!masterShow.fanartPath && ext.fanartUrl)
+                        updates.fanartPath = ext.fanartUrl;
+                    if (!masterShow.overview && ext.overview)
+                        updates.overview = ext.overview;
+                    if (!masterShow.tagline && ext.tagline)
+                        updates.tagline = ext.tagline;
+                    if (!masterShow.releaseYear && ext.releaseYear)
+                        updates.releaseYear = ext.releaseYear;
+                    if (masterShow.communityRating == null && ext.communityRating)
+                        updates.communityRating = ext.communityRating;
+                    await db.update(mediaNodes).set(updates).where(eq(mediaNodes.id, masterShow.id));
+                    for (const a of ext.actors || []) {
+                        await linkTagToNode(masterShow.id, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {}).catch(() => null);
+                    }
+                    for (const d of ext.directors || []) {
+                        await linkTagToNode(masterShow.id, 'director', d).catch(() => null);
+                    }
+                    for (const g of ext.genres || []) {
+                        await linkTagToNode(masterShow.id, 'genre', g).catch(() => null);
+                    }
+                }
+            }
+            catch { }
+        }
+    }
+    // 5. Récupérer tous les noeuds médias locaux non-LIVE
     const allNodes = await db.query.mediaNodes.findMany({
         where: (t, { ne: neOp }) => neOp(t.nodeType, 'LIVE_CHANNEL'),
     });
@@ -73,6 +219,19 @@ export async function repairAllMediaHierarchy() {
         const filePath = node.nfoFilePath || node.videoFilePath;
         if (!filePath || filePath.startsWith('http://') || filePath.startsWith('https://')) {
             continue;
+        }
+        // Requalification des bonus / coulisses / samples en EXTRA
+        if (isExtraMediaFile(filePath) && (node.nodeType !== 'EXTRA' || !node.isExtra)) {
+            await db
+                .update(mediaNodes)
+                .set({
+                nodeType: 'EXTRA',
+                isExtra: true,
+                updatedAt: new Date(),
+            })
+                .where(eq(mediaNodes.id, node.id));
+            node.nodeType = 'EXTRA';
+            node.isExtra = true;
         }
         // Ignorer les fichiers de trickplay résiduels
         if (filePath.includes('/.trickplay/') || filePath.endsWith('.bif')) {
@@ -195,7 +354,7 @@ export async function repairAllMediaHierarchy() {
             await db.update(mediaNodes).set(updates).where(eq(mediaNodes.id, node.id));
         }
     }
-    // 4. Rattachement des Méta-Franchises & Univers Partagés (Terre du Milieu, Rockyverse...)
+    // 6. Rattachement des Méta-Franchises & Univers Partagés (Terre du Milieu, Rockyverse...)
     const allCollections = await db.query.mediaNodes.findMany({
         where: (t, { eq: eqOp }) => eqOp(t.nodeType, 'COLLECTION'),
     });

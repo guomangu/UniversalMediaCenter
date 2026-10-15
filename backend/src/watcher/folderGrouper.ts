@@ -23,11 +23,17 @@ export function analyzeFolderGrouping(filePath: string, showDir: string): Folder
   let seasonNumber: number | undefined;
   let groupTitle: string | undefined;
 
-  // 1. Détection des bonus / coulisses dans les sous-dossiers stricts (ex: "Featurettes", "Bonus", "Extras")
-  if (/(?:^|\/)(?:featurettes|extras|bonus|deleted scenes|interviews)(?:$|\/)/i.test(relPath)) {
+  // 1. Détection universelle des bonus / coulisses / trailers / samples (dossiers et noms de fichiers)
+  if (
+    /(?:^|\/)(?:featurettes|extras|bonus|deleted[\s._-]?scenes|behind[\s._-]?the[\s._-]?scenes|interviews|samples|trailers|teasers|making[\s._-]?of)(?:$|\/)/i.test(relPath) ||
+    /(?:[-._ ]|\b)(?:trailer|teaser|sample|featurette|behind[\s._-]?the[\s._-]?scenes|deleted[\s._-]?scenes|making[\s._-]?of|ncop\d*|nced\d*|pv\d*|cm\d*)(?:[-._ ]|\.|$)/i.test(fileName)
+  ) {
     isExtra = true;
     if (/behind|making|stunt|wall/i.test(normFile)) extraType = 'behindthescenes';
     else if (/deleted/i.test(normFile)) extraType = 'deleted';
+    else if (/trailer|teaser/i.test(normFile)) extraType = 'trailer';
+    else if (/sample/i.test(normFile)) extraType = 'other';
+    else if (/ncop|nced|pv|cm/i.test(normFile)) extraType = 'other';
     else extraType = 'featurette';
     return { isExtra, extraType, groupTitle: 'Bonus & Coulisses' };
   }
@@ -88,4 +94,16 @@ export function analyzeFolderGrouping(filePath: string, showDir: string): Folder
   }
 
   return { isExtra: false, isMovie: false };
+}
+
+/**
+ * Teste immédiatement si un chemin de fichier ou de dossier correspond à un extra/bonus/trailer
+ */
+export function isExtraMediaFile(filePath: string): boolean {
+  const norm = filePath.replace(/\\/g, '/');
+  const base = path.basename(norm);
+  return (
+    /(?:^|\/)(?:featurettes|extras|bonus|deleted[\s._-]?scenes|behind[\s._-]?the[\s._-]?scenes|interviews|samples|trailers|teasers|making[\s._-]?of)(?:$|\/)/i.test(norm) ||
+    /(?:[-._ ]|\b)(?:trailer|teaser|sample|featurette|behind[\s._-]?the[\s._-]?scenes|deleted[\s._-]?scenes|making[\s._-]?of|ncop\d*|nced\d*|pv\d*|cm\d*)(?:[-._ ]|\.|$)/i.test(base)
+  );
 }
