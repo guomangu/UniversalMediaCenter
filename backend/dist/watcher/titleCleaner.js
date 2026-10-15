@@ -49,9 +49,10 @@ export function sanitizeReleaseTags(raw) {
     let t = String(raw ?? '').trim();
     // Nettoyage des suffixes de release
     t = t.replace(/\.(mkv|mp4|avi|mov|ts|m4v|webm)$/i, '');
+    // Nettoyage des années préfixées (ex: "1962 Dr. No", "1995 - Goldeneye", "2012.Skyfall")
+    t = t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, '');
     // Nettoyage des préfixes ordonnés (ex: "01 Iron Man", "03 Iron Man 2", "07 - Iron Man 3")
     t = t.replace(/^[0-9]{1,3}\s*[-._– ]\s*/, '');
-    t = t.replace(/^\d{4}\./, '');
     t = t.replace(/[\s._]\d{3,4}x\d{3,4}.*$/i, '');
     t = t.replace(/\s*[–-]\s*(Action|Comedy|Drama|Aventure)?\s*\d{4}\s*.*$/i, '');
     t = t.replace(/\s*\(?\d{4}\)?\s*(VFF|VF|VOSTFR|MULTi|ENG|FRENCH|AC3|DTS|BluRay|BDRip|1080p|720p|x264|x265|WEB).*$/i, '');
@@ -67,11 +68,16 @@ export function sanitizeReleaseTags(raw) {
 }
 /**
  * Extrait l'année cinématographique d'une chaîne ou d'un nom de fichier
+ * Protégé contre la pollution par les dossiers parents (ex: "saga (1962 - 2015)")
  */
 export function extractYearFromText(text) {
     if (!text)
         return undefined;
-    const match = text.match(/\b((?:19|20)\d{2})\b/);
+    let target = text;
+    if (target.includes('/') || target.includes('\\')) {
+        target = target.replace(/\\/g, '/').split('/').filter(Boolean).pop() || target;
+    }
+    const match = target.match(/\b((?:19|20)\d{2})\b/);
     if (match) {
         const yr = parseInt(match[1], 10);
         if (yr >= 1890 && yr <= 2099)

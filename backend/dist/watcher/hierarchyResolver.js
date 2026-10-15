@@ -130,3 +130,33 @@ export async function findOrCreateCollectionNode(collectionName, extraMeta) {
         .returning();
     return created;
 }
+/**
+ * Détecte si un fichier se trouve dans un dossier représentant une Saga ou Intégrale de films
+ */
+export function detectSagaNameFromFolder(filePath) {
+    const norm = filePath.replace(/\\/g, '/');
+    const parts = norm.split('/').filter(Boolean);
+    if (parts.length < 2)
+        return null;
+    const parentFolder = parts[parts.length - 2];
+    const isSagaFolder = /\b(int[ée]grale|saga|collection|trilogie|quadrilogie|boxset|anthologie)\b/i.test(parentFolder) ||
+        /\bfilms?\s*\(\s*(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\s*\)/i.test(parentFolder);
+    if (!isSagaFolder)
+        return null;
+    // Nettoyage pour obtenir le nom de la franchise
+    let baseName = parentFolder
+        .replace(/\s*[-–]\s*int[ée]grale.*$/i, '')
+        .replace(/\s*int[ée]grale.*$/i, '')
+        .replace(/\s*[-–]\s*saga.*$/i, '')
+        .replace(/\s*collection.*$/i, '')
+        .replace(/\s*[-–]\s*boxset.*$/i, '')
+        .replace(/\s*\(.*?\)/g, '')
+        .trim();
+    if (baseName.length < 2)
+        return null;
+    // Title case basique si tout en minuscules
+    if (baseName === baseName.toLowerCase()) {
+        baseName = baseName.replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    return `${baseName} - Saga`;
+}

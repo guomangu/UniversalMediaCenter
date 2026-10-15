@@ -61,7 +61,7 @@
 - `components/ProposeSessionModal.tsx` & `components/UserRatingModal.tsx` : Modales progressives pour lancer une proposition de séance contrôlée et attribuer des notes/avis aux gérants de séance.
 - `backend/src/routes/sessionRoutes.ts` & `backend/src/db/schema/sessions.ts` : Moteur de séances de visionnage en groupe (Watch Party / Ciné-club) avec gestion d'état, participants et présence en direct.
 - `backend/src/routes/ratingRoutes.ts` & `backend/src/db/schema/ratings.ts` : Système d'évaluation des utilisateurs et des gérants de séance avec moyenne et avis.
-- `backend/src/routes/taxonomyRoutes.ts` : Taxonomie optimisée avec déduplication intra-catégorie (`excludeIds`) et support direct des tags casting/personnes.
+- `backend/src/routes/taxonomyRoutes.ts` : Taxonomie optimisée avec catégorie "Séries" intercalée entre Sagas et Studios, affichant les tags des Genres pour les séries et filtrant strictement les séries parentes (`node_type = 'SHOW'`) afin de masquer les épisodes individuels ; déduplication intra-catégorie (`excludeIds`) et support direct des tags casting/personnes.
 - `backend/src/iptv/liveProxyService.ts` : Service proxy HLS live avec réécriture dynamique des URLs de manifestes .m3u8 en chemins absolus, en-têtes CORS universels et isolation des erreurs diffuseur source (403 Forbidden / 502 Bad Gateway) sans fuite console.
 - `components/MediaCard.tsx` & `MediaTile.tsx` : Gabarits doublés (style Kyoo : affiches 260x390px, tuiles 200x290px) avec badges saillants, badge "🍿 SÉANCE" et bandeau "🍿 X en séance" en bas de l'affiche.
 - `components/MediaChildrenRow.tsx` & `utils/mediaHierarchy.ts` : Affichage structuré empilant verticalement les saisons et ordonnant horizontalement les épisodes par chronologie, avec gestion tolérante des saisons inconnues et épisodes inconnus.
@@ -75,3 +75,7 @@
 - `config/paramSchema.ts` & `paramManager.ts` : Paramètres globaux dynamiques dans `param.yaml` régissant serveur, sécurité, types de profils, lecteur et indexation.
 - `components/MediaRepostModal.tsx` : Modal progressive pour noter et reposter un média en 2 champs.
 - `app/+not-found.tsx` : Interception 404 et redirection automatique vers l'accueil.
+
+- `backend/Dockerfile` : Image conteneurisée basée sur Debian 12 Bookworm Slim (`docker.io/node:20-bookworm-slim`), FFmpeg, Python 3 et GuessIt. Élimine la troncature silencieuse de répertoires sous musl libc (buffer 2 Ko) sur les partitions externes NTFS/FUSE et garantit une énumération 100% fidèle via glibc (buffer 32 Ko).
+- `backend/src/watcher/hierarchyResolver.ts` : Fonction `detectSagaNameFromFolder(filePath)` analysant sémantiquement les dossiers parents (`intégrale`, `saga`, `collection`, `trilogie`, `boxset`) pour rattacher automatiquement les films orphelins à leur franchise sans nécessiter de balise XML `<set>`.
+- `backend/src/watcher/titleCleaner.ts` : Fonction `extractYearFromText()` sanctuarisée sur `path.basename` interdisant toute contamination par les plages d années des dossiers parents (ex: `(1962 - 2015)`), et regex universelle de purge des années préfixées avec espace (`t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, "")`).
