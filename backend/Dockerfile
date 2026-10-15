@@ -1,9 +1,11 @@
-FROM docker.io/node:20-alpine
+FROM docker.io/node:20-bookworm-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache ffmpeg python3 py3-pip \
-    && pip install --break-system-packages guessit
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg python3 python3-pip python3-setuptools \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --break-system-packages guessit
 
 COPY package*.json ./
 RUN npm install

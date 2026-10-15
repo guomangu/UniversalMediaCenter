@@ -107,3 +107,14 @@
     6. **equipe** : Équipe créative détaillée (réalisateurs, scénaristes, producteurs, compositeurs).
     7. **info** : Fiche technique, classifications, pays d'origine et codecs vidéo/audio.
     8. **propositions medias par tags** : Suggestions thématiques intelligentes sans doublons (`MediaGenreSection`) et avis communautaires (`reposts`).
+
+### 🎬 Résolution Critique de l Indexation FUSE/NTFS, Migration Debian (glibc), Sanctuarisation des Sagas & Années James Bond
+- [x] **1. Diagnostic & Résolution du Bug Silencieux FUSE/NTFS sous Alpine Linux (`backend/Dockerfile`) :**
+  - **Autopsie de la Troncation des Répertoires** : Découverte de la limitation structurelle de musl libc (`char buf[2048]` dans `struct __dirstream`) qui ignorait silencieusement plus de 50% des fichiers et dossiers sur les partitions externes NTFS (`fuseblk` avec blocs d indexation de 4096 octets), expliquant l absence intégrale du dossier James Bond et de 224 médias dans `/film`.
+  - **Migration vers Debian GNU/Linux (`node:20-bookworm-slim`)** : Remplacement d Alpine par Debian avec `glibc` (buffer de 32 Ko), FFmpeg et GuessIt, rétablissant la visibilité immédiate de 100% des fichiers (520/520 dans `/film` et 134/134 dans James Bond).
+- [x] **2. Sanctuarisation de l Année et Protection contre la Pollution de Dossier Parent (`titleCleaner.ts`, `mediaIngester.ts`) :**
+  - **Extraction Sécurisée sur Basename** : Isolation automatique du nom de fichier via `path.basename` dans `extractYearFromText`, interdisant à la plage d années du dossier parent `(1962 - 2015)` de contaminer les films de la saga (GoldenEye 1995, Skyfall 2012, Spectre 2015 conservent leur vraie année).
+  - **Nettoyage Universel des Années Préfixées** : Prise en charge des années de 4 chiffres suivies d espaces, tirets ou underscores (`1962 Dr. No` -> `Dr No`).
+- [x] **3. Détection Automatique des Sagas par Dossier (`hierarchyResolver.ts`, `hierarchyRepair.ts`, `mediaIngester.ts`) :**
+  - **Moteur Heuristique de Franchises** : Détection des dossiers parents avec mots-clés `intégrale`, `integrale`, `saga`, `collection`, `trilogie`, `boxset` et extraction propre du nom de franchise.
+  - **Liaison Déterministe en Base de Données** : Rattachement automatique et ordonné des 26 films James Bond au nœud `COLLECTION` parent `James Bond 007 - Saga`.

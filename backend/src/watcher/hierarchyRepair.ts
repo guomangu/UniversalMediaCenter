@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import { db } from '../db/connection.js';
 import { mediaNodes } from '../db/schema/index.js';
 import { eq, and, ne, isNull, sql } from 'drizzle-orm';
-import { resolveParentShowNodeId, resolveSeriesRoot, findOrCreateCollectionNode, cleanShowFolderName } from './hierarchyResolver.js';
+import { resolveParentShowNodeId, resolveSeriesRoot, findOrCreateCollectionNode, cleanShowFolderName, detectSagaNameFromFolder } from './hierarchyResolver.js';
 import { analyzeFolderGrouping } from './folderGrouper.js';
 import { parseSeasonEpisode } from './seasonEpisodeHelper.js';
 import { sanitizeReleaseTags, extractYearFromText } from './titleCleaner.js';
@@ -112,9 +112,10 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
           const titleMatch = content.match(/<title>([^<]+)<\/title>/i);
           if (titleMatch && titleMatch[1]) {
             const rawTitle = titleMatch[1].trim();
-            if (rawTitle && rawTitle !== node.title && !/1080p|720p|x264|bluray/i.test(rawTitle)) {
-              movieUpdates.title = rawTitle;
-              movieUpdates.sortTitle = rawTitle.replace(/^(le|la|les|the|l')\s+/i, '').trim() || rawTitle;
+            const cleanTitle = sanitizeReleaseTags(rawTitle);
+            if (cleanTitle && cleanTitle !== node.title && !/1080p|720p|x264|bluray/i.test(cleanTitle)) {
+              movieUpdates.title = cleanTitle;
+              movieUpdates.sortTitle = cleanTitle.replace(/^(le|la|les|the|l')\s+/i, '').trim() || cleanTitle;
             }
           }
 
@@ -133,6 +134,21 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
             }
           }
         } catch {}
+      }
+
+      // Rattachement par dossier si aucune balise <set> n'était présente
+      if (!node.parentId) {
+        const folderSaga = detectSagaNameFromFolder(filePath);
+        if (folderSaga) {
+          const colNode = await findOrCreateCollectionNode(folderSaga);
+          if (colNode) {
+            const movieYear = node.releaseYear || (node.premieredDate ? new Date(node.premieredDate).getFullYear() : 0);
+            movieUpdates.parentId = colNode.id;
+            movieUpdates.orderIndex = movieYear || node.orderIndex;
+            report.moviesLinkedToSagas++;
+            node.parentId = colNode.id;
+          }
+        }
       }
 
       if (Object.keys(movieUpdates).length > 0) {
@@ -218,35 +234,49 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
     where: (t, { eq: eqOp }) => eqOp(t.nodeType, 'COLLECTION'),
   });
 
-  for (const col of allCollections) {
-    const t = col.title.toLowerCase();
-    if (t.includes('seigneur des anneaux') || t.includes('hobbit') || t.includes('rings') || t.includes('middle-earth')) {
-      await linkTagToNode(col.id, 'universe', 'Terre du Milieu').catch(() => null);
-      await linkTagToNode(col.id, 'franchise', 'Terre du Milieu').catch(() => null);
-    } else if (t.includes('rocky') || t.includes('creed')) {
-      await linkTagToNode(col.id, 'universe', 'Rocky Universe').catch(() => null);
-      await linkTagToNode(col.id, 'franchise', 'Rocky Universe').catch(() => null);
-    } else if (t.includes('banlieue 13')) {
-      await linkTagToNode(col.id, 'universe', 'Banlieue 13 Saga').catch(() => null);
-    } else if (t.includes('equalizer')) {
-      await linkTagToNode(col.id, 'universe', 'The Equalizer').catch(() => null);
+  // LOTR + Hobbit => Univers Terre du Milieu (Middle-Earth)
+  const lotrHobbitRegex = /(seigneur des anneaux|lord of the rings|hobbit|terre du milieu)/i;
+  const middleEarthCols = allCollections.filter((c) => lotrHobbitRegex.test(c.title));
+
+  if (middleEarthCols.length > 0) {
+    const universeTitle = 'Univers Terre du Milieu - Saga';
+    let universeNode = allCollections.find((c) => c.title.toLowerCase() === universeTitle.toLowerCase());
+
+    if (!universeNode) {
+      const uSlug = `univers-terre-du-milieu-collection-${Date.now().toString().slice(-4)}`;
+      const [createdUni] = await db
+        .insert(mediaNodes)
+        .values({
+          nodeType: 'COLLECTION',
+          title: universeTitle,
+          sortTitle: 'Terre du Milieu',
+          slug: uSlug,
+          state: 'READY',
+          confidenceScore: 1.0,
+          overview: "L'univers étendu complet de la Terre du Milieu imaginé par J.R.R. Tolkien, comprenant la trilogie du Seigneur des Anneaux et la trilogie du Hobbit.",
+          updatedAt: new Date(),
+        })
+        .returning();
+      universeNode = createdUni;
     }
-  }
 
-  // 5. Nettoyage des SHOWs orphelins vides (sans aucun enfant et sans fichiers)
-  const emptyShows = await db.execute(sql`
-    SELECT s.id, s.title
-    FROM media_nodes s
-    LEFT JOIN media_nodes c ON c.parent_id = s.id
-    WHERE s.node_type = 'SHOW'
-      AND s.video_file_path IS NULL
-      AND s.nfo_file_path IS NULL
-      AND c.id IS NULL
-  `);
-
-  for (const row of Array.from(emptyShows) as any[]) {
-    await db.delete(mediaNodes).where(eq(mediaNodes.id, row.id));
-    report.cleanedOrphans++;
+    if (universeNode) {
+      // Rattacher tous les films LOTR et Hobbit à cet univers
+      const allMovies = await db.query.mediaNodes.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.nodeType, 'MOVIE'),
+      });
+      for (const m of allMovies) {
+        if (lotrHobbitRegex.test(m.title) || lotrHobbitRegex.test(m.originalTitle || '')) {
+          if (m.parentId !== universeNode.id) {
+            await db
+              .update(mediaNodes)
+              .set({ parentId: universeNode.id, updatedAt: new Date() })
+              .where(eq(mediaNodes.id, m.id));
+            report.moviesLinkedToSagas++;
+          }
+        }
+      }
+    }
   }
 
   return report;

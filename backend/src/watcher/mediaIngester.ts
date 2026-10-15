@@ -14,7 +14,7 @@ import { identifyVideoFile } from './pipeline/universalScanner.js';
 import type { } from './pipeline/universalScanner.js';
 import type { UnifiedMediaMetadata } from './pipeline/universalScanner.js';
 import { detectAdjacentFiles } from './mediaFileDetector.js';
-import { resolveSeriesRoot, resolveParentShowNodeId } from './hierarchyResolver.js';
+import { resolveSeriesRoot, resolveParentShowNodeId, findOrCreateCollectionNode, detectSagaNameFromFolder } from './hierarchyResolver.js';
 import { analyzeFolderGrouping } from './folderGrouper.js';
 import type { ParsedNfo } from './types.js';
 import { sanitizeReleaseTags, extractYearFromText } from './titleCleaner.js';
@@ -62,6 +62,14 @@ export async function ingestMediaNode(
       }
       if (grouping.groupTitle && !folderArcTitle) {
         folderArcTitle = grouping.groupTitle;
+      }
+    }
+
+    if (effectiveType === 'MOVIE' && !parentId) {
+      const folderSagaName = detectSagaNameFromFolder(nfoPath || adjacent.videoFilePath || '');
+      if (folderSagaName) {
+        const sagaNode = await findOrCreateCollectionNode(folderSagaName);
+        if (sagaNode) parentId = sagaNode.id;
       }
     }
   }
@@ -380,6 +388,14 @@ export async function ingestStandaloneVideoFile(videoPath: string): Promise<stri
     }
     if (grouping.groupTitle) {
       arcTitle = grouping.groupTitle;
+    }
+  }
+
+  if (nodeType === 'MOVIE' && !parentId) {
+    const folderSagaName = detectSagaNameFromFolder(videoPath);
+    if (folderSagaName) {
+      const sagaNode = await findOrCreateCollectionNode(folderSagaName);
+      if (sagaNode) parentId = sagaNode.id;
     }
   }
 

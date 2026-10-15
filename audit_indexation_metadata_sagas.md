@@ -337,3 +337,76 @@ flowchart TD
 - **Cas Django Unchained & Iron Man validés** :
   - *Django Unchained* : Titre propre, année 2012, badge d'épisode supprimé, format 1080p Scope, regroupé dans **« Films de Quentin Tarantino »** avec *Once Upon a Time in Hollywood*, traductions FR et EN instantanées.
   - *Iron Man* : Titre épuré de `01 `, année 2008, badge d'épisode supprimé, format 1080p Scope, regroupé dans **« Films de Jon Favreau »** avec *Iron Man 2*.
+
+
+---
+
+## 10. Audit Spécifique & Résolution de l Indexation FUSE/NTFS & Sagas par Dossier (Cas d École James Bond)
+
+### 🚨 Contexte et Constat du Dysfonctionnement
+Lors du déploiement en conditions réelles sur les volumes externes montés en NTFS via FUSE (`/run/media/tele/My Passport`), l ensemble du dossier `/film/james bond - intégrale des 26 films (1962 - 2015)` ainsi que 224 fichiers et sous-dossiers sur 501 dans `/film` étaient totalement ignorés par le crawler et le watcher, sans qu aucune exception ne soit levée.
+
+### 🔬 Autopsie Détaillée des 3 Causes Racines
+
+#### 1. La Faille Bas-Niveau : Buffer de 2048 Octets de musl libc sous Alpine Linux vs Arbres B+ NTFS (4 Ko)
+- **Le Runtime Conteneur** : `backend/Dockerfile` utilisait l image `node:20-alpine`, compilée avec `musl libc`.
+- **La Limitation musl** : Dans `musl libc`, la structure `__dirstream` alloue un tampon interne rigide de seulement **2 048 octets** (`char buf[2048]`) pour l appel système noyau `getdents64`.
+- **La Géométrie FUSE/NTFS** : Les disques NTFS montés sous Linux via `fuseblk` / `ntfs-3g` organisent les entrées de répertoire dans des blocs d indexation B+ Tree de **4 096 octets** (4 Ko).
+- **Le Saut Silencieux (Block Skip)** : Lorsque `readdir()` ne lit que 2 048 octets dans un bloc de 4 Ko, l offset de reprise FUSE (`d_off`) saute directement à la frontière du bloc de 4 Ko suivant (offset 4096). **Tous les fichiers situés entre l octet 2049 et 4096 de chaque bloc d index sont silencieusement supprimés de l énumération.**
+- **Localisation du dossier James Bond** : Situé à l offset 3000 du bloc n°4, il était mathématiquement invisible pour `fs.readdir()`.
+
+```
+Index Block NTFS (4096 octets) :
+[ 0 octets ------------ 2048 octets ] [ 2049 octets ------------- 4096 octets ]
+  Ingéré par musl libc (70 entrées)     TRONQUÉ ET JETÉ (James Bond, 224 médias)
+                                         Pointeur FUSE saute au bloc suivant !
+```
+
+#### 2. Pollution de l Année de Sortie par le Dossier Parent (`extractYearFromText`)
+- Lors de l ingestion des films d une saga, `extractYearFromText(nfoPath)` appliquait la regex `/\b((?:19|20)\d{2})\b/` sur le **chemin absolu complet**.
+- Pour `/film/james bond - intégrale des 26 films (1962 - 2015)/1995 goldeneye.nfo`, la première année trouvée dans la chaîne était systématiquement `1962` (tirée du nom de dossier).
+- **Conséquence** : GoldenEye (1995), Skyfall (2012) et Spectre (2015) se voyaient tous attribuer l année erronée 1962.
+
+#### 3. Amnésie des Sagas par Dossier et Titres Pollués par l Année
+- Les 26 fichiers `.nfo` de l intégrale James Bond ne contenaient aucune balise XML `<set><name>`.
+- Le système n analysait les sagas que via cette balise ou l API TMDb, ignorant la structure sémantique du dossier physique `james bond - intégrale des 26 films`.
+- Le nettoyeur de titre ne retirait les années de 4 chiffres que suivies d un point (`^\d{4}\.`), conservant des titres bruts comme `"1962 Dr. No"`.
+
+---
+
+### 🛡️ Remédiations Architecturales Déployées
+
+1. **Migration vers Debian GNU/Linux (`node:20-bookworm-slim`)** :
+   - Bascule de la libc de `musl` vers GNU `glibc`.
+   - La `glibc` alloue un buffer de **32 768 octets (32 Ko)** pour `readdir()`, ingérant les blocs NTFS de 4 Ko en une seule passe sans aucune perte.
+   - **Résultat vérifié** :
+     - `/run/media/tele/My Passport/film` : passage instantané de **286 à 520 entrées**.
+     - Dossier James Bond : passage de **0 à 134 entrées** immédiatement scannées.
+
+2. **Sanctuarisation de l Extraction d Année sur le Basename (`titleCleaner.ts`)** :
+   - La fonction `extractYearFromText()` isole systématiquement `path.basename(path)` avant d exécuter la regex d année.
+   - GoldenEye conserve son année **1995**, Skyfall **2012** et Spectre **2015**.
+
+3. **Moteur Heuristique de Détection des Sagas par Dossier (`hierarchyResolver.ts`)** :
+   - Fonction `detectSagaNameFromFolder()` analysant les dossiers parents contenant `intégrale`, `saga`, `collection`, `trilogie`, `boxset` ou `films (YYYY - YYYY)`.
+   - Création et liaison automatique au nœud `COLLECTION` parent (`James Bond 007 - Saga`) avec tri chronologique par `release_year`.
+
+4. **Nettoyage Universel des Années Préfixées avec Séparateur (`titleCleaner.ts`)** :
+   - Regex `t = t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, "")` normalisant `"1962 Dr. No"` en `"Dr No"`.
+
+---
+
+### 📊 Validation des Métadonnées en Base de Données
+
+```sql
+SELECT title, node_type, release_year, order_index, parent_id 
+FROM media_nodes 
+WHERE parent_id = 0134effd-f74c-458c-895c-81b424c2bdf6 
+ORDER BY order_index ASC;
+```
+
+| Titre Nettoyé | Type de Nœud | Année de Sortie | Index d Ordre | Saga Parente Résolue |
+| :--- | :---: | :---: | :---: | :--- |
+| **Dr No** | `MOVIE` | **1962** | **1962** | `James Bond 007 - Saga` |
+| **Goldeneye** | `MOVIE` | **1995** | **1995** | `James Bond 007 - Saga` |
+| **Spectre** | `MOVIE` | **2015** | **2015** | `James Bond 007 - Saga` |

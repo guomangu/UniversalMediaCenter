@@ -133,3 +133,31 @@
 * **Bonnes Pratiques de Remédiation :**
   - **Nettoyage Déterministe Côté Serveur (`cleanupExpiredSessions`) :** Purger automatiquement les spectateurs inactifs (`last_ping_at < NOW() - INTERVAL '25 seconds'`), basculer automatiquement en `status = 'ENDED'` toute séance sans participants ou dont l'hôte a quitté, et exécuter cette routine à la fois périodiquement (`setInterval`) et en préambule de chaque requête de liste (`GET /api/sessions/active`).
   - **Décrochage Navigateur Réactif (`keepalive: true` & `beforeunload`) :** Brancher un listener `beforeunload` et `pagehide` dans le lecteur vidéo envoyant `DELETE /playback` et `POST /leave` avec `keepalive: true` pour avertir instantanément le serveur lors d'une fermeture d'onglet.
+
+---
+
+## 🛑 49. Incompatibilité Structurelle Alpine Linux (musl libc avec buffer 2 Ko) sur les Systèmes de Fichiers FUSE/NTFS causant la Perte Silencieuse de plus de 50% des Entrées de Répertoires
+
+* **Problème / Symptôme :** Des répertoires entiers contenant des dizaines de films (comme le dossier James Bond de 26 films ou 234 fichiers sur 501 dans le dossier `/film` d un disque externe) n étaient jamais scannés ni répertoriés, disparaissant complètement des résultats de `fs.readdir` et du crawler sans le moindre message d erreur.
+* **Conséquences :** Médias introuvables, collections amputées, scanners récursifs déclarant à tort que les dossiers sont vides ou partiellement peuplés.
+* **Causes Racines :**
+  - **Tampon de 2048 Octets Hardcodé dans musl libc :** Alpine Linux compile Node.js contre musl libc. Dans musl, `struct __dirstream` alloue un buffer fixe de seulement 2 Ko pour `getdents64`.
+  - **Structure B-Tree en Blocs de 4 Ko sous NTFS :** Les disques durs externes formatés en NTFS et montés via FUSE (`fuseblk` / `ntfs-3g`) gèrent les répertoires par blocs d indexation de 4096 octets.
+  - **Troncature et Saut de Bloc FUSE :** Lorsque musl lit les 2048 premiers octets d un bloc de 4 Ko, le pointeur de pagination FUSE/NTFS (`d_off`) saute directement à la frontière du bloc de 4 Ko suivant. Tout fichier ou sous-dossier situé au-delà de l octet 2048 dans chaque bloc d index est **silencieusement éliminé**.
+* **Bonnes Pratiques de Remédiation :**
+  - **Migration vers Debian GNU/Linux (glibc) :** Utiliser impérativement des images de base avec glibc (ex: `docker.io/node:20-bookworm-slim`). La glibc alloue un tampon de 32 768 octets (32 Ko) pour `readdir()`, ce qui ingère l intégralité des blocs NTFS en un seul appel sans aucune perte.
+  - **Bufferisation Large pour les Systèmes FUSE :** Pour toute lecture de système de fichiers externe ou réseau (NTFS, SMB, CIFS, FUSE), garantir une taille de buffer d au moins 32 Ko.
+
+---
+
+## 🛑 50. Pollution de l Année par le Dossier Parent et Rejet des Années Préfixées avec Espace
+
+* **Problème / Symptôme :** Tous les films d une même franchise (ex: GoldenEye 1995, Skyfall 2012, Spectre 2015) se retrouvaient datés de force de la même année (1962), tandis que leurs titres conservaient leur préfixe numérique brut (`"1962 Dr. No"`, `"1995 Goldeneye"`).
+* **Conséquences :** Tri chronologique faussé, échec du scraping TMDb et affichage visuel dégradé.
+* **Causes Racines :**
+  - **Extraction d Année sur Chemin Absolu :** `extractYearFromText(filePath)` testait la regex `(19|20)\d{2}` sur le chemin complet. Si le dossier parent portait une plage d années (ex: `james bond - intégrale des 26 films (1962 - 2015)`), la regex capturait systématiquement la première année du dossier parent (1962).
+  - **Regex de Nettoyage de Titre Trop Restrictive :** `titleCleaner.ts` ne nettoyait les années de 4 chiffres que si elles étaient suivies d un point (`^\d{4}\.`), ignorant les séparateurs usuels de scènes (espace, tiret, underscore : `1962 Dr. No`).
+* **Bonnes Pratiques de Remédiation :**
+  - **Extraction d Année Sanctuarisée sur le Basename :** `extractYearFromText` doit automatiquement isoler `path.basename(path)` avant d exécuter la recherche regex d année.
+  - **Nettoyage Universel des Années Préfixées :** Appliquer `t = t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, "")` pour transformer proprement `"1962 Dr. No"` en `"Dr. No"`.
+  - **Détection Automatique des Sagas par Dossier :** Si le dossier parent comporte les termes `intégrale`, `saga`, `collection`, `boxset` ou `trilogie`, extraire automatiquement le nom de la franchise et créer/lier le conteneur `COLLECTION` parent en base de données.
