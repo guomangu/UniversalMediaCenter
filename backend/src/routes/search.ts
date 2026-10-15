@@ -1,13 +1,10 @@
 import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
-import { requireAuth } from '../middleware/access.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 
 export const searchRouter = new Hono();
-
-searchRouter.use('*', requireAuth);
 
 searchRouter.get('/', async (c) => {
   const query = c.req.query('q')?.trim();
@@ -39,10 +36,11 @@ searchRouter.get('/', async (c) => {
       videoFilePath: n.video_file_path,
       nfoFilePath: n.nfo_file_path,
     })
-  ).slice(0, 20);
+  );
 
   const formattedNodes = allowedNodes.map((n) => {
-    const info = parseSeasonEpisode(n.title, n.order_index);
+    const isEpOrSeason = n.node_type === 'EPISODE' || n.node_type === 'SEASON';
+    const parsedInfo = isEpOrSeason ? parseSeasonEpisode(n.title, n.order_index, n.node_type) : null;
     return {
       id: n.id,
       nodeType: n.node_type,
@@ -51,44 +49,47 @@ searchRouter.get('/', async (c) => {
       slug: n.slug,
       releaseYear: n.release_year,
       posterPath: n.poster_path ? `/api/media/${n.id}/poster` : undefined,
-      seasonEpisodeTag: info?.seasonEpisodeTag ?? null,
-      displayBadge: info?.displayBadge ?? null,
-      score: n.score,
+      seasonEpisodeTag: parsedInfo?.seasonEpisodeTag ?? null,
+      displayBadge: parsedInfo?.displayBadge ?? null,
     };
   });
 
-  // 2. Recherche sur les tags cliquables EAV
-  const tags = await db.execute(sql`
-    SELECT v.id, v.value_text, v.value_slug, a.code AS attribute_code, a.display_name,
-           a.ui_zone, a.color_theme,
+  // 2. Recherche sur les artistes / comédiens / réalisateurs (EAV)
+  const people = await db.execute(sql`
+    SELECT DISTINCT v.value_text AS name, v.value_slug AS slug, a.display_name AS role,
            similarity(unaccent(v.value_text), unaccent(${cleanQuery})) AS score
     FROM eav_values v
     JOIN eav_attributes a ON v.attribute_id = a.id
-    WHERE v.value_text % ${cleanQuery}
-       OR v.value_text ILIKE ${'%' + cleanQuery + '%'}
+    WHERE a.code IN ('actor', 'director', 'writer', 'composer')
+      AND (
+        v.value_text % ${cleanQuery}
+        OR word_similarity(unaccent(${cleanQuery}), unaccent(v.value_text)) > 0.3
+        OR v.value_text ILIKE ${'%' + cleanQuery + '%'}
+      )
     ORDER BY score DESC
     LIMIT 10;
   `);
 
-  // 3. Recherche spécifique sur les acteurs / personnes
-  const people = await db.execute(sql`
-    SELECT v.id, v.value_text AS name, v.metadata_json->>'thumbUrl' AS thumb_url,
-           a.code AS role_category,
-           COUNT(l.id) AS credit_count
+  // 3. Recherche sur les autres tags (Genres, Studios, Pays)
+  const tags = await db.execute(sql`
+    SELECT DISTINCT v.value_text AS label, v.value_slug AS slug, a.code AS type,
+           similarity(unaccent(v.value_text), unaccent(${cleanQuery})) AS score
     FROM eav_values v
     JOIN eav_attributes a ON v.attribute_id = a.id
-    LEFT JOIN node_eav_links l ON l.value_id = v.id
-    WHERE a.code IN ('actor', 'director', 'writer')
-      AND (v.value_text % ${cleanQuery} OR v.value_text ILIKE ${'%' + cleanQuery + '%'})
-    GROUP BY v.id, v.value_text, v.metadata_json, a.code
-    ORDER BY credit_count DESC
-    LIMIT 8;
+    WHERE a.code IN ('genre', 'studio', 'country')
+      AND (
+        v.value_text % ${cleanQuery}
+        OR word_similarity(unaccent(${cleanQuery}), unaccent(v.value_text)) > 0.3
+        OR v.value_text ILIKE ${'%' + cleanQuery + '%'}
+      )
+    ORDER BY score DESC
+    LIMIT 10;
   `);
 
   return c.json({
     query,
     nodes: formattedNodes,
-    tags: Array.from(tags),
     people: Array.from(people),
+    tags: Array.from(tags),
   });
 });

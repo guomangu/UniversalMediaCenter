@@ -5,18 +5,24 @@ import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { TvSearchBar } from '@/components/TvSearchBar';
 import { TvChannelCard } from '@/components/TvChannelCard';
 import { fetchLiveChannels, fetchIptvCategories } from '@/services/api';
+import { useTabState } from '@/hooks/useTabState';
+import { getCachedData } from '@/services/pwaDataCache';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 
 export default function TvScreen() {
   const headerPaddingTop = useHeaderHeight(false);
-  const [channels, setChannels] = useState<any[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('ALL');
-  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useTabState('tv_search_query', '');
+  const [activeCategory, setActiveCategory] = useTabState('tv_active_category', 'ALL');
+
+  const initialCachedChannels = getCachedData<any[]>(`iptv_channels_${searchQuery}_${activeCategory}_0`) || [];
+  const initialCachedCategories = getCachedData<string[]>('iptv_categories') || [];
+
+  const [channels, setChannels] = useState<any[]>(initialCachedChannels);
+  const [categories, setCategories] = useState<string[]>(initialCachedCategories);
+  const [loading, setLoading] = useState(initialCachedChannels.length === 0);
 
   const loadData = async (q = searchQuery, cat = activeCategory) => {
-    setLoading(true);
+    if (channels.length === 0) setLoading(true);
     const [chList, catList] = await Promise.all([
       fetchLiveChannels({ q: q.trim() || undefined, category: cat !== 'ALL' ? cat : undefined }),
       categories.length === 0 ? fetchIptvCategories() : Promise.resolve(categories),
@@ -26,7 +32,9 @@ export default function TvScreen() {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(searchQuery, activeCategory); }, [searchQuery, activeCategory]);
+  useEffect(() => {
+    loadData(searchQuery, activeCategory);
+  }, [searchQuery, activeCategory]);
 
   return (
     <SafeAreaView style={styles.container}>

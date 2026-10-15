@@ -1,0 +1,32 @@
+{
+  "name": "The Universal Media Stack",
+  "short_name": "UMS",
+  "description": "Plateforme multimédia universelle, streaming direct, IPTV & Server-Driven UI",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "fr",
+  "categories": ["entertainment", "multimedia", "video"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/favicon.png",
+      "sizes": "48x48",
+      "type": "image/png"
+    }
+  ]
+}

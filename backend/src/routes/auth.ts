@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { users } from '../db/schema/index.js';
-import { sql, count } from 'drizzle-orm';
+import { sql, count, eq } from 'drizzle-orm';
 import { createSessionToken } from '../auth/token.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { getSiteParams, validateInvitationCode } from '../config/paramManager.js';
@@ -21,6 +21,42 @@ authRouter.get('/config', (c) => {
     defaultMaxCsaAge: params.security.defaultMaxCsaAge,
     defaultProfileRole: params.profiles?.defaultRole ?? 'STANDARD',
   });
+});
+
+// Statut d'authentification du serveur (/api/auth/status)
+// Indique si le premier administrateur a déjà été créé et si les inscriptions sont ouvertes
+authRouter.get('/status', async (c) => {
+  try {
+    const userCountResult = await db.select({ val: count() }).from(users);
+    const totalUsers = userCountResult[0]?.val ?? 0;
+
+    const adminCountResult = await db.select({ val: count() }).from(users).where(eq(users.isAdmin, true));
+    const totalAdmins = adminCountResult[0]?.val ?? 0;
+
+    const params = getSiteParams();
+
+    return c.json({
+      hasUsers: totalUsers > 0,
+      hasAdmin: totalAdmins > 0,
+      userCount: totalUsers,
+      adminCount: totalAdmins,
+      siteName: params.server.siteName || 'Universal Media Stack',
+      registrationOpen: !params.security.invitationOnly || Boolean(params.security.allowOnTheFlyCreation),
+      invitationOnly: Boolean(params.security.invitationOnly),
+    });
+  } catch (err: any) {
+    console.error('Erreur /api/auth/status:', err);
+    // En cas d'erreur transitoire sur la BD, ne jamais forcer la création d'admin
+    return c.json({
+      hasUsers: true,
+      hasAdmin: true,
+      userCount: 0,
+      adminCount: 0,
+      siteName: 'Universal Media Stack',
+      registrationOpen: false,
+      invitationOnly: false,
+    }, 500);
+  }
 });
 
 // Récupération de la session courante (/me)
@@ -131,7 +167,12 @@ authRouter.post('/register', async (c) => {
   }
 
   const userCountResult = await db.select({ val: count() }).from(users);
-  const isFirstUser = (userCountResult[0]?.val ?? 0) === 0;
+  const totalUsers = userCountResult[0]?.val ?? 0;
+  const isFirstUser = totalUsers === 0;
+
+  const adminCountResult = await db.select({ val: count() }).from(users).where(eq(users.isAdmin, true));
+  const hasExistingAdmin = (adminCountResult[0]?.val ?? 0) > 0;
+  const makeAdmin = isFirstUser || !hasExistingAdmin;
 
   const params = getSiteParams();
   if (!isFirstUser && params.security.invitationOnly && !validateInvitationCode(invitationCode)) {
@@ -145,13 +186,13 @@ authRouter.post('/register', async (c) => {
       email: cleanEmail,
       displayName: String(displayName).trim(),
       passwordHash,
-      isAdmin: isFirstUser,
+      isAdmin: makeAdmin,
       isIncognito: false,
-      profileRole: isFirstUser ? 'ADMIN' : (params.profiles?.defaultRole || 'STANDARD'),
+      profileRole: makeAdmin ? 'ADMIN' : (params.profiles?.defaultRole || 'STANDARD'),
       canDownload: params.profiles?.defaultCanDownload ?? true,
       canTranscode: params.profiles?.defaultCanTranscode ?? true,
       canWatchIptv: params.profiles?.defaultCanWatchIptv ?? true,
-      maxCsaAgeLimit: isFirstUser ? null : (params.profiles?.defaultMaxCsaAge ?? params.security.defaultMaxCsaAge ?? null),
+      maxCsaAgeLimit: makeAdmin ? null : (params.profiles?.defaultMaxCsaAge ?? params.security.defaultMaxCsaAge ?? null),
       allowedTags: params.profiles?.defaultAllowedTags ?? [],
       blockedTags: params.profiles?.defaultBlockedTags ?? [],
       blockedFolders: params.profiles?.defaultBlockedFolders ?? [],
@@ -178,7 +219,7 @@ authRouter.post('/register', async (c) => {
       blockedTags: newUser.blockedTags,
       blockedFolders: newUser.blockedFolders,
     },
-    message: isFirstUser
+    message: makeAdmin
       ? 'Félicitations ! Vous êtes le premier utilisateur et Administrateur de cette instance.'
       : 'Compte créé avec succès.',
   });

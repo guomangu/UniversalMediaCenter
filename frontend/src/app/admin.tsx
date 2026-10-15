@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { AccountModal } from '@/components/AccountModal';
 import { useCurrentUser } from '@/services/authStore';
+import { useTabState } from '@/hooks/useTabState';
 import { styles } from '@/components/AdminScreen.styles';
 import { AdminConfigTab } from '@/components/AdminConfigTab';
 import { AdminProfileTypesTab } from '@/components/AdminProfileTypesTab';
@@ -18,7 +19,7 @@ export default function AdminScreen() {
   const router = useRouter();
   const headerPaddingTop = useHeaderHeight(false);
   const currentUser = useCurrentUser();
-  const [tab, setTab] = useState<Tab>('LIBRARY');
+  const [tab, setTab] = useTabState<Tab>('admin_active_tab', 'LIBRARY');
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Garde de sécurité : seuls les administrateurs authentifiés peuvent voir et utiliser ce panneau

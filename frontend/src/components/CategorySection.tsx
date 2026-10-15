@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet, LayoutChangeEvent, Platform } from 'react-native';
-import { TaxonomyCategory } from '@/services/taxonomyApi';
+import { TaxonomyCategory, getCachedTaxonomyMedias } from '@/services/taxonomyApi';
 import { TagCard } from './TagCard';
 import { ClickableTopicText } from './ClickableTopicText';
 import { Radius, Spacing } from '@/constants/theme';
@@ -15,9 +15,26 @@ interface Props {
 export function CategorySection({ category, activeFilter, searchQuery, onLayoutPos }: Props) {
   const [tagLimit, setTagLimit] = useState(5);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [mediasByTag, setMediasByTag] = useState<Record<string, string[]>>({});
   const visibleTags = category.tags.slice(0, tagLimit);
   const hasMore = category.tags.length > tagLimit;
+
+  // Hydratation synchrone immédiate (0 ms) des IDs en cache pour éliminer tout effet de cascade
+  const [mediasByTag, setMediasByTag] = useState<Record<string, string[]>>(() => {
+    const init: Record<string, string[]> = {};
+    for (const t of category.tags.slice(0, 5)) {
+      const c = getCachedTaxonomyMedias({
+        category: category.id,
+        tag: t.slug,
+        filter: activeFilter,
+        q: searchQuery,
+        limit: 15,
+      });
+      if (c?.items?.length) {
+        init[t.slug] = c.items.map((m) => m.id);
+      }
+    }
+    return init;
+  });
 
   const handleLayout = (e: LayoutChangeEvent) => {
     onLayoutPos?.(category.id, e.nativeEvent.layout.y);
@@ -91,23 +108,40 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
 }
 
 const styles = StyleSheet.create({
-  container: { marginBottom: Spacing.four },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: Spacing.two },
-  categoryTitle: { fontSize: 44, fontWeight: '700', color: '#edeef2', letterSpacing: -0.5 },
-  tagCountBadge: { backgroundColor: 'rgba(148, 163, 184, 0.12)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.pill },
-  tagCountText: { color: '#8b97a8', fontSize: 11, fontWeight: '600' },
-  verticalTagList: { marginTop: 4 },
-  moreBtn: {
-    alignSelf: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(50, 60, 74, 0.4)',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.2)',
-    marginTop: 6,
-    marginBottom: Spacing.two,
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  container: { marginBottom: Spacing.four + 8 },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.three,
+    marginTop: Spacing.two,
+    paddingHorizontal: 2,
   },
-  moreText: { color: '#a0adc0', fontSize: 12, fontWeight: '600' },
+  categoryTitle: {
+    fontSize: 44,
+    fontWeight: '800',
+    color: '#edeef2',
+    letterSpacing: -1.2,
+    lineHeight: 52,
+  },
+  tagCountBadge: {
+    backgroundColor: 'rgba(55, 65, 80, 0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    alignSelf: 'center',
+  },
+  tagCountText: { color: '#8e9ab0', fontSize: 12, fontWeight: '600' },
+  verticalTagList: { gap: Spacing.three },
+  moreBtn: {
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(42, 48, 58, 0.6)',
+    borderRadius: Radius.pill,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.12)',
+  },
+  moreText: { color: '#9ba7b7', fontSize: 13, fontWeight: '600' },
 });

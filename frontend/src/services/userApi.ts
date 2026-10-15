@@ -1,55 +1,64 @@
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders, updateCurrentUser } from './authStore';
+import { fetchWithCache, setCachedData, getCachedData } from './pwaDataCache';
 
 export async function fetchUserStats(): Promise<any> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/user/stats`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  return fetchWithCache('user_stats', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/user/stats`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function fetchContinueWatching(): Promise<any[]> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/user/continue-watching`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.items || [];
-  } catch {
-    return [];
-  }
+  return fetchWithCache('user_continue_watching', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/user/continue-watching`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.items || [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function fetchWatchHistory(): Promise<any[]> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/user/history`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.history || [];
-  } catch {
-    return [];
-  }
+  return fetchWithCache('user_history', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/user/history`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.history || [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function fetchFavorites(): Promise<any[]> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/user/favorites`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.favorites || [];
-  } catch {
-    return [];
-  }
+  return fetchWithCache('user_favorites', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/user/favorites`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.favorites || [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function toggleFavorite(nodeId: string, shouldAdd: boolean): Promise<boolean> {
@@ -60,8 +69,19 @@ export async function toggleFavorite(nodeId: string, shouldAdd: boolean): Promis
       headers: getAuthHeaders(),
     });
     const data = await res.json();
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("favoritesUpdated", { detail: { nodeId, shouldAdd } }));
+
+    // Mise à jour optimiste du cache PWA
+    const currentFavs = getCachedData<any[]>('user_favorites');
+    if (Array.isArray(currentFavs)) {
+      if (shouldAdd) {
+        setCachedData('user_favorites', [{ id: nodeId }, ...currentFavs]);
+      } else {
+        setCachedData('user_favorites', currentFavs.filter((f) => f.id !== nodeId));
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('favoritesUpdated', { detail: { nodeId, shouldAdd } }));
     }
     return Boolean(data.isFavorite);
   } catch {
@@ -83,28 +103,32 @@ export async function checkFavorite(nodeId: string): Promise<boolean> {
 }
 
 export async function fetchUserForums(): Promise<any[]> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/user/forums`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.forums || [];
-  } catch {
-    return [];
-  }
+  return fetchWithCache('user_forums', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/user/forums`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.forums || [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function fetchUserProfile(): Promise<any> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/user/profile`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  return fetchWithCache('user_profile', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/user/profile`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function updateUserProfile(data: { displayName?: string; bio?: string; avatarUrl?: string; isIncognito?: boolean }): Promise<any> {
@@ -117,6 +141,7 @@ export async function updateUserProfile(data: { displayName?: string; bio?: stri
     const body = await res.json();
     if (body.success && body.user) {
       updateCurrentUser(body.user);
+      setCachedData('user_profile', body.user);
     }
     return body;
   } catch {

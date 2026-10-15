@@ -20,6 +20,7 @@ import { friendRouter } from './routes/friendRoutes.js';
 import { repostRouter } from './routes/repostRoutes.js';
 import { sessionRouter } from './routes/sessionRoutes.js';
 import { ratingRouter } from './routes/ratingRoutes.js';
+import { taxonomyRouter } from './routes/taxonomyRoutes.js';
 
 const app = new Hono();
 
@@ -43,6 +44,7 @@ app.onError((err, c) => {
 app.get('/api/health', (c) => c.json({ status: 'ok', stack: 'Universal Media Stack v3.0' }));
 app.route('/api/auth', authRouter);
 app.route('/api/ui', uiRouter);
+app.route('/api/taxonomy', taxonomyRouter);
 app.route('/api/media', mediaRouter);
 app.route('/api/search', searchRouter);
 app.route('/api/iptv', iptvRouter);

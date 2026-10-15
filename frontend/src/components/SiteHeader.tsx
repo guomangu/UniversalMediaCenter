@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { fetchPublicConfig } from '@/services/adminApi';
@@ -14,7 +14,6 @@ interface Props {
   onSelectCategory?: (id: string) => void;
   onScrollToTop?: () => void;
 }
-
 
 export function useHeaderHeight(hasCategories: boolean = false): number {
   const { width } = useWindowDimensions();
@@ -38,6 +37,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
   const [modalVisible, setModalVisible] = useState(false);
   const [favoritesCount, setFavoritesCount] = useState<number>(0);
   const currentUser = useCurrentUser();
+  const categoryScrollRef = useRef<ScrollView>(null);
 
   const loadFavs = () => {
     if (currentUser) {
@@ -63,6 +63,17 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
       return () => window.removeEventListener('favoritesUpdated', handler);
     }
   }, [currentUser]);
+
+  // Animation de défilement automatique du raccourci actif pour rester centré dans la barre
+  useEffect(() => {
+    if (!activeCategoryId) return;
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const el = document.getElementById(`cat-chip-${activeCategoryId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }
+  }, [activeCategoryId]);
 
   const navigateUserTab = (tab: 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED') => {
     if (!currentUser) {
@@ -190,17 +201,31 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
 
         {categories.length > 0 && onSelectCategory ? (
           <View style={styles.secondTierRow}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+            <ScrollView
+              ref={categoryScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.scroll}>
               {onScrollToTop ? (
                 <Pressable focusable={true} onPress={onScrollToTop} style={styles.homeBtn}>
                   <Text style={styles.homeTxt}>Haut</Text>
                 </Pressable>
               ) : null}
-              {categories.map((cat) => (
-                <Pressable focusable={true} key={cat.id} onPress={() => onSelectCategory(cat.id)} style={[styles.chip, activeCategoryId === cat.id && styles.actChip]}>
-                  <Text style={[styles.chipTxt, activeCategoryId === cat.id && styles.actTxt]}>{cat.title}</Text>
-                </Pressable>
-              ))}
+              {categories.map((cat) => {
+                const isActive = activeCategoryId === cat.id;
+                return (
+                  <Pressable
+                    focusable={true}
+                    key={cat.id}
+                    nativeID={`cat-chip-${cat.id}`}
+                    onPress={() => onSelectCategory(cat.id)}
+                    style={[styles.chip, isActive && styles.actChip]}>
+                    {isActive ? <View style={styles.activeDot} /> : null}
+                    <Text style={[styles.chipTxt, isActive && styles.actTxt]}>{cat.title}</Text>
+                    {isActive ? <View style={styles.activeUnderline} /> : null}
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           </View>
         ) : null}
@@ -229,10 +254,69 @@ const styles = StyleSheet.create({
   scroll: { gap: 6, alignItems: 'center', paddingRight: 16 },
   homeBtn: { backgroundColor: 'rgba(55, 65, 80, 0.45)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: Radius.pill, marginRight: 2 },
   homeTxt: { color: '#c5cedb', fontSize: 11, fontWeight: '700' },
-  chip: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: Radius.pill, backgroundColor: 'rgba(42, 48, 58, 0.6)', borderWidth: 1, borderColor: 'rgba(160, 175, 195, 0.14)' },
-  actChip: { backgroundColor: 'rgba(70, 85, 105, 0.5)', borderColor: 'rgba(148, 163, 184, 0.4)' },
-  chipTxt: { color: '#8e9ab0', fontSize: 11, fontWeight: '600' },
-  actTxt: { color: '#edeef2', fontWeight: '700' },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(42, 48, 58, 0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.14)',
+    position: 'relative',
+    overflow: 'hidden',
+    ...(Platform.OS === 'web'
+      ? ({
+          transition: 'all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          cursor: 'pointer',
+        } as any)
+      : {}),
+  },
+  actChip: {
+    backgroundColor: 'rgba(56, 189, 248, 0.14)',
+    borderColor: 'rgba(56, 189, 248, 0.5)',
+    transform: [{ scale: 1.04 }],
+    ...(Platform.OS === 'web'
+      ? ({
+          boxShadow: '0 0 10px rgba(56, 189, 248, 0.2)',
+        } as any)
+      : {}),
+  },
+  activeDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#38bdf8',
+    ...(Platform.OS === 'web'
+      ? ({
+          boxShadow: '0 0 6px #38bdf8',
+        } as any)
+      : {}),
+  },
+  chipTxt: {
+    color: '#8e9ab0',
+    fontSize: 11,
+    fontWeight: '600',
+    ...(Platform.OS === 'web'
+      ? ({
+          transition: 'color 0.2s ease',
+        } as any)
+      : {}),
+  },
+  actTxt: {
+    color: '#f0f9ff',
+    fontWeight: '700',
+  },
+  activeUnderline: {
+    position: 'absolute',
+    bottom: 0,
+    left: '18%',
+    right: '18%',
+    height: 2,
+    backgroundColor: '#38bdf8',
+    borderRadius: 2,
+  },
   actions: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   userShortcutsRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginRight: 4 },
   userNavPill: {

@@ -8,6 +8,8 @@ import { CastControlBar } from '@/components/CastControlBar';
 import { useActiveCastTarget, setActiveCastTarget } from '@/services/castState';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { syncSessionWithServer } from '@/services/authStore';
+import { registerPwa } from '@/services/pwaRegistration';
+import { OfflineIndicator } from '@/components/OfflineIndicator';
 
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -34,6 +36,7 @@ export default function RootLayout() {
   useTvNavigation();
 
   useEffect(() => {
+    registerPwa();
     syncSessionWithServer().catch(() => {});
   }, []);
 
@@ -54,6 +57,7 @@ export default function RootLayout() {
           <Stack.Screen name="live" />
         </Stack>
       </AuthGuard>
+      <OfflineIndicator />
       {activeCastTarget && (
         <CastControlBar target={activeCastTarget} onDisconnect={() => setActiveCastTarget(null)} />
       )}

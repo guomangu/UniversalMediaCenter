@@ -50,7 +50,7 @@ export function TagCard({
   }, []);
 
   useEffect(() => {
-    if (!cached) setLoading(true);
+    if (!cached && medias.length === 0) setLoading(true);
     fetchTaxonomyMedias({
       category: categoryId,
       tag: tag.slug,

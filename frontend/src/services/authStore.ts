@@ -16,8 +16,12 @@ export interface UserProfile {
 
 export interface AuthStatus {
   hasUsers: boolean;
+  hasAdmin: boolean;
+  userCount?: number;
+  adminCount?: number;
   siteName: string;
   registrationOpen: boolean;
+  invitationOnly?: boolean;
 }
 
 const STORAGE_KEY = 'ums_auth_session_v2';
@@ -101,9 +105,26 @@ export async function fetchAuthStatus(): Promise<AuthStatus> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/auth/status`);
     if (!res.ok) throw new Error('Erreur statut auth');
-    return await res.json();
+    const data = await res.json();
+    return {
+      hasUsers: Boolean(data.hasUsers),
+      hasAdmin: Boolean(data.hasAdmin ?? data.hasUsers),
+      userCount: typeof data.userCount === 'number' ? data.userCount : undefined,
+      adminCount: typeof data.adminCount === 'number' ? data.adminCount : undefined,
+      siteName: data.siteName || 'Universal Media Stack',
+      registrationOpen: Boolean(data.registrationOpen),
+      invitationOnly: Boolean(data.invitationOnly),
+    };
   } catch {
-    return { hasUsers: false, siteName: 'Universal Media Stack', registrationOpen: true };
+    // Si le serveur est temporairement inaccessible, ne JAMAIS présumer qu'il n'y a aucun compte/admin.
+    // Cela évite d'enfermer l'utilisateur dans l'écran "Création du premier Administrateur".
+    return {
+      hasUsers: true,
+      hasAdmin: true,
+      siteName: 'Universal Media Stack',
+      registrationOpen: true,
+      invitationOnly: false,
+    };
   }
 }
 

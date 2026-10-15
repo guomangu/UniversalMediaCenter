@@ -1,5 +1,7 @@
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders, getAuthToken } from './authStore';
+import { fetchWithCache } from './pwaDataCache';
+import { prefetchImageToCache } from './pwaImageCache';
 
 export function resolveImageUrl(uri?: string | null): string {
   if (!uri) return '';
@@ -19,30 +21,42 @@ export function getVideoStreamUrl(id: string, shareToken?: string | null): strin
 }
 
 export async function fetchHomeLayout(): Promise<any> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/ui/layout?page=HOME`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.rails || [];
-  } catch (err) {
-    return [];
-  }
+  return fetchWithCache('home_layout', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/ui/layout?page=HOME`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.rails || [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function fetchMediaDetail(id: string, shareToken?: string | null): Promise<any> {
-  try {
-    const query = shareToken ? `?share=${encodeURIComponent(shareToken)}` : '';
-    const res = await fetch(`${getApiBaseUrl()}/api/media/${id}${query}`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    return null;
-  }
+  const cacheKey = `media_detail_${id}${shareToken ? `_${shareToken}` : ''}`;
+  return fetchWithCache(cacheKey, async () => {
+    try {
+      const query = shareToken ? `?share=${encodeURIComponent(shareToken)}` : '';
+      const res = await fetch(`${getApiBaseUrl()}/api/media/${id}${query}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      // Pré-mise en cache immédiate des images principales
+      if (data) {
+        if (data.posterPath) prefetchImageToCache(resolveImageUrl(data.posterPath)).catch(() => {});
+        if (data.fanartPath) prefetchImageToCache(resolveImageUrl(data.fanartPath)).catch(() => {});
+      }
+
+      return data;
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function fetchNextMedia(id: string): Promise<any> {
@@ -53,21 +67,23 @@ export async function fetchNextMedia(id: string): Promise<any> {
     if (!res.ok) return null;
     const data = await res.json();
     return data.nextNode || null;
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
 export async function fetchMediaStats(): Promise<any> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/media/stats`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (err) {
-    return null;
-  }
+  return fetchWithCache('media_stats', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/media/stats`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function triggerLibraryRefresh(limit = 50): Promise<any> {
@@ -90,42 +106,47 @@ export async function searchMedia(query: string): Promise<any> {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
-  } catch (err) {
+  } catch {
     return { nodes: [], tags: [], people: [] };
   }
 }
 export const searchCatalog = searchMedia;
 
 export async function fetchLiveChannels(params?: { q?: string; category?: string; limit?: number }): Promise<any[]> {
-  try {
-    const sp = new URLSearchParams();
-    if (params?.q) sp.set('q', params.q);
-    if (params?.category && params.category !== 'ALL') sp.set('category', params.category);
-    if (params?.limit) sp.set('limit', String(params.limit));
-    const qs = sp.toString();
-    const url = `${getApiBaseUrl()}/api/iptv/channels${qs ? `?${qs}` : ''}` ;
-    const res = await fetch(url, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.channels || [];
-  } catch (err) {
-    return [];
-  }
+  const cacheKey = `iptv_channels_${params?.q || ''}_${params?.category || ''}_${params?.limit || 0}`;
+  return fetchWithCache(cacheKey, async () => {
+    try {
+      const sp = new URLSearchParams();
+      if (params?.q) sp.set('q', params.q);
+      if (params?.category && params.category !== 'ALL') sp.set('category', params.category);
+      if (params?.limit) sp.set('limit', String(params.limit));
+      const qs = sp.toString();
+      const url = `${getApiBaseUrl()}/api/iptv/channels${qs ? `?${qs}` : ''}`;
+      const res = await fetch(url, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.channels || [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function fetchIptvCategories(): Promise<string[]> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/api/iptv/categories`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.categories || [];
-  } catch {
-    return [];
-  }
+  return fetchWithCache('iptv_categories', async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/iptv/categories`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.categories || [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function saveWatchProgress(
@@ -140,5 +161,5 @@ export async function saveWatchProgress(
       headers: getAuthHeaders(),
       body: JSON.stringify({ userId, positionSeconds, durationSeconds }),
     });
-  } catch (err) {}
+  } catch {}
 }

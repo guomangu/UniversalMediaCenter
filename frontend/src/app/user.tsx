@@ -4,6 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { useCurrentUser, logout } from '@/services/authStore';
+import { useTabState } from '@/hooks/useTabState';
 import {
   fetchUserStats,
   fetchContinueWatching,
@@ -29,7 +30,7 @@ export default function UserScreen() {
   const authUser = useCurrentUser();
   const [profile, setProfile] = useState<any>(authUser);
   const { tab } = useLocalSearchParams<{ tab?: string }>();
-  const [activeTab, setActiveTab] = useState<UserTab>('CONTINUE');
+  const [activeTab, setActiveTab] = useTabState<UserTab>('user_active_tab', 'CONTINUE');
 
   useEffect(() => {
     if (tab && ['CONTINUE', 'FAVORITES', 'FRIENDS', 'FORUMS', 'FEED'].includes(tab.toUpperCase())) {

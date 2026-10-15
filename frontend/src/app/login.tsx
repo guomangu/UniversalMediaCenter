@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, Pressable, useWindowDimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { fetchAuthStatus, loginWithPassword, registerAccount, useCurrentUser } from '@/services/authStore';
-import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ returnUrl?: string; error?: string }>();
+  const params = useLocalSearchParams<{ returnUrl?: string; error?: string; mode?: string }>();
   const currentUser = useCurrentUser();
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
 
-  const [loadingStatus, setLoadingStatus] = useState(true);
+  // Initialisation à false pour éviter tout écran blanc ou spinner bloquant au SSR (Rendu instantané 0 ms)
+  const [loadingStatus, setLoadingStatus] = useState(false);
   const [hasUsers, setHasUsers] = useState<boolean>(true);
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [hasAdmin, setHasAdmin] = useState<boolean>(true);
+  const [isRegisterMode, setIsRegisterMode] = useState(params.mode === 'register');
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -24,15 +26,37 @@ export default function LoginScreen() {
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
+    let isMounted = true;
     fetchAuthStatus()
       .then((status) => {
+        if (!isMounted) return;
         setHasUsers(status.hasUsers);
-        if (!status.hasUsers) {
+        setHasAdmin(status.hasAdmin);
+
+        // L'écran de création du premier admin n'est activé QUE s'il n'existe aucun admin ni utilisateur
+        if (!status.hasAdmin && !status.hasUsers) {
           setIsRegisterMode(true);
+        } else if (params.mode === 'register') {
+          setIsRegisterMode(true);
+        } else {
+          setIsRegisterMode(false);
         }
       })
-      .finally(() => setLoadingStatus(false));
-  }, []);
+      .catch(() => {
+        if (!isMounted) return;
+        // En cas d'erreur ou d'indisponibilité réseau, rester sur la connexion standard par sécurité
+        setHasUsers(true);
+        setHasAdmin(true);
+        setIsRegisterMode(false);
+      })
+      .finally(() => {
+        if (isMounted) setLoadingStatus(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [params.mode]);
 
   // Si déjà connecté, rediriger vers returnUrl ou accueil
   useEffect(() => {
@@ -48,7 +72,7 @@ export default function LoginScreen() {
     setSuccessMessage('');
 
     if (!email || !password) {
-      setErrorMessage('Veuillez remplir votre adresse email et votre mot de passe.');
+      setErrorMessage('Veuillez renseigner votre adresse e-mail et votre mot de passe.');
       return;
     }
 
@@ -66,7 +90,7 @@ export default function LoginScreen() {
           setSubmitting(false);
           return;
         }
-        setSuccessMessage('Compte créé avec succès ! Connexion...');
+        setSuccessMessage('Compte créé avec succès ! Connexion en cours...');
       } else {
         const res = await loginWithPassword(email, password);
         if (!res.success) {
@@ -87,16 +111,8 @@ export default function LoginScreen() {
     }
   };
 
-  if (loadingStatus) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#6366f1" />
-        <Text style={styles.loadingText}>Initialisation du service...</Text>
-      </View>
-    );
-  }
-
-  const isFirstAdminCreation = !hasUsers;
+  // Ne s'affiche que s'il n'existe absolument aucun admin et aucun compte utilisateur en base
+  const isFirstAdminCreation = !hasAdmin && !hasUsers;
 
   return (
     <View style={styles.container}>
@@ -209,7 +225,7 @@ export default function LoginScreen() {
               }}
             >
               {submitting
-                ? 'Traitement...'
+                ? 'Traitement en cours...'
                 : isFirstAdminCreation
                 ? '👑 Initialiser et créer l’administrateur'
                 : isRegisterMode
@@ -229,6 +245,7 @@ export default function LoginScreen() {
               onPress={() => {
                 setIsRegisterMode(!isRegisterMode);
                 setErrorMessage('');
+                setSuccessMessage('');
               }}
               style={styles.switchBtn}
             >
@@ -272,18 +289,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.four,
-  },
-  centerContainer: {
-    flex: 1,
-    backgroundColor: '#090d16',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: '600',
   },
   card: {
     width: '100%',

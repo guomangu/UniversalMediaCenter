@@ -1,5 +1,7 @@
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders } from './authStore';
+import { MediaTileItem } from './taxonomyApi';
+import { fetchWithCache, getCachedData } from './pwaDataCache';
 
 export interface AuthorLocation {
   title: string;
@@ -29,6 +31,135 @@ export interface ForumMessage {
   quotedMediaPoster?: string | null;
   authorLocation?: AuthorLocation | null;
   createdAt: string;
+}
+
+export interface TopicTagItem {
+  code: string;
+  value_text: string;
+  value_slug: string;
+  count: number;
+}
+
+export interface AssociationGroup {
+  name: string;
+  slug?: string;
+  code?: string;
+  count?: number;
+  medias: MediaTileItem[];
+}
+
+export interface TopicContextResponse {
+  success: boolean;
+  topic: {
+    slug: string;
+    title: string;
+    typeLabel: string;
+    category?: string;
+    backdropUrl?: string | null;
+    posterUrl?: string | null;
+    totalMedias: number;
+    averageRating?: string | null;
+  };
+  medias: MediaTileItem[];
+  oeuvreGroups?: AssociationGroup[];
+  actorGroups?: AssociationGroup[];
+  studioGroups?: AssociationGroup[];
+  genreGroups?: AssociationGroup[];
+  tags: {
+    actors: TopicTagItem[];
+    crew: TopicTagItem[];
+    studios: TopicTagItem[];
+    genres: TopicTagItem[];
+    countries: TopicTagItem[];
+  };
+}
+
+export interface ForumExploreResponse {
+  success: boolean;
+  activeDiscussions: {
+    topicSlug: string;
+    topicTitle: string;
+    msgCount: number;
+    lastMsgAt: string;
+  }[];
+  oeuvreGroups?: AssociationGroup[];
+  actorGroups?: AssociationGroup[];
+  studioGroups?: AssociationGroup[];
+  genreGroups?: AssociationGroup[];
+  topActors: { title: string; slug: string; count: number }[];
+  topCrew: { title: string; slug: string; role?: string; count: number }[];
+  topStudios: { title: string; slug: string; count: number }[];
+  topGenres?: { title: string; slug: string; code?: string; count: number }[];
+}
+
+export const INITIAL_EXPLORE_DATA: ForumExploreResponse = {
+  success: true,
+  activeDiscussions: [],
+  topActors: [
+    { title: 'John Ratzenberger', slug: 'john-ratzenberger', count: 1 },
+    { title: 'Bonnie Hunt', slug: 'bonnie-hunt', count: 2 },
+    { title: 'Bob Peterson', slug: 'bob-peterson', count: 2 },
+    { title: 'Samuel L. Jackson', slug: 'samuel-l-jackson', count: 6 },
+  ],
+  topCrew: [],
+  topStudios: [
+    { title: 'Pixar', slug: 'pixar', count: 5 },
+    { title: 'Warner Bros. Pictures', slug: 'warner-bros-pictures', count: 10 },
+    { title: 'Columbia Pictures', slug: 'columbia-pictures', count: 10 },
+    { title: '20th Century Fox', slug: '20th-century-fox', count: 10 },
+  ],
+  topGenres: [
+    { title: 'United States of America', slug: 'united-states-of-america', code: 'country', count: 10 },
+    { title: 'Action', slug: 'action', code: 'genre', count: 10 },
+    { title: 'Comédie', slug: 'comedie', code: 'genre', count: 10 },
+    { title: 'Drame', slug: 'drame', code: 'genre', count: 10 },
+  ],
+  oeuvreGroups: [],
+  actorGroups: [],
+  studioGroups: [],
+  genreGroups: [],
+};
+
+export async function fetchTopicContext(
+  topicSlug: string,
+  title?: string,
+  category?: string
+): Promise<TopicContextResponse | null> {
+  try {
+    const slug = encodeURIComponent(topicSlug.toLowerCase().trim());
+    const params = new URLSearchParams();
+    if (title) params.set('title', title);
+    if (category) params.set('category', category);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+
+    const res = await fetch(`${getApiBaseUrl()}/api/forum/topics/${slug}/context${qs}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchForumExplore(): Promise<ForumExploreResponse | null> {
+  const cached = getCachedData<ForumExploreResponse>('forum_explore_data');
+  return fetchWithCache<ForumExploreResponse>(
+    'forum_explore_data',
+    async () => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/api/forum/explore`, {
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) return cached || INITIAL_EXPLORE_DATA;
+        const data = await res.json();
+        return data.success ? data : cached || INITIAL_EXPLORE_DATA;
+      } catch {
+        return cached || INITIAL_EXPLORE_DATA;
+      }
+    },
+    { staleTime: 1000 * 60 * 5 }
+  );
 }
 
 export async function fetchTopicMessages(topicSlug: string): Promise<ForumMessage[]> {

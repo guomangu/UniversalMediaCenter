@@ -6,6 +6,7 @@ import { fetchMediaDetail, resolveImageUrl } from '@/services/api';
 import { checkFavorite, toggleFavorite } from '@/services/userApi';
 import { fetchMediaReposts } from '@/services/repostApi';
 import { MediaDetailResponse } from '@/services/types';
+import { getCachedData } from '@/services/pwaDataCache';
 import { TagPill } from '@/components/TagPill';
 import { ClickableTopicText } from '@/components/ClickableTopicText';
 import { MediaChildrenRow } from '@/components/MediaChildrenRow';
@@ -22,8 +23,10 @@ export default function MediaDetailScreen() {
   const { id, share } = useLocalSearchParams<{ id: string; share?: string }>();
   const router = useRouter();
   const headerPaddingTop = useHeaderHeight(false);
-  const [data, setData] = useState<MediaDetailResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `media_detail_${id}${share ? `_${share}` : ""}`;
+  const initialCached = id ? getCachedData<MediaDetailResponse>(cacheKey) : null;
+  const [data, setData] = useState<MediaDetailResponse | null>(initialCached);
+  const [loading, setLoading] = useState(!initialCached);
   const [showCast, setShowCast] = useState(false);
   const [showRepostModal, setShowRepostModal] = useState(false);
   const [isFav, setIsFav] = useState(false);
@@ -31,7 +34,7 @@ export default function MediaDetailScreen() {
 
   const loadData = () => {
     if (!id) return;
-    setLoading(true);
+    if (!data) setLoading(true);
     fetchMediaDetail(id, share)
       .then((res) => {
         if (!res) {

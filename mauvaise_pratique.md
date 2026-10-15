@@ -161,3 +161,57 @@
   - **Extraction d Année Sanctuarisée sur le Basename :** `extractYearFromText` doit automatiquement isoler `path.basename(path)` avant d exécuter la recherche regex d année.
   - **Nettoyage Universel des Années Préfixées :** Appliquer `t = t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, "")` pour transformer proprement `"1962 Dr. No"` en `"Dr. No"`.
   - **Détection Automatique des Sagas par Dossier :** Si le dossier parent comporte les termes `intégrale`, `saga`, `collection`, `boxset` ou `trilogie`, extraire automatiquement le nom de la franchise et créer/lier le conteneur `COLLECTION` parent en base de données.
+
+---
+
+## 🛑 51. Tentative de Stockage d'Images Binaires dans les Cookies HTTP au lieu de l'API CacheStorage PWA (Erreur HTTP 431)
+
+* **Problème / Symptôme :** Vouloir stocker directement des posters, jaquettes ou images complètes dans les cookies du navigateur web.
+* **Conséquences :** Crash complet des requêtes HTTP avec l'erreur `431 Request Header Fields Too Large`. Tout appel vers l'API ou le serveur web est immédiatement rejeté, bloquant la navigation de l'utilisateur.
+* **Causes Racines :**
+  - **Limite Structurelle des Cookies HTTP :** Les spécifications web (RFC 6265) plafonnent les cookies à environ 4096 octets au total par domaine. De plus, les cookies sont automatiquement transmis dans **chaque en-tête HTTP** sortant.
+  - **Poids des Images Multimédias :** Une seule vignette WebP ou JPEG pèse entre 30 Ko et 500 Ko (10 à 100 fois la limite maximale d'un cookie).
+* **Bonnes Pratiques de Remédiation :**
+  - **Utiliser l'API Standard W3C `CacheStorage` (`window.caches`) :** La persistance binaire des images doit être confiée à l'API CacheStorage gérée par le Service Worker (`ums-images-cache-v1`). Elle offre des gigaoctets de stockage local sans aucun impact sur la taille des en-têtes réseau.
+  - **Réserver les Cookies à la Coordination Métadonnées :** N'utiliser les cookies que pour de simples balises d'état légères (`ums_pwa_active=1`, `ums_cache_version=1`, compteur de fichiers) pour synchroniser l'état client/serveur sans engorger les requêtes.
+
+---
+
+## 🛑 52. Réinitialisation Systématique de l'État des Vues et Onglets lors de la Navigation SPA/PWA
+
+* **Problème / Symptôme :** Un utilisateur consulte un onglet d'administration spécifique (ex: "Comptes" ou "IPTV") ou un filtre TV spécifique, clique sur une fiche média ou le profil, puis en revenant en arrière ou en rouvrant l'onglet, l'écran se réinitialise à l'état par défaut (onglet 1 "Scan", champs de recherche effacés, défilement perdu).
+* **Conséquences :** Frustration majeure de l'utilisateur (rupture de fluidité cognitive), obligeant à refaire les sélections et à relancer inutilement des requêtes serveur.
+* **Causes Racines :**
+  - Utilisation exclusive de `useState('VALEUR_PAR_DEFAUT')` sans couche de rémanence ni synchronisation avec `sessionStorage` ou mémoire d'état persistante.
+* **Bonnes Pratiques de Remédiation :**
+  - **Store Dédié de Persistance d'Onglets (`tabStateStore.ts` & `useTabState`) :** Centraliser l'état des onglets actifs, des filtres et requêtes de recherche dans un magasin réactif synchronisé avec `sessionStorage`.
+  - **Restitution Transparente :** Dès que le composant se remonte, il réhydrate automatiquement son état précédent avec une latence nulle.
+
+---
+
+## 🛑 53. Redirection HTTP 302 vers des CDNs Tiers Non-CORS (TMDb) & Incohérence des Clés de Cache Taxonomique
+
+* **Problème / Symptôme :** 
+  1. Multiples erreurs bloquantes dans la console : `Access to fetch at 'https://image.tmdb.org/...' (redirected from '/api/media/:id/poster') has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource`.
+  2. Temps de chargement anormalement longs sur la page d'accueil avec affichage intempestif de spinners sur chaque rail malgré le mode hors-ligne/mémoire.
+* **Conséquences :** Des dizaines de requêtes d'images échouent, le pool de connexions HTTP du navigateur est saturé, et l'expérience utilisateur est ralentie.
+* **Causes Racines :**
+  - **Redirection 302 vers un CDN sans en-têtes CORS :** Le backend renvoyait un `302 Found` vers l'URL TMDb externe (`c.redirect(filePath)`). Dès lors qu'une requête était effectuée par un Service Worker ou `fetch(url, { mode: 'cors' })`, le navigateur suivait la redirection vers `image.tmdb.org` qui refuse les requêtes cross-origin AJAX.
+  - **Divergence des Clés de Cache Taxonomique :** `fetchTaxonomyMedias` sauvegardait les données sous `tax_cat_tag_filter_q_limit_excludeIds`, tandis que `getCachedTaxonomyMedias` cherchait sans la signature d'exclusion. La donnée n'était donc jamais trouvée en cache (`cached === undefined`), forçant un rechargement réseau complet et le basculement en état `loading: true` sur l'ensemble des vignettes.
+* **Bonnes Pratiques de Remédiation :**
+  - **Proxy d'Images Transparent Côté Backend (`mediaArtworks.ts`) :** Remplacer le `c.redirect` par un proxying direct des octets de l'image avec les en-têtes `Access-Control-Allow-Origin: *` et `Cache-Control: public, max-age=31536000, immutable`. Aucun appel client ne transite par TMDb en direct, supprimant 100% des erreurs CORS.
+  - **Pré-chargement Natif HTML Image (`pwaImageCache.ts`) :** Remplacer `fetch(..., { mode: 'cors' })` par `new window.Image().src = url` pour alimenter le cache disque/mémoire du navigateur sans aucune contrainte de politique CORS.
+  - **Unification des Clés de Cache & Fallback Dédupliqué en Mémoire (`taxonomyApi.ts`) :** Aligner strictement les clés de cache et implémenter un fallback instantané filtrant les exclusions localement en mémoire à 0 ms.
+
+---
+
+## 🛑 54. Endpoint d'Authentification /status Inexistant & Fallback Client Défaillant Forçant la Création du Premier Admin
+
+* **Problème / Symptôme :** Un administrateur a déjà créé son compte sur l'application. En retournant sur `/login` pour se connecter, l'écran continue d'afficher obstinément « Création du premier Administrateur » avec le bouton « 👑 Initialiser et créer l'administrateur ». Il est impossible d'accéder au mode « Se connecter », et toute tentative d'enregistrement échoue avec « Un compte avec cette adresse e-mail existe déjà ».
+* **Conséquences :** Blocage complet de la connexion, impossibilité pour l'administrateur et les utilisateurs d'accéder au service.
+* **Causes Racines :**
+  - **Endpoint Manquant :** Le frontend appelait `GET /api/auth/status`, mais cette route n'était pas implémentée dans `backend/src/routes/auth.ts`, provoquant un HTTP 404.
+  - **Fallback Client Dangereux :** Le bloc `catch` de `fetchAuthStatus()` dans `authStore.ts` retournait `{ hasUsers: false }`. Le client en déduisait que la base de données était vierge et verrouillait l'interface sur la modale d'initialisation du premier administrateur en masquant le basculement vers le formulaire de connexion.
+* **Bonnes Pratiques de Remédiation :**
+  - **Implémentation Serveur Robuste (`/api/auth/status`) :** L'endpoint interroge PostgreSQL et compte précisément le nombre d'utilisateurs et d'administrateurs (`hasUsers: totalUsers > 0`, `hasAdmin: totalAdmins > 0`).
+  - **Principe de Sécurité du Fallback :** En cas d'erreur de communication réseau, ne jamais présumer que la base est vierge. Renvoyer par défaut `hasUsers: true` et `hasAdmin: true` pour présenter le formulaire de connexion standard et éviter d'enfermer l'utilisateur dans l'assistant d'initialisation.
