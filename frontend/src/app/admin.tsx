@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { SiteHeader } from '@/components/SiteHeader';
+import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { AccountModal } from '@/components/AccountModal';
 import { useCurrentUser } from '@/services/authStore';
 import { styles } from '@/components/AdminScreen.styles';
@@ -16,6 +16,7 @@ type Tab = 'CONFIG' | 'PROFILE_TYPES' | 'USERS' | 'LIBRARY' | 'IPTV';
 
 export default function AdminScreen() {
   const router = useRouter();
+  const headerPaddingTop = useHeaderHeight(false);
   const currentUser = useCurrentUser();
   const [tab, setTab] = useState<Tab>('LIBRARY');
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -25,7 +26,7 @@ export default function AdminScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <SiteHeader />
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, marginTop: 80 }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, marginTop: headerPaddingTop + 16 }}>
           <View style={[styles.card, { maxWidth: 440, width: '100%', alignItems: 'center' }]}>
             <Text style={{ fontSize: 40, marginBottom: 12 }}>🔒</Text>
             <Text style={[styles.cardTitle, { textAlign: 'center', marginBottom: 8 }]}>Accès Réservé aux Administrateurs</Text>
@@ -56,7 +57,7 @@ export default function AdminScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <SiteHeader />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]}>
         <Text style={styles.heading}>Panneau d’Administration Centralisé</Text>
         <View style={styles.tabRow}>
           {(['LIBRARY', 'PROFILE_TYPES', 'USERS', 'CONFIG', 'IPTV'] as const).map((t) => (

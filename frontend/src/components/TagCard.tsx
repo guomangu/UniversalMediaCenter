@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { TaxonomyTag, MediaTileItem, fetchTaxonomyMedias } from '@/services/taxonomyApi';
+import { TaxonomyTag, MediaTileItem, fetchTaxonomyMedias, getCachedTaxonomyMedias } from '@/services/taxonomyApi';
 import { MediaTile } from './MediaTile';
 import { ClickableTopicText } from './ClickableTopicText';
 import { Radius, Spacing } from '@/constants/theme';
@@ -26,15 +26,31 @@ export function TagCard({
   onMediasLoaded,
 }: Props) {
   const router = useRouter();
-  const [medias, setMedias] = useState<MediaTileItem[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(15);
-
   const excludeKey = useMemo(() => excludeIds.slice().sort().join(','), [excludeIds]);
 
+  const cached = useMemo(() => getCachedTaxonomyMedias({
+    category: categoryId,
+    tag: tag.slug,
+    filter: activeFilter,
+    q: searchQuery,
+    limit,
+    excludeIds,
+  }), [categoryId, tag.slug, activeFilter, searchQuery, limit, excludeKey]);
+
+  const [medias, setMedias] = useState<MediaTileItem[]>(cached?.items || []);
+  const [hasMore, setHasMore] = useState(cached?.hasMore || false);
+  const [loading, setLoading] = useState(!cached);
+
   useEffect(() => {
-    setLoading(true);
+    if (cached) {
+      onCountChange?.(tag.slug, cached.items.length);
+      onMediasLoaded?.(tag.slug, cached.items.map((m) => m.id));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cached) setLoading(true);
     fetchTaxonomyMedias({
       category: categoryId,
       tag: tag.slug,

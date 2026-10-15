@@ -436,12 +436,118 @@ mediaRouter.get('/:id', async (c) => {
         posterPath: ex.posterPath ? `/api/media/${ex.id}/poster` : formattedMedia.posterPath,
         thumbPath: ex.thumbPath ? `/api/media/${ex.id}/thumb` : undefined,
     }));
+    // 4. Saga parente et films de la saga (si le média actuel est un film appartenant à une saga)
+    let parentSaga = null;
+    let targetParentId = media.parentId;
+    if (!targetParentId && media.nodeType === 'MOVIE') {
+        const setRows = await db.execute(sql `
+      SELECT v.value_text FROM node_eav_links l
+      JOIN eav_values v ON l.value_id = v.id
+      JOIN eav_attributes a ON v.attribute_id = a.id
+      WHERE l.node_id = ${media.id}::uuid AND a.code IN ('set', 'collection')
+      LIMIT 1;
+    `);
+        const sRows = Array.isArray(setRows) ? setRows : setRows.rows || [];
+        if (sRows.length > 0 && sRows[0].value_text) {
+            const setName = String(sRows[0].value_text).trim();
+            const colNode = await db.query.mediaNodes.findFirst({
+                where: (t, { and, eq, or, ilike }) => and(eq(t.nodeType, 'COLLECTION'), or(eq(t.title, setName), ilike(t.title, `%${setName.replace(/\s*-\s*saga$/i, '').replace(/\s*collection$/i, '').trim()}%`))),
+            });
+            if (colNode) {
+                targetParentId = colNode.id;
+            }
+        }
+    }
+    if (targetParentId) {
+        const pNode = await db.query.mediaNodes.findFirst({
+            where: (t, { eq }) => eq(t.id, targetParentId),
+        });
+        if (pNode) {
+            const sagaSiblings = await db.query.mediaNodes.findMany({
+                where: (t, { eq, and }) => and(eq(t.parentId, targetParentId), eq(t.isExtra, false)),
+                orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.releaseYear), asc(t.title)],
+            });
+            parentSaga = {
+                id: pNode.id,
+                title: pNode.title,
+                nodeType: pNode.nodeType,
+                overview: pNode.overview,
+                posterPath: pNode.posterPath ? `/api/media/${pNode.id}/poster` : undefined,
+                fanartPath: pNode.fanartPath ? `/api/media/${pNode.id}/fanart` : undefined,
+                movies: sagaSiblings.map((s) => ({
+                    id: s.id,
+                    title: s.title,
+                    releaseYear: s.releaseYear,
+                    nodeType: s.nodeType,
+                    orderIndex: s.orderIndex,
+                    communityRating: s.communityRating,
+                    posterPath: s.posterPath ? `/api/media/${s.id}/poster` : (pNode.posterPath ? `/api/media/${pNode.id}/poster` : undefined),
+                })),
+            };
+        }
+    }
+    // 5. Studios de production et films dépendants/associés
+    const targetNodeId = media.id;
+    const parentNodeId = targetParentId || '00000000-0000-0000-0000-000000000000';
+    const studioFilmsRows = await db.execute(sql `
+    SELECT DISTINCT v.value_text AS studio_name,
+           m.id, m.title, m.release_year, m.poster_path, m.community_rating, m.node_type
+    FROM node_eav_links l
+    JOIN eav_values v ON l.value_id = v.id
+    JOIN eav_attributes a ON v.attribute_id = a.id
+    JOIN node_eav_links l2 ON l2.value_id = v.id
+    JOIN media_nodes m ON l2.node_id = m.id
+    WHERE a.code = 'studio'
+      AND (l.node_id = ${targetNodeId}::uuid OR l.node_id = ${parentNodeId}::uuid)
+      AND m.id != ${media.id}::uuid
+      AND m.is_extra = false
+      AND (m.node_type IN ('SHOW', 'COLLECTION') OR (m.node_type = 'MOVIE' AND (m.parent_id IS NULL OR m.parent_id != ${parentNodeId}::uuid)))
+    ORDER BY v.value_text, m.community_rating DESC NULLS LAST, m.release_year DESC NULLS LAST
+    LIMIT 60;
+  `);
+    const studioMap = new Map();
+    const mediaStudios = await db.execute(sql `
+    SELECT DISTINCT v.value_text AS studio_name
+    FROM node_eav_links l
+    JOIN eav_values v ON l.value_id = v.id
+    JOIN eav_attributes a ON v.attribute_id = a.id
+    WHERE a.code = 'studio'
+      AND (l.node_id = ${targetNodeId}::uuid OR l.node_id = ${parentNodeId}::uuid);
+  `);
+    const rawStudioNames = Array.isArray(mediaStudios) ? mediaStudios : mediaStudios.rows || [];
+    for (const sRow of rawStudioNames) {
+        if (sRow.studio_name) {
+            studioMap.set(sRow.studio_name, []);
+        }
+    }
+    const rawStudioList = Array.isArray(studioFilmsRows) ? studioFilmsRows : studioFilmsRows.rows || [];
+    for (const row of rawStudioList) {
+        const sName = row.studio_name;
+        if (!studioMap.has(sName))
+            studioMap.set(sName, []);
+        if (studioMap.get(sName).length < 15) {
+            studioMap.get(sName).push({
+                id: row.id,
+                title: row.title,
+                releaseYear: row.release_year,
+                nodeType: row.node_type,
+                communityRating: row.community_rating,
+                posterPath: row.poster_path ? `/api/media/${row.id}/poster` : undefined,
+            });
+        }
+    }
+    const studioMedias = Array.from(studioMap.entries()).map(([studioName, medias]) => ({
+        studioName,
+        medias,
+    }));
     const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId);
     return c.json({
         media: formattedMedia,
         tags: tagsByZone,
         children,
         extras,
+        parentSaga,
+        studioMedias,
         relatedTags,
     });
 });

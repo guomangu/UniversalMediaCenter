@@ -5,11 +5,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ForumTopMediasRail } from '@/components/ForumTopMediasRail';
 import { MediaForumSection } from '@/components/MediaForumSection';
 import { MediaTileItem } from '@/services/taxonomyApi';
-import { SiteHeader } from '@/components/SiteHeader';
+import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 
 export default function ForumTopicScreen() {
   const router = useRouter();
+  const headerPaddingTop = useHeaderHeight(false);
   const { topic, title, category } = useLocalSearchParams<{
     topic: string;
     title?: string;
@@ -33,7 +34,7 @@ export default function ForumTopicScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <SiteHeader />
-      <View style={[styles.header, { marginTop: 65 }]}>
+      <View style={[styles.header, { marginTop: headerPaddingTop }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backTxt}>←</Text>
         </Pressable>

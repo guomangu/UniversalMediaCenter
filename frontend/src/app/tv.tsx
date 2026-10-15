@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SiteHeader } from '@/components/SiteHeader';
+import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { TvSearchBar } from '@/components/TvSearchBar';
 import { TvChannelCard } from '@/components/TvChannelCard';
 import { fetchLiveChannels, fetchIptvCategories } from '@/services/api';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 
 export default function TvScreen() {
+  const headerPaddingTop = useHeaderHeight(false);
   const [channels, setChannels] = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,7 +31,7 @@ export default function TvScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <SiteHeader />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]} showsVerticalScrollIndicator={false}>
         <View style={styles.headerHero}>
           <Text style={styles.heroTitle}>📺 Télévision en Direct (IPTV)</Text>
           <Text style={styles.heroSub}>

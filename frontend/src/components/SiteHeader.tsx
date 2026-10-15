@@ -15,6 +15,21 @@ interface Props {
   onScrollToTop?: () => void;
 }
 
+
+export function useHeaderHeight(hasCategories: boolean = false): number {
+  const { width } = useWindowDimensions();
+  const currentUser = useCurrentUser();
+  const isMobile = width < 860;
+
+  if (isMobile) {
+    if (hasCategories) {
+      return currentUser ? 142 : 102;
+    }
+    return currentUser ? 104 : 68;
+  }
+  return hasCategories ? 96 : 68;
+}
+
 export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory, onScrollToTop }: Props) {
   const router = useRouter();
   const { width } = useWindowDimensions();

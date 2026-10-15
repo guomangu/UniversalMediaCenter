@@ -88,3 +88,22 @@
   - Extraction rapide (120 secondes, < 1,5s d'exécution) de la piste de sous-titres interne ou sidecar.
   - Reconnaissance d'entités de personnages (NER) pour désambiguïser *The Office (US)* vs *The Office (UK)*, *Shameless (US)* vs *Shameless (UK)*, et détection du carton de titre.
   - Résolution des conflits d'ordre DVD vs ordre de diffusion TV.
+
+### 🎯 Restauration Instantanée de Hauteur d'Accueil, Aération Menu & Structure Universelle des Médias
+- [x] **1. Sauvegarde & Restauration Fidèle de la Hauteur de la Page d'Accueil (`index.tsx`, `taxonomyApi.ts`, `TagCard.tsx`) :**
+  - **Mise en Cache Synchrone In-Memory des Rails** : Conservation instantanée des médias de tags dans `taxonomyMediasCache`, éliminant tout clignotement ou tassement de hauteur lors du retour sur l'accueil.
+  - **Moteur Multi-Paliers de Restauration de Défilement** : Déclenchement échelonné (16ms, 80ms, 200ms, 450ms, 850ms) et écoute dynamique de `onContentSizeChange` garantissant que le défilement se repositionne exactement à la hauteur sauvegardée sans être bridé par un redimensionnement asynchrone.
+  - **Protection contre l'Écrasement d'Unmount** : Garde `isRestoringScroll` interdisant l'écrasement intempestif de la position par des événements `onScroll` à zéro lors du démontage ou du chargement initial.
+- [x] **2. Correction Inesthétique du Menu Fixe & Dégagement Systématique des Boutons (`SiteHeader.tsx`) :**
+  - **Hook Dynamique de Hauteur `useHeaderHeight`** : Calcul adaptatif prenant en compte le mode mobile, les raccourcis utilisateurs connectés et les sous-rangées de catégories (68px à 142px).
+  - **Assainissement de Toutes les Pages** : Application harmonieuse sur `media/[id]`, `user`, `admin`, `tv`, `forum/[topic]` et `explore`, supprimant tout chevauchement ou blocage de clics sur les boutons de navigation (« Retour à l'accueil », onglets, etc.).
+- [x] **3. Normalisation Rigoureuse de la Structure de la Fiche Média (`media/[id].tsx`, `MediaSagaRow.tsx`, `MediaStudioSection.tsx`) :**
+  - **Ordre Strict et Cohérent Respecté** :
+    1. **media** : Hero Spotlight (titre, overview, note, badges, boutons d'action rapide).
+    2. **medias saga/serie** : Films de la même saga (`MediaSagaRow` avec mise en valeur du film actuel et lien vers la fiche saga) ou épisodes/saisons (`MediaChildrenRow`) et bonus (`extras`).
+    3. **medias studios** : Studios de production et films dépendants/associés (`MediaStudioSection` avec rails par studio).
+    4. **forum** : Espace communautaire, salon vocal continu et salle d'attente de séances (`MediaForumSection`).
+    5. **acteurs** : Casting complet avec photos de portraits, rôles et accès filmographie (`actors`).
+    6. **equipe** : Équipe créative détaillée (réalisateurs, scénaristes, producteurs, compositeurs).
+    7. **info** : Fiche technique, classifications, pays d'origine et codecs vidéo/audio.
+    8. **propositions medias par tags** : Suggestions thématiques intelligentes sans doublons (`MediaGenreSection`) et avis communautaires (`reposts`).

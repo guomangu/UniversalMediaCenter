@@ -9,16 +9,19 @@ import { MediaDetailResponse } from '@/services/types';
 import { TagPill } from '@/components/TagPill';
 import { ClickableTopicText } from '@/components/ClickableTopicText';
 import { MediaChildrenRow } from '@/components/MediaChildrenRow';
+import { MediaSagaRow } from '@/components/MediaSagaRow';
+import { MediaStudioSection } from '@/components/MediaStudioSection';
 import { MediaGenreSection } from '@/components/MediaGenreSection';
 import { MediaRepostModal } from '@/components/MediaRepostModal';
 import { MediaForumSection } from '@/components/MediaForumSection';
-import { SiteHeader } from '@/components/SiteHeader';
+import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { CastModal } from '@/components/CastModal';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function MediaDetailScreen() {
   const { id, share } = useLocalSearchParams<{ id: string; share?: string }>();
   const router = useRouter();
+  const headerPaddingTop = useHeaderHeight(false);
   const [data, setData] = useState<MediaDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCast, setShowCast] = useState(false);
@@ -65,6 +68,8 @@ export default function MediaDetailScreen() {
     tags = { HERO_BADGE: [], PRIMARY_PILL: [], PERSON_CAROUSEL: [], TECHNICAL_DRAWER: [] },
     children = [],
     extras = [],
+    parentSaga = null,
+    studioMedias = [],
     relatedTags = [],
   } = data || ({} as any);
 
@@ -179,12 +184,14 @@ export default function MediaDetailScreen() {
     <SafeAreaView style={styles.container}>
       <SiteHeader />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]}>
         <Pressable focusable={true} onPress={() => router.push('/')} style={styles.backBtn}>
           <Text style={styles.backTxt}>← Retour à l'accueil</Text>
         </Pressable>
 
-        {/* Hero Spotlight Header */}
+        {/* ======================================================== */}
+        {/* 1. MEDIA : Hero Spotlight Header                          */}
+        {/* ======================================================== */}
         <View style={styles.heroBox}>
           {fanartUri ? <Image source={{ uri: fanartUri }} style={styles.backdrop} /> : null}
           <View style={styles.heroContent}>
@@ -282,12 +289,20 @@ export default function MediaDetailScreen() {
           </View>
         </View>
 
-        {/* Épisodes & Saisons structurés avec onglets interactifs */}
+        {/* ======================================================== */}
+        {/* 2. MEDIAS SAGA / SERIE                                   */}
+        {/* ======================================================== */}
+        {/* Enfants d'une série ou saga parente */}
         <MediaChildrenRow
           parentType={media.nodeType}
           parentPoster={media.posterPath}
           children={children}
         />
+
+        {/* Si c'est un film appartenant à une saga : saga et ses films */}
+        {media.nodeType === 'MOVIE' && parentSaga && (
+          <MediaSagaRow parentSaga={parentSaga} currentMediaId={media.id} />
+        )}
 
         {/* Bonus, Coulisses et Scènes coupées (Extras) */}
         {extras && extras.length > 0 && (
@@ -332,7 +347,18 @@ export default function MediaDetailScreen() {
           </View>
         )}
 
-        {/* Section Forum / Salle d'attente / Appel vocal continu */}
+        {/* ======================================================== */}
+        {/* 3. MEDIAS STUDIOS : Studios et films dépendants associés  */}
+        {/* ======================================================== */}
+        <MediaStudioSection
+          studioMedias={studioMedias}
+          studioTags={studios}
+          currentMediaId={media.id}
+        />
+
+        {/* ======================================================== */}
+        {/* 4. FORUM : Section Forum & Vocal Direct                   */}
+        {/* ======================================================== */}
         <MediaForumSection
           topicSlug={media.slug || media.id}
           topicTitle={media.title}
@@ -340,138 +366,132 @@ export default function MediaDetailScreen() {
         />
 
         {/* ======================================================== */}
-        {/* ESPACE MÉTADONNÉES EN TOUS GENRES (SOUS L'ESPACE FORUM) */}
+        {/* 5. ACTEURS : Casting des Acteurs avec Photos et Rôles     */}
         {/* ======================================================== */}
-
-        <View style={styles.metaHubContainer}>
-          <Text style={styles.metaHubMainTitle}>Fiche technique & Métadonnées</Text>
-
-          {/* 1. Casting des Acteurs avec Photos et Rôles */}
-          {actors.length > 0 && (
-            <View style={styles.metaSubSection}>
-              <View style={styles.secHeaderRow}>
-                <Text style={styles.secTitle}>{media.nodeType === 'COLLECTION' ? 'Casting de la saga' : 'Casting & Artistes'} ({actors.length})</Text>
-                <Text style={styles.secHint}>Sélectionnez un artiste pour consulter sa filmographie</Text>
-              </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.actorsScroll}
-              >
-                {actors.map((actor: any, idx: number) => {
-                  const thumb = actor.metadata_json?.thumbUrl;
-                  return (
-                    <Pressable
-                      key={idx}
-                      focusable={true}
-                      onPress={() => handleActorPress(actor)}
-                      style={({ pressed }) => [styles.actorCard, pressed && styles.actorCardPressed]}
-                    >
-                      <View style={styles.actorAvatarWrap}>
-                        {thumb ? (
-                          <Image source={{ uri: thumb }} style={styles.actorAvatar} />
-                        ) : (
-                          <View style={styles.actorAvatarPlaceholder}>
-                            <Text style={styles.actorAvatarPlaceholderTxt}>
-                              {actor.value_text?.slice(0, 2)?.toUpperCase() || 'ART'}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.actorName} numberOfLines={1}>
-                        {actor.value_text}
+        {actors.length > 0 && (
+          <View style={styles.metaSubSection}>
+            <View style={styles.secHeaderRow}>
+              <Text style={styles.secTitle}>
+                {media.nodeType === 'COLLECTION' ? 'Casting de la saga' : 'Casting & Artistes'} ({actors.length})
+              </Text>
+              <Text style={styles.secHint}>Sélectionnez un artiste pour consulter sa filmographie</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.actorsScroll}
+            >
+              {actors.map((actor: any, idx: number) => {
+                const thumb = actor.metadata_json?.thumbUrl;
+                return (
+                  <Pressable
+                    key={idx}
+                    focusable={true}
+                    onPress={() => handleActorPress(actor)}
+                    style={({ pressed }) => [styles.actorCard, pressed && styles.actorCardPressed]}
+                  >
+                    <View style={styles.actorAvatarWrap}>
+                      {thumb ? (
+                        <Image source={{ uri: thumb }} style={styles.actorAvatar} />
+                      ) : (
+                        <View style={styles.actorAvatarPlaceholder}>
+                          <Text style={styles.actorAvatarPlaceholderTxt}>
+                            {actor.value_text?.slice(0, 2)?.toUpperCase() || 'ART'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.actorName} numberOfLines={1}>
+                      {actor.value_text}
+                    </Text>
+                    {actor.context_role ? (
+                      <Text style={styles.actorRole} numberOfLines={2}>
+                        {actor.context_role}
                       </Text>
-                      {actor.context_role ? (
-                        <Text style={styles.actorRole} numberOfLines={2}>
-                          {actor.context_role}
-                        </Text>
-                      ) : null}
-                      <View style={styles.actorTagBadge}>
-                        <Text style={styles.actorTagBadgeTxt}>Artiste</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
+                    ) : null}
+                    <View style={styles.actorTagBadge}>
+                      <Text style={styles.actorTagBadgeTxt}>Artiste</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
-          {/* 2. Équipes Créatives (Réalisateurs, Scénaristes, Producteurs, Musique) */}
-          {(directors.length > 0 || writers.length > 0 || producers.length > 0 || composers.length > 0) && (
-            <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>Réalisation & Équipe Créative</Text>
-              <View style={styles.zoneRow}>
-                {directors.map((d: any, i: number) => (
-                  <TagPill key={`dir-${i}`} label={d.value_text} subtext="Réalisateur" theme="amber" />
-                ))}
-                {writers.map((w: any, i: number) => (
-                  <TagPill key={`wri-${i}`} label={w.value_text} subtext="Scénariste / Auteur" theme="emerald" />
-                ))}
-                {producers.map((p: any, i: number) => (
-                  <TagPill key={`prod-${i}`} label={p.value_text} subtext="Producteur" theme="indigo" />
-                ))}
-                {composers.map((m: any, i: number) => (
-                  <TagPill key={`comp-${i}`} label={m.value_text} subtext="Compositeur" theme="rose" />
-                ))}
+        {/* ======================================================== */}
+        {/* 6. EQUIPE : Réalisation & Équipe Créative                 */}
+        {/* ======================================================== */}
+        {(directors.length > 0 || writers.length > 0 || producers.length > 0 || composers.length > 0) && (
+          <View style={styles.metaSubSection}>
+            <Text style={styles.secTitle}>Réalisation & Équipe Créative</Text>
+            <View style={styles.zoneRow}>
+              {directors.map((d: any, i: number) => (
+                <TagPill key={`dir-${i}`} label={d.value_text} subtext="Réalisateur" theme="amber" />
+              ))}
+              {writers.map((w: any, i: number) => (
+                <TagPill key={`wri-${i}`} label={w.value_text} subtext="Scénariste / Auteur" theme="emerald" />
+              ))}
+              {producers.map((p: any, i: number) => (
+                <TagPill key={`prod-${i}`} label={p.value_text} subtext="Producteur" theme="indigo" />
+              ))}
+              {composers.map((m: any, i: number) => (
+                <TagPill key={`comp-${i}`} label={m.value_text} subtext="Compositeur" theme="rose" />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* ======================================================== */}
+        {/* 7. INFO : Fiche Technique & Métadonnées                   */}
+        {/* ======================================================== */}
+        {(ratings.length > 0 || countries.length > 0 || technicalSpecs.length > 0) && (
+          <View style={styles.metaSubSection}>
+            <Text style={styles.secTitle}>Fiche Technique & Informations</Text>
+
+            {ratings.length > 0 && (
+              <View style={styles.infoBlock}>
+                <Text style={styles.secSubTitle}>Notes & Classification</Text>
+                <View style={styles.zoneRow}>
+                  {ratings.map((r, i) => (
+                    <TagPill key={`rat-${i}`} label={r.value} subtext={r.label} theme={r.theme as any} />
+                  ))}
+                </View>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* 3. Studios & Production */}
-          {studios.length > 0 && (
-            <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>Studios & Production</Text>
-              <View style={styles.zoneRow}>
-                {studios.map((s: any, i: number) => (
-                  <TagPill key={`std-${i}`} label={s.value_text} subtext="Studio" theme="sky" />
-                ))}
+            {countries.length > 0 && (
+              <View style={styles.infoBlock}>
+                <Text style={styles.secSubTitle}>Origine & Lieux de tournage</Text>
+                <View style={styles.zoneRow}>
+                  {countries.map((c: any, i: number) => (
+                    <TagPill key={`cnt-${i}`} label={c.value_text} subtext="Pays / Lieu" theme="teal" />
+                  ))}
+                </View>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* 4. Pays d'Origine & Lieux */}
-          {countries.length > 0 && (
-            <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>Origine & Lieux de tournage</Text>
-              <View style={styles.zoneRow}>
-                {countries.map((c: any, i: number) => (
-                  <TagPill key={`cnt-${i}`} label={c.value_text} subtext="Pays / Lieu" theme="teal" />
-                ))}
+            {technicalSpecs.length > 0 && (
+              <View style={styles.infoBlock}>
+                <Text style={styles.secSubTitle}>Caractéristiques techniques & Codecs</Text>
+                <View style={styles.zoneRow}>
+                  {technicalSpecs.map((t: any, i: number) => (
+                    <TagPill
+                      key={`tech-${i}`}
+                      label={t.value_text}
+                      subtext={t.display_name}
+                      theme="slate"
+                    />
+                  ))}
+                </View>
               </View>
-            </View>
-          )}
+            )}
+          </View>
+        )}
 
-          {/* 5. Notes & Classifications */}
-          {ratings.length > 0 && (
-            <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>Notes & Classification</Text>
-              <View style={styles.zoneRow}>
-                {ratings.map((r, i) => (
-                  <TagPill key={`rat-${i}`} label={r.value} subtext={r.label} theme={r.theme as any} />
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* 6. Caractéristiques Techniques & Pistes de Flux */}
-          {technicalSpecs.length > 0 && (
-            <View style={styles.metaSubSection}>
-              <Text style={styles.secTitle}>Caractéristiques techniques & Codecs</Text>
-              <View style={styles.zoneRow}>
-                {technicalSpecs.map((t: any, i: number) => (
-                  <TagPill
-                    key={`tech-${i}`}
-                    label={t.value_text}
-                    subtext={t.display_name}
-                    theme="slate"
-                  />
-                ))}
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* Genres & Thèmes exploratoires avec déduplication stricte inter-tags */}
+        {/* ======================================================== */}
+        {/* 8. PROPOSITIONS MEDIAS PAR TAGS & AVIS COMMUNAUTAIRES     */}
+        {/* ======================================================== */}
         <MediaGenreSection
           currentMediaId={media.id}
           relatedTags={relatedTags}
@@ -525,7 +545,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: Radius.pill,
     marginBottom: Spacing.two,
-    marginTop: 6,
+    marginTop: 2,
     borderWidth: 1,
     borderColor: 'rgba(160, 175, 195, 0.14)',
   },
@@ -560,121 +580,125 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  metaYearTxt: { color: '#8a95a5', fontSize: 11, fontWeight: '600' },
+  metaYearTxt: { color: '#c5cedb', fontSize: 11, fontWeight: '700' },
   editionPill: {
-    backgroundColor: 'rgba(45, 52, 64, 0.6)',
-    borderColor: 'rgba(160, 175, 195, 0.16)',
+    backgroundColor: 'rgba(45, 52, 64, 0.85)',
+    borderColor: 'rgba(160, 175, 195, 0.2)',
   },
   verifyPill: {
-    backgroundColor: 'rgba(168, 70, 70, 0.25)',
-    borderColor: 'rgba(168, 70, 70, 0.4)',
+    backgroundColor: 'rgba(120, 40, 40, 0.45)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
-  title: { fontSize: 26, fontWeight: '700', color: '#edeef2', letterSpacing: -0.3 },
-  taglineTxt: { fontSize: 14, fontStyle: 'italic', color: '#9ba7b7', lineHeight: 20 },
-  overview: { fontSize: 13.5, color: '#b0bccb', lineHeight: 22, maxWidth: 800 },
+  title: { fontSize: 26, fontWeight: '800', color: '#edeef2', letterSpacing: -0.5 },
+  taglineTxt: { fontSize: 14, fontStyle: 'italic', color: '#9ba7b7', marginVertical: 2 },
+  overview: { fontSize: 13, color: '#c5cedb', lineHeight: 20 },
   playBtn: {
+    backgroundColor: 'rgba(60, 72, 88, 0.85)',
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: Radius.pill,
-    backgroundColor: '#475569',
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.16)',
   },
-  btnText: { color: '#edeef2', fontWeight: '700', fontSize: 12 },
-  section: { padding: Spacing.four },
-  secTitle: { fontSize: 17, fontWeight: '700', color: '#dfe4ec', marginBottom: 12, letterSpacing: -0.2 },
-  secHeaderRow: { marginBottom: 12 },
-  secHint: { color: '#8a95a5', fontSize: 12, marginTop: 2 },
-  actorsScroll: { gap: 14, paddingVertical: 4 },
-  actorCard: {
-    width: 105,
+  btnText: { color: '#edeef2', fontWeight: '700', fontSize: 13 },
+  section: {
+    backgroundColor: 'rgba(38, 44, 54, 0.75)',
+    borderRadius: Radius.lg,
+    padding: Spacing.four,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.14)',
+    gap: 12,
+  },
+  secTitle: { fontSize: 16, fontWeight: '700', color: '#edeef2', letterSpacing: -0.3 },
+  secSubTitle: { fontSize: 12, fontWeight: '700', color: '#9ba7b7', textTransform: 'uppercase', letterSpacing: 0.5 },
+  secHint: { fontSize: 12, color: '#8e9ab0' },
+  secHeaderRow: { flexDirection: 'column', gap: 4 },
+  infoBlock: { gap: 6, paddingTop: 4 },
+  extraCard: { width: 140 },
+  extraThumbWrap: {
+    width: 140,
+    height: 85,
+    backgroundColor: 'rgba(26, 31, 40, 0.8)',
+    borderRadius: Radius.md,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
+    position: 'relative',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.12)',
   },
-  actorCardPressed: { opacity: 0.85 },
+  extraThumbTxt: { color: '#8e9ab0', fontSize: 11, fontWeight: '700' },
+  extraTypeBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(20, 24, 33, 0.85)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+  },
+  extraTypeBadgeTxt: { color: '#c5cedb', fontSize: 9, fontWeight: '600' },
+  extraTitle: { color: '#edeef2', fontSize: 12, fontWeight: '600' },
+  extraRuntime: { color: '#8e9ab0', fontSize: 11, marginTop: 2 },
+  metaSubSection: {
+    backgroundColor: 'rgba(38, 44, 54, 0.75)',
+    borderRadius: Radius.lg,
+    padding: Spacing.four,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.14)',
+    gap: 12,
+  },
+  actorsScroll: { gap: 12, paddingVertical: 4 },
+  actorCard: {
+    width: 100,
+    alignItems: 'center',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  actorCardPressed: {
+    transform: [{ scale: 0.96 }],
+  },
   actorAvatarWrap: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 72,
+    height: 72,
+    borderRadius: Radius.pill,
     overflow: 'hidden',
-    backgroundColor: 'rgba(35, 41, 51, 0.95)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(160, 175, 195, 0.2)',
-    marginBottom: 4,
+    backgroundColor: 'rgba(26, 31, 40, 0.8)',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.14)',
   },
-  actorAvatar: { width: '100%', height: '100%' },
-  actorAvatarPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  actorAvatarPlaceholderTxt: { color: '#7c8797', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  actorName: { color: '#dfe4ec', fontSize: 12, fontWeight: '600', textAlign: 'center' },
-  actorRole: { color: '#8a95a5', fontSize: 10, fontWeight: '500', textAlign: 'center', lineHeight: 13 },
+  actorAvatar: { width: '100%', height: '100%', resizeMode: 'cover' },
+  actorAvatarPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(45, 52, 64, 0.8)',
+  },
+  actorAvatarPlaceholderTxt: { color: '#8e9ab0', fontSize: 14, fontWeight: '700' },
+  actorName: { color: '#edeef2', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  actorRole: { color: '#8e9ab0', fontSize: 10, textAlign: 'center', marginTop: 2 },
   actorTagBadge: {
-    backgroundColor: 'rgba(148, 163, 184, 0.12)',
+    marginTop: 4,
+    backgroundColor: 'rgba(55, 68, 85, 0.4)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.15)',
-    marginTop: 2,
+    borderColor: 'rgba(160, 175, 195, 0.1)',
   },
-  actorTagBadgeTxt: { color: '#94a1b3', fontSize: 9, fontWeight: '600' },
-  extraCard: {
-    width: 180,
-    backgroundColor: 'rgba(38, 44, 54, 0.65)',
-    borderRadius: Radius.md,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.12)',
-  },
-  extraThumbWrap: {
-    height: 100,
-    borderRadius: 8,
-    backgroundColor: 'rgba(30, 36, 45, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  extraThumbTxt: { color: '#7c8797', fontSize: 12, fontWeight: '700', letterSpacing: 1.5 },
-  extraTypeBadge: {
-    position: 'absolute',
-    bottom: 6,
-    right: 6,
-    backgroundColor: 'rgba(20, 24, 30, 0.75)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  extraTypeBadgeTxt: { color: '#cbd5e1', fontSize: 9.5, fontWeight: '600' },
-  extraTitle: { color: '#dfe4ec', fontWeight: '600', fontSize: 13 },
-  extraRuntime: { color: '#8a95a5', fontSize: 11, marginTop: 2 },
-  metaHubContainer: {
-    backgroundColor: 'rgba(38, 44, 54, 0.65)',
-    borderRadius: Radius.xl,
-    padding: Spacing.four,
-    marginTop: Spacing.four,
-    marginBottom: Spacing.four,
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.12)',
-    gap: 20,
-  },
-  metaHubMainTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#edeef2',
-    letterSpacing: -0.3,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(160, 175, 195, 0.1)',
-    paddingBottom: 10,
-  },
-  metaSubSection: { gap: 10 },
+  actorTagBadgeTxt: { color: '#a0afc3', fontSize: 9, fontWeight: '600' },
   repostCard: {
-    backgroundColor: 'rgba(38, 44, 54, 0.65)',
+    backgroundColor: 'rgba(26, 31, 40, 0.6)',
     borderRadius: Radius.md,
-    padding: 12,
+    padding: Spacing.three,
+    gap: 6,
     borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.12)',
+    borderColor: 'rgba(160, 175, 195, 0.08)',
   },
-  repostHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  repostAuthor: { color: '#dfe4ec', fontWeight: '600', fontSize: 13 },
-  repostRating: { color: '#cfb991', fontSize: 12 },
-  repostComment: { color: '#b0bccb', fontSize: 13, lineHeight: 18 },
+  repostHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  repostAuthor: { color: '#edeef2', fontWeight: '700', fontSize: 12 },
+  repostRating: { color: '#fcd34d', fontSize: 12 },
+  repostComment: { color: '#c5cedb', fontSize: 12, lineHeight: 18 },
 });

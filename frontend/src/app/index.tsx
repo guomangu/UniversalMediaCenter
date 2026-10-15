@@ -1,33 +1,125 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, ScrollView, RefreshControl, ActivityIndicator, useWindowDimensions, View, Text, Pressable } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import {
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  ActivityIndicator,
+  useWindowDimensions,
+  View,
+  Text,
+  Pressable,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
-import { SiteHeader } from '@/components/SiteHeader';
+import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { TagSearchBar } from '@/components/TagSearchBar';
 import { CategorySection } from '@/components/CategorySection';
 import { fetchTaxonomy, TaxonomyCategory } from '@/services/taxonomyApi';
+import { useCurrentUser } from '@/services/authStore';
 import { Spacing, MaxContentWidth, Radius } from '@/constants/theme';
+
+let savedHomeScrollY = 0;
+let cachedCategories: TaxonomyCategory[] = [];
 
 export default function HomeScreen() {
   const router = useRouter();
+  const currentUser = useCurrentUser();
   const { width } = useWindowDimensions();
-  const isMobile = width < 768;
-  const [categories, setCategories] = useState<TaxonomyCategory[]>([]);
+  const isMobile = width < 860;
+  const [categories, setCategories] = useState<TaxonomyCategory[]>(cachedCategories);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('Tous');
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(cachedCategories.length === 0);
   const scrollRef = useRef<ScrollView>(null);
   const catPositions = useRef<Record<string, number>>({});
+  const isRestoringScroll = useRef(savedHomeScrollY > 0);
+  const scrollRestoredRef = useRef(false);
+
+  const headerPaddingTop = useHeaderHeight(true);
+
+  const applyScroll = useCallback((y: number) => {
+    if (y <= 0) return;
+    scrollRef.current?.scrollTo({ y, animated: false });
+    if (Platform.OS === 'web' && scrollRef.current) {
+      const node = (scrollRef.current as any).getScrollableNode?.() || (scrollRef.current as any);
+      if (node && node.scrollTop !== undefined) {
+        node.scrollTop = y;
+      }
+    }
+  }, []);
 
   const loadData = async () => {
     const list = await fetchTaxonomy();
-    setCategories(list);
+    if (list && list.length > 0) {
+      cachedCategories = list;
+      setCategories(list);
+    }
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+      const stored = sessionStorage.getItem('ums_home_scroll_y');
+      if (stored) {
+        const val = parseFloat(stored);
+        if (!isNaN(val) && val > 0) savedHomeScrollY = val;
+      }
+    }
+    if (savedHomeScrollY > 0) {
+      isRestoringScroll.current = true;
+    }
+    loadData();
+  }, []);
+
+  // Détection des interactions utilisateur réelles pour relâcher le mode restauration
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handleUserInteraction = () => {
+        isRestoringScroll.current = false;
+      };
+      window.addEventListener('wheel', handleUserInteraction, { passive: true });
+      window.addEventListener('touchstart', handleUserInteraction, { passive: true });
+      return () => {
+        window.removeEventListener('wheel', handleUserInteraction);
+        window.removeEventListener('touchstart', handleUserInteraction);
+      };
+    }
+  }, []);
+
+  // Restauration fidèle de la zone de défilement dès que les données sont affichées
+  useEffect(() => {
+    if (savedHomeScrollY > 0 && !scrollRestoredRef.current) {
+      isRestoringScroll.current = true;
+      const t1 = setTimeout(() => applyScroll(savedHomeScrollY), 16);
+      const t2 = setTimeout(() => applyScroll(savedHomeScrollY), 80);
+      const t3 = setTimeout(() => applyScroll(savedHomeScrollY), 200);
+      const t4 = setTimeout(() => applyScroll(savedHomeScrollY), 450);
+      const t5 = setTimeout(() => {
+        applyScroll(savedHomeScrollY);
+        isRestoringScroll.current = false;
+        scrollRestoredRef.current = true;
+      }, 850);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+        clearTimeout(t4);
+        clearTimeout(t5);
+      };
+    }
+  }, [loading, applyScroll]);
+
+  const handleContentSizeChange = (contentWidth: number, contentHeight: number) => {
+    if (isRestoringScroll.current && savedHomeScrollY > 0) {
+      applyScroll(savedHomeScrollY);
+      if (contentHeight > savedHomeScrollY + 200) {
+        scrollRestoredRef.current = true;
+      }
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -38,8 +130,17 @@ export default function HomeScreen() {
   const handleJumpToCategory = (id: string) => {
     const y = catPositions.current[id];
     if (y !== undefined) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, y - (isMobile ? 100 : 92)), animated: true });
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - headerPaddingTop), animated: true });
     }
+  };
+
+  const handleScrollToTop = () => {
+    savedHomeScrollY = 0;
+    isRestoringScroll.current = false;
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+      sessionStorage.removeItem('ums_home_scroll_y');
+    }
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   return (
@@ -48,14 +149,31 @@ export default function HomeScreen() {
         <SiteHeader
           categories={categories}
           onSelectCategory={handleJumpToCategory}
-          onScrollToTop={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+          onScrollToTop={handleScrollToTop}
         />
 
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
-          contentContainerStyle={[styles.contentContainer, { paddingTop: isMobile ? 98 : 90 }]}
+          contentContainerStyle={[styles.contentContainer, { paddingTop: headerPaddingTop }]}
           showsVerticalScrollIndicator={false}
+          onContentSizeChange={handleContentSizeChange}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            if (isRestoringScroll.current) {
+              if (Math.abs(y - savedHomeScrollY) < 50) {
+                scrollRestoredRef.current = true;
+              }
+              return;
+            }
+            if (y >= 0) {
+              savedHomeScrollY = y;
+              if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+                sessionStorage.setItem('ums_home_scroll_y', String(y));
+              }
+            }
+          }}
+          scrollEventThrottle={32}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8e9ab0" />}>
           <TagSearchBar
             searchQuery={searchQuery}

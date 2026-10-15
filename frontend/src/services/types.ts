@@ -57,6 +57,36 @@ export interface RelatedTagGroup {
   medias: any[];
 }
 
+export interface ParentSaga {
+  id: string;
+  title: string;
+  nodeType?: string;
+  overview?: string;
+  posterPath?: string;
+  fanartPath?: string;
+  movies: Array<{
+    id: string;
+    title: string;
+    releaseYear?: number;
+    nodeType: string;
+    orderIndex?: number;
+    communityRating?: number;
+    posterPath?: string;
+  }>;
+}
+
+export interface StudioMediaGroup {
+  studioName: string;
+  medias: Array<{
+    id: string;
+    title: string;
+    releaseYear?: number;
+    nodeType: string;
+    communityRating?: number;
+    posterPath?: string;
+  }>;
+}
+
 export interface MediaDetailResponse {
   media: MediaNode;
   tags: {
@@ -67,6 +97,8 @@ export interface MediaDetailResponse {
   };
   children?: MediaNode[];
   extras?: MediaNode[];
+  parentSaga?: ParentSaga | null;
+  studioMedias?: StudioMediaGroup[];
   relatedTags?: RelatedTagGroup[];
 }
 

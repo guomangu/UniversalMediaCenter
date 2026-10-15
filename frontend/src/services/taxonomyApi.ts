@@ -45,6 +45,20 @@ export async function fetchTaxonomy(): Promise<TaxonomyCategory[]> {
   }
 }
 
+
+const taxonomyMediasCache = new Map<string, TaxonomyMediasResult>();
+
+export function getCachedTaxonomyMedias(params: {
+  category: string;
+  tag: string;
+  filter?: string;
+  q?: string;
+  limit?: number;
+  excludeIds?: string[];
+}): TaxonomyMediasResult | undefined {
+  const key = `${params.category}:${params.tag}:${params.filter || ''}:${params.q || ''}:${params.limit || 15}:${(params.excludeIds || []).slice().sort().join(',')}`;
+  return taxonomyMediasCache.get(key);
+}
 export async function fetchTaxonomyMedias(params: {
   category: string;
   tag: string;
@@ -53,6 +67,7 @@ export async function fetchTaxonomyMedias(params: {
   limit?: number;
   excludeIds?: string[];
 }): Promise<TaxonomyMediasResult> {
+  const cacheKey = `${params.category}:${params.tag}:${params.filter || ''}:${params.q || ''}:${params.limit || 15}:${(params.excludeIds || []).slice().sort().join(',')}`;
   try {
     const p: Record<string, string> = {
       category: params.category,
@@ -70,11 +85,13 @@ export async function fetchTaxonomyMedias(params: {
     });
     if (!res.ok) return { items: [], hasMore: false, totalReturned: 0 };
     const data = await res.json();
-    return {
+    const result: TaxonomyMediasResult = {
       items: data.items || [],
       hasMore: !!data.hasMore,
       totalReturned: data.totalReturned || 0,
     };
+    taxonomyMediasCache.set(cacheKey, result);
+    return result;
   } catch {
     return { items: [], hasMore: false, totalReturned: 0 };
   }

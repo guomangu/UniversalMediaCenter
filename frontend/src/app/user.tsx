@@ -17,7 +17,7 @@ import { UserFriendsTab } from '@/components/user/UserFriendsTab';
 import { UserForumsTab } from '@/components/user/UserForumsTab';
 import { UserFeedTab } from '@/components/user/UserFeedTab';
 import { MediaCard } from '@/components/MediaCard';
-import { SiteHeader } from '@/components/SiteHeader';
+import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { Platform } from 'react-native';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 
@@ -25,6 +25,7 @@ type UserTab = 'CONTINUE' | 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED';
 
 export default function UserScreen() {
   const router = useRouter();
+  const headerPaddingTop = useHeaderHeight(false);
   const authUser = useCurrentUser();
   const [profile, setProfile] = useState<any>(authUser);
   const { tab } = useLocalSearchParams<{ tab?: string }>();
@@ -72,7 +73,7 @@ export default function UserScreen() {
       <SafeAreaView style={styles.container}>
         <SiteHeader />
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingTop: Platform.OS === 'web' ? 70 : 0 }]}
+          contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadAll} />}>
           {/* Header Bar */}
           <View style={styles.topNav}>
