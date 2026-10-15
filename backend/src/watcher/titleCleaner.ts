@@ -75,7 +75,7 @@ export function sanitizeReleaseTags(raw: string | number): string {
   t = t.replace(/[\s._]\d{3,4}x\d{3,4}.*$/i, '');
   t = t.replace(/\s*[–-]\s*(Action|Comedy|Drama|Aventure)?\s*\d{4}\s*.*$/i, '');
   t = t.replace(/\s*\(?\d{4}\)?\s*(VFF|VF|VOSTFR|MULTi|ENG|FRENCH|AC3|DTS|BluRay|BDRip|1080p|720p|x264|x265|WEB).*$/i, '');
-  t = t.replace(/\b(MULTi|VFF|VF|VOSTFR|FRENCH|TRUEFRENCH|1080p|720p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|web-dl|webrip|web|h264|h265|x264|x265|hevc|dts-hd|dts|truehd|ac3|aac|proper|repack|remastered|extended|1920x\d+|1280x\d+)\b.*$/i, '');
+  t = t.replace(/\b(MULTi|VFF|VF|VOSTFR|FRENCH|TRUEFRENCH|FASTSUB|SUBITA|LD|FiNAL|1080p|720p|480p|576p|360p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|h264|h265|x264|x265|xvid|divx|hevc|dts-hd|dts|truehd|ac3|aac|flac|mp3|proper|repack|remastered|extended|1920x\d+|1280x\d+)\b.*$/i, '');
   t = t.replace(/(?<=[a-zA-Z0-9]{2,})\.|\.(?=[a-zA-Z0-9]{2,})/g, ' ');
   t = t.replace(/_/g, ' ');
   t = t.replace(/\[.*?\]/g, '');
@@ -85,6 +85,80 @@ export function sanitizeReleaseTags(raw: string | number): string {
 
   const cleaned = t.replace(/\s{2,}/g, ' ').trim();
   return cleaned || t || '';
+}
+
+/**
+ * Extrait le titre canonique pur d'une série télévisée ou anime en éliminant :
+ * - Les mentions de saison (ex: " - Saison 4 (2017)", " - Saison 1 360p", " Season 2", " S02")
+ * - Les résolutions (360p, 720p, 1080p...) et formats (HDTV, WEBRip, XviD...)
+ * - Les équipes et domaines de téléchargement (Zone-Telechargement, Cpasbien...)
+ * - Les fautes de frappe courantes (ex: "peacky blinders" -> "Peaky Blinders")
+ */
+export function extractCanonicalShowTitle(raw: string | number): string {
+  let s = String(raw ?? '').trim();
+  if (!s) return '';
+
+  // 1. Extraire le nom de base si c'est un chemin complet
+  if (s.includes('/') || s.includes('\\')) {
+    s = s.replace(/\\/g, '/').split('/').filter(Boolean).pop() || s;
+  }
+
+  // 2. Nettoyer les extensions de fichiers
+  s = s.replace(/\.(mkv|mp4|avi|mov|ts|m4v|webm|nfo)$/i, '');
+
+  // 3. Nettoyer les tags entre crochets ou domaines web
+  s = s.replace(/^\s*\[.*?\]\s*/g, '');
+  s = s.replace(/\s*\[.*?\]/g, '');
+  s = s.replace(/\b(?:w+w\.)?[a-zA-Z0-9-]+\.(?:ws|com|pw|cm|org|to|me|cx|net)\b/gi, '');
+
+  // 4. Nettoyer les codes d'épisodes s'ils sont dans le nom
+  s = s.replace(/\s*[-_–]\s*S\d+.*$/i, '');
+  s = s.replace(/\s+S\d+E\d+.*$/i, '');
+  s = s.replace(/\s+S\d+\b.*$/i, '');
+  s = s.replace(/\b\d+x\d+\b.*$/i, '');
+
+  // 5. Supprimer les mentions de saison françaises et anglaises
+  s = s.replace(/\s*[-_–]\s*(?:saison|season|séries?|series?|part|partie|cour|vol|volume)\s*0*\d+.*$/i, '');
+  s = s.replace(/\s+\b(?:saison|season|séries?|series?|part|partie|cour|vol|volume)\s*0*\d+.*$/i, '');
+
+  // 6. Supprimer les années résiduelles (2017) ou (1990)
+  s = s.replace(/\s*\((?:19|20)\d{2}\)\s*$/i, '');
+  s = s.replace(/\s+-\s+(?:19|20)\d{2}\s*$/i, '');
+
+  // 7. Supprimer les résolutions, formats, qualités, langues
+  s = s.replace(/\b(360p|480p|576p|720p|1080p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|xvid|divx|x264|x265|hevc|h264|h265|vostfr|vff|vf|french|truefrench|multi|fastsub|subita|ld|final|repack|proper|remastered|extended)\b.*$/i, '');
+
+  // 8. Remplacer les points et underscores par des espaces
+  s = s.replace(/[._]/g, ' ');
+  s = s.replace(/`/g, "'");
+  s = s.replace(/\s{2,}/g, ' ').trim();
+
+  // 9. Dictionnaire des fautes de frappe et variantes courantes
+  if (/^peac?ky\s+blinders$/i.test(s)) {
+    return 'Peaky Blinders';
+  }
+  if (/^breaking\s+bad$/i.test(s)) {
+    return 'Breaking Bad';
+  }
+  if (/^prison\s+break$/i.test(s)) {
+    return 'Prison Break';
+  }
+  if (/^american\s+dad$/i.test(s)) {
+    return 'American Dad';
+  }
+  if (/^mr\s*robot$/i.test(s)) {
+    return 'Mr. Robot';
+  }
+  if (/^fullmetal\s+alch[ie]mist$/i.test(s)) {
+    return 'Fullmetal Alchemist';
+  }
+
+  // 10. Capitalisation soignée si tout est en minuscules
+  if (s === s.toLowerCase() && s.length > 2) {
+    s = s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+  }
+
+  return s;
 }
 
 /**

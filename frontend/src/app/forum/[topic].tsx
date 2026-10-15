@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { ForumAssociationsModule } from '@/components/ForumAssociationsModule';
 import { MediaForumSection } from '@/components/MediaForumSection';
-import { fetchTopicContext, TopicContextResponse } from '@/services/forumApi';
+import { fetchTopicContext, TopicContextResponse, TopicTagItem } from '@/services/forumApi';
 import { resolveImageUrl } from '@/services/api';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 
@@ -68,15 +68,19 @@ export default function ForumTopicScreen() {
 
       <ScrollView
         ref={scrollViewRef}
-        contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]}
+        contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + Spacing.three }]}
         showsVerticalScrollIndicator={false}>
-        <Pressable focusable={true} onPress={() => router.push('/forum')} style={styles.backBtn}>
-          <Text style={styles.backTxt}>← Retour aux salons</Text>
+        {/* Bouton Retour vers le Forum */}
+        <Pressable
+          focusable={true}
+          onPress={() => router.push('/forum' as any)}
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.8 }]}>
+          <Text style={styles.backTxt}>← Retour à l'Agora & salons</Text>
         </Pressable>
 
-        {/* ========================================================================= */}
-        {/* 1. HERO SPOTLIGHT IMMERSIF (Identique à la page média)                   */}
-        {/* ========================================================================= */}
+        {/* ======================================================== */}
+        {/* 1. EN-TÊTE IMMERSIF DU TOPIC (Hero Card)                 */}
+        {/* ======================================================== */}
         <View style={styles.heroBox}>
           {backdropUri ? (
             <Image
@@ -90,7 +94,9 @@ export default function ForumTopicScreen() {
           <View style={styles.heroContent}>
             <View style={styles.badgeRow}>
               <View style={styles.typeBadge}>
-                <Text style={styles.typeBadgeTxt}>Salon Thématique</Text>
+                <Text style={styles.typeBadgeTxt}>
+                  {context?.topic?.typeLabel || 'Sujet d’Agora'}
+                </Text>
               </View>
               {context?.topic?.category ? (
                 <View style={styles.categoryBadge}>
@@ -98,13 +104,15 @@ export default function ForumTopicScreen() {
                 </View>
               ) : null}
               {totalAssociatedMedias > 0 ? (
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeTxt}>{totalAssociatedMedias} œuvres liées</Text>
+                <View style={styles.mediaCountBadge}>
+                  <Text style={styles.mediaCountBadgeTxt}>
+                    🎬 {totalAssociatedMedias} œuvre{totalAssociatedMedias > 1 ? 's' : ''} associée{totalAssociatedMedias > 1 ? 's' : ''}
+                  </Text>
                 </View>
               ) : null}
             </View>
 
-            <Text style={styles.heroTitle}>#{context?.topic?.title || topicTitle}</Text>
+            <Text style={styles.heroTitle}>{context?.topic?.title || topicTitle}</Text>
 
             {context?.topic?.overview ? (
               <Text style={styles.heroOverview} numberOfLines={3}>
@@ -161,7 +169,7 @@ export default function ForumTopicScreen() {
             <ForumAssociationsModule
               title="Structures & studios de production"
               subtitle="Découvrez les créations issues des mêmes studios et producteurs"
-              tags={tags.studios?.map((s) => ({
+              tags={tags.studios?.map((s: TopicTagItem) => ({
                 label: s.value_text,
                 slug: s.value_slug,
                 theme: 'teal',
@@ -177,12 +185,12 @@ export default function ForumTopicScreen() {
               title="Genres & origines géographiques"
               subtitle="Explorez par univers thématiques et pays de production"
               tags={[
-                ...(tags.genres || []).map((g) => ({
+                ...(tags.genres || []).map((g: TopicTagItem) => ({
                   label: g.value_text,
                   slug: g.value_slug,
                   theme: 'emerald',
                 })),
-                ...(tags.countries || []).map((c) => ({
+                ...(tags.countries || []).map((c: TopicTagItem) => ({
                   label: c.value_text,
                   slug: c.value_slug,
                   theme: 'slate',
@@ -251,11 +259,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   heroBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     opacity: 0.35,
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(18, 21, 26, 0.7)',
   },
   heroContent: {
@@ -274,94 +282,93 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(56, 189, 248, 0.35)',
     borderWidth: 1,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: Radius.pill,
   },
   typeBadgeTxt: {
     color: '#38bdf8',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   categoryBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: Radius.pill,
   },
   categoryBadgeTxt: {
-    color: '#edeef2',
-    fontSize: 11,
-    fontWeight: '600',
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '500',
   },
-  countBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  mediaCountBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    borderWidth: 1,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: Radius.pill,
   },
-  countBadgeTxt: {
-    color: '#94a3b8',
-    fontSize: 11,
+  mediaCountBadgeTxt: {
+    color: '#34d399',
+    fontSize: 12,
     fontWeight: '600',
   },
   heroTitle: {
-    color: '#edeef2',
     fontSize: 28,
     fontWeight: '800',
+    color: '#ffffff',
     letterSpacing: -0.5,
   },
   heroOverview: {
-    color: '#8e9ab0',
-    fontSize: 13,
-    lineHeight: 20,
-    maxWidth: 720,
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#94a3b8',
+    maxWidth: 800,
   },
   actionsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    gap: 10,
     marginTop: 6,
     flexWrap: 'wrap',
   },
   actionBtnPrimary: {
-    backgroundColor: '#38bdf8',
+    backgroundColor: '#6366f1',
+    paddingVertical: 9,
     paddingHorizontal: 16,
-    paddingVertical: 10,
     borderRadius: Radius.pill,
-  },
-  actionBtnPrimaryTxt: {
-    color: '#0f172a',
-    fontSize: 13,
-    fontWeight: '700',
   },
   actionBtnSecondary: {
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  actionBtnSecondaryTxt: {
-    color: '#edeef2',
-    fontSize: 13,
-    fontWeight: '600',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: Radius.pill,
   },
   actionBtnPressed: {
     opacity: 0.8,
   },
+  actionBtnPrimaryTxt: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  actionBtnSecondaryTxt: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   loadingWrap: {
-    paddingVertical: 60,
+    paddingVertical: Spacing.six,
     alignItems: 'center',
     gap: 12,
   },
   loadingTxt: {
     color: '#8e9ab0',
-    fontSize: 13,
+    fontSize: 14,
   },
   forumContainer: {
-    marginTop: Spacing.two,
+    marginTop: Spacing.four,
   },
 });

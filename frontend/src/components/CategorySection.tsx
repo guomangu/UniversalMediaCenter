@@ -27,7 +27,7 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
         tag: t.slug,
         filter: activeFilter,
         q: searchQuery,
-        limit: 15,
+        limit: 10,
       });
       if (c?.items?.length) {
         init[t.slug] = c.items.map((m) => m.id);

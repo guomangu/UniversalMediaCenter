@@ -12,14 +12,19 @@
         }
     }
 
-    # 2. Service direct des Artworks et médias locaux
+    # 2. Liens d'invitation personnalisés (Open Graph direct pour WhatsApp/Instagram + Connexion 1 clic)
+    handle /invite/* {
+        reverse_proxy backend:3000
+    }
+
+    # 3. Service direct des Artworks et médias locaux
     handle_path /artworks/* {
         root * /media
         header Cache-Control "public, max-age=31536000, immutable"
         file_server
     }
 
-    # 3. Interface Web Universelle Expo
+    # 4. Interface Web Universelle Expo
     handle /* {
         reverse_proxy host.containers.internal:8081 {
             header_up Host {upstream_hostport}

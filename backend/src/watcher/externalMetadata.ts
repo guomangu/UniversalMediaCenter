@@ -1,3 +1,5 @@
+import { extractCanonicalShowTitle } from './titleCleaner.js';
+
 export interface ExternalActor {
   name: string;
   role?: string;
@@ -66,6 +68,8 @@ const TMDB_GENRE_MAP: Record<number, string> = {
  * Nettoie les titres de fichiers ou de médias (retrait des préfixes numériques, balises d'équipes, résolutions, intégrales, etc.)
  */
 export function cleanShowTitle(rawTitle: string): string {
+  const canonical = extractCanonicalShowTitle(rawTitle);
+  if (canonical && canonical.length >= 2) return canonical;
   return rawTitle
     .replace(/^\s*\[[^\]]+\]\s*/, '') // Enlever [Team]
     .replace(/^\s*\d+[\s\.\-_]+/, '') // Enlever préfixes 01, 02., 1 -
@@ -124,79 +128,48 @@ export async function fetchWikipediaSummary(
 }
 
 /**
- * Récupère les métadonnées complètes d'une Saga / Collection via TMDB avec fallback Wikipedia
+ * Recherche et récupère les métadonnées d'une saga cinématographique (TMDb / Collections)
  */
-async function fetchTmdbCollection(rawTitle: string): Promise<ExternalMediaMetadata | null> {
-  const cleanTitle = rawTitle.trim();
-  const candidates = [
-    cleanTitle,
-    cleanTitle.replace(/\s+(Collection|Saga|Trilogy|Tetralogy|Série|Series)/i, ''),
-    cleanTitle.replace(/^(The\s+Ultimate|The\s+Complete|The)\s+/i, ''),
-    cleanTitle
-      .replace(/^(The\s+Ultimate|The\s+Complete|The)\s+/i, '')
-      .replace(/\s+(Collection|Saga|Trilogy|Tetralogy)/i, ''),
-  ];
-  const uniqueCandidates = [...new Set(candidates.map((c) => c.trim()).filter(Boolean))];
+export async function fetchTmdbCollection(collectionName: string): Promise<ExternalMediaMetadata | null> {
+  const cleanTitle = collectionName
+    .replace(/\s*-\s*saga$/i, '')
+    .replace(/\s*collection$/i, '')
+    .trim();
 
-  let collectionId: number | null = null;
   let collectionOverview: string | undefined;
   let collectionPoster: string | undefined;
   let collectionBackdrop: string | undefined;
-  let collectionName: string | undefined;
+  const genres: string[] = [];
 
-  for (const cand of uniqueCandidates) {
+  // Recherche TMDb Collections API
+  if (TMDB_TOKEN) {
     try {
       const searchUrl = `https://api.themoviedb.org/3/search/collection?query=${encodeURIComponent(
-        cand
+        cleanTitle
       )}&language=fr-FR`;
       const searchRes = await fetch(searchUrl, {
         headers: { Authorization: `Bearer ${TMDB_TOKEN}`, 'User-Agent': UA },
         signal: AbortSignal.timeout(6000),
       });
-      if (!searchRes.ok) continue;
-      const searchData = await searchRes.json();
-      if (searchData.results && searchData.results.length > 0) {
-        const best =
-          searchData.results.find((r: any) => r.overview && r.overview.length > 0) ||
-          searchData.results[0];
-        collectionId = best.id;
-        collectionName = best.name;
-        collectionOverview = best.overview || undefined;
-        collectionPoster = best.poster_path
-          ? `https://image.tmdb.org/t/p/original${best.poster_path}`
-          : undefined;
-        collectionBackdrop = best.backdrop_path
-          ? `https://image.tmdb.org/t/p/original${best.backdrop_path}`
-          : undefined;
-        break;
-      }
-    } catch {
-      // Continuer avec le candidat suivant
-    }
-  }
 
-  const genres: string[] = [];
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const first = searchData.results?.[0];
+        if (first) {
+          const detailUrl = `https://api.themoviedb.org/3/collection/${first.id}?language=fr-FR`;
+          const detailRes = await fetch(detailUrl, {
+            headers: { Authorization: `Bearer ${TMDB_TOKEN}`, 'User-Agent': UA },
+            signal: AbortSignal.timeout(6000),
+          });
 
-  if (collectionId) {
-    try {
-      const detailUrl = `https://api.themoviedb.org/3/collection/${collectionId}?language=fr-FR`;
-      const detailRes = await fetch(detailUrl, {
-        headers: { Authorization: `Bearer ${TMDB_TOKEN}`, 'User-Agent': UA },
-        signal: AbortSignal.timeout(6000),
-      });
-      if (detailRes.ok) {
-        const d = await detailRes.json();
-        if (d.overview && d.overview.length > 0) {
-          collectionOverview = d.overview;
-        }
-        if (d.name) collectionName = d.name;
-        if (d.poster_path) collectionPoster = `https://image.tmdb.org/t/p/original${d.poster_path}`;
-        if (d.backdrop_path)
-          collectionBackdrop = `https://image.tmdb.org/t/p/original${d.backdrop_path}`;
+          if (detailRes.ok) {
+            const d = await detailRes.json();
+            collectionOverview = d.overview || first.overview;
+            if (d.poster_path) collectionPoster = `https://image.tmdb.org/t/p/w780${d.poster_path}`;
+            if (d.backdrop_path) collectionBackdrop = `https://image.tmdb.org/t/p/original${d.backdrop_path}`;
 
-        if (Array.isArray(d.parts)) {
-          for (const part of d.parts) {
-            if (Array.isArray(part.genre_ids)) {
+            // Récupérer les genres de tous les films de la saga
+            for (const part of d.parts || []) {
               for (const gid of part.genre_ids) {
                 const gname = TMDB_GENRE_MAP[gid];
                 if (gname && !genres.includes(gname)) genres.push(gname);
@@ -321,103 +294,95 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
       dept === 'Writing' ||
       jobs.includes('writer') ||
       jobs.includes('creator') ||
-      jobs.includes('author') ||
-      jobs.includes('comic book')
+      jobs.includes('screenplay') ||
+      jobs.includes('story')
     ) {
       if (!writers.includes(name)) writers.push(name);
     }
-    if (jobs.includes('music') || jobs.includes('composer')) {
+    if (
+      dept === 'Sound' ||
+      dept === 'Music' ||
+      jobs.includes('music') ||
+      jobs.includes('composer') ||
+      jobs.includes('original music')
+    ) {
       if (!composers.includes(name)) composers.push(name);
     }
-    if (dept === 'Production' && jobs.includes('producer')) {
+    if (
+      dept === 'Production' ||
+      jobs.includes('producer') ||
+      jobs.includes('executive producer')
+    ) {
       if (!producers.includes(name)) producers.push(name);
     }
   }
 
-  const actors: ExternalActor[] = [];
-  for (const c of castSource.slice(0, 30)) {
-    if (!c.name) continue;
-    const role = (c.roles || []).map((r: any) => r.character).filter(Boolean).join(', ');
-    const thumb = c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined;
-    actors.push({ name: c.name, role: role || undefined, thumb });
-  }
+  // Acteurs avec photos
+  const actors: ExternalActor[] = castSource
+    .filter((a: any) => a.name)
+    .slice(0, 30)
+    .map((a: any) => ({
+      name: a.name,
+      role: (a.roles || [])[0]?.character || undefined,
+      thumb: a.profile_path ? `https://image.tmdb.org/t/p/w185${a.profile_path}` : undefined,
+    }));
 
-  // Certification / Classification CSA
-  let certification: string | undefined;
-  const ratings = d.content_ratings?.results || [];
-  const frRating = ratings.find((r: any) => r.iso_3166_1 === 'FR');
-  const usRating = ratings.find((r: any) => r.iso_3166_1 === 'US');
-  if (frRating?.rating && frRating.rating !== 'NR') {
-    certification = `FR-${frRating.rating}`;
-  } else if (usRating?.rating) {
-    certification = usRating.rating;
-  }
+  // Certification / Âge limite
+  let cert: string | undefined;
+  const ratingEntries = d.content_ratings?.results || [];
+  const frRating = ratingEntries.find((r: any) => r.iso_3166_1 === 'FR');
+  const usRating = ratingEntries.find((r: any) => r.iso_3166_1 === 'US');
+  if (frRating?.rating) cert = frRating.rating;
+  else if (usRating?.rating) cert = usRating.rating;
+
+  // Studios / Chaînes
+  const studios: string[] = (d.networks || []).concat(d.production_companies || []).map((s: any) => s.name);
+  const countries: string[] = (d.origin_country || []).map((c: any) => String(c));
+  const genres: string[] = (d.genres || []).map((g: any) => g.name);
 
   // Mots-clés / Sujets
-  const tags: string[] = (d.keywords?.results || []).map((k: any) => k.name).filter(Boolean);
+  const tags: string[] = (d.keywords?.results || []).map((k: any) => k.name);
 
-  // Studios et diffuseurs/networks
-  const studioSet = new Set<string>();
-  for (const p of d.production_companies || []) {
-    if (p.name) studioSet.add(p.name);
-  }
-  for (const n of d.networks || []) {
-    if (n.name) studioSet.add(n.name);
-  }
-
-  // Synopsis résilient (FR -> Wikipédia FR -> EN -> Wikipédia EN)
-  let finalOverview = d.overview || undefined;
-  if (!finalOverview || finalOverview.trim().length === 0) {
-    const wikiFr = await fetchWikipediaSummary(d.name || String(tmdbIdOrTitle), ['fr']);
-    if (wikiFr?.extract) {
-      finalOverview = wikiFr.extract;
-    } else if (enOverview && enOverview.trim().length > 0) {
-      finalOverview = enOverview;
-    } else {
-      const wikiEn = await fetchWikipediaSummary(d.name || String(tmdbIdOrTitle), ['en']);
-      if (wikiEn?.extract) finalOverview = wikiEn.extract;
-    }
-  }
-
+  // Traductions bilingues
   const translations: Record<string, { title?: string; overview?: string; tagline?: string }> = {
     fr: {
-      title: d.name || undefined,
-      overview: d.overview || finalOverview,
-      tagline: d.tagline || undefined,
+      title: d.name,
+      overview: d.overview || enOverview,
+      tagline: d.tagline,
     },
     en: {
-      title: enData?.name || d.original_name || undefined,
-      overview: enOverview || undefined,
-      tagline: enData?.tagline || undefined,
+      title: d.original_name || d.name,
+      overview: enOverview || d.overview,
+      tagline: enData?.tagline || d.tagline,
     },
   };
 
   return {
     title: d.name,
     originalTitle: d.original_name,
-    overview: finalOverview,
-    translations,
-    tagline: d.tagline || undefined,
-    releaseYear: d.first_air_date ? parseInt(d.first_air_date.slice(0, 4), 10) : undefined,
-    premiered: d.first_air_date || undefined,
+    overview: d.overview || enOverview,
+    tagline: d.tagline,
+    releaseYear: d.first_air_date ? new Date(d.first_air_date).getFullYear() : undefined,
+    premiered: d.first_air_date,
     communityRating: d.vote_average ? Math.round(d.vote_average * 10) / 10 : undefined,
-    certification,
-    posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/original${d.poster_path}` : undefined,
+    certification: cert,
+    posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : undefined,
     fanartUrl: d.backdrop_path ? `https://image.tmdb.org/t/p/original${d.backdrop_path}` : undefined,
-    genres: (d.genres || []).map((g: any) => g.name).filter(Boolean),
+    genres,
     tags,
-    studios: Array.from(studioSet),
-    countries: d.origin_country || [],
-    directors: directors.slice(0, 10),
-    writers: writers.slice(0, 10),
-    composers: composers.slice(0, 5),
-    producers: producers.slice(0, 10),
+    studios,
+    countries,
+    directors,
+    writers,
+    composers,
+    producers,
     actors,
+    translations,
   };
 }
 
 /**
- * Récupère les métadonnées complètes d'un Film via TMDB
+ * Récupère les métadonnées complètes d'un film via TMDB (avec collection/saga, crew, cast, translations)
  */
 async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalMediaMetadata | null> {
   let movieId: number | null = typeof tmdbIdOrTitle === 'number' ? tmdbIdOrTitle : null;
@@ -436,6 +401,7 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
     movieId = searchData.results[0].id;
   }
 
+  // Requête française principale
   const detailUrl = `https://api.themoviedb.org/3/movie/${movieId}?language=fr-FR&append_to_response=credits,release_dates,keywords`;
   const detailRes = await fetch(detailUrl, {
     headers: { Authorization: `Bearer ${TMDB_TOKEN}`, 'User-Agent': UA },
@@ -444,6 +410,7 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
   if (!detailRes.ok) return null;
   const d = await detailRes.json();
 
+  // Requête en-US en parallèle pour le synopsis original et noms romanisés
   let enCrew: any[] = [];
   let enCast: any[] = [];
   let enOverview: string | undefined;
@@ -460,9 +427,7 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
       enCast = enData.credits?.cast || [];
       enOverview = enData.overview || undefined;
     }
-  } catch {
-    // Silencieux si timeout
-  }
+  } catch {}
 
   const crewSource = enCrew.length > 0 ? enCrew : d.credits?.crew || [];
   const castSource = enCast.length > 0 ? enCast : d.credits?.cast || [];
@@ -478,56 +443,64 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
     const name = cr.name;
     if (!name) continue;
 
-    if (job === 'director') {
+    if (dept === 'Directing' || job === 'director') {
       if (!directors.includes(name)) directors.push(name);
     }
-    if (dept === 'Writing' || job.includes('writer') || job.includes('screenplay')) {
+    if (
+      dept === 'Writing' ||
+      job.includes('writer') ||
+      job.includes('screenplay') ||
+      job.includes('story')
+    ) {
       if (!writers.includes(name)) writers.push(name);
     }
-    if (job.includes('music') || job.includes('composer')) {
+    if (
+      dept === 'Sound' ||
+      dept === 'Music' ||
+      job.includes('music') ||
+      job.includes('composer') ||
+      job.includes('original music composer')
+    ) {
       if (!composers.includes(name)) composers.push(name);
     }
-    if (job === 'producer') {
+    if (
+      dept === 'Production' ||
+      job === 'producer' ||
+      job === 'executive producer'
+    ) {
       if (!producers.includes(name)) producers.push(name);
     }
   }
 
-  const actors: ExternalActor[] = [];
-  for (const c of castSource.slice(0, 30)) {
-    if (!c.name) continue;
-    const thumb = c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined;
-    actors.push({ name: c.name, role: c.character || undefined, thumb });
+  // Acteurs avec photos
+  const actors: ExternalActor[] = castSource
+    .filter((a: any) => a.name)
+    .slice(0, 30)
+    .map((a: any) => ({
+      name: a.name,
+      role: a.character || undefined,
+      thumb: a.profile_path ? `https://image.tmdb.org/t/p/w185${a.profile_path}` : undefined,
+    }));
+
+  // Certification / Limite d'âge
+  let cert: string | undefined;
+  const releaseEntries = d.release_dates?.results || [];
+  const frRelease = releaseEntries.find((r: any) => r.iso_3166_1 === 'FR');
+  const usRelease = releaseEntries.find((r: any) => r.iso_3166_1 === 'US');
+  if (frRelease?.release_dates?.[0]?.certification) {
+    cert = frRelease.release_dates[0].certification;
+  } else if (usRelease?.release_dates?.[0]?.certification) {
+    cert = usRelease.release_dates[0].certification;
   }
 
-  // Certification
-  let certification: string | undefined;
-  const releases = d.release_dates?.results || [];
-  const frRel = releases.find((r: any) => r.iso_3166_1 === 'FR');
-  const usRel = releases.find((r: any) => r.iso_3166_1 === 'US');
-  const frCert = frRel?.release_dates?.find((x: any) => x.certification)?.certification;
-  const usCert = usRel?.release_dates?.find((x: any) => x.certification)?.certification;
-  if (frCert) certification = `FR-${frCert}`;
-  else if (usCert) certification = usCert;
-
-  const tags: string[] = (d.keywords?.keywords || []).map((k: any) => k.name).filter(Boolean);
-
-  let finalOverview = d.overview || undefined;
-  if (!finalOverview || finalOverview.trim().length === 0) {
-    const wiki = await fetchWikipediaSummary(d.title || String(tmdbIdOrTitle), ['fr', 'en']);
-    if (wiki?.extract) {
-      finalOverview = wiki.extract;
-    } else if (enOverview && enOverview.trim().length > 0) {
-      finalOverview = enOverview;
-    }
-  }
-
+  // Saga / Collection parente
   let collection: ExternalCollection | undefined;
   if (d.belongs_to_collection) {
     collection = {
       id: d.belongs_to_collection.id,
       name: d.belongs_to_collection.name,
       posterUrl: d.belongs_to_collection.poster_path
-        ? `https://image.tmdb.org/t/p/original${d.belongs_to_collection.poster_path}`
+        ? `https://image.tmdb.org/t/p/w780${d.belongs_to_collection.poster_path}`
         : undefined,
       fanartUrl: d.belongs_to_collection.backdrop_path
         ? `https://image.tmdb.org/t/p/original${d.belongs_to_collection.backdrop_path}`
@@ -535,134 +508,71 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
     };
   }
 
+  const studios: string[] = (d.production_companies || []).map((s: any) => s.name);
+  const countries: string[] = (d.production_countries || []).map((c: any) => c.name);
+  const genres: string[] = (d.genres || []).map((g: any) => g.name);
+  const tags: string[] = (d.keywords?.keywords || []).map((k: any) => k.name);
+
+  // Traductions bilingues
   const translations: Record<string, { title?: string; overview?: string; tagline?: string }> = {
     fr: {
-      title: d.title || undefined,
-      overview: d.overview || finalOverview,
-      tagline: d.tagline || undefined,
+      title: d.title,
+      overview: d.overview || enOverview,
+      tagline: d.tagline,
     },
     en: {
-      title: enData?.title || d.original_title || undefined,
-      overview: enOverview || undefined,
-      tagline: enData?.tagline || undefined,
+      title: d.original_title || d.title,
+      overview: enOverview || d.overview,
+      tagline: enData?.tagline || d.tagline,
     },
   };
 
   return {
     title: d.title,
     originalTitle: d.original_title,
-    collection,
-    overview: finalOverview,
-    translations,
-    tagline: d.tagline || undefined,
-    releaseYear: d.release_date ? parseInt(d.release_date.slice(0, 4), 10) : undefined,
-    premiered: d.release_date || undefined,
+    overview: d.overview || enOverview,
+    tagline: d.tagline,
+    releaseYear: d.release_date ? new Date(d.release_date).getFullYear() : undefined,
+    premiered: d.release_date,
     communityRating: d.vote_average ? Math.round(d.vote_average * 10) / 10 : undefined,
-    certification,
-    posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/original${d.poster_path}` : undefined,
+    certification: cert,
+    posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : undefined,
     fanartUrl: d.backdrop_path ? `https://image.tmdb.org/t/p/original${d.backdrop_path}` : undefined,
-    genres: (d.genres || []).map((g: any) => g.name).filter(Boolean),
+    collection,
+    genres,
     tags,
-    studios: (d.production_companies || []).map((p: any) => p.name).filter(Boolean),
-    countries: (d.production_countries || []).map((c: any) => c.iso_3166_1).filter(Boolean),
-    directors: directors.slice(0, 5),
-    writers: writers.slice(0, 5),
-    composers: composers.slice(0, 3),
-    producers: producers.slice(0, 5),
+    studios,
+    countries,
+    directors,
+    writers,
+    composers,
+    producers,
     actors,
+    translations,
   };
 }
 
+/**
+ * Entrée principale : Moissonnage externe automatique avec arbitrage multilingue
+ */
 export async function fetchExternalMetadata(
   title: string,
   nodeType: string,
-  externalId?: { tmdb?: string | number; imdb?: string }
+  externalIds?: { tmdb?: number; imdb?: string }
 ): Promise<ExternalMediaMetadata | null> {
-  const cleanTitle = title.trim();
-  if (!cleanTitle || cleanTitle === 'Média sans titre') return null;
+  const cleanTitle = cleanShowTitle(title);
+  if (!cleanTitle) return null;
 
-  try {
-    // 1. Spécifique aux Collections / Sagas
-    if (nodeType === 'COLLECTION') {
-      const colMeta = await fetchTmdbCollection(cleanTitle);
-      if (colMeta) return colMeta;
-    }
+  if (nodeType === 'COLLECTION') {
+    return await fetchTmdbCollection(cleanTitle);
+  }
 
-    // 2. Priorité Séries TV / Saisons / Épisodes
-    if (nodeType === 'SHOW' || nodeType === 'SEASON' || nodeType === 'EPISODE') {
-      const showQuery = cleanShowTitle(cleanTitle);
-      const tmdbMeta = await fetchTmdbTvShow(externalId?.tmdb || showQuery);
-      if (tmdbMeta) return tmdbMeta;
+  if (nodeType === 'SHOW' || nodeType === 'EPISODE') {
+    return await fetchTmdbTvShow(externalIds?.tmdb || cleanTitle);
+  }
 
-      // Fallback TVmaze si TMDB inaccessible
-      const res = await fetch(
-        `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(
-          showQuery
-        )}&embed[]=cast&embed[]=crew`,
-        { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(6000) }
-      );
-      if (res.ok) {
-        const d = await res.json();
-        const castList = (d._embedded?.cast || [])
-          .map((c: any) => ({
-            name: c.person?.name,
-            role: c.character?.name,
-            thumb: c.character?.image?.medium || c.person?.image?.medium,
-          }))
-          .filter((a: any) => a.name);
-
-        const crewList = d._embedded?.crew || [];
-        const creators = crewList
-          .filter((cr: any) => cr.type === 'Creator')
-          .map((cr: any) => cr.person?.name)
-          .filter(Boolean);
-
-        return {
-          title: d.name,
-          overview: d.summary ? d.summary.replace(/<[^>]+>/g, '').trim() : undefined,
-          releaseYear: d.premiered ? parseInt(d.premiered.slice(0, 4), 10) : undefined,
-          premiered: d.premiered || undefined,
-          communityRating: d.rating?.average ? parseFloat(d.rating.average) : undefined,
-          posterUrl: d.image?.original || d.image?.medium,
-          genres: (d.genres || []).map(String),
-          tags: [],
-          studios: d.network?.name ? [d.network.name] : [],
-          countries: d.network?.country?.code ? [d.network.country.code] : [],
-          directors: [],
-          writers: creators,
-          composers: [],
-          producers: [],
-          actors: castList,
-        };
-      }
-    } else {
-      // 3. Film / Movie ou Saga en repli
-      const movieQuery = cleanShowTitle(cleanTitle);
-      const tmdbMeta = await fetchTmdbMovie(externalId?.tmdb || movieQuery);
-      if (tmdbMeta) return tmdbMeta;
-
-      // Fallback Wikipedia
-      const wiki = await fetchWikipediaSummary(movieQuery, ['fr', 'en']);
-      if (wiki?.extract) {
-        return {
-          title: wiki.title || movieQuery,
-          overview: wiki.extract,
-          tagline: wiki.description,
-          posterUrl: wiki.thumbnail,
-          genres: [],
-          tags: [],
-          studios: [],
-          countries: [],
-          directors: [],
-          writers: [],
-          composers: [],
-          producers: [],
-          actors: [],
-        };
-      }
-    }
-  } catch (err) {
-    console.warn(`External metadata search failed for "${cleanTitle}":`, err);
+  if (nodeType === 'MOVIE') {
+    return await fetchTmdbMovie(externalIds?.tmdb || cleanTitle);
   }
 
   return null;

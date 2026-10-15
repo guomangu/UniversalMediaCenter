@@ -5,7 +5,7 @@ server:
   port: 3000
   corsOrigins:
     - "*"
-  publicBaseUrl: https://api.cool.sweaw.com
+  publicBaseUrl: https://cool.sweaw.com
 security:
   invitationOnly: false
   invitationCodes:

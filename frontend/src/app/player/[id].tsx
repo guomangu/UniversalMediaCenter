@@ -22,6 +22,7 @@ import {
   MediaSession,
 } from '@/services/sessionApi';
 import { styles } from '@/components/PlayerScreen.styles';
+import { toggleFullscreen, isFullscreenActive } from '@/utils/fullscreen';
 
 export default function PlayerScreen() {
   const { id, title, share } = useLocalSearchParams<{ id: string; title?: string; share?: string }>();
@@ -41,7 +42,25 @@ export default function PlayerScreen() {
   const [activeSubtitle, setActiveSubtitle] = useState('off');
   const [activeAudio, setActiveAudio] = useState('auto');
   const [statusMessage, setStatusMessage] = useState<string>('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const updateFs = () => setIsFullscreen(isFullscreenActive());
+    updateFs();
+    document.addEventListener('fullscreenchange', updateFs);
+    document.addEventListener('webkitfullscreenchange', updateFs);
+    document.addEventListener('mozfullscreenchange', updateFs);
+    document.addEventListener('MSFullscreenChange', updateFs);
+    return () => {
+      document.removeEventListener('fullscreenchange', updateFs);
+      document.removeEventListener('webkitfullscreenchange', updateFs);
+      document.removeEventListener('mozfullscreenchange', updateFs);
+      document.removeEventListener('MSFullscreenChange', updateFs);
+    };
+  }, []);
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
+  const [isLive, setIsLive] = useState(false);
   const [nextNode, setNextNode] = useState<any>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const countdownTimer = useRef<any>(null);
@@ -63,6 +82,8 @@ export default function PlayerScreen() {
         if (res?.media) {
           const badge = res.media.displayBadge || res.media.seasonEpisodeTag;
           setResolvedTitle(badge ? `${res.media.title} (${badge})` : res.media.title);
+          const isChannel = res.media.nodeType === 'LIVE_CHANNEL' || Boolean(res.media.streamUrl);
+          setIsLive(isChannel);
 
           const chapters = res.media.chaptersJson || [];
           const foundIntro = chapters.find((ch: any) => ch.type === 'INTRO');
@@ -184,12 +205,14 @@ export default function PlayerScreen() {
   };
 
   const handleNearEnd = (remainingSec: number) => {
+    if (isLive) return; // Pas d'enchaînement de fin sur un flux live
     if (nextNode && !isCancelledRef.current && countdown === null) {
       setCountdown(Math.min(remainingSec, 8));
     }
   };
 
   const handleVideoEnded = () => {
+    if (isLive) return;
     if (nextNode && !isCancelledRef.current) {
       handlePlayNext();
     }
@@ -204,15 +227,6 @@ export default function PlayerScreen() {
   const isModalOpen = showQuality || showAudio || showSubtitles || showShare || showCast;
   usePlayerControls({ videoRef, isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast });
 
-  const handleSeekDelta = (deltaSeconds: number) => {
-    if (!videoRef.current) return;
-    const current = (videoRef.current.currentTime || savedPosRef.current || 0) + deltaSeconds;
-    const clamped = Math.max(0, current);
-    videoRef.current.currentTime = clamped;
-    savedPosRef.current = clamped;
-    showToast(`${deltaSeconds > 0 ? '+' : ''}${deltaSeconds}s`);
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <VideoPlayerView
@@ -220,6 +234,7 @@ export default function PlayerScreen() {
         streamUrl={streamUrl}
         initialTime={initialTime}
         isPlaying={isPlaying}
+        isLive={isLive}
         videoRef={videoRef}
         showSkipIntro={showSkipIntro}
         intro={introChapter}
@@ -227,11 +242,12 @@ export default function PlayerScreen() {
         activeQuality={activeQuality}
         activeAudio={activeAudio}
         statusMessage={statusMessage}
+        isFullscreen={isFullscreen}
         onSkipIntro={() => {
           const target = introChapter ? introChapter.end : (videoRef.current?.currentTime || 0) + 85;
           if (videoRef.current) videoRef.current.currentTime = target;
           setShowSkipIntro(false);
-          showToast('Générique passé');
+          showToast('Générique passé ⏩');
         }}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
@@ -242,8 +258,14 @@ export default function PlayerScreen() {
         onEnded={handleVideoEnded}
       />
 
-      <View style={styles.topBar}>
-        <Pressable focusable={true} onPress={() => { if (router.canGoBack()) router.back(); else router.push('/'); }} style={styles.topBtn}>
+      {!isFullscreen && (
+        <View style={styles.topBar} data-player-topbar="true">
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          onPress={() => { if (router.canGoBack()) router.back(); else router.push('/'); }}
+          style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+        >
           <Text style={styles.topBtnText}>← Retour</Text>
         </Pressable>
 
@@ -251,12 +273,17 @@ export default function PlayerScreen() {
         {viewersCount >= 2 || activeSession ? (
           <Pressable
             focusable={true}
+            accessibilityRole="button"
             onPress={() => {
               const nextMute = !isMuted;
               setIsMuted(nextMute);
               showToast(nextMute ? 'Mode Silence activé' : 'Discussion en direct activée 🎙️');
             }}
-            style={[styles.voiceBtn, isMuted ? styles.voiceBtnMuted : styles.voiceBtnActive]}
+            style={({ focused }: any) => [
+              styles.voiceBtn,
+              isMuted ? styles.voiceBtnMuted : styles.voiceBtnActive,
+              focused && styles.topBtnFocused,
+            ]}
           >
             <Text style={styles.voiceBtnTxt}>
               {isMuted ? '🔇 Mode Silence' : '🎙️ Entendre la discussion'} ({viewersCount} spectateur{viewersCount > 1 ? 's' : ''})
@@ -267,23 +294,66 @@ export default function PlayerScreen() {
         <Text numberOfLines={1} style={styles.headerTitle}>{mediaTitle}</Text>
 
         <View style={styles.rightActions}>
-          <Pressable focusable={true} onPress={() => setShowShare(true)} style={styles.topBtn}>
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            onPress={() => setShowShare(true)}
+            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+          >
             <Text style={styles.topBtnText}>🔗 Partager</Text>
           </Pressable>
-          <Pressable focusable={true} onPress={() => setShowCast(true)} style={[styles.topBtn, activeCastTarget && styles.castActiveBtn]}>
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            onPress={() => setShowCast(true)}
+            style={({ focused }: any) => [
+              styles.topBtn,
+              activeCastTarget && styles.castActiveBtn,
+              focused && styles.topBtnFocused,
+            ]}
+          >
             <Text style={styles.topBtnText}>{activeCastTarget ? `📡 ${activeCastTarget.name}` : '📡 Cast'}</Text>
           </Pressable>
-          <Pressable focusable={true} onPress={() => setShowAudio(true)} style={styles.topBtn}>
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            onPress={() => setShowAudio(true)}
+            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+          >
             <Text style={styles.topBtnText}>🔊 Audio</Text>
           </Pressable>
-          <Pressable focusable={true} onPress={() => setShowSubtitles(true)} style={styles.topBtn}>
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            onPress={() => setShowSubtitles(true)}
+            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+          >
             <Text style={styles.topBtnText}>💬 ST</Text>
           </Pressable>
-          <Pressable focusable={true} onPress={() => setShowQuality(true)} style={styles.topBtn}>
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            onPress={() => setShowQuality(true)}
+            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+          >
             <Text style={styles.topBtnText}>⚙️ Qualité</Text>
+          </Pressable>
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            accessibilityLabel="Plein écran"
+            onPress={() => {
+              const el = typeof document !== 'undefined' ? (document.querySelector('[data-player-container="true"]') as HTMLElement) || document.documentElement : null;
+              const entered = toggleFullscreen(el);
+              showToast(entered ? '⛶ Plein écran' : 'Mode fenêtre');
+            }}
+            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+          >
+            <Text style={styles.topBtnText}>⛶ Plein Écran</Text>
           </Pressable>
         </View>
       </View>
+      )}
 
       {/* Netflix Binge-Watching Next Episode Overlay */}
       {countdown !== null && nextNode && (
@@ -300,10 +370,20 @@ export default function PlayerScreen() {
           </View>
           <Text style={styles.nextTitle} numberOfLines={2}>{nextNode.title}</Text>
           <View style={styles.nextActions}>
-            <Pressable focusable={true} onPress={handlePlayNext} style={styles.nextPlayBtn}>
+            <Pressable
+              focusable={true}
+              accessibilityRole="button"
+              onPress={handlePlayNext}
+              style={({ focused }: any) => [styles.nextPlayBtn, focused && { borderWidth: 2, borderColor: '#ffffff' }]}
+            >
               <Text style={styles.nextPlayBtnText}>▶ Regarder maintenant</Text>
             </Pressable>
-            <Pressable focusable={true} onPress={handleCancelNext} style={styles.nextCancelBtn}>
+            <Pressable
+              focusable={true}
+              accessibilityRole="button"
+              onPress={handleCancelNext}
+              style={({ focused }: any) => [styles.nextCancelBtn, focused && { borderWidth: 2, borderColor: '#ffffff' }]}
+            >
               <Text style={styles.nextCancelBtnText}>✕ Annuler</Text>
             </Pressable>
           </View>

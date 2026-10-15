@@ -9,3 +9,4 @@ export * from './forum.js';
 export * from './social.js';
 export * from './sessions.js';
 export * from './ratings.js';
+export * from './invitations.js';

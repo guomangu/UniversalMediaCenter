@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { sendCastCommand } from '@/services/castService';
+import { toggleFullscreen } from '@/utils/fullscreen';
 
 interface UsePlayerControlsProps {
   videoRef: React.RefObject<any>;
@@ -13,11 +14,18 @@ interface UsePlayerControlsProps {
 
 /**
  * Contrôleur média pour écran /player :
- * - Progression vidéo (ArrowLeft / ArrowRight) active uniquement quand la vidéo est sélectionnée
- * - Pas de blocage ArrowUp / ArrowDown (réservé à la navigation spatiale TV de bouton en bouton)
+ * - Gestion plein écran via touche 'F', bouton télécommande ou bouton plein écran (avec debounce)
+ * - Progression vidéo (ArrowLeft / ArrowRight) active lorsque l'utilisateur est en mode lecture
+ * - Raccourci 'S' pour sauter le générique d'introduction
+ * - La navigation directionnelle TV dans la barre supérieure n'interfère pas avec le seek
  */
 export function usePlayerControls({
-  videoRef, isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast,
+  videoRef,
+  isPlaying,
+  setIsPlaying,
+  isModalOpen,
+  activeCastTarget,
+  showToast,
 }: UsePlayerControlsProps) {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -27,29 +35,66 @@ export function usePlayerControls({
       if (!v) return;
 
       const active = document.activeElement as HTMLElement | null;
-      // La vidéo est sélectionnée si elle ou son conteneur possède le focus actif
-      const isVideoSelected = !!(
+      const isInput = !!(active && ['INPUT', 'TEXTAREA'].includes(active.tagName));
+      if (isInput) return;
+
+      const isTopBar = !!(
         active &&
-        (active === v || v.contains(active) || active.getAttribute('data-video-player') === 'true')
+        (active.getAttribute('data-player-topbar') === 'true' || !!active.closest('[data-player-topbar="true"]'))
+      );
+      const isSkipIntro = !!(
+        active &&
+        (active.getAttribute('data-skip-intro') === 'true' || !!active.closest('[data-skip-intro="true"]'))
       );
 
+      // 1. Touche de raccourci 'S' pour sauter l'intro
+      if (e.key === 's' || e.key === 'S') {
+        const skipBtn = document.querySelector<HTMLElement>('[data-skip-intro="true"]');
+        if (skipBtn) {
+          e.preventDefault();
+          skipBtn.click();
+          showToast('Générique passé ⏩');
+          return;
+        }
+      }
+
+      // 2. Gestion de la touche Plein Écran universelle télécommande & clavier
+      const isFullscreenKey =
+        e.key === 'f' ||
+        e.key === 'F' ||
+        e.key === 'FullScreen' ||
+        e.key === 'F11' ||
+        [10071, 10072, 184, 261].includes(e.keyCode);
+
+      if (isFullscreenKey) {
+        e.preventDefault();
+        const target =
+          (document.querySelector('[data-player-container="true"]') as HTMLElement) ||
+          document.documentElement;
+        const entered = toggleFullscreen(target);
+        showToast(entered ? '⛶ Plein écran activé' : 'Mode fenêtre');
+        return;
+      }
+
+      // 3. Navigation Seek (ArrowLeft / ArrowRight) :
+      // Actif uniquement si le focus n'est PAS dans les boutons de la barre supérieure ou passer l'intro
       if (e.key === 'ArrowLeft') {
-        if (!isVideoSelected) return; // Laisse la navigation TV aller de bouton en bouton
+        if (isTopBar || isSkipIntro) return; // Laisse la navigation TV aller d'un bouton à l'autre
         e.preventDefault();
         const next = Math.max(0, v.currentTime - 10);
         v.currentTime = next;
         showToast(`⏪ -10s (${Math.floor(next)}s)`);
         if (activeCastTarget) sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: next });
       } else if (e.key === 'ArrowRight') {
-        if (!isVideoSelected) return; // Laisse la navigation TV aller de bouton en bouton
+        if (isTopBar || isSkipIntro) return; // Laisse la navigation TV aller d'un bouton à l'autre
         e.preventDefault();
         const next = Math.min(v.duration || 7200, v.currentTime + 10);
         v.currentTime = next;
         showToast(`⏩ +10s (${Math.floor(next)}s)`);
         if (activeCastTarget) sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: next });
       } else if (e.key === ' ' || e.key === 'MediaPlayPause') {
-        if (['INPUT', 'TEXTAREA'].includes(active?.tagName || '')) return;
-        if (active && ['BUTTON', 'A'].includes(active.tagName) && !isVideoSelected) return;
+        if (isTopBar || isSkipIntro) return; // Laisser la touche espace activer le bouton sélectionné
+        if (active && ['BUTTON', 'A'].includes(active.tagName)) return;
         e.preventDefault();
         const next = !isPlaying;
         next ? v.play() : v.pause();

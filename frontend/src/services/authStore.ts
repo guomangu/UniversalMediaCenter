@@ -29,13 +29,27 @@ let memoryUser: UserProfile | null = null;
 let memoryToken: string | null = null;
 const listeners = new Set<(u: UserProfile | null) => void>();
 
-if (typeof window !== 'undefined' && window.localStorage) {
+if (typeof window !== 'undefined') {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      memoryUser = parsed.user || null;
-      memoryToken = parsed.token || null;
+    if (window.localStorage) {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        memoryUser = parsed.user || null;
+        memoryToken = parsed.token || null;
+      }
+    }
+
+    // Récupération prioritaire d'un jeton d'invitation directe ou de redirection (?token=... ou ?auth_token=...)
+    if (window.location && window.location.search) {
+      const sp = new URLSearchParams(window.location.search);
+      const queryToken = sp.get('token') || sp.get('auth_token');
+      if (queryToken && queryToken.trim().length > 0) {
+        memoryToken = queryToken.trim();
+        // Nettoyage esthétique de la barre d'adresse sans recharger la page
+        const cleanUrl = window.location.pathname + (window.location.hash || '');
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
     }
   } catch {}
 }
@@ -53,6 +67,12 @@ function notify() {
 
 export function getCurrentUser(): UserProfile | null { return memoryUser; }
 export function getAuthToken(): string | null { return memoryToken; }
+
+export function setAuthSession(user: UserProfile, token: string): void {
+  memoryUser = user;
+  memoryToken = token;
+  notify();
+}
 
 export function updateCurrentUser(partial: Partial<UserProfile>): void {
   if (memoryUser) {

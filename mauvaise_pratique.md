@@ -1,217 +1,95 @@
----
-
-## 🛑 39. Confusion Hiérarchique des Séries/Saisons, Faux Extras Contaminants et Vol de Vidéos par les NFO de Saisons
-
-* **Problème / Symptôme :** Suite à un scan universel, des séries se retrouvaient mélangées : Soul Eater (51 épisodes) ne contenait plus qu'un seul épisode tandis que Bleach en affichait 440 (ayant englouti les épisodes de Soul Eater, Angel Beats et Lain) ; les saisons disparaissaient (les épisodes d'Utopia devenant des bonus inaccessibles dans la liste principale) ; et des noeuds fantômes "Saison 1" de type `SEASON` volaient le fichier vidéo du premier épisode.
-* **Conséquences :** Expérience utilisateur chaotique, épisodes introuvables sur la fiche de leur série respective, doublons de médias sans fin et perte de la navigation naturelle par saison.
-* **Causes Racines & Anti-Patterns Identifiés :**
-  - **Recherche de Parent par LIKE Préfixe sans Slash de Délimitation :** Utiliser `like(nfoFilePath, ${parentShowDir}%)` où `parentShowDir` correspondait au dossier racine des bibliothèques (`/Animes` ou `/Series`). En SQL, tout show situé sous ce dossier matchait le premier résultat venu, absorbant ainsi les épisodes de toutes les séries voisines.
-  - **Vol de Vidéo Adjacent par les NFO Non-Jouables (`tvshow.nfo` et `season.nfo`) :** Dans `detectAdjacentFiles()`, attribuer la première vidéo trouvée dans le répertoire à un fichier `.nfo` sans vérifier son type. Un `season.nfo` ou `tvshow.nfo` se retrouvait lié à la vidéo de l'épisode 1, créant un noeud `SEASON` concurrent de l'épisode réel.
-  - **Contamination des Extras par Test de Chemin Global :** Tester `regex.test(fullPath)` avec des mots-clés comme `extras|bonus|featurettes` sur le chemin absolu au lieu du sous-dossier direct. Si le dossier de la série contenait `+ Extras` dans son titre de release (ex: `Utopia (2013) Season 1-2 S01-S02 + Extras`), **100% des épisodes de la série étaient marqués comme des bonus (`isExtra = true`)**, les faisant disparaître de la grille principale d'épisodes.
-  - **Collisions d'Index d'Ordre Entre Saisons :** Utiliser un `orderIndex = episodeNumber` brut sans offset de saison, conduisant à des collisions directes (`S01E01` et `S02E01` ayant tous deux `orderIndex = 1`).
-* **Bonnes Pratiques de Remédiation :**
-  - **Résolution Déterministe de la Racine de Série (`hierarchyResolver.ts`) :** Remonter l'arborescence depuis le fichier jusqu'à trouver un `tvshow.nfo` physique ou la racine de catégorie (`Animes/`, `Series/`). Le dossier trouvé est le conteneur unique et inviolable de la série.
-  - **Adoption avec Slash Terminal Strict :** Tout rattachement ou requête de descendance doit formellement inclure le séparateur de dossier : `like(path, ${showDir}/%)`. Impossible pour une série d'adopter un fichier extérieur.
-  - **Exclusion Formelle des Vidéos pour `tvshow.nfo` et `season.nfo` :** `mediaFileDetector.ts` ne doit attribuer un `videoFilePath` qu'aux NFOs d'épisodes ou de films avec correspondance stricte de nom de base (`base === nfoBase`).
-  - **Détection des Extras sur les Sous-Dossiers Relatifs Délimités (`folderGrouper.ts`) :** Tester uniquement les dossiers immédiats (`/(?:^|\/)(?:featurettes|extras|bonus|deleted scenes)(?:$|\/)/i.test(relPath)`), jamais le chemin absolu.
-  - **Index d'Ordre Unifié Multi-Saisons :** Pour les saisons supérieures à 1, appliquer rigoureusement `orderIndex = season * 1000 + episode` afin de garantir un tri unifié sans aucune collision.
-  - **Moteur de Réconciliation Automatique (`hierarchyRepair.ts`) :** Déclenché automatiquement en 3ème passe de scan et disponible via l'endpoint admin `POST /api/admin/scan/rebuild-hierarchy` et l'interface pour remettre instantanément d'équerre l'arborescence complète sans altérer les fichiers sur disque.
+  - **Restauration Transparente d'Erreurs :** Écouter `Hls.Events.ERROR` et appeler systématiquement `hls.startLoad()` sur `NETWORK_ERROR` et `hls.recoverMediaError()` sur `MEDIA_ERROR`.
+  - **Sanctuaire Live vs VOD :** Désactiver formellement les déclencheurs de fin de lecture (`onNearEnd`, compte à rebours de suite) lorsque le média est identifié comme flux direct (`isLive = true`), et relancer immédiatement la lecture en cas d'événement `ended` intempestif.
 
 ---
 
-## 🛑 40. Entrelacement Inter-Saisons (S01E01, S02E01, S01E02...), Badges Bruts "2001" et Omission des Nomenclatures d'Anime (R1, R2, Cour, Part)
+## 🛑 58. Sauts Angulaires Orthogonaux en Navigation Spatiale D-Pad et Surcharge d'Autocomplétion Synchrone
 
-* **Problème / Symptôme :** Sur les séries multi-saisons comme Code Geass (Saison 1 "R1" et Saison 2 "R2"), les épisodes s'affichaient entrelacés de façon alternée (`S01E01`, `S02E01`, `S01E02`, `S02E02`...), tandis que les badges de la saison 2 affichaient un libellé brut `"2001, 2002"` au lieu de `"S02 • EP 01, S02 • EP 02"`.
-* **Conséquences :** Confusion majeure pour le visionnage continu, rupture de la chronologie narrative et perte de lisibilité sur les cartes d'épisodes.
+* **Problème / Symptôme :** Sur télécommande ou manette, appuyer sur la touche directionnelle Droite depuis un bouton ou une carte sautait de manière illogique vers la barre de recherche située tout en haut de la page. Par ailleurs, sur la page d'accueil, la frappe de chaque caractère dans la barre de recherche lançait des dizaines de requêtes d'autocomplétion lourdes et superflues.
+* **Conséquences :** Navigation spatiale imprévisible et frustrante ; latence et consommation CPU/réseau excessive lors de la saisie.
 * **Causes Racines :**
-  - **Court-circuit de la Détection de Saison par `absoluteOrderIndex` :** Dans `mediaHierarchy.ts`, le test `if (c.absoluteOrderIndex > 0) episode = c.absoluteOrderIndex;` était évalué avant l'analyse regex de la saison. Comme `c.absoluteOrderIndex` valait 1 pour `S01E01` et 1 pour `S02E01`, le bloc regex extrayant `S01` et `S02` n'était jamais atteint. Les deux saisons restaient affectées au groupe par défaut `'Épisodes'` et le tri par numéro d'épisode `episode - episode` alternait les deux saisons !
-  - **Omission des Nomenclatures Alternées dans les Sous-Dossiers :** Des dossiers titrés `Code Geass R1 (2006)` ou `Code Geass R2 (2008)` n'étaient pas reconnus par les regex cherchant uniquement `Season` ou `Saison`.
-  - **Fallback Brut sur `orderIndex >= 1000` :** Dans `seasonEpisodeHelper.ts` et `media.ts`, un `orderIndex` de 2001 (encodage conventionnel `season * 1000 + episode`) était converti aveuglément en `EP 2001` ou `2001` au lieu d'être décodé arithmétiquement en `Saison 2, Épisode 1` (`Math.floor(val / 1000)` et `val % 1000`).
+  - **Calcul de Distance Spatial Non-Conique :** L'algorithme comparait `dx > 5` sans vérifier si la distance verticale `dy` écrasait `dx`. Un élément situé 300px plus haut mais ayant un centre décalé de 10px à droite était considéré comme valide pour la touche 'Droite'.
+  - **Re-rendu Synchrone à Chaque Touche (`onChangeText` direct) :** `TagSearchBar` appelait immédiatement la fonction de recherche globale du parent, ré-exécutant le filtrage sur des centaines de tags.
 * **Bonnes Pratiques de Remédiation :**
-  - **Priorité Absolue au Découpage SxxExx & Dossiers Dédiés :** Extraire prioritairement la saison et l'épisode via `/S(\d+)[\s._-]*E(\d+)/i` sur le titre ou le chemin physique, puis tester les nomenclatures `R1`/`R2`, `Part 1`/`Part 2`, `Cour 1`/`Cour 2`, `Picture Drama` et arcs narratifs.
-  - **Décodage Arithmétique Universel des Index $\ge 1000$ :** Tout `orderIndex >= 1000` doit être systématiquement décodé en `season = Math.floor(orderIndex / 1000)` et `episode = orderIndex % 1000` pour produire automatiquement `displayBadge: S02 • EP 01` et `seasonEpisodeTag: S02E01`.
-  - **Tri Hiérarchique à 4 Clés :** Au sein de chaque section, trier impérativement selon `season ASC` $\rightarrow$ `episode ASC` $\rightarrow$ `orderIndex ASC` $\rightarrow$ `fsSortKey ASC`. Même dans une vue agrégée "Tous", l'intégralité de la Saison 1 précède impérativement la Saison 2, interdisant mathématiquement tout entrelacement.
+  - **Alignement Géométrique par Ligne et Colonne (`useTvNavigation.ts`) :** Détecter le chevauchement vertical (`hasVOverlap`). En l'absence de chevauchement sur la même rangée, rejeter tout candidat dont l'écart vertical dépasse `dx * 1.2` lors d'un mouvement horizontal.
+  - **Recherche Explicite Différée (`TagSearchBar.tsx`) :** Isoler la saisie dans un état local `localText` et ne déclencher la recherche parent qu'à la validation explicite (touche Entrée ou clic sur '🔍 Rechercher'), tout en vidant immédiatement au clic sur '✕'.
 
 ---
----
 
-## 🛑 41. Requêtes Client avec Chemins Relatifs en Environnement Multi-Ports (404 Not Found & 401 Unauthorized)
+## 🛑 59. Double Déclenchement sur Touche Entrée / Capture Phase Provoquant l'Annulation Instantanée d'une Action à Deux États (Plein Écran)
 
-* **Problème / Symptôme :** Clic sur "Enrichir les métadonnées" dans la console d'administration générant l'erreur console : `api/admin/library/refresh:1 Failed to load resource: the server responded with a status of 404 (Not Found)`.
-* **Conséquences :** Échec silencieux de l'enrichissement TVmaze / Wikipedia, sentiment de régression et confusion côté administrateur.
+* **Problème / Symptôme :** Lors de l'appui sur la touche « Entrée » sur un bouton à bascule (comme « Plein Écran »), l'action basculait puis s'annulait instantanément (le plein écran s'activait et se désactivait en moins de 2 millisecondes), alors qu'un clic à la souris fonctionnait parfaitement.
+* **Conséquences :** Impossibilité d'utiliser le mode plein écran au clavier ou à la télécommande depuis son bouton dédié.
 * **Causes Racines :**
-  - **Appel fetch Brut avec Chemin Relatif :** Exécuter `fetch('/api/admin/library/refresh', { ... })` directement dans un composant React Native / Expo Web. Lorsque l'application est consultée sur le port de dev Expo (8081), la requête frappe le serveur Expo Web bundler au lieu du serveur API backend (port 3000), renvoyant immédiatement un code HTTP 404.
-  - **Omission des En-têtes d'Authentification :** L'appel brut omettait `getAuthHeaders()`, privant la requête du token JWT administrateur et risquant de provoquer un refus 401 Unauthorized même en cas de reverse-proxy.
+  - **Collision Capture Phase vs Gestionnaire Natif :** Le gestionnaire global de navigation spatiale écoutait les événements clavier en phase de capture (`{ capture: true }`) et exécutait `active.click()` sur la touche Entrée.
+  - **Activation Double pour les Éléments Déjà Cliquables :** Les boutons HTML natifs (`<button>`) ainsi que les composants React Native Web (`Pressable` avec `role="button"`) interceptent déjà nativement la touche Entrée pour émettre un `click` ou appeler `onPress`. L'appel préalable à `active.click()` provoquait donc deux activations consécutives dans la même boucle d'événement.
 * **Bonnes Pratiques de Remédiation :**
-  - **Centralisation Systématique dans les Services d'API :** Proscrire les `fetch` bruts disséminés dans les composants UI. Centraliser tous les appels d'administration dans `adminApi.ts` ou `api.ts`.
-  - **Préfixage Automatique de l'URL de Base et En-têtes Sécurisés :** Utiliser systématiquement `${getApiBaseUrl()}` combiné avec `getAuthHeaders()` (ex: fonction unifiée `triggerLibraryRefresh()`), assurant le ciblage absolu du port backend et l'injection inviolable du token de session.
+  - **Filtrage des Éléments Déjà Cliquables (`useTvNavigation.ts`) :** Ne jamais appeler artificiellement `active.click()` lors d'un événement `Enter` si l'élément actif est déjà un bouton ou un lien (`BUTTON`, `A`, `[role="button"]`, `[role="link"]`). Laisser le navigateur ou React Native Web propager naturellement l'événement.
+  - **Anti-Rebond Universel de Sécurité (`fullscreen.ts`) :** Ajouter un verrou temporel (debounce) de 450 ms dans `toggleFullscreen` interdisant toute inversion d'état immédiate consécutive à des événements rapprochés.
 
 ---
 
-## 🛑 42. Utilisation Fragile d'IntersectionObserver Bloquant les Boucles de Polling en Conteneurs Scrollables
+## 🛑 60. Piège de Focus dans le Scrubber de la Balise Vidéo Native et Masquage du Bouton « Passer l'intro » sans Souris
 
-* **Problème / Symptôme :** La discussion de forum synchronisée / asynchrone cessait de recevoir les nouveaux messages et ne rafraîchissait plus les séances en cours.
-* **Conséquences :** Rupture de la communication temps réel entre utilisateurs, sentiment d'application buggée ou figée.
+* **Problème / Symptôme :** Lors de la navigation directionnelle au clavier sur la page `/player`, le focus restait piégé dans la barre de progression (timeline) du lecteur vidéo, interdisant l'accès aux boutons de la barre supérieure. De plus, le bouton « Passer l'intro » disparaissait au bout de 3 secondes dès lors qu'aucune souris physique ne bougeait.
+* **Conséquences :** Lecteur vidéo inutilisable à la télécommande TV ou au clavier sans souris.
 * **Causes Racines :**
-  - **Conditionnement du Polling à un IntersectionObserver sur Composant Imbriqué :** Dans `MediaForumSection.tsx`, le déclenchement de `setInterval` était conditionné à `isVisible`. Sur le Web avec React Native Web, lorsque le composant est imbriqué dans un `<ScrollView>` ou lors du chargement initial de la vue, l'élément peut renvoyer un état `isIntersecting = false` non restauré, détruisant le timer et coupant définitivement toute synchronisation.
-  - **Dépendances Inconsistantes de Callbacks :** `loadData` dépendait de l'état `activeSession`, entraînant des réinstanciations répétées et des réinitialisations anarchiques de l'observateur.
+  - **Focus Forcé sur la Balise Vidéo avec Contrôles (`tabIndex={0}` + `.focus()`) :** Donner le focus à une balise `<video controls>` force les navigateurs à transférer le clavier aux contrôles Shadow DOM internes (notamment le slider de progression), interceptant les flèches directionnelles.
+  - **Filtrage Géométrique par Boîte Englobante sur Conteneur Superposé :** La vidéo occupant tout l'espace d'arrière-plan (`top: 8px`), les boutons d'overlay situés en haut (`top: 12px`) étaient exclus par le filtre directionnel `tR.top < cR.top - 2`.
+  - **Dépendance à la Souris (`mouseActive`) pour les Actions d'Accessibilité :** Conditionner l'affichage du bouton de générique à `mouseActive` condamnait le bouton à s'évaporer sur Smart TV ou lors d'une utilisation au clavier sans souris.
 * **Bonnes Pratiques de Remédiation :**
-  - **Cycle de Vie Déterministe pour la Synchronisation :** Pour les fonctionnalités de discussion et de live-room où l'utilisateur s'attend à une réactivité immédiate, maintenir une boucle de rafraîchissement périodique (2.5s) basée purement sur le montage/démontage du composant (`useEffect` avec `clearInterval` au unmount).
-  - **Mise à Jour Optimiste Côté Client :** Dès la soumission d'un message par l'utilisateur, insérer immédiatement une copie optimiste dans le state local avant même la réponse réseau, éliminant tout sentiment de latence.
+  - **Neutralisation du Scrubber Navigateur :** Définir `tabIndex={-1}` sur `<video>` et ne pas forcer le focus logiciel sur l'élément vidéo brut.
+  - **Passerelles Directionnelles Spécifiques Lecteur :** Lorsque l'élément actif est dans le lecteur vidéo, la touche Haut transfère directement le focus sur la barre supérieure (`[data-player-topbar="true"]`), et la touche Bas cible le bouton « Passer l'intro » (`[data-skip-intro="true"]`).
+  - **Visibilité Continue des Actions Temporelles :** Conserver le bouton « Passer l'intro » affiché pendant toute la durée du segment d'intro indépendamment de tout mouvement de souris, lui octroyer un indicateur de focus clair (`scale: 1.08`, contour blanc), et prévoir un raccourci clavier direct (`S`).
 
 ---
 
-## 🛑 43. Rupture de Contexte par Ouverture d'Onglets Externes pour les Vocaux (`Linking.openURL`)
+## 🛑 61. Maintien d'Overlays et Boutons Superposés en Plein Écran Polluant la Toile Vidéo
 
-* **Problème / Symptôme :** Cliquer sur un message vocal dans le forum ouvrait un nouvel onglet de navigateur blanc affichant le lecteur média natif du navigateur, déconnectant l'utilisateur de sa conversation.
-* **Conséquences :** Expérience utilisateur dégradée, arrêt forcé de la lecture des autres messages et perte du contexte du forum.
-* **Causes Racines :** Utilisation simpliste de `Linking.openURL(fullUrl)` pour les médias de type `'AUDIO'`.
-* **Bonnes Pratiques de Remédiation :**
-  - **Lecteur Audio Intégré In-Place ([`InlineAudioPlayer.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/InlineAudioPlayer.tsx)) :** Encapsulation d'une instance HTML5 Audio / Web Audio au sein même de la bulle de discussion, dotée d'un bouton Play/Pause (`▶` / `⏸`), d'un compteur de temps dynamique et d'une jauge de progression.
-  - **Gestion Globale de l'Exclusivité Audio :** Maintien d'une référence statique globale garantissant que le lancement d'un nouveau vocal met automatiquement en pause le vocal précédent, évitant toute cacophonie.
-
----
-
-## 🛑 44. Omission du Heartbeat de Visionnage Solo et Affichage Intempestif de Compteurs à Zéro
-
-* **Problème / Symptôme :** Les utilisateurs regardant un média de façon autonome n'étaient pas comptabilisés comme étant "en séance", et les cartes affichaient des badges vides ou trompeurs.
-* **Conséquences :** Impression d'une plateforme déserte alors que des membres visionnent des épisodes, et pollution visuelle causée par l'affichage de libellés "0 en séance".
+* **Problème / Symptôme :** Lors du passage en plein écran sur le lecteur vidéo `/player`, l'ensemble des boutons de la barre supérieure (Retour, Voix, Partager, Cast, Audio, ST, Qualité, Plein Écran) restaient superposés en permanence au-dessus du film.
+* **Conséquences :** Dégradation sévère du confort de visionnage et sensation d'une interface non immersive polluant l'écran.
 * **Causes Racines :**
-  - **Absence de Heartbeat sur la Lecture Solo :** Le lecteur vidéo ne signalait la présence de l'utilisateur que si une session formelle multi-spectateurs existait au préalable en base de données.
-  - **Omission de la Propagation Hiérarchique :** Si un utilisateur regardait l'épisode 3 d'une série, seul l'ID de l'épisode était noté, laissant la carte principale de la série avec un compteur nul sur l'accueil.
-  - **Absence de Seuil Minimal d'Affichage :** Rendu du composant badge sans vérifier que `activeSession.count >= 1`.
+  - **Absence d'Écouteur d'État Plein Écran :** Les composants React d'overlay étaient conditionnés à des états statiques sans observer les événements natifs `fullscreenchange` de l'API Fullscreen du DOM.
+  - **Sortie Non Reliée aux Touches Universelles :** L'absence d'interception de la touche Échap et de la touche Retour de télécommande (`isEscape || isBackNav`) empêchait de quitter le plein écran sans cibler un bouton physique à l'écran.
 * **Bonnes Pratiques de Remédiation :**
-  - **Heartbeat de Progression Universel ([`media.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts) & [`presenceStore.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/presenceStore.ts)) :** Émission régulière de `POST /api/media/:id/progress` dès qu'un média est en cours de lecture, maintenant un registre en mémoire des spectateurs actifs avec expiration glissante (25s) et nettoyage au démontage (`leavePlayback`).
-  - **Agrégation Montante Automatique :** Tout visionnage d'un épisode crédite également la série parente (`parentId`), assurant que la vignette de la série reflète l'activité globale.
-  - **Règle Stricte Zéro-Séance ([`MediaCard.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx)) :** Conditionner l'affichage à `Boolean(activeSession && activeSession.count >= 1)`. Ne jamais afficher "0 en séance".
+  - **Masquage Intégral en Plein Écran (`!isFullscreen`) :** Suivre les événements `fullscreenchange` / `webkitfullscreenchange` et masquer tous les bandeaux de boutons dès que `isFullscreen` est actif pour une toile cinématographique 100 % épurée.
+  - **Sortie Ergonomique par Échap ou Retour Télécommande (`useTvNavigation.ts`) :** Intercepter `isEscape` ou `isBackNav` lorsque `isFullscreenActive()` est vrai pour quitter immédiatement le plein écran et restaurer les commandes sans quitter la page.
 
 ---
 
-## 🛑 45. Présomption du Format de Résultat Drizzle ORM avec Postgres.js (`(res as any).rows` vs `Array.isArray(res)`)
+## 🛑 62. Dictature du Chemin de Répertoire et Confiance Aveugle aux Balises NFO Étrangères Écrasant la Typologie d'Épisode
 
-* **Problème / Symptôme :** Disparition totale des métadonnées (casting, réalisateurs, codecs, notes, pays, studios, identifiants) sur la page `/media/:id`, toutes les zones de tags retournant un tableau vide (`HERO: 0, PILLS: 0, ACCORDION: 0`).
-* **Conséquences :** Fiche média dépouillée, sections de caractéristiques invisibles et perte de navigation croisée par artiste.
+* **Problème / Symptôme :** Des épisodes de séries TV (notamment Peaky Blinders Saison 4) étaient classés de manière aberrante en tant que films indépendants (`node_type = 'MOVIE'`), apparaissant isolément dans le catalogue de films avec des affiches génériques, tandis que la série globale apparaissait tronquée ou vide.
+* **Conséquences :** Séparation brutale des épisodes du corpus de la série, absence de lecture séquentielle, perte des métadonnées TMDb et désorientation totale de l'utilisateur.
 * **Causes Racines :**
-  - **Hypothèse erronée sur `db.execute(sql...)` :** Présumer que l’exécution SQL renvoie un objet `{ rows: [...] }` comme le driver `pg` classique. Dans `postgres.js` utilisé par Drizzle, le résultat retourné est directement un tableau `Array`. Ainsi, `(linkedTags as any).rows || []` valait `undefined || [] = []`, ignorant l'intégralité des 101 tags stockés en base de données.
+  - **Dictature du Chemin de Dossier (`guessitParser.ts`) :** Le parser Guessit forçait inconditionnellement `mediaType = 'movie'` dès que le chemin absolu du fichier contenait `/films/`, `/film/` ou `/crime/`, écrasant la présence formelle de motifs d'épisodes (`S04E05`, `4x05`, `saison 4 episode 5`).
+  - **Confiance Aveugle aux Balises XML NFO (`nfoParser.ts`) :** Lorsqu'un fichier `.nfo` externe généré par un scraper tiers contenait une balise racine `<movie>`, le parseur adoptait aveuglément le type `MOVIE`, ignorant les motifs de numérotation d'épisodes présents dans le nom de fichier ou dans les métadonnées vidéo.
+  - **Verrouillage de la Réparation Hiérarchique (`hierarchyRepair.ts`) :** Le script de réparation ignorait systématiquement les nœuds typés `MOVIE`, empêchant toute requalification ultérieure d'un épisode mal étiqueté lors de l'ingestion initiale.
 * **Bonnes Pratiques de Remédiation :**
-  - **Extraction Polymorphique Résiliente :** Utiliser systématiquement `const rows = Array.isArray(result) ? result : (result as any).rows || [];`.
-  - **Double Mappage Clés/Zones :** Alimenter à la fois la nomenclature standard (`HERO_BADGE`, `PRIMARY_PILL`, `PERSON_CAROUSEL`, `TECHNICAL_DRAWER`) et les alias historiques (`HERO`, `PILLS`, `ACCORDION`), en injectant simultanément les propriétés en `camelCase` et `snake_case` (`value_text` et `value`, `attr_code` et `attributeCode`).
+  - **Garde Prioritaire Inviolable du Format Épisode (`guessitParser.ts`, `nfoParser.ts`) :** Si un fichier présente un motif clair d'épisode (`S\d+E\d+`, `\d+x\d+`, `saison \d+`) ou se trouve dans un dossier de saison, le type `EPISODE` doit prévaloir de manière absolue sur les dossiers parents (`/films/`) et sur les balises XML `<movie>`.
+  - **Requalification Rétroactive Automatique (`hierarchyRepair.ts`) :** Détecter dans la base les nœuds `node_type = 'MOVIE'` contenant des motifs `SxxExx` dans leur titre ou nom de fichier, et les requalifier dynamiquement en `EPISODE` en les rattachant à leur série maîtresse.
 
 ---
 
-## 🛑 46. Découpage en Tranches MediaRecorder sans En-tête EBML (`start(timeslice)`) Causant la Coupure Définitive du Son après 2.5s
+## 🛑 63. Prolifération de Pseudo-Séries lors du Découpage par Dossiers de Saison et Pollution des Requêtes TMDb
 
-* **Problème / Symptôme :** Les appels vocaux directs fonctionnaient pendant les premières secondes, puis aucun son ne passait plus entre les participants.
-* **Conséquences :** Fonctionnalité d'appel direct inutilisable, silence radio après le premier fragment.
+* **Problème / Symptôme :** Une même série télévisée se retrouvait éclatée en plusieurs séries distinctes dans l'interface (ex: « Peaky Blinders - Saison 1 360p », « Peaky Blinders Saison 2 », « Peaky Blinders »), chacune ne contenant que les épisodes de sa saison respective. Par ailleurs, ces séries dérivées n'avaient ni poster ni synopsis TMDb.
+* **Conséquences :** Fragmentation du catalogue, pollution visuelle, métadonnées absentes (fiches blanches sans poster), et impossibilité de naviguer entre saisons au sein d'une fiche unifiée.
 * **Causes Racines :**
-  - **Omission de l'En-tête EBML sur les Chunks Suivants :** Lorsque `MediaRecorder.start(2500)` est utilisé dans les navigateurs Chrome/Chromium, seul le premier blob émis par `ondataavailable` contient l'en-tête du conteneur WebM (EBML Header). Tous les fragments ultérieurs sont des tranches brutes sans en-tête. Côté récepteur, `new Audio(data:audio/webm;base64,...)` échoue silencieusement au demuxage sur tous les fragments à partir du 2ème car ils ne sont pas des conteneurs WebM complets autonomes.
-  - **Absence de File d'Attente Séquentielle :** La réception directe créait une instance `Audio` par fragment sans séquencement, provoquant des superpositions ou des rejets de lecture simultanée.
+  - **Absence de Nettoyage Canonique des Noms de Dossiers (`resolveSeriesRoot`) :** Lorsqu'une saison résidait dans un dossier de premier niveau (ex: `Peaky Blinders - Saison 1 360p (2013)`), l'ingesteur créait un nœud `SHOW` portant ce nom brut au lieu de dériver le titre canonique `Peaky Blinders`.
+  - **Pollution des Requêtes TMDb (`cleanShowTitle`) :** Les termes parasites (`Saison X`, `Season X`, `360p`, `480p`, `1080p`, `x264`) étaient transmis tels quels à l'API TMDb lors de la recherche TV, retournant 0 résultat.
 * **Bonnes Pratiques de Remédiation :**
-  - **Génération Déterministe de Fragments Autonomes :** Démarrer l'enregistreur sans paramètre de découpage, et appeler explicitement `recorder.stop()` à la fin de chaque intervalle (2.5s) avant de réinstancier le fragment suivant. La fermeture du recorder garantit que chaque fragment produit est un fichier WebM/Opus complet, valide et autonome doté de son propre en-tête.
-  - **Queue de Lecture Audio Séquentielle (`audioQueueRef`) :** Enfiler les fragments reçus dans une file d'attente jouée séquentiellement via l'événement `onended`, garantissant une restitution vocale fluide, continue et ininterrompue.
+  - **Fonction Canonique Universelle (`extractCanonicalShowTitle`) :** Nettoyer agressivement tous les motifs de saisons, résolutions, codecs et groupes de release pour extraire le titre pur de la série avant toute création de nœud et avant toute requête vers TMDb.
+  - **Agrégation et Déduplication Automatique (`hierarchyRepair.ts`) :** Identifier les pseudo-séries portant des variantes du même nom canonique via `pg_trgm`, élire le nœud maître (`SHOW`), migrer tous les épisodes et liens EAV sans conflit d'unicité, puis purger les nœuds doublons.
 
 ---
 
-## 🛑 47. Sérialisation Brute d'Instances JavaScript `Date` dans les Fragments SQL Postgres.js (`ERR_INVALID_ARG_TYPE`)
+## 🛑 64. Rigidité des Catégories Racines (Amnésie du Singulier `/serie/`) et Désaffiliation d'Épisodes
 
-* **Problème / Symptôme :** Crash silencieux ou rejet de requête lors des nettoyages de sessions avec l'erreur `TypeError [ERR_INVALID_ARG_TYPE]: The "string" argument must be of type string or an instance of Buffer or ArrayBuffer. Received an instance of Date`.
-* **Conséquences :** Les requêtes de suppression périodique échouent, bloquant le cycle de vie des séances actives qui restent bloquées indéfiniment en base de données.
+* **Problème / Symptôme :** Sur certains volumes de stockage (comme `/My Passport`), l'ensemble des épisodes restaient orphelins avec `parent_id = null`, exclus des séries et invisibles dans les arborescences.
+* **Conséquences :** Des centaines d'épisodes présents sur le disque n'étaient rattachés à aucune série et flottaient de façon erratique dans le système.
 * **Causes Racines :**
-  - **Interpolation Directe d'Objet `new Date()` dans `sql` :** Utiliser `sql\`... < \${cutoff}\`` où `cutoff` est un objet JavaScript `new Date()`. Le pilote `postgres.js` ne sérialise pas automatiquement les objets `Date` passés comme paramètres scalaires de template tag SQL brut et attend une chaîne ou un type natif PostgreSQL.
+  - **Liste Restrictive des Catégories Racines (`SERIES_ROOT_CATEGORIES`) :** La liste n'admettait que les formes plurielles (`series`, `séries`, `shows`), ignorant le singulier `serie` et `série` pourtant très fréquent dans l'organisation des disques durs.
 * **Bonnes Pratiques de Remédiation :**
-  - **Délégation Temporelle Native à PostgreSQL :** Exprimer les intervalles d'expiration directement en SQL standard : `sql\`... < NOW() - INTERVAL '25 seconds'\``. Cela élimine tout décalage d'horloge entre l'application et la base de données, évite toute allocation d'objet intermédiaire et prévient 100% des erreurs de typage.
-
----
-
-## 🛑 48. Séances et Spectateurs Zombie Persistant Indéfiniment par Absence de Garbage Collection de Présence
-
-* **Problème / Symptôme :** Une carte de séance créée par un utilisateur (ex: `🔴 EN COURS Initié par : TeleAdmin Pro Séance Soirée Popcorn 👥 1 spectateur`) reste affichée indéfiniment sur la fiche du média, et le badge `🍿 1 en séance` subsiste sur la page d'accueil des heures après que tous les participants ont quitté la page ou fermé leur navigateur.
-* **Conséquences :** Sentiment de bug majeur pour les utilisateurs, fausse indication de présence et encombrement de l'interface par des séances fantômes abandonnées.
-* **Causes Racines :**
-  - **Absence de Clôture Automatique :** Le statut de la séance restait `ACTIVE` même avec 0 spectateur, aucune tâche de fond ne purgeant les participants dont le ping a expiré.
-  - **Absence de Décrochage sur Fermeture d'Onglet :** Fermer le navigateur ou changer d'URL sans cliquer explicitement sur "Quitter" laissait la ligne dans la table `media_session_participants`.
-* **Bonnes Pratiques de Remédiation :**
-  - **Nettoyage Déterministe Côté Serveur (`cleanupExpiredSessions`) :** Purger automatiquement les spectateurs inactifs (`last_ping_at < NOW() - INTERVAL '25 seconds'`), basculer automatiquement en `status = 'ENDED'` toute séance sans participants ou dont l'hôte a quitté, et exécuter cette routine à la fois périodiquement (`setInterval`) et en préambule de chaque requête de liste (`GET /api/sessions/active`).
-  - **Décrochage Navigateur Réactif (`keepalive: true` & `beforeunload`) :** Brancher un listener `beforeunload` et `pagehide` dans le lecteur vidéo envoyant `DELETE /playback` et `POST /leave` avec `keepalive: true` pour avertir instantanément le serveur lors d'une fermeture d'onglet.
-
----
-
-## 🛑 49. Incompatibilité Structurelle Alpine Linux (musl libc avec buffer 2 Ko) sur les Systèmes de Fichiers FUSE/NTFS causant la Perte Silencieuse de plus de 50% des Entrées de Répertoires
-
-* **Problème / Symptôme :** Des répertoires entiers contenant des dizaines de films (comme le dossier James Bond de 26 films ou 234 fichiers sur 501 dans le dossier `/film` d un disque externe) n étaient jamais scannés ni répertoriés, disparaissant complètement des résultats de `fs.readdir` et du crawler sans le moindre message d erreur.
-* **Conséquences :** Médias introuvables, collections amputées, scanners récursifs déclarant à tort que les dossiers sont vides ou partiellement peuplés.
-* **Causes Racines :**
-  - **Tampon de 2048 Octets Hardcodé dans musl libc :** Alpine Linux compile Node.js contre musl libc. Dans musl, `struct __dirstream` alloue un buffer fixe de seulement 2 Ko pour `getdents64`.
-  - **Structure B-Tree en Blocs de 4 Ko sous NTFS :** Les disques durs externes formatés en NTFS et montés via FUSE (`fuseblk` / `ntfs-3g`) gèrent les répertoires par blocs d indexation de 4096 octets.
-  - **Troncature et Saut de Bloc FUSE :** Lorsque musl lit les 2048 premiers octets d un bloc de 4 Ko, le pointeur de pagination FUSE/NTFS (`d_off`) saute directement à la frontière du bloc de 4 Ko suivant. Tout fichier ou sous-dossier situé au-delà de l octet 2048 dans chaque bloc d index est **silencieusement éliminé**.
-* **Bonnes Pratiques de Remédiation :**
-  - **Migration vers Debian GNU/Linux (glibc) :** Utiliser impérativement des images de base avec glibc (ex: `docker.io/node:20-bookworm-slim`). La glibc alloue un tampon de 32 768 octets (32 Ko) pour `readdir()`, ce qui ingère l intégralité des blocs NTFS en un seul appel sans aucune perte.
-  - **Bufferisation Large pour les Systèmes FUSE :** Pour toute lecture de système de fichiers externe ou réseau (NTFS, SMB, CIFS, FUSE), garantir une taille de buffer d au moins 32 Ko.
-
----
-
-## 🛑 50. Pollution de l Année par le Dossier Parent et Rejet des Années Préfixées avec Espace
-
-* **Problème / Symptôme :** Tous les films d une même franchise (ex: GoldenEye 1995, Skyfall 2012, Spectre 2015) se retrouvaient datés de force de la même année (1962), tandis que leurs titres conservaient leur préfixe numérique brut (`"1962 Dr. No"`, `"1995 Goldeneye"`).
-* **Conséquences :** Tri chronologique faussé, échec du scraping TMDb et affichage visuel dégradé.
-* **Causes Racines :**
-  - **Extraction d Année sur Chemin Absolu :** `extractYearFromText(filePath)` testait la regex `(19|20)\d{2}` sur le chemin complet. Si le dossier parent portait une plage d années (ex: `james bond - intégrale des 26 films (1962 - 2015)`), la regex capturait systématiquement la première année du dossier parent (1962).
-  - **Regex de Nettoyage de Titre Trop Restrictive :** `titleCleaner.ts` ne nettoyait les années de 4 chiffres que si elles étaient suivies d un point (`^\d{4}\.`), ignorant les séparateurs usuels de scènes (espace, tiret, underscore : `1962 Dr. No`).
-* **Bonnes Pratiques de Remédiation :**
-  - **Extraction d Année Sanctuarisée sur le Basename :** `extractYearFromText` doit automatiquement isoler `path.basename(path)` avant d exécuter la recherche regex d année.
-  - **Nettoyage Universel des Années Préfixées :** Appliquer `t = t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, "")` pour transformer proprement `"1962 Dr. No"` en `"Dr. No"`.
-  - **Détection Automatique des Sagas par Dossier :** Si le dossier parent comporte les termes `intégrale`, `saga`, `collection`, `boxset` ou `trilogie`, extraire automatiquement le nom de la franchise et créer/lier le conteneur `COLLECTION` parent en base de données.
-
----
-
-## 🛑 51. Tentative de Stockage d'Images Binaires dans les Cookies HTTP au lieu de l'API CacheStorage PWA (Erreur HTTP 431)
-
-* **Problème / Symptôme :** Vouloir stocker directement des posters, jaquettes ou images complètes dans les cookies du navigateur web.
-* **Conséquences :** Crash complet des requêtes HTTP avec l'erreur `431 Request Header Fields Too Large`. Tout appel vers l'API ou le serveur web est immédiatement rejeté, bloquant la navigation de l'utilisateur.
-* **Causes Racines :**
-  - **Limite Structurelle des Cookies HTTP :** Les spécifications web (RFC 6265) plafonnent les cookies à environ 4096 octets au total par domaine. De plus, les cookies sont automatiquement transmis dans **chaque en-tête HTTP** sortant.
-  - **Poids des Images Multimédias :** Une seule vignette WebP ou JPEG pèse entre 30 Ko et 500 Ko (10 à 100 fois la limite maximale d'un cookie).
-* **Bonnes Pratiques de Remédiation :**
-  - **Utiliser l'API Standard W3C `CacheStorage` (`window.caches`) :** La persistance binaire des images doit être confiée à l'API CacheStorage gérée par le Service Worker (`ums-images-cache-v1`). Elle offre des gigaoctets de stockage local sans aucun impact sur la taille des en-têtes réseau.
-  - **Réserver les Cookies à la Coordination Métadonnées :** N'utiliser les cookies que pour de simples balises d'état légères (`ums_pwa_active=1`, `ums_cache_version=1`, compteur de fichiers) pour synchroniser l'état client/serveur sans engorger les requêtes.
-
----
-
-## 🛑 52. Réinitialisation Systématique de l'État des Vues et Onglets lors de la Navigation SPA/PWA
-
-* **Problème / Symptôme :** Un utilisateur consulte un onglet d'administration spécifique (ex: "Comptes" ou "IPTV") ou un filtre TV spécifique, clique sur une fiche média ou le profil, puis en revenant en arrière ou en rouvrant l'onglet, l'écran se réinitialise à l'état par défaut (onglet 1 "Scan", champs de recherche effacés, défilement perdu).
-* **Conséquences :** Frustration majeure de l'utilisateur (rupture de fluidité cognitive), obligeant à refaire les sélections et à relancer inutilement des requêtes serveur.
-* **Causes Racines :**
-  - Utilisation exclusive de `useState('VALEUR_PAR_DEFAUT')` sans couche de rémanence ni synchronisation avec `sessionStorage` ou mémoire d'état persistante.
-* **Bonnes Pratiques de Remédiation :**
-  - **Store Dédié de Persistance d'Onglets (`tabStateStore.ts` & `useTabState`) :** Centraliser l'état des onglets actifs, des filtres et requêtes de recherche dans un magasin réactif synchronisé avec `sessionStorage`.
-  - **Restitution Transparente :** Dès que le composant se remonte, il réhydrate automatiquement son état précédent avec une latence nulle.
-
----
-
-## 🛑 53. Redirection HTTP 302 vers des CDNs Tiers Non-CORS (TMDb) & Incohérence des Clés de Cache Taxonomique
-
-* **Problème / Symptôme :** 
-  1. Multiples erreurs bloquantes dans la console : `Access to fetch at 'https://image.tmdb.org/...' (redirected from '/api/media/:id/poster') has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource`.
-  2. Temps de chargement anormalement longs sur la page d'accueil avec affichage intempestif de spinners sur chaque rail malgré le mode hors-ligne/mémoire.
-* **Conséquences :** Des dizaines de requêtes d'images échouent, le pool de connexions HTTP du navigateur est saturé, et l'expérience utilisateur est ralentie.
-* **Causes Racines :**
-  - **Redirection 302 vers un CDN sans en-têtes CORS :** Le backend renvoyait un `302 Found` vers l'URL TMDb externe (`c.redirect(filePath)`). Dès lors qu'une requête était effectuée par un Service Worker ou `fetch(url, { mode: 'cors' })`, le navigateur suivait la redirection vers `image.tmdb.org` qui refuse les requêtes cross-origin AJAX.
-  - **Divergence des Clés de Cache Taxonomique :** `fetchTaxonomyMedias` sauvegardait les données sous `tax_cat_tag_filter_q_limit_excludeIds`, tandis que `getCachedTaxonomyMedias` cherchait sans la signature d'exclusion. La donnée n'était donc jamais trouvée en cache (`cached === undefined`), forçant un rechargement réseau complet et le basculement en état `loading: true` sur l'ensemble des vignettes.
-* **Bonnes Pratiques de Remédiation :**
-  - **Proxy d'Images Transparent Côté Backend (`mediaArtworks.ts`) :** Remplacer le `c.redirect` par un proxying direct des octets de l'image avec les en-têtes `Access-Control-Allow-Origin: *` et `Cache-Control: public, max-age=31536000, immutable`. Aucun appel client ne transite par TMDb en direct, supprimant 100% des erreurs CORS.
-  - **Pré-chargement Natif HTML Image (`pwaImageCache.ts`) :** Remplacer `fetch(..., { mode: 'cors' })` par `new window.Image().src = url` pour alimenter le cache disque/mémoire du navigateur sans aucune contrainte de politique CORS.
-  - **Unification des Clés de Cache & Fallback Dédupliqué en Mémoire (`taxonomyApi.ts`) :** Aligner strictement les clés de cache et implémenter un fallback instantané filtrant les exclusions localement en mémoire à 0 ms.
-
----
-
-## 🛑 54. Endpoint d'Authentification /status Inexistant & Fallback Client Défaillant Forçant la Création du Premier Admin
-
-* **Problème / Symptôme :** Un administrateur a déjà créé son compte sur l'application. En retournant sur `/login` pour se connecter, l'écran continue d'afficher obstinément « Création du premier Administrateur » avec le bouton « 👑 Initialiser et créer l'administrateur ». Il est impossible d'accéder au mode « Se connecter », et toute tentative d'enregistrement échoue avec « Un compte avec cette adresse e-mail existe déjà ».
-* **Conséquences :** Blocage complet de la connexion, impossibilité pour l'administrateur et les utilisateurs d'accéder au service.
-* **Causes Racines :**
-  - **Endpoint Manquant :** Le frontend appelait `GET /api/auth/status`, mais cette route n'était pas implémentée dans `backend/src/routes/auth.ts`, provoquant un HTTP 404.
-  - **Fallback Client Dangereux :** Le bloc `catch` de `fetchAuthStatus()` dans `authStore.ts` retournait `{ hasUsers: false }`. Le client en déduisait que la base de données était vierge et verrouillait l'interface sur la modale d'initialisation du premier administrateur en masquant le basculement vers le formulaire de connexion.
-* **Bonnes Pratiques de Remédiation :**
-  - **Implémentation Serveur Robuste (`/api/auth/status`) :** L'endpoint interroge PostgreSQL et compte précisément le nombre d'utilisateurs et d'administrateurs (`hasUsers: totalUsers > 0`, `hasAdmin: totalAdmins > 0`).
-  - **Principe de Sécurité du Fallback :** En cas d'erreur de communication réseau, ne jamais présumer que la base est vierge. Renvoyer par défaut `hasUsers: true` et `hasAdmin: true` pour présenter le formulaire de connexion standard et éviter d'enfermer l'utilisateur dans l'assistant d'initialisation.
+  - **Élargissement Exhaustif des Catégories Racines :** Inclure systématiquement les formes singulières et plurielles (`serie`, `series`, `série`, `séries`, `shows`, `tv shows`, `emission`, `emissions`).
+  - **Résolution Floue Trigramme de Secours :** En l'absence de répertoire parent direct de type série, utiliser une recherche trigramme floue (`similarity > 0.4`) sur le titre canonique de l'épisode pour le raccrocher automatiquement au nœud `SHOW` existant le plus pertinent.

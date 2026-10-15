@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView, Image, Pressable, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { resolveImageUrl } from '@/services/api';
@@ -12,9 +12,114 @@ interface Props {
   currentMediaId?: string;
 }
 
-export function MediaStudioSection({ studioMedias = [], studioTags = [], currentMediaId }: Props) {
+function StudioGroupRail({ group }: { group: StudioMediaGroup }) {
   const router = useRouter();
+  const sorted = React.useMemo(() => {
+    return [...group.medias].sort(
+      (a, b) => (b.releaseYear || 0) - (a.releaseYear || 0)
+    );
+  }, [group.medias]);
 
+  // Limite initiale de 10 éléments, puis +10 (total 20), puis +12
+  const [visibleCount, setVisibleCount] = useState(10);
+  const hasMore = visibleCount < sorted.length;
+  const nextIncrement = visibleCount <= 10 ? 10 : 12;
+
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount((prev) => {
+      if (prev <= 10) return prev + 10;
+      return prev + 12;
+    });
+  }, []);
+
+  const handleScroll = useCallback((e: any) => {
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    if (contentOffset.x + layoutMeasurement.width >= contentSize.width - 200) {
+      if (hasMore) {
+        handleLoadMore();
+      }
+    }
+  }, [hasMore, handleLoadMore]);
+
+  const visibleItems = sorted.slice(0, visibleCount);
+
+  return (
+    <View key={group.studioName} style={styles.studioGroupBlock}>
+      <View style={styles.groupHeader}>
+        <Text style={styles.groupTitle}>Productions {group.studioName}</Text>
+        <View style={styles.groupCountBadge}>
+          <Text style={styles.groupCountTxt}>
+            {sorted.length} titre{sorted.length > 1 ? 's' : ''}
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.row}
+        onScroll={handleScroll}
+        scrollEventThrottle={64}
+      >
+        {visibleItems.map((item) => {
+          const posterUri = resolveImageUrl(item.posterPath);
+          const typeLabel =
+            item.nodeType === 'SHOW'
+              ? 'Série'
+              : item.nodeType === 'COLLECTION'
+              ? 'Saga'
+              : 'Film';
+
+          return (
+            <Pressable
+              key={item.id}
+              focusable={true}
+              onPress={() => router.push(`/media/${item.id}` as any)}
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            >
+              <View style={styles.posterWrap}>
+                {posterUri ? (
+                  <Image source={{ uri: posterUri }} style={styles.poster} />
+                ) : (
+                  <View style={styles.placeholderWrap}>
+                    <Text style={styles.placeholderTxt}>{typeLabel.toUpperCase()}</Text>
+                  </View>
+                )}
+
+                <View style={styles.typeBadge}>
+                  <Text style={styles.typeBadgeTxt}>{typeLabel}</Text>
+                </View>
+
+                {item.communityRating ? (
+                  <View style={styles.ratingBadge}>
+                    <Text style={styles.ratingTxt}>★ {Number(item.communityRating).toFixed(1)}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Text style={styles.title} numberOfLines={2}>
+                {item.title}
+              </Text>
+
+              {item.releaseYear ? (
+                <Text style={styles.yearTxt}>{item.releaseYear}</Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
+
+        {hasMore ? (
+          <Pressable focusable={true} onPress={handleLoadMore} style={styles.moreTile}>
+            <Text style={styles.morePlus}>+{nextIncrement}</Text>
+            <Text style={styles.moreTxt}>Afficher plus</Text>
+          </Pressable>
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+}
+
+export function MediaStudioSection({ studioMedias = [], studioTags = [], currentMediaId }: Props) {
   const groupsWithMedias = studioMedias.filter((g) => g.medias && g.medias.length > 0);
   const allStudioNames = Array.from(
     new Set([
@@ -47,73 +152,9 @@ export function MediaStudioSection({ studioMedias = [], studioTags = [], current
       )}
 
       {/* Rails de films et séries dépendants/associés par studio */}
-      {groupsWithMedias.map((group) => {
-        const sorted = [...group.medias].sort(
-          (a, b) => (b.releaseYear || 0) - (a.releaseYear || 0)
-        );
-
-        return (
-          <View key={group.studioName} style={styles.studioGroupBlock}>
-            <View style={styles.groupHeader}>
-              <Text style={styles.groupTitle}>Productions {group.studioName}</Text>
-              <View style={styles.groupCountBadge}>
-                <Text style={styles.groupCountTxt}>
-                  {sorted.length} titre{sorted.length > 1 ? 's' : ''}
-                </Text>
-              </View>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-              {sorted.map((item) => {
-                const posterUri = resolveImageUrl(item.posterPath);
-                const typeLabel =
-                  item.nodeType === 'SHOW'
-                    ? 'Série'
-                    : item.nodeType === 'COLLECTION'
-                    ? 'Saga'
-                    : 'Film';
-
-                return (
-                  <Pressable
-                    key={item.id}
-                    focusable={true}
-                    onPress={() => router.push(`/media/${item.id}` as any)}
-                    style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-                  >
-                    <View style={styles.posterWrap}>
-                      {posterUri ? (
-                        <Image source={{ uri: posterUri }} style={styles.poster} />
-                      ) : (
-                        <View style={styles.placeholderWrap}>
-                          <Text style={styles.placeholderTxt}>{typeLabel.toUpperCase()}</Text>
-                        </View>
-                      )}
-
-                      <View style={styles.typeBadge}>
-                        <Text style={styles.typeBadgeTxt}>{typeLabel}</Text>
-                      </View>
-
-                      {item.communityRating ? (
-                        <View style={styles.ratingBadge}>
-                          <Text style={styles.ratingTxt}>★ {Number(item.communityRating).toFixed(1)}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-
-                    <Text style={styles.title} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-
-                    {item.releaseYear ? (
-                      <Text style={styles.yearTxt}>{item.releaseYear}</Text>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        );
-      })}
+      {groupsWithMedias.map((group) => (
+        <StudioGroupRail key={group.studioName} group={group} />
+      ))}
     </View>
   );
 }
@@ -255,5 +296,28 @@ const styles = StyleSheet.create({
     color: '#8e9ab0',
     fontSize: 11,
     marginTop: 2,
+  },
+  moreTile: {
+    width: 110,
+    height: 175,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.2)',
+    backgroundColor: 'rgba(45, 52, 64, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  morePlus: {
+    color: '#38bdf8',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  moreTxt: {
+    color: '#8e9ab0',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

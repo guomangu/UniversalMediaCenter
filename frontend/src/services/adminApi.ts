@@ -296,3 +296,71 @@ export async function matchMedia(id: string, payload: { title?: string }): Promi
     return { success: false, error: err.message };
   }
 }
+
+export interface AdminInvitation {
+  id: string;
+  token: string;
+  inviteUrl: string;
+  messageText: string;
+  displayName: string;
+  email: string;
+  password?: string;
+  profileRole: string;
+  clicksCount: number;
+  lastUsedAt?: string | null;
+  createdAt: string;
+  previewTitle?: string;
+  previewDescription?: string;
+}
+
+export async function fetchAdminInvitations(): Promise<AdminInvitation[]> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/invitations`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    return data.invitations || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function createAdminInvitation(payload: {
+  displayName?: string;
+  recipientName?: string;
+  email?: string;
+  recipientEmail?: string;
+  password?: string;
+  customPassword?: string;
+  profileRole?: string;
+  customToken?: string;
+  customSlug?: string;
+}): Promise<{ success: boolean; invitation?: AdminInvitation; error?: string }> {
+  try {
+    const normalizedPayload = {
+      displayName: payload.displayName || payload.recipientName || '',
+      email: payload.email || payload.recipientEmail || undefined,
+      password: payload.password || payload.customPassword || undefined,
+      profileRole: payload.profileRole || 'MEMBRE',
+      customToken: payload.customToken || payload.customSlug || undefined,
+    };
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/invitations`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(normalizedPayload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur réseau' };
+  }
+}
+
+export async function deleteAdminInvitation(id: string): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/invitations/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

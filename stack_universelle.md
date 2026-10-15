@@ -91,3 +91,18 @@
   - Mode hors-ligne flexible permettant de continuer à naviguer et consulter l'intégralité du contenu local sans blocage réseau.
 - `frontend/src/services/tabStateStore.ts` & `frontend/src/hooks/useTabState.ts` : Gestionnaire de persistance d'état inter-onglets et inter-écrans garantissant que tout onglet ou vue (`admin`, `user`, `tv`, `home`) retrouve exactement l'état laissé lors du dernier passage (onglet actif, filtres, recherche, position).
 - `frontend/src/components/OfflineIndicator.tsx` : Pastille visuelle discrète et élégante (`Radius.pill`, style feutré ardoise/terracotta) informant instantanément l'utilisateur de l'état de connexion et du mode hors-ligne disponible.
+
+### Invitations Personnalisées par Lien Magique 1-Clic
+- `backend/src/db/schema/invitations.ts` & `backend/src/db/migrateSecondary.ts` : Schéma et table PostgreSQL `user_invitations` stockant les jetons d'invitation uniques, les identifiants en clair pour rappel/preview, les clics et dates d'accès.
+- `backend/src/routes/inviteRoutes.ts` : Endpoints d'administration `POST /api/admin/invitations`, `GET /api/admin/invitations`, `DELETE /api/admin/invitations/:id`, et endpoint public `GET /invite/:token` générant la page HTML optimisée pour WhatsApp/Instagram avec balises Open Graph et script d'auto-authentification 0ms dans le localStorage.
+- `components/AdminCreateInviteModal.tsx` : Modale d'administration pour configurer le nom, l'identifiant (auto-généré ou personnalisé), le mot de passe (avec bouton régénérateur), le pack de profil, et générer le message complet prêt à être partagé avec prévisualisation des cartes de messagerie.
+- `app/invite/[token].tsx` : Route dynamique Expo Router consommant les jetons d'invitation et authentifiant automatiquement l'utilisateur à chaud.
+
+### Gestion Multimédia Avancée, Contrôle TV & Navigation Spatiale
+- `frontend/src/utils/fullscreen.ts` : Gestionnaire universel Plein Écran multi-plateformes compatible WebKit, Blink, Gecko, Smart TV Samsung Tizen, LG WebOS et Android TV avec bascule transparente (`toggleFullscreen`, `isFullscreenActive`).
+- `frontend/src/hooks/usePlayerControls.ts` : Contrôleur média pour `/player/[id]` intégrant les raccourcis clavier et télécommande (touches `f`, `F`, `FullScreen`, keycodes 10071/10072/184/261) avec affichage d'un toast d'état.
+- `frontend/src/hooks/useTvNavigation.ts` : Moteur de navigation spatiale D-Pad garantissant la cohérence directionnelle stricte (alignement ligne/colonne sans saut vertical lors des déplacements horizontaux) et raccourcis d'accès direct à la recherche (`/` ou touche Search) et au plein écran.
+- `frontend/src/components/VideoPlayerView.tsx` : Lecteur vidéo universel avec streaming HLS Live résilient (paramétrage anti-décrochage de buffer, auto-recovery transparent sur erreurs réseau/média, sanctuarisation du mode direct interdisant tout faux déclenchement de fin de lecture).
+- `frontend/src/components/TagSearchBar.tsx` : Barre de recherche de taxonomie avec découplage de saisie locale, éliminant tout rechargement synchrone intempestif et exécutant la recherche sur validation explicite (Entrée ou bouton « 🔍 Rechercher »).
+- `frontend/src/components/TagCard.tsx` & composants de rails : Pagination progressive optimisée (10 éléments initiaux, chargement à la volée de +10 puis +12 éléments lors du défilement horizontal ou clic).
+- `frontend/src/services/authStore.ts` : Fonction `setAuthSession(user, token)` garantissant l'activation instantanée de session en mémoire vive et la notification synchrone des hooks React (`useCurrentUser`) lors des connexions 1-clic par lien magique.

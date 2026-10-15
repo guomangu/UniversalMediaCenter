@@ -63,7 +63,7 @@ export function analyzeFolderGrouping(filePath: string, showDir: string): Folder
     return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
   }
 
-  // 6. Détection d'un dossier Saison standard (ex: "Season 1", "Saison 2", "S01", "Part 1", "Cour 1")
+  // 6. Détection d'un dossier Saison standard dans relPath (ex: "Season 1", "Saison 2", "S01", "Part 1", "Cour 1")
   const seasonMatch = /(?:^|\/)(?:Season|Saison|Part|Cour|S)[-_ ]*(\d{1,2})(?:$|\/)/i.exec(relPath);
   if (seasonMatch) {
     seasonNumber = parseInt(seasonMatch[1], 10);
@@ -71,7 +71,15 @@ export function analyzeFolderGrouping(filePath: string, showDir: string): Folder
     return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
   }
 
-  // 7. Fallback sur le nom de fichier lui-même (ex: "Code Geass S02E01")
+  // 7. Détection d'un dossier Saison dans le chemin complet (ex: "Peaky Blinders - Saison 4 (2017)")
+  const fullPathSeasonMatch = /(?:^|\/|[ _-])(?:Season|Saison|Part|Cour)[-_ ]*0*(\d{1,2})\b/i.exec(normFile);
+  if (fullPathSeasonMatch) {
+    seasonNumber = parseInt(fullPathSeasonMatch[1], 10);
+    groupTitle = `Saison ${seasonNumber}`;
+    return { isExtra: false, isMovie: false, groupTitle, seasonNumber };
+  }
+
+  // 8. Fallback sur le nom de fichier lui-même (ex: "Code Geass S02E01")
   const fileSeasonMatch = /S(\d+)[\s._-]*E(\d+)/i.exec(fileName);
   if (fileSeasonMatch) {
     seasonNumber = parseInt(fileSeasonMatch[1], 10);

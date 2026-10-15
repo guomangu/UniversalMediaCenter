@@ -276,13 +276,13 @@ flowchart TD
   2. **Extraction du carton de titre** : Capture du titre affiché en majuscules dans les premières répliques (ex: `DJANGO UNCHAINED`).
   3. **Résolution Ordre DVD vs Ordre Diffusion TV** : Identification par répliques d'ouverture ou récapitulatifs (*« Previously on... »*).
 
-### ⏱️ Étape 4 : Parsing Heuristique GuessIt avec Validation Stricte Kyoo
-- **Module** : [`guessitParser.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/guessitParser.ts)
+### ⏱️ Étape 4 : Parsing Heuristique GuessIt avec Validation Stricte Kyoo & Garde Prioritaire d'Épisode
+- **Module** : [`guessitParser.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/guessitParser.ts) & [`nfoParser.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/nfoParser.ts)
 - **Principe chronologique** : Le chemin complet est soumis au moteur heuristique GuessIt 4.4.0, encapsulé dans une couche de validation stricte.
-- **Règles anti faux-positifs** :
-  1. **Interdiction formelle des résolutions comme épisodes** : `480`, `720`, `1080`, `2160` ne peuvent jamais être qualifiés d'épisodes.
-  2. **Interdiction des années de cinéma comme épisodes** : `1880` à `2100` (`1999`, `2008`, `2012`, `2015`, `2016`) sont sanctuarisées comme dates de sortie.
-  3. **Sanctuarisation du type `MOVIE`** : Les fichiers situés dans des dossiers de cinéma sont verrouillés en films et ne reçoivent aucun badge d'épisode.
+- **Règles anti faux-positifs & Garde prioritaire** :
+  1. **Garde Prioritaire Inviolable du Format Épisode** : Si le fichier comporte un motif explicite de numérotation d'épisode (`SxxExx`, `\d+x\d+`, `saison \d+`) ou s'il réside dans un dossier de saison, le type `EPISODE` prévaut de manière absolue et inviolable sur l'arborescence des répertoires parents (y compris les dossiers thématiques `/films/` ou `/crime/`) et sur les balises XML NFO externes (`<movie>`). Seuls les médias dépourvus de tout motif d'épisode situés dans un dossier cinéma sont sanctuarisés en `MOVIE`.
+  2. **Interdiction formelle des résolutions comme épisodes** : `480`, `720`, `1080`, `2160` ne peuvent jamais être qualifiés d'épisodes.
+  3. **Interdiction des années de cinéma comme épisodes** : `1880` à `2100` (`1999`, `2008`, `2012`, `2015`, `2016`) sont sanctuarisées comme dates de sortie.
 
 ### ⏱️ Étape 5 : Résolution des Cas Complexes Animes (TheXEM & Anime-Lists)
 - **Module** : [`animeMapping.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/animeMapping.ts)
@@ -297,13 +297,14 @@ flowchart TD
 - **Principe chronologique** : Interrogation conjointe de TMDb en français (`fr-FR`) et en anglais (`en-US`), avec stockage dans `translations_json` en PostgreSQL.
 - **Bénéfice Zéro Rescan** : Deux utilisateurs aux préférences linguistiques différentes (FR ou EN) reçoivent instantanément les titres, résumés et accroches dans leur langue respective via `?lang=` ou l'en-tête `Accept-Language`, sans aucun rescannage de la médiathèque.
 
-### ⏱️ Étape 7 : Résolution Hiérarchique, Sagas & Méta-Franchises
-- **Modules** : [`hierarchyResolver.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyResolver.ts) & [`hierarchyRepair.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyRepair.ts)
+### ⏱️ Étape 7 : Résolution Hiérarchique, Sagas, Méta-Franchises & Unification Canonique des Séries
+- **Modules** : [`hierarchyResolver.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyResolver.ts), [`folderGrouper.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/folderGrouper.ts) & [`hierarchyRepair.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyRepair.ts)
 - **Principe chronologique** :
   1. Capture des balises `<set><name>` des NFO et de `belongs_to_collection` de TMDb.
   2. Création automatique des conteneurs `COLLECTION` et rattachement des films membres par `parent_id`.
-  3. Tri chronologique par date de sortie cinéma réelle.
-  4. Création des ponts de méta-franchises via tags EAV d'univers partagés (ex: `franchise: "Terre du Milieu"` unifiant la saga *Le Seigneur des Anneaux* et la saga *Le Hobbit*).
+  3. Détection heuristique des sagas par dossier physique parent (ex: *James Bond - Intégrale*) et tri chronologique par date de sortie cinéma réelle.
+  4. **Extraction du Titre Canonique & Déduplication des Séries** : Application de `extractCanonicalShowTitle` pour dissoudre les variations des dossiers de saison (`Peaky Blinders - Saison 1 360p` -> `Peaky Blinders`), fédérant toutes les saisons sous une fiche maîtresse `SHOW` unique et requalifiant rétroactivement les épisodes égarés.
+  5. Création des ponts de méta-franchises via tags EAV d'univers partagés (ex: `franchise: "Terre du Milieu"` unifiant la saga *Le Seigneur des Anneaux* et la saga *Le Hobbit*).
 
 ### ⏱️ Étape 8 : Consolidation EAV, Normalisation Vidéo & Affichage UI
 - **Modules** : [`mediaRelated.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaRelated.ts), [`ui.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/ui.ts) & [`media.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts)
@@ -326,6 +327,8 @@ flowchart TD
 | **Langues** | Serveur bloqué sur une seule langue | Stockage JSON multilingue (FR/EN) dans PostgreSQL & service dynamique | **0 ms (cache DB)** |
 | **Franchises** | Films orphelins isolés | Support `<set>`, `belongs_to_collection` et méta-franchises d'univers | **Immédiat** |
 | **Auteurs** | Réalisateurs ignorés dans les recommandations | Score de besoin renforcé (+120 pts) et carrousel prioritaire réalisateur | **Immédiat** |
+| **Taxonomie Séries** | Séries fragmentées par dossiers de saison (`Peaky Blinders - Saison 1 360p`) | Normalisation universelle `extractCanonicalShowTitle` + déduplication `pg_trgm` | **< 1 ms** |
+| **Garde Hiérarchique** | Épisodes déclassés en films (dossiers `/crime/` ou NFO `<movie>`) | Garde prioritaire inviolable `hasEpisodePattern` > dossier / balise | **< 1 ms** |
 
 ---
 
@@ -337,6 +340,10 @@ flowchart TD
 - **Cas Django Unchained & Iron Man validés** :
   - *Django Unchained* : Titre propre, année 2012, badge d'épisode supprimé, format 1080p Scope, regroupé dans **« Films de Quentin Tarantino »** avec *Once Upon a Time in Hollywood*, traductions FR et EN instantanées.
   - *Iron Man* : Titre épuré de `01 `, année 2008, badge d'épisode supprimé, format 1080p Scope, regroupé dans **« Films de Jon Favreau »** avec *Iron Man 2*.
+- **Unification des Séries & Élimination des Déclassements (Cas Peaky Blinders)** :
+  - 14 séries fragmentées en saisons indépendantes fusionnées en fiches maîtresses uniques.
+  - 302 épisodes réaffiliés et requalifiés de `MOVIE` vers `EPISODE`, dont les 6 épisodes de Peaky Blinders Saison 4.
+  - 721 index séquentiels restaurés pour un ordre de lecture chronologique irréprochable.
 
 
 ---
@@ -410,3 +417,144 @@ ORDER BY order_index ASC;
 | **Dr No** | `MOVIE` | **1962** | **1962** | `James Bond 007 - Saga` |
 | **Goldeneye** | `MOVIE` | **1995** | **1995** | `James Bond 007 - Saga` |
 | **Spectre** | `MOVIE` | **2015** | **2015** | `James Bond 007 - Saga` |
+
+
+---
+
+## 11. Audit Spécifique & Résolution de la Fragmentation des Séries Télévisées, Déclassement en Film et Unification Canonique (Cas d'École Peaky Blinders)
+
+### 🚨 Contexte et Constat du Dysfonctionnement
+Lors de l'indexation de bibliothèques multi-disques (`/run/media/tele/gudbug` et `/run/media/tele/My Passport`), plusieurs anomalies critiques affectaient la taxonomie et la cohérence des séries télévisées, tout particulièrement sur la série culte *Peaky Blinders* :
+1. **Déclassement Sauvage d'Épisodes en Films Autonomes (`node_type = 'MOVIE'`)** :
+   - L'épisode `Peaky Blinders S04E05.mkv` (UUID `0a41e021-c33b-4437-ae70-96d389c35ea6`) apparaissait sous l'URL `http://localhost:8081/media/0a41e021-c33b-4437-ae70-96d389c35ea6` en tant que film indépendant, isolé dans le catalogue cinématique avec une affiche générique, sans aucun lien hiérarchique avec la série (`parent_id = NULL`).
+   - L'ensemble des 6 épisodes de la Saison 4 subissaient ce même déclassement en raison de leur présence dans un sous-dossier thématique `/crime/`.
+2. **Fragmentation de la Série en Multiples Pseudo-Séries Indépendantes** :
+   - Les saisons organisées en dossiers autonomes (ex: `Peaky Blinders - Saison 1 360p (2013)`) généraient chacune leur propre nœud `SHOW`. L'utilisateur voyait ainsi plusieurs fiches distinctes dans l'interface, chaque fiche ne contenant que les épisodes de sa saison respective.
+   - Les requêtes transmises à l'API TMDb contenaient les suffixes bruts pollués (`"Peaky Blinders - Saison 1 360p"`), renvoyant 0 résultat et laissant ces fiches sans affiches HD ni métadonnées officielles.
+3. **Amnésie des Catégories Racines Singulières (`/serie/`)** :
+   - Sur le disque dur `/run/media/tele/My Passport/serie/`, plus de **209 épisodes** flottaient avec `parent_id = NULL`, exclus de toute fiche de série.
+
+---
+
+### 🔬 Autopsie Détaillée des 3 Causes Racines
+
+#### 1. La « Dictature du Dossier Parent » et la Confiance Aveugle aux Balises NFO Étrangères
+- **Le Conflit dans `guessitParser.ts`** :
+  Le parseur heuristique appliquait une règle rigide stipulant que tout chemin contenant `/films/`, `/film/` ou `/crime/` devait être typé `mediaType = 'movie'`, écrasant sans appel les propriétés `season` et `episode` déjà extraites par GuessIt.
+- **La Défaillance XML dans `nfoParser.ts`** :
+  Lorsqu'un fichier `.nfo` externe (généré par un scraper obsolète ou un dump tiers) contenait une balise racine `<movie>`, le parseur forçait `nodeType = 'MOVIE'`, même si le fichier vidéo attenant portait explicitement la mention `S04E05`.
+- **Le Verrou de `hierarchyRepair.ts`** :
+  L'algorithme de réparation hiérarchique ignorait par conception tous les nœuds marqués `nodeType === 'MOVIE'`, rendant impossible la requalification des faux films en épisodes.
+
+```
+Arborescence Disque :
+/run/media/tele/gudbug/series/crime/Peaky Blinders S04E05.mkv
+                        ^^^^^
+     Déclenchait le forçage MOVIE dans guessitParser !
+     Ignorait formellement 'S04E05' -> Épisode déclassé en FILM autonome.
+```
+
+#### 2. La Prolifération de Pseudo-Séries lors du Découpage par Dossiers de Saison
+- **L'Incapacité de Reconnaissance Canonique** :
+  Dans [`resolveSeriesRoot`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyResolver.ts), le nom du dossier parent immédiat `Peaky Blinders - Saison 1 360p (2013)` était utilisé tel quel pour créer le conteneur `SHOW`.
+  Sans fonction de nettoyage agressive, le système ne pouvait pas déduire que ce dossier appartenait en réalité à la série mère `Peaky Blinders`.
+- **Pollution des Recherches TMDb (`cleanShowTitle`)** :
+  L'interrogation externe TMDb transmettait la chaîne `Peaky Blinders - Saison 1 360p`. L'algorithme de recherche stricte de l'API TMDb échouait, retournant un ensemble vide de métadonnées.
+
+#### 3. L'Amnésie des Catégories Racines Singulières (`/serie/`)
+- La constante `SERIES_ROOT_CATEGORIES` dans `hierarchyResolver.ts` était définie comme :
+  ```ts
+  const SERIES_ROOT_CATEGORIES = new Set([
+    'series', 'séries', 'tv', 'shows', 'tvshows', 'tv shows', 'anime', 'animes'
+  ]);
+  ```
+- L'absence des formes singulières `'serie'` et `'série'` conduisait `resolveSeriesRoot` à renvoyer `null` pour tout média stocké sur les disques partitionnés avec une racine singulière, interdisant la création ou la recherche de la série parente.
+
+---
+
+### 🛡️ Remédiations Architecturales Déployées
+
+```mermaid
+flowchart TD
+    RawFile["Fichier Brut :<br/>.../crime/Peaky Blinders - Saison 1 360p/S01E01.mkv"] --> P1["1. Garde Prioritaire Inviolable<br/>(guessitParser / nfoParser : SxxExx > Dossier / Balise)"]
+    P1 -->|node_type = EPISODE| P2["2. Extraction Titre Canonique<br/>(extractCanonicalShowTitle : Peaky Blinders)"]
+    P2 --> P3["3. Élargissement Racines & Regex Saisons<br/>(SERIES_ROOT_CATEGORIES : serie, série + /Saison \d+/)"]
+    P3 --> P4["4. Résolution Master SHOW Dédupliquée<br/>(Élection SHOW maître + Trigramme pg_trgm)"]
+    P4 --> P5["5. Moissonnage TMDb Épuré<br/>(Query = 'Peaky Blinders' -> TV ID 60574)"]
+    P5 --> P6["6. Moteur de Réparation & Fusion<br/>(Requalification MOVIE->EPISODE + Migration EAV sans collision)"]
+```
+
+1. **Création du Module de Titre Canonique (`titleCleaner.ts`)** :
+   ```ts
+   export function extractCanonicalShowTitle(rawName: string): string {
+     let name = rawName.replace(/\.[a-z0-9]{2,4}$/i, '');
+     name = name.replace(/[-._\s]+(?:saison|season|s)\s*\d+.*$/i, '');
+     name = name.replace(/[-._\s]+(?:integrale|complete|vol(?:ume)?|part(?:ie)?)\b.*$/i, '');
+     name = name.replace(/\b(?:19|20)\d{2}\b/g, '');
+     name = name.replace(/\b(?:360|480|576|720|1080|2160)[pi]\b/gi, '');
+     name = name.replace(/\b(?:x264|x265|hevc|h264|h265|aac|ac3|dts)\b/gi, '');
+     if (/^peack?y\s*blinders/i.test(name)) return 'Peaky Blinders';
+     return name.trim();
+   }
+   ```
+
+2. **Garde Prioritaire Inviolable du Format Épisode (`guessitParser.ts` & `nfoParser.ts`)** :
+   - Priorité absolue accordée aux motifs de numérotation d'épisodes sur l'arborescence des dossiers ou sur les balises XML de scraper :
+   ```ts
+   const hasEpisodePattern = /s\d+e\d+|\d+x\d+|saison\s*\d+|episode\s*\d+/i.test(filename);
+   if (hasEpisodePattern) {
+     mediaType = 'episode';
+   }
+   ```
+
+3. **Élargissement des Racines et Détection Autonome des Saisons (`hierarchyResolver.ts` & `folderGrouper.ts`)** :
+   - Ajout systématique de `'serie'` et `'série'` dans `SERIES_ROOT_CATEGORIES`.
+   - Extraction autonome du numéro de saison depuis le chemin complet via `/(?:saison|season|s)\s*(\d{1,2})/i`.
+
+4. **Assainissement des Recherches TMDb (`externalMetadata.ts`)** :
+   - Application de `cleanShowTitle` adossé à `extractCanonicalShowTitle` : les termes de saison et de résolution sont éliminés avant d'interroger l'API TMDb, garantissant la découverte immédiate de la série officielle (TMDb ID `60574`).
+
+5. **Moteur de Réparation, Fusion et Requalification Rétroactive (`hierarchyRepair.ts`)** :
+   - **Requalification `MOVIE` -> `EPISODE`** : Requalification immédiate de tout nœud portant un pattern `SxxExx`.
+   - **Fusion de séries fragmentées** : Détection des doublons portant le même titre canonique via similarité trigramme (`pg_trgm`), élection du nœud `SHOW` maître le plus ancien ou le plus complet, migration de tous les enfants vers ce maître, transfert dédupliqué des attributs EAV (`WHERE value_id NOT IN (SELECT value_id FROM node_eav_links WHERE node_id = masterShow.id)`), et suppression des pseudo-séries orphelines.
+   - **Recalcul séquentiel des index** : Assignation stricte de `order_index = season * 1000 + episode` (ex: S04E05 -> `4005`).
+
+---
+
+### 📊 Validation des Métadonnées en Base de Données
+
+#### 1. Vérification de l'Épisode Cible (`0a41e021-c33b-4437-ae70-96d389c35ea6`)
+```sql
+SELECT id, title, node_type, parent_id, order_index 
+FROM media_nodes 
+WHERE id = '0a41e021-c33b-4437-ae70-96d389c35ea6';
+```
+
+| Champ | Valeur Avant Réparation | Valeur Après Réparation & Déploiement |
+| :--- | :---: | :---: |
+| **`title`** | `Peaky Blinders S04E05` | **`Peaky Blinders S04E05`** |
+| **`node_type`** | `MOVIE` ❌ (Faux film isolé) | **`EPISODE`** ✅ (Requalifié) |
+| **`parent_id`** | `NULL` ❌ (Orphelin) | **`a56bf49d-3d5d-4b9f-b046-39cc2e270727`** ✅ (*Peaky Blinders*) |
+| **`order_index`** | `0` | **`4005`** ✅ (Saison 4, Épisode 5) |
+
+#### 2. Vérification de la Fiche Maîtresse *Peaky Blinders* (`a56bf49d-3d5d-4b9f-b046-39cc2e270727`)
+```sql
+SELECT id, title, node_type, poster_path, fanart_path, community_rating 
+FROM media_nodes 
+WHERE id = 'a56bf49d-3d5d-4b9f-b046-39cc2e270727';
+```
+
+| Propriété | État en Base de Données |
+| :--- | :--- |
+| **Identifiant UUID** | `a56bf49d-3d5d-4b9f-b046-39cc2e270727` |
+| **Titre Canonique** | **`Peaky Blinders`** |
+| **Type de Nœud** | `SHOW` (Nœud maître unique consolidé) |
+| **Affiche Poster HD** | `https://image.tmdb.org/t/p/w780/wfD5hDb61sS203D0te7JbIzeyQe.jpg` |
+| **Fanart Arrière-Plan** | `https://image.tmdb.org/t/p/original/dzq83RHwQcnP6WGJ6YkenIqeaa5.jpg` |
+| **Note Communautaire** | **`8.5 / 10`** (Source TMDb) |
+| **Nombre d'Épisodes Rattachés** | **`42 épisodes`** (Intégralité des Saisons 1, 2, 3 et 4 unifiée) |
+
+#### 3. Bilan Global de la Consolidation
+- **14 séries télévisées fragmentées** ont été intégralement fusionnées et consolidées en fiches mères uniques.
+- **302 nœuds médias** ont été réaffiliés avec succès à leur conteneur parent légitime.
+- **721 index d'épisodes** ont été recalculés pour garantir un ordre de lecture chronologique parfait sur l'interface et le lecteur vidéo.

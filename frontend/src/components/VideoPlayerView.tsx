@@ -11,6 +11,7 @@ interface Props {
   activeQuality?: string;
   activeAudio?: string;
   isPlaying?: boolean;
+  isLive?: boolean;
   videoRef?: any;
   onLoadedMetadata?: () => void;
   onTimeUpdate?: (current: number, duration: number) => void;
@@ -22,6 +23,7 @@ interface Props {
   showSkipIntro?: boolean;
   statusMessage?: string;
   id?: string;
+  isFullscreen?: boolean;
 }
 
 export const VideoPlayerView: React.FC<Props> = ({
@@ -30,6 +32,7 @@ export const VideoPlayerView: React.FC<Props> = ({
   intro,
   activeSubtitle,
   activeQuality = 'auto',
+  isLive = false,
   onLoadedMetadata,
   onTimeUpdate,
   onEnded,
@@ -40,8 +43,10 @@ export const VideoPlayerView: React.FC<Props> = ({
   showSkipIntro = false,
   statusMessage,
   id = '',
+  isFullscreen = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const userPausedRef = useRef(false);
   const [curTime, setCurTime] = useState(0);
   const [mouseActive, setMouseActive] = useState(true);
   const [currentCue, setCurrentCue] = useState('');
@@ -65,51 +70,94 @@ export const VideoPlayerView: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    const focusTimer = setTimeout(() => {
-      if (Platform.OS === 'web' && videoRef.current) {
-        videoRef.current.focus?.();
-      }
-    }, 150);
+    // Ne pas forcer le focus sur la vidéo brute car cela piège les touches du clavier
+    // dans la barre de progression native du navigateur.
     return () => {
       if (mouseTimer.current) clearTimeout(mouseTimer.current);
-      clearTimeout(focusTimer);
     };
   }, []);
 
-  const isHlsMode = useMemo(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return false;
+  const isHlsStream = useMemo(() => {
+    if (!streamUrl) return false;
+    return isLive || streamUrl.includes('.m3u8') || streamUrl.includes('/stream/') || streamUrl.includes('iptv');
+  }, [isLive, streamUrl]);
+
+  const shouldUseHlsJs = useMemo(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || !isHlsStream) return false;
     const v = document.createElement('video');
     const canPlayNative = Boolean(v.canPlayType('application/vnd.apple.mpegurl'));
     const Hls = (window as any).Hls;
     return Boolean(Hls?.isSupported() && !canPlayNative);
-  }, []);
+  }, [isHlsStream]);
 
-  // Support HLS Live IPTV universel sur tous les navigateurs (Chrome, Firefox, Safari, Edge)
+  // Support HLS Live IPTV résilient sur tous les navigateurs avec auto-recovery et buffer anti-décrochage
   useEffect(() => {
-    if (Platform.OS !== 'web' || !videoRef.current || !streamUrl) return;
+    if (Platform.OS !== 'web' || !videoRef.current || !streamUrl || !shouldUseHlsJs) return;
     setPlaybackError(null);
     const v = videoRef.current;
     const Hls = (window as any).Hls;
 
-    if (Hls && Hls.isSupported() && !v.canPlayType('application/vnd.apple.mpegurl')) {
-      const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+    if (Hls && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 60,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 10,
+        manifestLoadingTimeOut: 15000,
+        manifestLoadingMaxRetry: 6,
+        levelLoadingTimeOut: 15000,
+        levelLoadingMaxRetry: 6,
+        fragLoadingTimeOut: 20000,
+        fragLoadingMaxRetry: 8,
+      });
+
       hls.loadSource(streamUrl);
       hls.attachMedia(v);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (!userPausedRef.current) {
+          v.play().catch(() => {});
+        }
+      });
+
       hls.on(Hls.Events.ERROR, (_: any, data: any) => {
         if (data.fatal) {
-          const status = data.response?.code;
-          if (status === 403 || status === 404 || status === 502 || status === 504) {
-            setPlaybackError(`Flux en direct indisponible (${status === 502 || status === 403 ? 'Le diffuseur source a restreint ou interrompu ce flux' : `Erreur HTTP ${status}`}).`);
-          } else {
-            setPlaybackError(`Erreur réseau sur le flux en direct (${data.details || 'Diffuseur hors ligne'}).`);
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError();
+              break;
+            default:
+              const status = data.response?.code;
+              if (status === 403 || status === 404 || status === 502 || status === 504) {
+                setPlaybackError(
+                  `Flux en direct indisponible (${
+                    status === 502 || status === 403
+                      ? 'Le diffuseur source a restreint ou interrompu ce flux'
+                      : `Erreur HTTP ${status}`
+                  }).`
+                );
+              } else {
+                setPlaybackError(
+                  `Erreur réseau sur le flux en direct (${data.details || 'Diffuseur hors ligne'}).`
+                );
+              }
+              hls.destroy();
+              break;
           }
         }
       });
+
       return () => {
         hls.destroy();
       };
     }
-  }, [streamUrl]);
+  }, [streamUrl, shouldUseHlsJs]);
 
   const subtitleUrl = React.useMemo(() => {
     if (!activeSubtitle || activeSubtitle === 'off') return '';
@@ -134,31 +182,53 @@ export const VideoPlayerView: React.FC<Props> = ({
 
   const handleLoaded = () => {
     const target = initialTime && initialTime > 0 ? initialTime : savedTimeRef.current;
-    if (target > 0 && videoRef.current && Math.abs(videoRef.current.currentTime - target) > 0.5) videoRef.current.currentTime = target;
+    if (target > 0 && videoRef.current && Math.abs(videoRef.current.currentTime - target) > 0.5) {
+      videoRef.current.currentTime = target;
+    }
     onLoadedMetadata?.();
   };
 
   const introEnd = intro?.end ?? 90.04;
-  const showBtn = showSkipIntro && curTime >= (intro?.start ?? 0) && curTime < introEnd && mouseActive;
+  // Le bouton "Passer l'intro" reste accessible pendant toute la durée du générique,
+  // y compris lors de la navigation au clavier ou à la télécommande sans souris
+  const showBtn = !isFullscreen && showSkipIntro && curTime >= (intro?.start ?? 0) && curTime < introEnd;
 
   return (
-    <View style={styles.videoPlaceholder} onPointerMove={resetMouse}>
+    <View style={styles.videoPlaceholder} onPointerMove={resetMouse} data-player-container="true">
       {Platform.OS === 'web' ? (
         <video
           ref={videoRef}
-          src={isHlsMode ? undefined : streamUrl}
+          src={shouldUseHlsJs ? undefined : streamUrl}
           controls
           autoPlay
           playsInline
           crossOrigin="anonymous"
-          tabIndex={0}
+          tabIndex={-1}
           data-video-player="true"
           style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
-          onPlay={onPlay}
-          onPause={onPause}
-          onEnded={() => onEnded?.()}
+          onPlay={() => {
+            userPausedRef.current = false;
+            setPlaybackError(null);
+            onPlay?.();
+          }}
+          onPause={() => {
+            userPausedRef.current = true;
+            onPause?.();
+          }}
+          onCanPlay={() => {
+            if (videoRef.current?.paused && !userPausedRef.current) {
+              videoRef.current.play().catch(() => {});
+            }
+          }}
+          onEnded={() => {
+            if (!isLive) {
+              onEnded?.();
+            } else if (videoRef.current && !userPausedRef.current) {
+              videoRef.current.play().catch(() => {});
+            }
+          }}
           onError={() => {
-            if (!playbackError) {
+            if (!playbackError && !isLive) {
               setPlaybackError('Flux multimédia temporairement indisponible (Erreur diffuseur ou lien expiré).');
             }
           }}
@@ -167,7 +237,9 @@ export const VideoPlayerView: React.FC<Props> = ({
             const d = videoRef.current?.duration || 0;
             setCurTime(t);
             onTimeUpdate?.(t, d);
-            if (d > 30 && d - t <= 10) onNearEnd?.(Math.max(0, Math.floor(d - t)));
+            if (!isLive && Number.isFinite(d) && d > 30 && d - t <= 10) {
+              onNearEnd?.(Math.max(0, Math.floor(d - t)));
+            }
           }}
           onLoadedMetadata={handleLoaded}
         >
@@ -185,7 +257,7 @@ export const VideoPlayerView: React.FC<Props> = ({
         <Text style={styles.videoText}>🎬 Lecture ({activeQuality.toUpperCase()})</Text>
       )}
 
-      {/* Alerte informative et bienveillante en cas de flux 403 / indisponible */}
+      {/* Alerte informative en cas de flux indisponible */}
       {playbackError ? (
         <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.92)', borderRadius: 16, padding: 24, alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <Text style={{ fontSize: 36, marginBottom: 8 }}>📡</Text>
@@ -218,8 +290,16 @@ export const VideoPlayerView: React.FC<Props> = ({
         </View>
       ) : null}
       {showBtn && (
-        <Pressable focusable={true} style={styles.skipBtn} onPress={onSkipIntro}>
-          <Text style={styles.skipText}>⏭ Passer l'introduction ({Math.floor(introEnd)}s)</Text>
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          accessibilityLabel="Passer l'intro"
+          data-skip-intro="true"
+          data-focusable="true"
+          onPress={onSkipIntro}
+          style={({ focused }: any) => [styles.skipBtn, focused && styles.skipBtnFocused]}
+        >
+          <Text style={styles.skipText}>Passer l'intro ⏩</Text>
         </Pressable>
       )}
     </View>

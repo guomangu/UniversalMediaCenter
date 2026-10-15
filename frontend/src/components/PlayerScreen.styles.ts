@@ -22,12 +22,19 @@ export const styles = StyleSheet.create({
   topBtn: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill,
     backgroundColor: 'rgba(51, 65, 85, 0.6)',
+    borderWidth: 1.5, borderColor: 'transparent',
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  topBtnFocused: {
+    backgroundColor: '#4f46e5',
+    borderColor: '#ffffff',
+    transform: [{ scale: 1.05 }],
   },
   topBtnText: { color: '#f8fafc', fontWeight: '600', fontSize: 11 },
   voiceBtn: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill,
-    marginLeft: 6, cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+    marginLeft: 6, borderWidth: 1.5, borderColor: 'transparent',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   voiceBtnActive: { backgroundColor: '#10b981' },
   voiceBtnMuted: { backgroundColor: '#475569' },
@@ -43,8 +50,15 @@ export const styles = StyleSheet.create({
     position: 'absolute', bottom: 90, right: 24, zIndex: 50,
     backgroundColor: 'rgba(99, 102, 241, 0.92)', paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two, borderRadius: Radius.pill,
+    borderWidth: 2, borderColor: 'transparent',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 6,
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  skipBtnFocused: {
+    backgroundColor: '#4338ca',
+    borderColor: '#ffffff',
+    transform: [{ scale: 1.08 }],
+    shadowOpacity: 0.7,
   },
   skipText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
   skipIntroBtn: {

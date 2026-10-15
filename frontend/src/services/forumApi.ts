@@ -55,6 +55,8 @@ export interface TopicContextResponse {
     title: string;
     typeLabel: string;
     category?: string;
+    overview?: string;
+    fanartPath?: string;
     backdropUrl?: string | null;
     posterUrl?: string | null;
     totalMedias: number;
@@ -66,11 +68,11 @@ export interface TopicContextResponse {
   studioGroups?: AssociationGroup[];
   genreGroups?: AssociationGroup[];
   tags: {
-    actors: TopicTagItem[];
-    crew: TopicTagItem[];
-    studios: TopicTagItem[];
-    genres: TopicTagItem[];
-    countries: TopicTagItem[];
+    actors?: TopicTagItem[];
+    crew?: TopicTagItem[];
+    studios?: TopicTagItem[];
+    genres?: TopicTagItem[];
+    countries?: TopicTagItem[];
   };
 }
 
@@ -82,14 +84,14 @@ export interface ForumExploreResponse {
     msgCount: number;
     lastMsgAt: string;
   }[];
+  topActors: { title: string; slug: string; count: number }[];
+  topCrew: { title: string; slug: string; role?: string; count: number }[];
+  topStudios: { title: string; slug: string; count: number }[];
+  topGenres: { title: string; slug: string; code?: string; count: number }[];
   oeuvreGroups?: AssociationGroup[];
   actorGroups?: AssociationGroup[];
   studioGroups?: AssociationGroup[];
   genreGroups?: AssociationGroup[];
-  topActors: { title: string; slug: string; count: number }[];
-  topCrew: { title: string; slug: string; role?: string; count: number }[];
-  topStudios: { title: string; slug: string; count: number }[];
-  topGenres?: { title: string; slug: string; code?: string; count: number }[];
 }
 
 export const INITIAL_EXPLORE_DATA: ForumExploreResponse = {

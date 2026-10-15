@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { Spacing } from '@/constants/theme';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
+import { Spacing, Radius } from '@/constants/theme';
 import { UiRailItem } from '@/services/types';
 import { MediaCard } from './MediaCard';
 
@@ -18,6 +18,29 @@ export const MediaRail: React.FC<MediaRailProps> = ({ rail }) => {
       ? 'LIVE_CARD'
       : 'POSTER';
 
+  // 10 initial, puis +10 (total 20), puis +12
+  const [visibleCount, setVisibleCount] = useState(10);
+  const hasMore = visibleCount < rail.items.length;
+  const nextIncrement = visibleCount <= 10 ? 10 : 12;
+
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount((prev) => {
+      if (prev <= 10) return prev + 10;
+      return prev + 12;
+    });
+  }, []);
+
+  const handleScroll = useCallback((e: any) => {
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    if (contentOffset.x + layoutMeasurement.width >= contentSize.width - 200) {
+      if (hasMore) {
+        handleLoadMore();
+      }
+    }
+  }, [hasMore, handleLoadMore]);
+
+  const visibleItems = rail.items.slice(0, visibleCount);
+
   return (
     <View style={styles.railContainer}>
       <View style={styles.header}>
@@ -27,10 +50,19 @@ export const MediaRail: React.FC<MediaRailProps> = ({ rail }) => {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}>
-        {rail.items.map((item) => (
+        contentContainerStyle={styles.scrollContent}
+        onScroll={handleScroll}
+        scrollEventThrottle={64}
+      >
+        {visibleItems.map((item) => (
           <MediaCard key={item.id} item={item} styleVariant={cardStyleVariant} />
         ))}
+        {hasMore ? (
+          <Pressable focusable={true} onPress={handleLoadMore} style={styles.moreTile}>
+            <Text style={styles.morePlus}>+{nextIncrement}</Text>
+            <Text style={styles.moreTxt}>Afficher plus</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -64,5 +96,29 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.four,
+    gap: 12,
+  },
+  moreTile: {
+    width: 110,
+    height: 190,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.2)',
+    backgroundColor: 'rgba(45, 52, 64, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
+  morePlus: {
+    color: '#38bdf8',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  moreTxt: {
+    color: '#8e9ab0',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

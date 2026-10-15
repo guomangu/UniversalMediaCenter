@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { TaxonomyTag, MediaTileItem, fetchTaxonomyMedias, getCachedTaxonomyMedias } from '@/services/taxonomyApi';
@@ -26,7 +26,8 @@ export function TagCard({
   onMediasLoaded,
 }: Props) {
   const router = useRouter();
-  const [limit, setLimit] = useState(15);
+  // Limite initiale stricte de 10 éléments pour optimiser les performances et la mémoire
+  const [limit, setLimit] = useState(10);
   const excludeKey = useMemo(() => excludeIds.slice().sort().join(','), [excludeIds]);
 
   const cached = useMemo(() => getCachedTaxonomyMedias({
@@ -75,10 +76,31 @@ export function TagCard({
       });
   }, [categoryId, tag.slug, activeFilter, searchQuery, limit, excludeKey]);
 
+  // Chargement à la volée : 10 initial, puis +10 (total 20), puis +12 (total 32, 44...)
+  const handleLoadMore = useCallback(() => {
+    if (loading || !hasMore) return;
+    setLimit((prev) => {
+      if (prev <= 10) return prev + 10;
+      return prev + 12;
+    });
+  }, [loading, hasMore]);
+
+  const handleScroll = useCallback((e: any) => {
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    // Détection à la volée quand le défilement horizontal approche du bord droit (240px)
+    if (contentOffset.x + layoutMeasurement.width >= contentSize.width - 240) {
+      if (hasMore && !loading) {
+        handleLoadMore();
+      }
+    }
+  }, [hasMore, loading, handleLoadMore]);
+
   if (medias.length === 0) {
     if (!loading) return null;
     if (searchQuery) return null;
   }
+
+  const nextIncrement = limit <= 10 ? 10 : 12;
 
   return (
     <View style={styles.card}>
@@ -101,12 +123,24 @@ export function TagCard({
       {loading && medias.length === 0 ? (
         <ActivityIndicator color="#8e9ab0" style={{ marginVertical: 15 }} />
       ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.mediaRow}
+          onScroll={handleScroll}
+          scrollEventThrottle={64}
+        >
           {medias.map((m) => <MediaTile key={m.id} item={m} />)}
           {hasMore ? (
-            <Pressable focusable={true} onPress={() => setLimit((prev) => prev + 10)} style={styles.moreTile}>
-              <Text style={styles.morePlus}>+10</Text>
-              <Text style={styles.moreTxt}>Afficher plus</Text>
+            <Pressable focusable={true} onPress={handleLoadMore} style={styles.moreTile}>
+              {loading ? (
+                <ActivityIndicator color="#8e9ab0" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.morePlus}>+{nextIncrement}</Text>
+                  <Text style={styles.moreTxt}>Afficher plus</Text>
+                </>
+              )}
             </Pressable>
           ) : null}
         </ScrollView>
@@ -149,10 +183,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(45, 52, 64, 0.4)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
-    marginBottom: 12,
+    marginLeft: 6,
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
-  morePlus: { fontSize: 20, fontWeight: '700', color: '#cbd5e1' },
-  moreTxt: { fontSize: 11, fontWeight: '600', color: '#94a1b3', marginTop: 4, textAlign: 'center' },
+  morePlus: { color: '#38bdf8', fontSize: 20, fontWeight: '800', marginBottom: 2 },
+  moreTxt: { color: '#8e9ab0', fontSize: 11, fontWeight: '600' },
 });

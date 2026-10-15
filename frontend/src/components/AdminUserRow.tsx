@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, TextInput } from 'react-native';
+import { View, Text, Pressable, TextInput, Platform } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
 interface Props {
@@ -167,13 +167,42 @@ export function AdminUserRow({ user, profileTypes = [], onUpdate, onDelete }: Pr
                   keyboardType="numeric"
                   value={csaAge}
                   onChangeText={setCsaAge}
+                  autoComplete="off"
+                  textContentType="none"
                   onBlur={() => onUpdate(user.id, { maxCsaAgeLimit: csaAge ? Number(csaAge) : null })}
+                  {...({
+                    name: `user_csa_age_${user.id}`,
+                    autoComplete: 'off',
+                    'data-lpignore': 'true',
+                    'data-1p-ignore': 'true',
+                    'data-form-type': 'other',
+                  } as any)}
                 />
               )}
             </View>
 
             <View style={{ flex: 1, minWidth: 140 }}>
               <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>Nouveau Mot de Passe :</Text>
+              {/* Leurre invisible absorbant l'autofill de Chromium pour qu'il n'aille jamais polluer la barre de recherche */}
+              {Platform.OS === 'web' ? (
+                <input
+                  type="text"
+                  name={`decoy_user_${user.id}`}
+                  autoComplete="username"
+                  tabIndex={-1}
+                  readOnly
+                  style={{
+                    position: 'absolute',
+                    opacity: 0,
+                    height: 0,
+                    width: 0,
+                    pointerEvents: 'none',
+                    border: 'none',
+                    margin: 0,
+                    padding: 0,
+                  }}
+                />
+              ) : null}
               <TextInput
                 style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#f8fafc', paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.sm, fontSize: 12 }}
                 placeholder="Modifier mot de passe..."
@@ -181,7 +210,19 @@ export function AdminUserRow({ user, profileTypes = [], onUpdate, onDelete }: Pr
                 secureTextEntry
                 value={newPassword}
                 onChangeText={setNewPassword}
+                autoComplete="new-password"
+                textContentType="newPassword"
+                autoCorrect={false}
+                autoCapitalize="none"
                 onBlur={() => { if (newPassword && newPassword.length >= 4) { onUpdate(user.id, { password: newPassword }); setNewPassword(''); } }}
+                {...({
+                  autoComplete: 'new-password',
+                  name: `edit_account_pwd_${user.id}`,
+                  id: `edit_account_pwd_${user.id}`,
+                  'data-lpignore': 'true',
+                  'data-1p-ignore': 'true',
+                  'data-form-type': 'other',
+                } as any)}
               />
             </View>
 

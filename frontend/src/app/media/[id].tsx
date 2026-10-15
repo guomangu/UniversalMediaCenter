@@ -351,24 +351,6 @@ export default function MediaDetailScreen() {
         )}
 
         {/* ======================================================== */}
-        {/* 3. MEDIAS STUDIOS : Studios et films dépendants associés  */}
-        {/* ======================================================== */}
-        <MediaStudioSection
-          studioMedias={studioMedias}
-          studioTags={studios}
-          currentMediaId={media.id}
-        />
-
-        {/* ======================================================== */}
-        {/* 4. FORUM : Section Forum & Vocal Direct                   */}
-        {/* ======================================================== */}
-        <MediaForumSection
-          topicSlug={media.slug || media.id}
-          topicTitle={media.title}
-          mediaId={media.id}
-        />
-
-        {/* ======================================================== */}
         {/* 5. ACTEURS : Casting des Acteurs avec Photos et Rôles     */}
         {/* ======================================================== */}
         {actors.length > 0 && (
@@ -491,6 +473,24 @@ export default function MediaDetailScreen() {
             )}
           </View>
         )}
+
+        {/* ======================================================== */}
+        {/* 3. MEDIAS STUDIOS : Studios et films dépendants associés  */}
+        {/* ======================================================== */}
+        <MediaStudioSection
+          studioMedias={studioMedias}
+          studioTags={studios}
+          currentMediaId={media.id}
+        />
+
+        {/* ======================================================== */}
+        {/* 4. FORUM : Section Forum & Vocal Direct                   */}
+        {/* ======================================================== */}
+        <MediaForumSection
+          topicSlug={media.slug || media.id}
+          topicTitle={media.title}
+          mediaId={media.id}
+        />
 
         {/* ======================================================== */}
         {/* 8. PROPOSITIONS MEDIAS PAR TAGS & AVIS COMMUNAUTAIRES     */}

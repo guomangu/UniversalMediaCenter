@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, Pressable, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Pressable, Modal, ActivityIndicator, StyleSheet } from 'react-native';
 import { createAdminUser } from '@/services/adminApi';
-import { styles } from './AccountModal.styles';
-import { Radius } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 
 interface Props {
   visible: boolean;
@@ -27,6 +26,8 @@ export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
       return () => clearTimeout(timer);
     }
   }, [visible]);
+
+  if (!visible) return null;
 
   const handleCreate = async () => {
     if (!name.trim()) return setErr('Le nom d’affichage est requis');
@@ -55,48 +56,72 @@ export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View
-          style={[styles.modalCard, { maxWidth: 420 }]}
-          {...({ dataSet: { modalContainer: 'true' } } as any)}
-        >
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>👤 Nouveau Compte Utilisateur</Text>
+      <View style={modalStyles.overlay}>
+        <View style={modalStyles.card}>
+          <View style={modalStyles.headerRow}>
+            <Text style={modalStyles.title}>👤 Nouveau Compte Utilisateur</Text>
             <Pressable
               focusable={true}
-              style={styles.closeBtn}
+              style={modalStyles.closeBtn}
               onPress={onClose}
-              {...({ dataSet: { modalClose: 'true' } } as any)}
             >
-              <Text style={styles.closeText}>✕</Text>
+              <Text style={modalStyles.closeBtnTxt}>✕</Text>
             </Pressable>
           </View>
 
-          <TextInput
-            ref={firstInputRef}
-            style={styles.input}
-            placeholder="Nom d’affichage (ex: Lucas)"
-            placeholderTextColor="#64748b"
-            value={name}
-            onChangeText={setName}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Email (ex: lucas@domaine.com)"
-            placeholderTextColor="#64748b"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Mot de passe (au moins 6 car.)"
-            placeholderTextColor="#64748b"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+          {err ? (
+            <View style={modalStyles.alertError}>
+              <Text style={modalStyles.alertErrorTxt}>⚠️ {err}</Text>
+            </View>
+          ) : null}
+
+          <View style={modalStyles.inputGroup}>
+            <Text style={modalStyles.inputLabel}>Nom ou Pseudo *</Text>
+            <TextInput
+              ref={firstInputRef}
+              style={modalStyles.textInput}
+              placeholder="Ex : Lucas, Marie..."
+              placeholderTextColor="#64748b"
+              value={name}
+              onChangeText={setName}
+            />
+          </View>
+
+          <View style={modalStyles.inputGroup}>
+            <Text style={modalStyles.inputLabel}>Adresse Email *</Text>
+            <TextInput
+              style={modalStyles.textInput}
+              placeholder="lucas@famille.fr"
+              placeholderTextColor="#64748b"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
+          </View>
+
+          <View style={modalStyles.inputGroup}>
+            <Text style={modalStyles.inputLabel}>Mot de passe (optionnel)</Text>
+            <TextInput
+              style={modalStyles.textInput}
+              placeholder="Au moins 6 caractères ou vide..."
+              placeholderTextColor="#64748b"
+              secureTextEntry
+              autoComplete="new-password"
+              textContentType="newPassword"
+              value={password}
+              onChangeText={setPassword}
+              autoCapitalize="none"
+              {...({
+                autoComplete: 'new-password',
+                name: 'create_user_new_password',
+                id: 'create_user_new_password',
+                'data-lpignore': 'true',
+                'data-1p-ignore': 'true',
+                'data-form-type': 'other',
+              } as any)}
+            />
+          </View>
 
           <Pressable
             focusable={true}
@@ -105,44 +130,123 @@ export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
               flexDirection: 'row',
               alignItems: 'center',
               gap: 8,
-              padding: 8,
+              padding: 10,
               borderRadius: Radius.md,
-              backgroundColor: isAdmin ? 'rgba(99, 102, 241, 0.2)' : 'rgba(30, 41, 59, 0.6)',
-              marginBottom: 12,
+              backgroundColor: isAdmin ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+              borderWidth: 1,
+              borderColor: isAdmin ? '#6366f1' : 'rgba(255, 255, 255, 0.08)',
+              marginBottom: 16,
             }}
           >
             <Text style={{ fontSize: 16 }}>{isAdmin ? '👑' : '👤'}</Text>
-            <Text style={{ color: isAdmin ? '#a5b4fc' : '#94a3b8', fontSize: 12, fontWeight: '700' }}>
-              {isAdmin ? 'Droits Administrateur Activés' : 'Compte Membre Standard'}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#f8fafc', fontWeight: '700', fontSize: 12 }}>
+                Privilèges Administrateur
+              </Text>
+              <Text style={{ color: '#94a3b8', fontSize: 11 }}>
+                {isAdmin ? 'Accès illimité à l’Agora, TV, réglages serveur et studio' : 'Utilisateur standard / profil famille'}
+              </Text>
+            </View>
           </Pressable>
 
-          {err ? <Text style={styles.errorText}>{err}</Text> : null}
-
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable
-              focusable={true}
-              style={[styles.submitBtn, { flex: 1, backgroundColor: '#475569' }]}
-              onPress={onClose}
-              {...({ dataSet: { modalClose: 'true' } } as any)}
-            >
-              <Text style={styles.submitText}>Annuler</Text>
-            </Pressable>
-            <Pressable
-              focusable={true}
-              style={[styles.submitBtn, { flex: 2 }]}
-              onPress={handleCreate}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.submitText}>Créer le compte</Text>
-              )}
-            </Pressable>
-          </View>
+          <Pressable
+            focusable={true}
+            disabled={loading}
+            onPress={handleCreate}
+            style={[modalStyles.primaryBtn, loading && { opacity: 0.6 }]}
+          >
+            {loading ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text style={modalStyles.primaryBtnTxt}>Créer le compte</Text>
+            )}
+          </Pressable>
         </View>
       </View>
     </Modal>
   );
 }
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 8, 15, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.four,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: 'rgba(29, 33, 39, 0.98)',
+    borderRadius: Radius.xl,
+    padding: Spacing.four,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.35)',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.three,
+  },
+  title: {
+    color: '#f8fafc',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  closeBtn: {
+    padding: 6,
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  closeBtnTxt: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  alertError: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: 10,
+    marginBottom: 12,
+  },
+  alertErrorTxt: {
+    color: '#fca5a5',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  inputGroup: {
+    marginBottom: 12,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#cbd5e1',
+    marginBottom: 4,
+  },
+  textInput: {
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#f8fafc',
+    fontSize: 13,
+  },
+  primaryBtn: {
+    backgroundColor: '#6366f1',
+    paddingVertical: 12,
+    borderRadius: Radius.lg,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  primaryBtnTxt: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});
