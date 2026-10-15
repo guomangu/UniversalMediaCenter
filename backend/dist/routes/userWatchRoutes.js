@@ -5,7 +5,9 @@ import { eq, and, desc } from 'drizzle-orm';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 export const userWatchRouter = new Hono();
 function formatNode(node) {
-    const info = parseSeasonEpisode(node.title, node.orderIndex);
+    const nodeType = node.nodeType || node.node_type;
+    const isEpOrSeason = nodeType === 'EPISODE' || nodeType === 'SEASON';
+    const info = isEpOrSeason ? parseSeasonEpisode(node.title, node.orderIndex, nodeType) : null;
     return {
         ...node,
         posterPath: node.posterPath ? `/api/media/${node.id}/poster` : undefined,
@@ -21,22 +23,20 @@ userWatchRouter.get('/continue-watching', async (c) => {
         node: mediaNodes,
         pos: watchProgress.positionSeconds,
         dur: watchProgress.durationSeconds,
-        updatedAt: watchProgress.updatedAt,
+        isCompleted: watchProgress.isCompleted,
     })
         .from(watchProgress)
         .innerJoin(mediaNodes, eq(watchProgress.nodeId, mediaNodes.id))
         .where(and(eq(watchProgress.userId, sessionUser.id), eq(watchProgress.isCompleted, false)))
         .orderBy(desc(watchProgress.updatedAt))
         .limit(20);
-    return c.json({
-        items: items.map((it) => ({
-            ...formatNode(it.node),
-            positionSeconds: it.pos,
-            durationSeconds: it.dur,
-            progressPercent: it.dur > 0 ? Math.round((it.pos / it.dur) * 100) : 0,
-            updatedAt: it.updatedAt,
-        })),
-    });
+    return c.json(items.map((i) => ({
+        ...formatNode(i.node),
+        positionSeconds: i.pos,
+        durationSeconds: i.dur,
+        progressPercent: i.dur > 0 ? Math.round((i.pos / i.dur) * 100) : 0,
+        isCompleted: i.isCompleted,
+    })));
 });
 userWatchRouter.get('/history', async (c) => {
     const sessionUser = c.get('user');
@@ -52,15 +52,13 @@ userWatchRouter.get('/history', async (c) => {
         .innerJoin(mediaNodes, eq(watchProgress.nodeId, mediaNodes.id))
         .where(eq(watchProgress.userId, sessionUser.id))
         .orderBy(desc(watchProgress.updatedAt))
-        .limit(30);
-    return c.json({
-        history: items.map((it) => ({
-            ...formatNode(it.node),
-            positionSeconds: it.pos,
-            durationSeconds: it.dur,
-            isCompleted: it.isCompleted,
-            progressPercent: it.dur > 0 ? Math.round((it.pos / it.dur) * 100) : 0,
-            updatedAt: it.updatedAt,
-        })),
-    });
+        .limit(50);
+    return c.json(items.map((i) => ({
+        ...formatNode(i.node),
+        positionSeconds: i.pos,
+        durationSeconds: i.dur,
+        progressPercent: i.dur > 0 ? Math.round((i.pos / i.dur) * 100) : 0,
+        isCompleted: i.isCompleted,
+        watchedAt: i.updatedAt,
+    })));
 });

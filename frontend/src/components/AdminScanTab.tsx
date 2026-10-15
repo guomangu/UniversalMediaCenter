@@ -28,6 +28,7 @@ export function AdminScanTab() {
   const [isScanningTriggered, setIsScanningTriggered] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [rebuildingHierarchy, setRebuildingHierarchy] = useState(false);
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
 
   // Modale d'association manuelle rapide
   const [selectedMediaForMatch, setSelectedMediaForMatch] = useState<any | null>(null);
@@ -183,70 +184,124 @@ export function AdminScanTab() {
           </View>
         </View>
 
-        {/* Barre de progression interactive si scan en cours */}
+        {/* Barre de progression interactive si synchronisation en cours */}
         {isScanning && (
-          <View style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: 12, borderRadius: 12, marginVertical: 10, borderWidth: 1, borderColor: '#3b82f6' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <ActivityIndicator color="#60a5fa" size="small" />
-              <Text style={{ color: '#93c5fd', fontWeight: '700', fontSize: 13 }}>
-                Analyse & Ingestion en temps réel...
-              </Text>
+          <View style={{ backgroundColor: 'rgba(15, 23, 42, 0.75)', padding: 14, borderRadius: 14, marginVertical: 12, borderWidth: 1, borderColor: '#6366f1' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <ActivityIndicator color="#818cf8" size="small" />
+                <Text style={{ color: '#c7d2fe', fontWeight: '800', fontSize: 14 }}>
+                  {statusData?.phaseName || 'Synchronisation Universelle en cours...'}
+                </Text>
+              </View>
+              {statusData?.phase && (
+                <View style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+                  <Text style={{ color: '#a5b4fc', fontSize: 11, fontWeight: '700' }}>{statusData.phase}</Text>
+                </View>
+              )}
             </View>
+
             <Text style={{ color: '#f8fafc', fontSize: 13, fontWeight: '600' }}>
-              {statusData?.processedCount ?? 0} fichier(s) traités sur {statusData?.totalDiscovered ?? 'découverte...'}
+              Progression : {statusData?.processedCount ?? 0} élément(s) traités sur {statusData?.totalDiscovered || 'analyse...'}
+              {statusData?.enrichedCount ? ` • ${statusData.enrichedCount} enrichis` : ''}
             </Text>
+
             {statusData?.currentFile ? (
-              <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 4 }} numberOfLines={1}>
+              <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 5 }} numberOfLines={1}>
                 En cours : {statusData.currentFile}
               </Text>
             ) : null}
           </View>
         )}
 
-        {/* Boutons d'action principaux */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 }}>
-          <Pressable
-            focusable={true}
-            style={[styles.submitBtn, { flex: 1, minWidth: 180 }, isScanning && styles.btnDisabled]}
-            onPress={handleLaunchScan}
-            disabled={isScanning}
-          >
-            {isScanning ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.submitText}>🚀 Lancer le Scan Universel</Text>
-            )}
-          </Pressable>
-
+        {/* Bouton d'action unique : Synchronisation Universelle Complète */}
+        <View style={{ marginTop: 8 }}>
           <Pressable
             focusable={true}
             style={[
               styles.submitBtn,
-              { flex: 1, minWidth: 180, backgroundColor: '#8b5cf6' },
-              (rebuildingHierarchy || isScanning) && styles.btnDisabled,
+              {
+                backgroundColor: '#4f46e5',
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                borderRadius: Radius.lg,
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+              isScanning && styles.btnDisabled,
             ]}
-            onPress={handleRebuildHierarchy}
-            disabled={rebuildingHierarchy || isScanning}
+            onPress={handleLaunchScan}
+            disabled={isScanning}
           >
-            {rebuildingHierarchy ? (
-              <ActivityIndicator color="#fff" />
+            {isScanning ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <ActivityIndicator color="#fff" />
+                <Text style={[styles.submitText, { fontSize: 15, fontWeight: '700' }]}>
+                  {statusData?.phaseName || 'Synchronisation en cours...'}
+                </Text>
+              </View>
             ) : (
-              <Text style={styles.submitText}>🔄 Réparer la Hiérarchie</Text>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={[styles.submitText, { fontSize: 16, fontWeight: '800', letterSpacing: 0.3 }]}>
+                  ⚡ Lancer la Synchronisation Universelle Complète
+                </Text>
+                <Text style={{ color: '#c7d2fe', fontSize: 11, marginTop: 4, opacity: 0.9 }}>
+                  Scan In-Place ➔ Moissonnage Distant ➔ Graphe Hiérarchique & Sagas ➔ Tags EAV
+                </Text>
+              </View>
             )}
           </Pressable>
 
-          <Pressable
-            focusable={true}
-            style={[styles.submitBtn, { flex: 1, minWidth: 180, backgroundColor: '#0284c7' }, (enriching || isScanning) && styles.btnDisabled]}
-            onPress={handleEnrichMetadata}
-            disabled={enriching || isScanning}
-          >
-            {enriching ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.submitText}>🧠 Enrichir Métadonnées</Text>
-            )}
-          </Pressable>
+          {/* Outils de maintenance individuels (repliés) */}
+          <View style={{ marginTop: 12, alignItems: 'center' }}>
+            <Pressable
+              focusable={true}
+              onPress={() => setShowAdvancedTools(!showAdvancedTools)}
+              style={{ paddingVertical: 4, paddingHorizontal: 10 }}
+            >
+              <Text style={{ color: '#94a3b8', fontSize: 12 }}>
+                {showAdvancedTools ? '▾ Masquer les sous-routines de maintenance' : '▸ Outils individuels de maintenance (Avancé)'}
+              </Text>
+            </Pressable>
+          </View>
+
+          {showAdvancedTools && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8, padding: 10, backgroundColor: 'rgba(15, 23, 42, 0.4)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
+              <Pressable
+                focusable={true}
+                style={[
+                  styles.submitBtn,
+                  { flex: 1, minWidth: 160, backgroundColor: '#8b5cf6', paddingVertical: 10 },
+                  (rebuildingHierarchy || isScanning) && styles.btnDisabled,
+                ]}
+                onPress={handleRebuildHierarchy}
+                disabled={rebuildingHierarchy || isScanning}
+              >
+                {rebuildingHierarchy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={[styles.submitText, { fontSize: 12 }]}>🔄 Réparer Séries & Sagas</Text>
+                )}
+              </Pressable>
+
+              <Pressable
+                focusable={true}
+                style={[
+                  styles.submitBtn,
+                  { flex: 1, minWidth: 160, backgroundColor: '#0284c7', paddingVertical: 10 },
+                  (enriching || isScanning) && styles.btnDisabled,
+                ]}
+                onPress={handleEnrichMetadata}
+                disabled={enriching || isScanning}
+              >
+                {enriching ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={[styles.submitText, { fontSize: 12 }]}>🧠 Enrichir Métadonnées (Lot 100)</Text>
+                )}
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {actionMsg ? <Text style={styles.statusMsg}>{actionMsg}</Text> : null}
@@ -263,6 +318,11 @@ export function AdminScanTab() {
           <View style={{ flex: 1, minWidth: 100, backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: 12, borderRadius: 12, alignItems: 'center' }}>
             <Text style={{ color: '#38bdf8', fontSize: 22, fontWeight: '800' }}>{stats.totalNodes}</Text>
             <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>Total Nœuds</Text>
+          </View>
+
+          <View style={{ flex: 1, minWidth: 100, backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: 12, borderRadius: 12, alignItems: 'center' }}>
+            <Text style={{ color: '#818cf8', fontSize: 22, fontWeight: '800' }}>{(stats as any).collectionsCount ?? 0}</Text>
+            <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>Sagas & Collections</Text>
           </View>
 
           <View style={{ flex: 1, minWidth: 100, backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: 12, borderRadius: 12, alignItems: 'center' }}>

@@ -11,6 +11,7 @@ import { mediaNextRouter } from './mediaNext.js';
 import { processNfoFile } from '../watcher/index.js';
 import { getRelatedTagsForMedia } from './mediaRelated.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
+import { localizeMediaNode, extractRequestLanguage } from '../watcher/pipeline/localizationHelper.js';
 import { fetchExternalMetadata, cleanShowTitle } from '../watcher/externalMetadata.js';
 import { linkTagToNode } from '../watcher/tagExtractor.js';
 import { createShareToken } from '../auth/shareToken.js';
@@ -226,8 +227,11 @@ mediaRouter.get('/:id', async (c) => {
   const id = c.req.param('id');
   const shareToken = c.req.query('share_token');
   const user = (c as any).get('user') as UserSession | undefined;
+  const userLang = extractRequestLanguage(c);
 
-  const media = await findMediaByIdOrSlug(id);
+  const mediaRaw = await findMediaByIdOrSlug(id);
+  if (!mediaRaw) return c.json({ error: 'Média introuvable' }, 404);
+  const media = localizeMediaNode(mediaRaw, userLang);
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
@@ -357,7 +361,8 @@ mediaRouter.get('/:id', async (c) => {
     ? `Saga cinématographique regroupant ${childNodes.length} films et œuvres associées.`
     : undefined);
 
-  const info = parseSeasonEpisode(media.title, media.orderIndex);
+  const isEpOrSeason = media.nodeType === "EPISODE" || media.nodeType === "SEASON";
+  const info = isEpOrSeason ? parseSeasonEpisode(media.title, media.orderIndex, media.nodeType) : null;
 
   // Récupération de la progression de lecture (watchProgress) pour l'utilisateur
   const progressMap = new Map<string, { positionSeconds: number; durationSeconds: number; isCompleted: boolean; progressPercent: number }>();
@@ -432,18 +437,22 @@ mediaRouter.get('/:id', async (c) => {
     overview: effectiveOverview,
   };
 
-  const children = childNodes.map((ch) => {
-    const chInfo = parseSeasonEpisode(ch.title, ch.orderIndex);
+  const children = childNodes.map((chRaw) => {
+    const ch = localizeMediaNode(chRaw, userLang);
+    const isChEpOrSeason = ch.nodeType === 'EPISODE' || ch.nodeType === 'SEASON';
+    const chInfo = isChEpOrSeason ? parseSeasonEpisode(ch.title, ch.orderIndex, ch.nodeType) : null;
     let displayBadge = ch.title;
     let seasonEpisodeTag = null;
 
     if (ch.nodeType === 'MOVIE') {
-      displayBadge = ch.orderIndex > 0 ? `FILM ${ch.orderIndex}` : 'FILM';
-      seasonEpisodeTag = ch.orderIndex > 0 ? `FILM${ch.orderIndex}` : 'FILM';
+      const isYear = ch.orderIndex >= 1880 && ch.orderIndex <= 2100;
+      const filmNum = (!isYear && ch.orderIndex > 0) ? ch.orderIndex : null;
+      displayBadge = filmNum ? `FILM ${filmNum}` : 'FILM';
+      seasonEpisodeTag = filmNum ? `FILM${filmNum}` : 'FILM';
     } else if (chInfo?.displayBadge) {
       displayBadge = chInfo.displayBadge;
       seasonEpisodeTag = chInfo.seasonEpisodeTag;
-    } else if (ch.orderIndex >= 1000) {
+    } else if (isChEpOrSeason && ch.orderIndex >= 1000 && (ch.orderIndex < 1880 || ch.orderIndex > 2100)) {
       const s = Math.floor(ch.orderIndex / 1000);
       const e = ch.orderIndex % 1000;
       const sStr = String(s).padStart(2, '0');
@@ -453,7 +462,7 @@ mediaRouter.get('/:id', async (c) => {
     } else if (ch.absoluteOrderIndex && ch.absoluteOrderIndex > 0 && ch.absoluteOrderIndex < 1000) {
       displayBadge = `EP ${String(ch.absoluteOrderIndex).padStart(2, '0')}`;
       seasonEpisodeTag = `E${String(ch.absoluteOrderIndex).padStart(2, '0')}`;
-    } else if (ch.orderIndex > 0) {
+    } else if (isChEpOrSeason && ch.orderIndex > 0 && (ch.orderIndex < 1880 || ch.orderIndex > 2100)) {
       displayBadge = `EP ${String(ch.orderIndex).padStart(2, '0')}`;
       seasonEpisodeTag = `E${String(ch.orderIndex).padStart(2, '0')}`;
     }

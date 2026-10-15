@@ -5,15 +5,21 @@ import { eq, and, ne, isNull, or, like } from 'drizzle-orm';
 import { generateSlug } from './slugify.js';
 import { linkTagToNode } from './tagExtractor.js';
 import { calculateOSHash, extractCrc32 } from './pipeline/binaryFingerprint.js';
+import { computeBinaryFootprint } from './pipeline/binaryHasher.js';
+import { inspectContainerMetadata } from './pipeline/containerInspector.js';
+import { analyzeSubtitlesNlp } from './pipeline/subtitleNlpMatcher.js';
 import { probeMediaFile } from './pipeline/ffprobeProbe.js';
 import { parseLexicalFilename } from './pipeline/lexicalParser.js';
 import { identifyVideoFile } from './pipeline/universalScanner.js';
 import { detectAdjacentFiles } from './mediaFileDetector.js';
 import { resolveSeriesRoot, resolveParentShowNodeId } from './hierarchyResolver.js';
 import { analyzeFolderGrouping } from './folderGrouper.js';
+import { sanitizeReleaseTags, extractYearFromText } from './titleCleaner.js';
+import { parsePathWithGuessit } from './pipeline/guessitParser.js';
+import { isAnimeMedia, resolveAnimeSeasonEpisode } from './pipeline/animeMapping.js';
 export async function ingestMediaNode(nfoPath, parsed, sha256) {
     const adjacent = await detectAdjacentFiles(nfoPath);
-    const slug = `${generateSlug(parsed.title)}-${parsed.year || 'media'}`;
+    const slug = `${generateSlug(parsed.title)}-${parsed.year || 'media'}`; //
     const sortTitle = parsed.sortTitle || parsed.title;
     let parentId = null;
     let isExtra = false;
@@ -51,22 +57,53 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
     // Calcul d'index d'ordre unifié et sans collision entre saisons
     let orderIndex = 0;
     let absoluteOrderIndex = null;
+    // 1. Parsing heuristique GuessIt avec validation stricte Kyoo
+    const guess = await parsePathWithGuessit(adjacent.videoFilePath || nfoPath);
+    if (guess.type === 'movie' && effectiveType !== 'COLLECTION') {
+        effectiveType = 'MOVIE';
+    }
+    let effYear = parsed.year || guess.year;
+    if (guess.year && (!effYear || Math.abs(effYear - guess.year) > 1)) {
+        effYear = guess.year;
+    }
     if (effectiveType === 'MOVIE') {
-        orderIndex = parsed.episodeNumber ?? 0;
-        absoluteOrderIndex = null;
-    }
-    else if (parsed.absoluteEpisodeNumber != null && parsed.absoluteEpisodeNumber > 0) {
-        orderIndex = parsed.absoluteEpisodeNumber;
-        absoluteOrderIndex = parsed.absoluteEpisodeNumber;
-    }
-    else if (parsed.episodeNumber != null && parsed.episodeNumber > 0) {
-        if (parsed.seasonNumber && parsed.seasonNumber > 1) {
-            orderIndex = parsed.seasonNumber * 1000 + parsed.episodeNumber;
-            absoluteOrderIndex = parsed.seasonNumber * 1000 + parsed.episodeNumber;
+        const detectedYear = extractYearFromText(nfoPath) || extractYearFromText(adjacent.videoFilePath) || extractYearFromText(parsed.title) || guess.year;
+        if (detectedYear) {
+            effYear = detectedYear;
         }
-        else {
-            orderIndex = parsed.episodeNumber;
-            absoluteOrderIndex = parsed.episodeNumber;
+        orderIndex = effYear || 0;
+        absoluteOrderIndex = effYear || null;
+    }
+    else if (effectiveType === 'EPISODE') {
+        // 2. Résolution des cas complexes Animes (TheXEM & Anime-Lists)
+        const showName = parsed.showTitle || guess.title;
+        const candidateAbs = parsed.absoluteEpisodeNumber || guess.absoluteEpisode || (guess.episode && guess.episode > 24 ? guess.episode : undefined);
+        if (candidateAbs && isAnimeMedia(showName, nfoPath)) {
+            const animeRes = resolveAnimeSeasonEpisode(showName, candidateAbs, nfoPath);
+            if (animeRes) {
+                orderIndex = animeRes.season * 1000 + animeRes.episode;
+                absoluteOrderIndex = animeRes.absoluteEpisode;
+            }
+        }
+        if (!orderIndex) {
+            if (parsed.absoluteEpisodeNumber != null && parsed.absoluteEpisodeNumber > 0) {
+                orderIndex = parsed.absoluteEpisodeNumber;
+                absoluteOrderIndex = parsed.absoluteEpisodeNumber;
+            }
+            else if (parsed.episodeNumber != null && parsed.episodeNumber > 0) {
+                if (parsed.seasonNumber && parsed.seasonNumber > 1) {
+                    orderIndex = parsed.seasonNumber * 1000 + parsed.episodeNumber;
+                    absoluteOrderIndex = parsed.seasonNumber * 1000 + parsed.episodeNumber;
+                }
+                else {
+                    orderIndex = parsed.episodeNumber;
+                    absoluteOrderIndex = parsed.episodeNumber;
+                }
+            }
+            else if (guess.episode) {
+                orderIndex = (guess.season ? guess.season * 1000 : 1000) + guess.episode;
+                absoluteOrderIndex = guess.absoluteEpisode || guess.episode;
+            }
         }
     }
     else if (parsed.seasonNumber != null && parsed.seasonNumber > 0) {
@@ -89,23 +126,32 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
     let crc32;
     let edition;
     let chapters = parsed.chapters || [];
+    let probedQuality;
+    let probedCodec;
     if (adjacent.videoFilePath) {
-        oshash = (await calculateOSHash(adjacent.videoFilePath)) || undefined;
-        crc32 = extractCrc32(adjacent.videoFilePath) || undefined;
+        const [binaryFootprint, containerMeta, subtitleNlp, probed] = await Promise.all([
+            computeBinaryFootprint(adjacent.videoFilePath),
+            inspectContainerMetadata(adjacent.videoFilePath),
+            analyzeSubtitlesNlp(adjacent.videoFilePath, parsed.title),
+            probeMediaFile(adjacent.videoFilePath),
+        ]);
+        oshash = binaryFootprint.oshash;
+        crc32 = binaryFootprint.crc32 || extractCrc32(adjacent.videoFilePath) || undefined;
         const lexical = parseLexicalFilename(adjacent.videoFilePath);
-        edition = lexical.edition;
+        edition = containerMeta.edition || lexical.edition;
         if (lexical.isExtra) {
             isExtra = true;
             extraType = lexical.extraType || extraType;
         }
-        if (chapters.length === 0 || !durationSeconds) {
-            const probed = await probeMediaFile(adjacent.videoFilePath);
-            if (probed) {
-                if (chapters.length === 0 && probed.chapters.length > 0)
-                    chapters = probed.chapters;
-                if (!durationSeconds && probed.durationSeconds)
-                    durationSeconds = probed.durationSeconds;
-            }
+        if (probed) {
+            if (probed.videoQuality)
+                probedQuality = probed.videoQuality;
+            if (probed.videoCodec)
+                probedCodec = probed.videoCodec;
+            if (chapters.length === 0 && probed.chapters.length > 0)
+                chapters = probed.chapters;
+            if (!durationSeconds && probed.durationSeconds)
+                durationSeconds = probed.durationSeconds;
         }
     }
     let nodeId;
@@ -113,14 +159,14 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
         parentId: parentId || (existing?.parentId ?? undefined),
         nodeType: effectiveType,
         state: 'READY',
-        title: parsed.title,
-        originalTitle: parsed.originalTitle,
-        sortTitle,
+        title: sanitizeReleaseTags(parsed.title),
+        originalTitle: parsed.originalTitle ? sanitizeReleaseTags(parsed.originalTitle) : undefined,
+        sortTitle: sanitizeReleaseTags(sortTitle),
         tagline: parsed.tagline,
         overview: parsed.plot || parsed.plot || parsed.outline,
         orderIndex,
         absoluteOrderIndex,
-        releaseYear: parsed.year,
+        releaseYear: effYear,
         premieredDate,
         runtimeSeconds: durationSeconds,
         communityRating: parsed.rating,
@@ -195,8 +241,9 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
         await linkTagToNode(nodeId, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {});
     }
     const sd = parsed.streamDetails;
-    if (sd?.videoQuality)
-        await linkTagToNode(nodeId, 'video_quality', sd.videoQuality);
+    const effQuality = probedQuality || sd?.videoQuality;
+    if (effQuality)
+        await linkTagToNode(nodeId, 'video_quality', effQuality);
     if (sd?.videoCodec)
         await linkTagToNode(nodeId, 'video_codec', sd.videoCodec.toUpperCase());
     if (sd?.aspectRatio)

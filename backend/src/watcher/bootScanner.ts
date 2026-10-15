@@ -3,6 +3,7 @@ import path from 'node:path';
 import { processNfoFile } from './index.js';
 import { ingestStandaloneVideoFile } from './mediaIngester.js';
 import { repairAllMediaHierarchy } from './hierarchyRepair.js';
+import { enrichLibraryMetadata } from './metadataEnricher.js';
 
 const VIDEO_EXTENSIONS = new Set([
   '.mkv', '.mp4', '.avi', '.mov', '.m4v', '.webm', '.ts', '.wmv', '.flv',
@@ -19,22 +20,29 @@ export interface DiscoveredScanFiles {
 
 export interface ScanStatus {
   isScanning: boolean;
+  phase?: 'IDLE' | 'DISCOVERY_NFO' | 'METADATA_ENRICH' | 'HIERARCHY_REPAIR' | 'EAV_CONSOLIDATION' | 'DONE' | 'ERROR';
+  phaseName?: string;
   totalDiscovered: number;
   processedCount: number;
   nfoCount: number;
   standaloneCount: number;
+  enrichedCount?: number;
   currentFile?: string;
   startedAt?: string;
   finishedAt?: string;
   error?: string;
+  report?: any;
 }
 
 const activeScanStatus: ScanStatus = {
   isScanning: false,
+  phase: 'IDLE',
+  phaseName: 'En attente',
   totalDiscovered: 0,
   processedCount: 0,
   nfoCount: 0,
   standaloneCount: 0,
+  enrichedCount: 0,
 };
 
 export function getScanStatus(): ScanStatus {
@@ -94,7 +102,7 @@ export async function findMediaFilesRecursive(dir: string): Promise<DiscoveredSc
 }
 
 /**
- * Lance le scan universel complet des bibliothèques (Pass 1 NFO + Pass 2 Standalone + Pass 3 Hiérarchie)
+ * Lance le pipeline unifié complet des bibliothèques (Pass 1 NFO & Standalone + Pass 2 Enrichissement TMDb/Wiki + Pass 3 Hiérarchie & Sagas + Pass 4 EAV)
  */
 export const runBootMediaScan = triggerMediaScan;
 export async function triggerMediaScan(roots: string[]): Promise<void> {
@@ -104,13 +112,17 @@ export async function triggerMediaScan(roots: string[]): Promise<void> {
   }
 
   activeScanStatus.isScanning = true;
+  activeScanStatus.phase = 'DISCOVERY_NFO';
+  activeScanStatus.phaseName = 'Passe 1/4 : Découverte & Indexation In-Place';
   activeScanStatus.totalDiscovered = 0;
   activeScanStatus.processedCount = 0;
   activeScanStatus.nfoCount = 0;
   activeScanStatus.standaloneCount = 0;
+  activeScanStatus.enrichedCount = 0;
   activeScanStatus.startedAt = new Date().toISOString();
   activeScanStatus.finishedAt = undefined;
   activeScanStatus.error = undefined;
+  activeScanStatus.report = undefined;
 
   try {
     const allNfos: string[] = [];
@@ -123,7 +135,7 @@ export async function triggerMediaScan(roots: string[]): Promise<void> {
     }
 
     activeScanStatus.totalDiscovered = allNfos.length + allStandalones.length;
-    console.log(`📁 Found ${allNfos.length} .nfo and ${allStandalones.length} standalone video(s) across all roots.`);
+    console.log(`📁 [Pipeline] Found ${allNfos.length} .nfo and ${allStandalones.length} standalone video(s) across all roots.`);
 
     // 1ère passe : Fichiers avec NFO
     for (const p of allNfos) {
@@ -145,16 +157,33 @@ export async function triggerMediaScan(roots: string[]): Promise<void> {
       }
     }
 
-    // 3ème passe : Réconciliation déterministe de toute la hiérarchie
-    console.log('🔄 Running deterministic hierarchy reconciliation...');
-    const repairReport = await repairAllMediaHierarchy();
-    console.log(`✨ Hierarchy reconciliation finished:`, repairReport);
+    // 3ème passe : Moissonnage & Enrichissement Distant Continu (TMDb / TVmaze / Wikipedia)
+    activeScanStatus.phase = 'METADATA_ENRICH';
+    activeScanStatus.phaseName = 'Passe 2/4 : Moissonnage & Enrichissement Distant';
+    activeScanStatus.currentFile = 'Recherche TMDb / TVmaze / Wiki...';
+    console.log('🧠 [Pipeline] Running distant metadata enrichment & collection capture...');
+    const enrichResult = await enrichLibraryMetadata(150);
+    activeScanStatus.enrichedCount = enrichResult.enrichedCount;
+    console.log(`✨ [Pipeline] Enrichment complete: ${enrichResult.enrichedCount}/${enrichResult.processedCount} médias enrichis.`);
 
+    // 4ème passe : Réconciliation déterministe de toute la hiérarchie et des sagas
+    activeScanStatus.phase = 'HIERARCHY_REPAIR';
+    activeScanStatus.phaseName = 'Passe 3/4 : Réconciliation Hiérarchique & Sagas';
+    activeScanStatus.currentFile = 'Réconciliation Séries, Épisodes, Sagas & Univers...';
+    console.log('🔄 [Pipeline] Running deterministic hierarchy & collection reconciliation...');
+    const repairReport = await repairAllMediaHierarchy();
+    activeScanStatus.report = repairReport;
+    console.log(`✨ [Pipeline] Hierarchy reconciliation finished:`, repairReport);
+
+    activeScanStatus.phase = 'DONE';
+    activeScanStatus.phaseName = 'Synchronisation Universelle Terminée avec Succès';
     activeScanStatus.finishedAt = new Date().toISOString();
-    console.log(`✅ Media scan complete: ${activeScanStatus.processedCount} media file(s) processed.`);
+    console.log(`✅ [Pipeline] Universal Pipeline complete: ${activeScanStatus.processedCount} media(s) processed.`);
   } catch (err: any) {
+    activeScanStatus.phase = 'ERROR';
+    activeScanStatus.phaseName = 'Erreur lors du pipeline';
     activeScanStatus.error = err.message || 'Unknown scan error';
-    console.error('❌ Media scan failed with error:', err);
+    console.error('❌ Universal Pipeline failed with error:', err);
   } finally {
     activeScanStatus.isScanning = false;
     activeScanStatus.currentFile = undefined;

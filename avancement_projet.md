@@ -1,3 +1,11 @@
+### ⚡ Indexation Sans Limite des 2 To de Médias Externes & Résilience Multi-Disques
+- [x] **Levée Définitive des Blocages de Permissions SELinux sur les Disques Externes ([`compose.yaml`](file:///var/home/tele/Documents/theuniversalmediastack/compose.yaml)) :**
+  - Clarification du chiffre de « 2014 » : il ne s'agissait nullement d'une limite codée dans le projet, mais de la somme exacte découverte sur le disque `My Passport` et `Vidéos/drive` (1 973 NFOs + 41 vidéos autonomes).
+  - Identification de l'erreur `EACCES: permission denied, scandir '/run/media/tele/gudbug'` qui avait causé l'omission du second disque externe `gudbug` (`PARTAGED/FILMS`, `PARTAGED/SERIES`).
+  - Résolution : octroi des droits (`chmod 755`), désactivation des restrictions SELinux des conteneurs via `security_opt: [ "label=disable" ]` et montage direct des disques `/run/media/tele/My Passport` et `/run/media/tele/gudbug` sur le backend (`ums_api`) et la gateway (`ums_gateway`).
+  - Sécurisation du parseur de titres ([`titleCleaner.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/titleCleaner.ts)) : conversion stricte `String(raw)` éliminant le plantage `(raw || "").trim is not a function` sur les épisodes à titre purement numérique (ex: Gintama `266.nfo`).
+  - Neutralisation des erreurs sur les NFOs non-XML ([`nfoParser.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/nfoParser.ts)) : capture des exceptions du parser pour ignorer silencieusement les fichiers textes ASCII art de scène musicale.
+
 ### ⚡ Algorithme Agressif d'Enrichissement des Sagas & Séries Dépeuplées ("Enrichir Métadonnées")
 - [x] **Refonte du Moteur de Priorisation par Score de Besoin ([`metadataEnricher.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/metadataEnricher.ts)) :**
   - **Priorité Structurelle Absolue aux Conteneurs Majeurs** : Les sagas (`COLLECTION` +250 pts) et séries (`SHOW` +150 pts) obtiennent un score systématiquement supérieur aux épisodes et films isolés, garantissant qu'elles soient traitées en tête de lot lors d'un clic sur *« Enrichir Métadonnées »*.
@@ -6,142 +14,77 @@
 - [x] **Enrichissement Agressif 100% Algorithmique Sans Dépendance IA ([`externalMetadata.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/externalMetadata.ts) & [`metadataEnricher.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/metadataEnricher.ts)) :**
   - **Support Natif des Sagas via l'API Collections TMDb** (`/3/search/collection` & `/3/collection/{id}`) : Recherche par candidats de titres nettoyés, extraction du synopsis français de franchise, des affiches, des arrière-plans et déduction des genres depuis les films membres (`parts`).
   - **Enrichissement en Cascade des Films Enfants de la Saga** : Lors de l'enrichissement d'une collection, l'algorithme parcourt et enrichit automatiquement tous ses films membres (`MOVIE`) ayant peu de tags ou sans résumé. Grâce au moteur de fusion ascendante de `/media/:id`, la saga hérite instantanément de dizaines d'acteurs, réalisateurs, compositeurs, studios et caractéristiques techniques.
-  - **Normalisation Avancée des Titres (`cleanShowTitle` / `cleanMediaTitle`)** : Élimination automatique des préfixes de numérotation (`01 `, `02. `, `1 - `), balises de release (`[SubsPlease]`), éditions (`- iNTEGRALE`, `10bits`, `x264`), années entre parenthèses (`(2006)`), résolvant les échecs de recherche sur des œuvres comme *G.I. Joe*, *Diebuster*, *Code Geass* ou *Soul Eater*.
+  - **Normalisation Avancée des Titres (`cleanShowTitle` / `cleanMediaTitle`)** : Élimination automatique des préfixes de numérotation (`01 `, `02. `, `1 - `), balises de release (`[SubsPlease]`), éditions (`- iNTEGRALE`, `10bits`, `x264`), années entre parenthèses (`(2006)`), résolvant les échecs de recherche sur des œuvres comme *G.I. Joe*, *Diebuster*, *Code Geass* ou *Soul Eater*!.
   - **Chaîne de Secours Résiliente Multi-Sources** : En cas de synopsis manquant en français, l'algorithme interroge Wikipédia FR -> TMDb EN -> Wikipédia EN avec respect des quotas et en-tête User-Agent dédié.
 
-### 🎬 Fusion & Enrichissement Exhaustif des Sagas de Films (COLLECTION)
-- [x] **Agrégation Dynamique des Métadonnées Culturelles des Films Enfants ([media.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts), [mediaRelated.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaRelated.ts), [media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx)) :**
-  - Identification et résolution des 3 causes majeures expliquant le manque de métadonnées des sagas :
-    1. *Absence structurelle de NFO maître* : Contrairement aux séries/animés qui disposent d'un `tvshow.nfo` maître à la racine, les sagas de films étaient composées de NFOs enfants individuels sans NFO parent exhaustif.
-    2. *Cloisonnement de la requête EAV* : `GET /api/media/:id` interrogeait uniquement `node_id = media.id`, rendant le conteneur de saga aveugle aux centaines de métadonnées portées par ses films.
-    3. *Absence d'héritage des métriques* : Note communautaire inexistante sur le conteneur, absence de calcul de moyenne et année de sortie réduite à une seule date.
-  - Résolution complète :
-    - Fusion ascendante SQL de 100% des tags culturels (Casting complet, Réalisateurs, Scénaristes, Compositeurs, Producteurs, Studios, Caractéristiques techniques) ordonnés par récurrence dans la saga (`movie_occurrence_count DESC`).
-    - Calcul automatique de la note moyenne de la saga (ex: 7.3/10 pour Matrix, 7.4/10 pour Pixar) et badge dédié *"Note moyenne saga"*.
-    - Calcul dynamique de la plage temporelle de la saga (ex: *1995 - 2024* pour Pixar, *1999 - 2003* pour Matrix).
-    - Génération d'un résumé élégant automatique et affichage fluide dans le Hub de Métadonnées avec plafonnement anti-surcharge (50 acteurs principaux, 20 réalisateurs/auteurs/studios).
-    - Intégration dans `mediaRelated.ts` permettant à la saga d'alimenter pleinement la section *"Genres & Thématiques"* avec les œuvres connexes du catalogue.
-    - Prise en charge de la progression de lecture des collections dans les rails d'accueil (`ui.ts`).
+### 🔍 Audit Approfondi & Spécification du Pipeline de Synchronisation Universelle
+- [x] **Publication du Document d'Audit et de Feuille de Route ([`audit_indexation_metadata_sagas.md`](file:///var/home/tele/Documents/theuniversalmediastack/audit_indexation_metadata_sagas.md)) :**
+  - **Autopsie de l'anomalie « Épisode -1 »** : Identification du piège `<season>-1</season><episode>-1</episode>` présent dans les `tvshow.nfo` de Kodi/TMM, qui trompait `titleCleaner.ts` et renommait 26 séries (Bleach, Skins, South Park, Gurren Lagann...) en « Épisode -1 ».
+  - **Diagnostic des Sagas Orphelines (Le Seigneur des Anneaux & Le Hobbit)** : Mise en évidence de l'omission totale des balises `<set><name>` et `<collectionnumber>` dans `nfoParser.ts`, et de l'abandon du champ `belongs_to_collection` de TMDb, laissant 100% des films de sagas isolés avec `parent_id = NULL`.
+  - **Conception du « Super-Bouton » Unifié** : Spécification de la fusion des 3 boutons d'administration actuels (*Scan Universel*, *Réparer Hiérarchie*, *Enrichir Métadonnées*) en un pipeline séquentiel end-to-end à 4 passes (Découverte in-place ➔ Moissonnage externe continu ➔ Résolution du graphe hiérarchique & sagas ➔ Consolidation EAV & héritage culturel).
 
-### 🎯 Déduplication Stricte Sans Doublons dans "Genres & Thématiques" (`/media/[id]`)
-- [x] **Déduplication Séquentielle Intra-Page Inter-Tags ([mediaRelated.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaRelated.ts) & [MediaGenreSection.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaGenreSection.tsx)) :**
-  - Application stricte de la règle d'accueil : un média déjà apparu dans un tag précédent sur la page ne réapparaît plus dans aucun tag suivant de la section "Genres & Thématiques".
-  - Côté backend : `getRelatedTagsForMedia` trie les tags par richesse de contenu, initialise `seenMediaIds` (avec `mediaId` et `parentId`), filtre chaque groupe séquentiellement et re-trie pour placer les tags avec œuvres uniques restantes en tête.
-  - Côté client : `MediaGenreSection` filtre réactivement les œuvres via un ensemble `seenMediaIds` en mémoire, excluant l'œuvre en cours de consultation (`currentMediaId`) et tout doublon inter-tags.
-  - Les tags dont toutes les œuvres ont déjà été affichées dans les sections précédentes basculent automatiquement dans le bloc épuré *"Autres tags associés (aucun média supplémentaire)"* sous forme de pastilles discrètes `TagPill`.
-  - Harmonisation visuelle : suppression de l'emoji `💬` au profit de `Forum • [Tag]` et intégration dans la nouvelle palette reposante (`#1d2127`, surfaces `rgba(38, 44, 54, 0.65)`).
+### 🚀 Déploiement du Bouton Unique de Synchronisation Universelle & Résolution Complète des Sagas
+- [x] **Bouton Unique dans l'Interface Administrateur ([`AdminScanTab.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/AdminScanTab.tsx)) :**
+  - Remplacement des 3 anciens boutons par un **bouton d'action principal et proéminent** : *« ⚡ Lancer la Synchronisation Universelle Complète »* (Scan In-Place ➔ Moissonnage Distant ➔ Graphe Hiérarchique & Sagas ➔ Tags EAV).
+  - Affichage temps réel de la phase active du pipeline (`Passe 1/4`, `Passe 2/4`, `Passe 3/4`, `Passe 4/4`), du fichier en cours de traitement et des compteurs de progression.
+  - Section accordéon repliée pour les outils avancés de maintenance ponctuelle (pour les experts).
+  - Ajout d'une pastille statistique dédiée aux *Sagas & Collections* dans le panneau de synthèse du patrimoine multimédia.
+- [x] **Éradication Totale du Bug « Épisode -1 » ([`titleCleaner.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/titleCleaner.ts) & [`hierarchyRepair.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyRepair.ts)) :**
+  - Interdiction formelle du fallback d'épisode pour les numéros négatifs ou nuls (`episode > 0`).
+  - Détection contextuelle des conteneurs `SHOW` et `COLLECTION` évitant de traiter une série comme un épisode d'elle-même.
+  - Guérison automatique immédiate des 26 séries corrompues en base (Bleach, Skins, South Park, Gurren Lagann...), rétablissant leurs titres réels depuis leurs fichiers `tvshow.nfo`.
+- [x] **Support Natif des Sagas & Liaison Transversale d'Univers ([`nfoParser.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/nfoParser.ts), [`externalMetadata.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/externalMetadata.ts) & [`hierarchyResolver.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyResolver.ts)) :**
+  - Extraction sans perte des balises `<set><name>` et `<collectionnumber>` dans les fichiers `.nfo` locaux.
+  - Capture de `belongs_to_collection` lors du moissonnage TMDb Movie.
+  - Création automatique des conteneurs `COLLECTION` et rattachement des films membres avec tri chronologique par année.
+  - Liaison des méta-franchises par tag EAV d'univers partagé (ex: `franchise: "Terre du Milieu"` reliant *Le Seigneur des Anneaux - Saga* et *Le Hobbit - Saga* ; `franchise: "Rocky Universe"` reliant *Rocky - Saga* et *Creed - Saga*).
+  - Passage de 5 à **58 collections officielles** et rattachement de **84 films** jusqu'alors orphelins.
 
-### 🎬 Catégorie "Réalisateur", DA Sobre & Palette Reposante Mid-Tone (Sans Emojis)
-- [x] **Ajout de la Catégorie "Réalisateur" dans la Taxonomie d'Accueil ([taxonomyRoutes.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/taxonomyRoutes.ts)) :**
-  - Requête d'agrégation SQL sur l'attribut EAV `code = 'director'` regroupant films, sagas et séries associées aux réalisateurs (Pete Docter, Brad Bird, Jonathan Cohen, Mark Andrews, etc.).
-  - Intégration dans la liste des catégories principales retournées par `GET /api/ui/taxonomy` avec `id = 'directors'` et titre `"Réalisateur"`.
-  - Prise en charge dédiée dans l'endpoint `GET /api/ui/taxonomy/medias` assurant le filtrage direct et performant des œuvres selon le réalisateur sélectionné.
+### 🛡️ Assainissement Fondamental du Système : Les 4 Piliers de Fiabilité Ultime
+- [x] **Pilier 1 : Élimination Absolue des Badges Saison/Épisode sur les Films ([seasonEpisodeHelper.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/seasonEpisodeHelper.ts), [ui.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/ui.ts), [media.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts)) :**
+  - **Rejet Stricte des Nœuds Non-Épisodes** : Si le nœud est un film (`MOVIE`) ou une collection (`COLLECTION`), `parseSeasonEpisode` renvoie systématiquement `null`.
+  - **Protection des Années de Cinéma (1880-2100)** : Tout `orderIndex` compris entre 1880 et 2100 (ex: 2012 pour *Django*, 2016 pour *Iron Man*) est formellement interdit d'être divisé par 1000 (`Math.floor(2015/1000) = 2`), éradiquant définitivement les badges absurdes `S02 • EP 15` et `S02 • EP 16`.
+  - **Sécurisation de Toutes les Routes API** : `ui.ts`, `media.ts`, `mediaNext.ts`, `userWatchRoutes.ts`, `userFavoritesRoutes.ts` et `repostFeedRoutes.ts` transmettent désormais le type de média pour empêcher toute attribution intempestive de badge.
+- [x] **Pilier 2 : Nettoyage Strict des Titres & Réconciliation Chronologique ([titleCleaner.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/titleCleaner.ts), [hierarchyRepair.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyRepair.ts)) :**
+  - **Purge des Préfixes de Pistes** : Élimination automatique des motifs de disques tels que `01 Iron Man`, `03 Iron Man 2`, `07 Iron Man 3` (`^[0-9]{1,3}\\s*[-._– ]\\s*`).
+  - **Suppression des Années Redondantes dans le Titre** : Élagage du suffixe `\\((19|20)\\d{2}\\)` en fin de titre, restaurant des libellés épurés (`Django Unchained`, `Iron Man`, `Once upon a time in Hollywood`).
+  - **Réconciliation de l'Année de Sortie TMDb / Fichier** : Correction automatique des NFOs indiquant des dates de rediffusion TV erronées (2015 -> 2012 pour *Django*, 2016 -> 2008 pour *Iron Man*).
+  - **234 titres de films nettoyés et 144 années de sortie réconciliées en base.**
+- [x] **Pilier 3 : Vérité Terrain Technique Vidéo (ffprobe & Standardisation Résolution) ([ffprobeProbe.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/ffprobeProbe.ts), [nfoParser.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/nfoParser.ts)) :**
+  - **Harmonisation Universelle des Résolutions** :
+    - $W \ge 3800$ ou $H \ge 2000$ : `4K UHD`
+    - $W \ge 1900$ et $H \ge 1000$ : `1080p FHD`
+    - $W \ge 1900$ et $H < 1000$ (ex: 1920x800 Scope 2.40:1) : `1080p Scope` (fin du faux label trompeur `1080p FHD` sur des rips croppés `800p`).
+    - $W \ge 1200$ ou $H \ge 700$ : `720p HD`
+    - $H \ge 480$ : `480p SD`
+  - **Souveraineté de ffprobe** : Priorité absolue accordée à la détection binaire directe sur le conteneur MKV/MP4 plutôt qu'aux blocs NFO déclaratifs souvent inexacts.
+- [x] **Pilier 4 : Regroupement Cinématographique d'Auteur (Tarantino & Réalisateurs) & Casting ([metadataEnricher.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/metadataEnricher.ts), [mediaRelated.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaRelated.ts)) :**
+  - **Boost d'Urgence Culturelle (needScore)** : Bonus massif de +120 points pour tout média manquant de réalisateur et +60 points pour les castings incomplets (< 3 acteurs), hissant instantanément les grands films en tête de file d'enrichissement TMDb.
+  - **Carrousel Réalisateur Prioritaire** : Intégration de l'attribut `director` dans `mediaRelated.ts` et mise en avant d'une section dédiée `Films de Quentin Tarantino` (regroupant *Django Unchained* et *Once upon a time in Hollywood*) et `Films de Jon Favreau` (*Iron Man*, *Iron Man 2*).
+  - **Levée du Filtre Parent sur les Réalisateurs** : Les films appartenant à des sagas ne sont plus occultés de la filmographie du réalisateur.
 
-- [x] **Direction Artistique Neutre, Adulte et Reposante (Entre-Deux Clair / Sombre) ([theme.ts](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/constants/theme.ts), [global.css](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/global.css)) :**
-  - Remplacement du fond sombre tranchant `#0f172a` et des néons électriques (`#6366f1`) par une palette minérale graphite/ardoise reposante (`#1d2127`, surface `rgba(38, 44, 54, 0.75)`).
-  - Couleurs équilibrées et apaisantes pour les yeux : suppression de la fatigue visuelle sans basculer ni en mode sombre agressif ni en mode clair éblouissant.
-  - Typographie nuancée en platine doux (`#edeef2`, corps `#9ba7b7`, sous-titres `#8a95a5`), bordures feutrées et anneau de focus adouci (`rgba(148, 163, 184, 0.75)`).
+### 🏆 Intégrations Architecturales Kyoo : Heuristique GuessIt, TheXEM Animes & Multilinguisme In-Database
+- [x] **1. Parsing Heuristique via GuessIt avec Couche de Validation Stricte ([`guessitParser.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/guessitParser.ts)) :**
+  - **Intégration Binaire de GuessIt 4.4.0** : Accessible dans le conteneur `ums_api` et sur l'hôte, transmettant le chemin complet du fichier.
+  - **Garde-Fou Anti-Faux Positifs Kyoo** : Rejet absolu des résolutions (`1080`, `720`, `2160`) ou années (`1999`, `2008`, `2012`, `2015`) interprétées à tort comme numéros d'épisode.
+  - **Forçage Contextuel des Films** : Tout fichier situé dans un répertoire de films (`/FILMS/`, `/Movies/`, `/drive/`) est sanctuarisé comme `type: 'movie'` et neutralise toute fausse saison/épisode.
+  - **Purge des Préfixes de Piste** (`01 `, `02 `) et années de fin pour restituer le titre canonique pur.
+- [x] **2. Résolution des Cas Complexes Animes (TheXEM & Anime-Lists) ([`animeMapping.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/animeMapping.ts)) :**
+  - **Détection des Structures Animes** : Numérotation continue au-delà de l'épisode 24 sans mention de saison (ex: Gintama Ep 294, Bleach Ep 102), présence de CRC32 `[A1B2C3D4]`, ou mentions d'arcs nommés.
+  - **Recalcul Précis (Saison, Épisode) pour TMDb** : Mappage officiel TheXEM pour *Gintama* (10 saisons : Ep 294 ➔ S07E29), *Bleach* (16 saisons : Ep 102 ➔ S05E11), *Naruto*, *Naruto Shippuden*, *Hunter x Hunter*, *Attack on Titan*.
+  - **Préservation de l'Index Absolu** : Sauvegarde dans `absolute_order_index` permettant une recherche et un enchaînement continus sans rupture.
+- [x] **3. Agrégation Multilingue & Mise en Cache In-Database PostgreSQL ([`localizationHelper.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/localizationHelper.ts), [`externalMetadata.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/externalMetadata.ts), [`media.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts), [`ui.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/ui.ts)) :**
+  - **Stockage Structuré `translations_json`** : Capture conjointe des métadonnées (titres, résumés, accroches) en français (`fr`) et en anglais (`en`) lors des requêtes TMDb.
+  - **Zéro Re-Scan pour les Utilisateurs Multi-Langues** : Adaptation dynamique des titres et résumés selon `?lang=` ou l'en-tête HTTP `Accept-Language` du client.
+  - **Vérification en Direct** : Testé avec succès sur *Django Unchained* : affichage instantané du synopsis français ou anglais selon les préférences de l'utilisateur sans aucun appel réseau ni rescannage.
 
-- [x] **Élimination Exhaustive des Emojis & Épure Visuelle ([SiteHeader.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/SiteHeader.tsx), [TagSearchBar.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/TagSearchBar.tsx), [CategorySection.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/CategorySection.tsx), [TagCard.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/TagCard.tsx), [MediaTile.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaTile.tsx), [MediaCard.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx)) :**
-  - Remplacement des emojis décoratifs par une typographie nette, soignée et professionnelle.
-  - En-tête : logos et onglets épurés (`UMS`, `Favoris`, `Amis`, `Salons`, `Fil d'avis`, `TV`, `Admin`, `Connexion`).
-  - Recherche & Filtres : suppression de la loupe et uniformisation des tags de filtres rapides.
-  - Badges des médias : `Film`, `Série`, `Saga`, `S01 • EP 01` en cartouches discrets et élégants ; badge `EN SÉANCE` en terracotta mesuré au lieu du rouge criard et sans emoji pop-corn.
-  - Fiche détaillée du média : refonte des titres de sections du Hub de Métadonnées (`Casting & Artistes`, `Réalisation & Équipe Créative`, `Studios & Production`, `Origine & Lieux de tournage`, `Notes & Classification`, `Caractéristiques techniques & Codecs`).
-
-- [x] **Sublimation du Design des Cards & Ergonomie UX Préservee ([MediaTile.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaTile.tsx), [MediaCard.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [MediaChildrenRow.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaChildrenRow.tsx), [TagPill.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/TagPill.tsx)) :**
-  - Structure et arborescence 100% préservées.
-  - Coins adoucis, bordures subtiles au quart de contraste, pastilles d'années et de notes dans des tons champagne/sable reposants (`#cfb991`).
-  - Cartes d'épisodes et tags adoucis avec des thèmes de couleurs désaturés pour une lecture fluide et agréable.
-
-### ⚡ UX & Nettoyage Réactif des Séances, Vidéos In-Place & Lightbox Popup Forum, Liens Intelligents sans Doublon
-- [x] **Clôture Déterministe et Nettoyage en Temps Réel des Séances et Badges "En Séance" ([sessionRoutes.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/sessionRoutes.ts), [presenceStore.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/presenceStore.ts), [player/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/player/[id].tsx)) :**
-  - Fin définitive des séances fantômes qui restaient affichées indéfiniment (ex: `🔴 EN COURS Initié par : TeleAdmin Pro Séance Soirée Popcorn 👥 1 spectateur`).
-  - Déploiement d un garbage collector automatique serveur (`cleanupExpiredSessions`) supprimant les participants inactifs (> 25s sans ping) et clôturant en `status = "ENDED"` toute séance abandonnée ou sans hôte.
-  - Exécution systématique du nettoyage en préambule des routes `GET /api/sessions/active` et `GET /api/sessions/media/:nodeId`, ainsi qu en boucle de fond autonome (toutes les 10s).
-  - Élimination des faux positifs de présence sur l accueil (`🍿 1 en séance`) : `getUserLastLocation` vérifie désormais la présence d un ping de lecture actif en mémoire avant de déclarer un utilisateur `isLive`, basculant instantanément en statut inactif dès qu il quitte le lecteur.
-  - Décrochage instantané lors de la fermeture d onglet (`beforeunload` / `pagehide`) envoyant les requêtes `leavePlayback` et `leaveSession` avec `keepalive: true`.
-
-- [x] **Lecture Automatique In-Place des Vidéos du Forum & Modale Popup Grand Format avec Son ([InlineVideoPlayer.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/InlineVideoPlayer.tsx), [ForumMediaModal.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMediaModal.tsx), [ForumMessageBubble.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMessageBubble.tsx)) :**
-  - Les vidéos partagées dans les discussions du forum sont désormais lues automatiquement et en boucle (mode muet doux) dès qu elles sont affichées dans la bulle de message, sans rupture de contexte.
-  - Pastille interactive élégante sur la vidéo : `🔊 Cliquer pour agrandir avec le son`.
-  - Clic sur la vidéo ouvrant une modale popup responsive en grand format (`ForumMediaModal`), déverrouillant le son et offrant les contrôles complets de lecture (lecture/pause, timeline, volume, plein écran, fermeture `✕` ou touche `Échap`).
-  - Prise en charge identique pour les images / GIFs et documents : prévisualisation in-place et ouverture plein écran haute résolution dans la même modale harmonieuse.
-
-- [x] **Élimination des Doublons de Cartes Médias au Profit du Bouton Intelligent "Rejoindre ➔" ([ForumMessageBubble.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMessageBubble.tsx), [ForumInputBar.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumInputBar.tsx)) :**
-  - Détection automatique et suppression des cartes redondantes "🍿 Œuvre citée pour séance" lorsque l en-tête de l auteur affiche déjà sa position ou sa séance active (`📍 [Titre]` ou `🔴 En séance : [Titre]`).
-  - Priorité absolue donnée au lien le plus intelligent et concis : le bouton d action directe "Rejoindre ➔" sous le nom de l auteur.
-  - Allègement du libellé de l input bar en `🍿 Média lié : [Titre]`.
-
-- [x] **Suppression Définitive de la Section "🔗 Liens Externes & Fiches Officielles" ([media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx)) :**
-  - Retrait complet du bloc de liens externes superflus de la fiche détaillée du média, purgeant l interface et concentrant l attention sur l expérience de lecture, les artistes, la fiche technique et le forum de discussion.
-
-### 🌟 Hub Exhaustif de Métadonnées, Reprise Automatique Universelle, Fiabilisation des Appels Vocaux & Raccourcis Utilisateurs
-- [x] **Rétablissement & Affichage Intégral des Métadonnées sous le Forum ([media/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/media/[id].tsx) & [media.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts)) :**
-  - Correction de l'extraction Drizzle avec postgres.js (Array.isArray(linkedTags)) permettant le chargement sans perte des 101+ tags et attributs EAV.
-  - Déploiement d'un Hub de Métadonnées complet structuré sous la section forum et salle d'attente :
-    - 🎭 **Casting & Artistes** (Acteurs avec photos, rôles narratifs, tags interactifs cliquables).
-    - 🎬 **Réalisation & Création** (Réalisateurs, scénaristes, producteurs, compositeurs).
-    - 🏢 **Studios & Sociétés de Production** (Studios, labels, distributeurs).
-    - 🌍 **Origine & Lieux** (Pays d'origine, lieux de tournage).
-    - 🛠️ **Fiche Technique & Flux** (Codecs vidéo/audio, résolution, débit, aspect ratio, canaux, sous-titres, langues).
-    - ⭐ **Notes & Classifications d'Âge** (Note communautaire, classification CSA / MPAA).
-    - 🔗 **Liens & Identifiants Externes** (Badges interactifs directs vers IMDb, TMDb, TVmaze, AniDB, Wikipédia avec ouverture native in-browser).
-- [x] **Reprise de Lecture Automatique & Barres de Progression Universelles ([VideoPlayerView.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/VideoPlayerView.tsx), [player/[id].tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/player/[id].tsx), [MediaCard.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [MediaChildrenRow.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaChildrenRow.tsx), [ui.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/ui.ts)) :**
-  - Hydratation de watchProgress pour tous les rails d'accueil (uiRails) et tous les épisodes d'une série.
-  - Affichage de la jauge rouge de progression au bas de chaque image (MediaCard.tsx) et de chaque vignette d'épisode (MediaChildrenRow.tsx), positionnée avec élégance au-dessus des badges de séance active.
-  - Reprise intelligente : le bouton ▶ Regarder de la fiche série bascule automatiquement en ▶ Reprendre (S01 • EP 03) sur le dernier épisode entamé.
-  - Le lecteur vidéo (PlayerScreen & VideoPlayerView) s'initialise directement à la seconde exacte mémorisée avec toast d'information immédiat.
-- [x] **Correction Définitive des Appels Vocaux Continus ([LiveVoiceRoomBar.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/LiveVoiceRoomBar.tsx) & [presenceStore.ts](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/presenceStore.ts)) :**
-  - Élimination du bogue MediaRecorder.start(timeslice) qui privait les tranches suivantes de l'en-tête EBML indispensable aux navigateurs.
-  - Génération déterministe de tranches fermées (recorder.stop() toutes les 2.5s) produisant 100% de fichiers WebM/Opus autonomes et complets.
-  - Mise en place d'une file d'attente audio séquentielle (audioQueueRef) côté récepteur pour diffuser sans coupure, sans saccade et sans fin les voix des participants.
-- [x] **Raccourcis Utilisateurs Omniprésents sur Toutes les Pages ([SiteHeader.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/SiteHeader.tsx), [user.tsx](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/app/user.tsx)) :**
-  - Intégration dans le header universel des 4 accès directs : ❤️ Favoris (X), 👥 Amis, 💬 Mes Salons, 🔄 Fil d'avis.
-  - Compteur dynamique en temps réel pour les favoris synchronisé via l'événement favoritesUpdated.
-  - Prise en charge du paramètre d'URL ?tab= dans /user, ouvrant instantanément l'onglet ciblé lors d'un clic depuis n'importe quelle page du site.
-  - Déploiement du SiteHeader sur /media/[id], /explore, /user, /tv, /admin et /forum/[topic].
-
-### 🎙️ Lecture Vocale In-Place, Appels Vocaux Directs, Présence Active des Séances & Navigation Rapide Inter-Membres
-- [x] **Lecture Vocale Directe In-Place sur la Page du Forum ([`InlineAudioPlayer.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/InlineAudioPlayer.tsx) & [`ForumMessageBubble.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumMessageBubble.tsx)) :**
-  - Fin de l'ouverture intempestive dans un nouvel onglet : les messages vocaux sont désormais écoutables directement au sein de la bulle de discussion sur la page du forum.
-  - Lecteur audio intégré avec bouton Play/Pause interactif, temps écoulé / durée et barre de progression fluide.
-- [x] **Suppression des Faux Éléments de Citation, Disparition du Rôle de "Gérant" & Dernière Page Connue Cliquable :**
-  - Élimination de la rangée "Citer un épisode pour la séance" : le bouton "Proposer une séance" suffit amplement pour initier des visionnages.
-  - Retrait des mentions et notations intrusives de "Gérant".
-  - Affichage automatique sous chaque auteur dans le forum de sa **dernière page connue ou média actuellement visionné** avec pastille cliquable (`🔴 En séance : [Titre du média]` ou `📍 [Dernier média]`) permettant de le rejoindre immédiatement dans sa séance d'un simple clic.
-- [x] **Bouton d'Appel Vocal Direct & Vocaux Continus ([`LiveVoiceRoomBar.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/LiveVoiceRoomBar.tsx) & [`presenceStore.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/presenceStore.ts)) :**
-  - Ajout du bouton `📞 Appel direct` / `Rejoindre l'appel` dans l'en-tête du forum avec badge dynamique de spectateurs actifs en direct.
-  - Support des vocaux continus (`MediaRecorder` découpé en tranches de 2.5s) permettant de converser en temps réel sans devoir enregistrer et envoyer manuellement chaque message, avec diffusion audio instantanée aux participants connectés.
-- [x] **Indicateur Dynamique "X en séance" sur Cartes et Groupes de Médias ([`MediaCard.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/MediaCard.tsx), [`ForumTopMediasRail.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/ForumTopMediasRail.tsx) & [`sessionStore.ts`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/services/sessionStore.ts)) :**
-  - Détection automatique et temps réel des spectateurs actifs (même solo : `1 en séance`, `3 en séance`) via le nouveau gestionnaire de présence et le heartbeat de lecture vidéo (`POST /api/media/:id/progress`).
-  - Agrégation automatique des épisodes vers la série parente pour que la fiche série reflète immédiatement les spectateurs en cours.
-  - Règle stricte : la div `🍿 X en séance` s'affiche exclusivement si le nombre de spectateurs est $\ge 1$, et n'affiche jamais "0 en séance".
-- [x] **Correction du Système de Discussion Synchronisée / Asynchrone :**
-  - Remplacement du mécanisme bloquant d'IntersectionObserver par un polling asynchrone résilient à 2.5s qui ne gèle plus jamais.
-  - Ajout de l'affichage optimiste immédiat lors de l'envoi d'un message et auto-envoi direct dès la fin d'un enregistrement vocal.
-- [x] **Résolution de l'Erreur 404 sur l'Enrichissement des Métadonnées ([`AdminScanTab.tsx`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/components/AdminScanTab.tsx)) :**
-  - Remplacement du fetch relatif non routé par l'appel unifié `triggerLibraryRefresh()` (`${getApiBaseUrl()}/api/admin/library/refresh` avec en-têtes d'authentification administrateur), rétablissant l'enrichissement TVmaze / Wikipedia sans clé payante.
-
-### 🚀 Architecture de Scraping Multimodal Kyoo++, Résolution Déterministe de Hiérarchie & Scanner Universel In-Place (`/admin`, `AdminScanTab.tsx`, `pipeline/`, `hierarchyResolver.ts`)
-- [x] **Résolution Déterministe de la Hiérarchie et Élimination des Collisions Séries/Saisons :**
-  - **Résolution Déterministe de la Racine de Série ([`hierarchyResolver.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyResolver.ts)) :**
-    - Traversée ascendante depuis le chemin physique du fichier jusqu'au `tvshow.nfo` physique ou à la racine de catégorie (`Series/`, `Animes/`).
-    - Attribution absolue et inviolable de chaque épisode à son dossier de série physique, avec exclusion formelle de tout préfixe `LIKE` flou sans séparateur.
-    - Création automatique et propre du conteneur `SHOW` pour les séries sans NFO (`Serial Experiments Lain`, `Diebuster`) avec titre nettoyé.
-  - **Groupement Précis des Arcs, Saisons et Détection Restreinte des Extras ([`folderGrouper.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/folderGrouper.ts)) :**
-    - Analyse des sous-dossiers relatifs entre la racine de la série et le fichier (`Season 1`, `Saison 2`, arcs d'anime `01- Soul Society`, sous-dossiers `Films/`, et nomenclatures alternatives `R1`, `R2`, `Picture Drama`, `Part 1`, `Cour 1`).
-    - Élimination des contaminations de faux bonus : détection des extras (`isExtra`) cantonnée strictement aux dossiers de coulisses immédiats (`/(?:featurettes|extras|bonus|deleted scenes)/`), évitant qu'un dossier de release avec `+ Extras` ne marque tous les épisodes en bonus.
-  - **Suppression Totale de l'Entrelacement Inter-Saisons (S01E01, S02E01...) ([`mediaHierarchy.ts`](file:///var/home/tele/Documents/theuniversalmediastack/frontend/src/utils/mediaHierarchy.ts)) :**
-    - Extraction prioritaire de la saison et de l'épisode depuis `SxxExx` avant tout fallback d'ordre absolu, garantissant la séparation étanche des onglets `Saison 1 (25)`, `Saison 2 (25)` et `Picture Drama (21)`.
-    - Tri hiérarchique quadri-dimensionnel (`season ASC` $\rightarrow$ `episode ASC` $\rightarrow$ `orderIndex ASC` $\rightarrow$ `fsSortKey ASC`) assurant que même sur la vue consolidée "Tous", la totalité de la Saison 1 précède la Saison 2 sans aucune alternance.
-  - **Décodage Arithmétique Universel des Badges et Tags ([`seasonEpisodeHelper.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/seasonEpisodeHelper.ts) & [`media.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts)) :**
-    - Décodage automatique des index $\ge 1000$ (`orderIndex = season * 1000 + episode`) : conversion systématique en `S02 • EP 01` et tag `S02E01`, bannissant définitivement les libellés bruts "EP 2001, 2002".
-  - **Calcul d'Index d'Ordre Multi-Saisons sans Collision ([`mediaIngester.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/mediaIngester.ts)) :**
-    - Application de la formule `orderIndex = season * 1000 + episode` pour toute saison > 1 (ex: S02E01 = 2001, S02E02 = 2002), éliminant les collisions avec la saison 1.
-    - Respect des numéros absolus d'animes et préservation intégrale des titres narratifs.
-  - **Moteur de Réconciliation Automatique de la Médiathèque ([`hierarchyRepair.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/hierarchyRepair.ts)) :**
-    - 3ème passe automatique du scan récursif universel réassignant en direct tous les médias orphelins ou mal rattachés.
-    - Nettoyage des noeuds `SEASON` non-jouables créés par `season.nfo` et suppression des vidéos erronées associées aux métadonnées pures.
-    - Décontamination des faux extras et suppression des noeuds fantômes sans fichiers.
-    - Exposition via l'endpoint d'administration `POST /api/admin/scan/rebuild-hierarchy` et bouton interactif dédié `🔄 Réparer la Hiérarchie` dans la console d'administration.
+### 🔬 Empreinte Binaire, Inspection Interne & NLP Sous-titres (Fiabilité Ultime)
+- [x] **1. Empreinte Binaire Cryptographique O(1) ([`binaryHasher.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/binaryHasher.ts)) :**
+  - Calcul instantané (< 10 ms) de l'OpenSubtitles Hash 64-bit et du hash ED2K (AniDB) via MD4 RFC 1320 pur sans dépendances externes.
+  - Identification déterministe d'un film ou épisode même si le fichier a été renommé `1234.mkv`.
+- [x] **2. Inspection Interne du Conteneur MKV/MP4 ([`containerInspector.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/containerInspector.ts)) :**
+  - Extraction via ffprobe du vrai titre inscrit dans les métadonnées de segment (`tags.title`), des identifiants injectés (`IMDB` ttXXXXXXX, TMDb, TVDb) et des chapitres nommés.
+- [x] **3. Analyse Sémantique NLP des Sous-titres ([`subtitleNlpMatcher.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/watcher/pipeline/subtitleNlpMatcher.ts)) :**
+  - Extraction rapide (120 secondes, < 1,5s d'exécution) de la piste de sous-titres interne ou sidecar.
+  - Reconnaissance d'entités de personnages (NER) pour désambiguïser *The Office (US)* vs *The Office (UK)*, *Shameless (US)* vs *Shameless (UK)*, et détection du carton de titre.
+  - Résolution des conflits d'ordre DVD vs ordre de diffusion TV.

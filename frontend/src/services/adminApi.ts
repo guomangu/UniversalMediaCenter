@@ -204,16 +204,21 @@ export async function deleteIptvSource(id: string): Promise<any> {
 
 export interface ScanStatusResponse {
   isScanning: boolean;
+  phase?: string;
+  phaseName?: string;
   totalDiscovered: number;
   processedCount: number;
   nfoCount: number;
   standaloneCount: number;
+  enrichedCount?: number;
   currentFile?: string;
   startedAt?: string;
   finishedAt?: string;
   error?: string;
+  report?: any;
   stats?: {
     totalNodes: number;
+    collectionsCount?: number;
     moviesCount: number;
     showsCount: number;
     episodesCount: number;

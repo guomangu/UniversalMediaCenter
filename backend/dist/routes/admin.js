@@ -34,9 +34,12 @@ adminRouter.post('/scan/rebuild-hierarchy', async (c) => {
 });
 adminRouter.post('/scan/trigger', async (c) => {
     const roots = parseMediaChaosRoots();
-    // Lancer en arrière-plan
-    runBootMediaScan(roots).catch((err) => console.error('Erreur scan admin:', err));
-    return c.json({ success: true, message: `Scan universel déclenché sur ${roots.length} dossier(s)` });
+    // Lancer le pipeline universel complet en arrière-plan
+    runBootMediaScan(roots).catch((err) => console.error('Erreur pipeline unifié:', err));
+    return c.json({
+        success: true,
+        message: `Synchronisation Universelle Complète déclenchée sur ${roots.length} dossier(s) (Scan + Métadonnées + Hiérarchie + Sagas)`,
+    });
 });
 adminRouter.get('/scan/status', async (c) => {
     const status = getScanStatus();
@@ -44,6 +47,7 @@ adminRouter.get('/scan/status', async (c) => {
         columns: { id: true, nodeType: true, isExtra: true, confidenceScore: true },
     });
     const totalNodes = allNodes.length;
+    const collectionsCount = allNodes.filter((n) => n.nodeType === 'COLLECTION').length;
     const moviesCount = allNodes.filter((n) => n.nodeType === 'MOVIE' && !n.isExtra).length;
     const showsCount = allNodes.filter((n) => n.nodeType === 'SHOW' && !n.isExtra).length;
     const episodesCount = allNodes.filter((n) => n.nodeType === 'EPISODE' && !n.isExtra).length;
@@ -55,6 +59,7 @@ adminRouter.get('/scan/status', async (c) => {
         ...status,
         stats: {
             totalNodes,
+            collectionsCount,
             moviesCount,
             showsCount,
             episodesCount,

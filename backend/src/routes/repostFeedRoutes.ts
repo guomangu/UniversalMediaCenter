@@ -7,7 +7,9 @@ import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 export const repostFeedRouter = new Hono();
 
 function formatNode(node: any) {
-  const info = parseSeasonEpisode(node.title, node.orderIndex);
+  const nodeType = node.nodeType || node.node_type;
+  const isEpOrSeason = nodeType === 'EPISODE' || nodeType === 'SEASON';
+  const info = isEpOrSeason ? parseSeasonEpisode(node.title, node.orderIndex, nodeType) : null;
   return {
     ...node,
     posterPath: node.posterPath ? `/api/media/${node.id}/poster` : undefined,
@@ -19,71 +21,86 @@ function formatNode(node: any) {
 
 repostFeedRouter.get('/user', async (c) => {
   const sessionUser = (c as any).get('user');
-  const rows = await db
-    .select({ repost: mediaReposts, media: mediaNodes })
+  const items = await db
+    .select({
+      id: mediaReposts.id,
+      nodeId: mediaReposts.nodeId,
+      comment: mediaReposts.comment,
+      createdAt: mediaReposts.createdAt,
+      node: mediaNodes,
+    })
     .from(mediaReposts)
     .innerJoin(mediaNodes, eq(mediaReposts.nodeId, mediaNodes.id))
     .where(eq(mediaReposts.userId, sessionUser.id))
     .orderBy(desc(mediaReposts.createdAt))
     .limit(30);
 
-  return c.json({
-    reposts: rows.map((r) => ({
-      ...r.repost,
-      media: formatNode(r.media),
-    })),
-  });
+  return c.json(
+    items.map((it) => ({
+      ...it,
+      node: formatNode(it.node),
+    }))
+  );
 });
 
-repostFeedRouter.get('/feed', async (c) => {
+repostFeedRouter.get('/friends', async (c) => {
   const sessionUser = (c as any).get('user');
-  const friends = await db
-    .select({ userId: userFriends.userId, friendId: userFriends.friendId })
-    .from(userFriends)
-    .where(
-      and(
-        or(eq(userFriends.userId, sessionUser.id), eq(userFriends.friendId, sessionUser.id)),
-        eq(userFriends.status, 'ACCEPTED')
-      )
-    );
 
-  const allowedUserIds = new Set<string>([sessionUser.id]);
-  for (const f of friends) {
-    if (f.userId === sessionUser.id) allowedUserIds.add(f.friendId);
-    else allowedUserIds.add(f.userId);
+  const friends = await db
+    .select({ friendId: userFriends.friendId })
+    .from(userFriends)
+    .where(and(eq(userFriends.userId, sessionUser.id), eq(userFriends.status, 'ACCEPTED')));
+
+  const friendIds = friends.map((f) => f.friendId);
+  if (friendIds.length === 0) {
+    return c.json([]);
   }
 
-  const rows = await db
+  const items = await db
     .select({
-      repost: mediaReposts,
-      author: { id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl },
-      media: mediaNodes,
+      id: mediaReposts.id,
+      nodeId: mediaReposts.nodeId,
+      comment: mediaReposts.comment,
+      createdAt: mediaReposts.createdAt,
+      node: mediaNodes,
+      user: {
+        id: users.id,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      },
     })
     .from(mediaReposts)
-    .innerJoin(users, eq(mediaReposts.userId, users.id))
     .innerJoin(mediaNodes, eq(mediaReposts.nodeId, mediaNodes.id))
-    .where(inArray(mediaReposts.userId, Array.from(allowedUserIds)))
+    .innerJoin(users, eq(mediaReposts.userId, users.id))
+    .where(inArray(mediaReposts.userId, friendIds))
     .orderBy(desc(mediaReposts.createdAt))
-    .limit(50);
+    .limit(30);
 
-  return c.json({
-    feed: rows.map((r) => ({
-      ...r.repost,
-      author: r.author,
-      media: formatNode(r.media),
-    })),
-  });
+  return c.json(
+    items.map((it) => ({
+      ...it,
+      node: formatNode(it.node),
+    }))
+  );
 });
 
-repostFeedRouter.delete('/:id', async (c) => {
+repostFeedRouter.post('/', async (c) => {
   const sessionUser = (c as any).get('user');
-  const repostId = c.req.param('id');
-  const existing = await db.query.mediaReposts.findFirst({
-    where: (t, { eq }) => eq(t.id, repostId),
-  });
-  if (!existing || existing.userId !== sessionUser.id) {
-    return c.json({ error: 'Repost introuvable ou non autorisé' }, 404);
+  const body = await c.req.json();
+  const { nodeId, comment } = body;
+
+  if (!nodeId) {
+    return c.json({ error: 'nodeId manquant' }, 400);
   }
-  await db.delete(mediaReposts).where(eq(mediaReposts.id, repostId));
-  return c.json({ success: true });
+
+  const [inserted] = await db
+    .insert(mediaReposts)
+    .values({
+      userId: sessionUser.id,
+      nodeId,
+      comment: comment || null,
+    })
+    .returning();
+
+  return c.json(inserted);
 });

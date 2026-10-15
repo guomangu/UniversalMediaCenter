@@ -87,3 +87,46 @@ export async function resolveParentShowNodeId(filePath) {
         .returning();
     return createdShow.id;
 }
+/**
+ * Trouve ou crée de façon déterministe le nœud COLLECTION pour un film
+ */
+export async function findOrCreateCollectionNode(collectionName, extraMeta) {
+    const cleanName = collectionName.trim();
+    if (!cleanName)
+        return null;
+    // 1. Recherche par titre exact
+    const existing = await db.query.mediaNodes.findFirst({
+        where: (t, { and: aOp, eq: eOp, or: oOp }) => aOp(eOp(t.nodeType, 'COLLECTION'), oOp(eOp(t.title, cleanName), eOp(t.sortTitle, cleanName))),
+    });
+    if (existing)
+        return existing;
+    // 2. Recherche par racine normalisée (sans " - Saga" ou " Collection")
+    const normalizedBase = cleanName.replace(/\s*-\s*saga$/i, '').replace(/\s*collection$/i, '').trim();
+    if (normalizedBase.length > 2) {
+        const existingFuzzy = await db.query.mediaNodes.findFirst({
+            where: (t, { and: aOp, eq: eOp, or: oOp, like: lOp }) => aOp(eOp(t.nodeType, 'COLLECTION'), oOp(lOp(t.title, `%${normalizedBase}%`), lOp(t.sortTitle, `%${normalizedBase}%`))),
+        });
+        if (existingFuzzy)
+            return existingFuzzy;
+    }
+    // 3. Création du conteneur COLLECTION
+    const baseSlug = generateSlug(cleanName) || 'saga';
+    const slug = `${baseSlug}-collection-${Date.now().toString().slice(-4)}`;
+    const cleanSort = cleanName.replace(/^(le|la|les|the|l')\s+/i, '').trim() || cleanName;
+    const [created] = await db
+        .insert(mediaNodes)
+        .values({
+        nodeType: 'COLLECTION',
+        title: cleanName,
+        sortTitle: cleanSort,
+        slug,
+        state: 'READY',
+        confidenceScore: 1.0,
+        posterPath: extraMeta?.posterUrl,
+        fanartPath: extraMeta?.fanartUrl,
+        overview: extraMeta?.overview,
+        updatedAt: new Date(),
+    })
+        .returning();
+    return created;
+}

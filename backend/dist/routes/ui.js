@@ -5,24 +5,29 @@ import { desc, asc, eq, and, inArray } from 'drizzle-orm';
 import { taxonomyRouter } from './taxonomyRoutes.js';
 import { requireAuth } from '../middleware/access.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
+import { localizeMediaNode, extractRequestLanguage } from '../watcher/pipeline/localizationHelper.js';
 import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 export const uiRouter = new Hono();
 // Toutes les requêtes UI (listes, rails, tags, taxonomie) exigent d'être authentifié
 uiRouter.use('*', requireAuth);
 // Taxonomie hiérarchique Catégories < Tags < Médias
 uiRouter.route('/taxonomy', taxonomyRouter);
-function formatMediaItem(item) {
-    const parsedInfo = parseSeasonEpisode(item.title, item.orderIndex);
+function formatMediaItem(item, lang = "fr") {
+    const localized = localizeMediaNode(item, lang);
+    const nodeType = localized.nodeType || localized.node_type;
+    const isEpOrSeason = nodeType === "EPISODE" || nodeType === "SEASON";
+    const parsedInfo = isEpOrSeason ? parseSeasonEpisode(localized.title, localized.orderIndex, nodeType) : null;
     return {
-        ...item,
-        posterPath: item.posterPath ? `/api/media/${item.id}/poster` : undefined,
-        fanartPath: item.fanartPath ? `/api/media/${item.id}/fanart` : undefined,
+        ...localized,
+        posterPath: localized.posterPath ? `/api/media/${localized.id}/poster` : undefined,
+        fanartPath: localized.fanartPath ? `/api/media/${localized.id}/fanart` : undefined,
         seasonEpisodeTag: parsedInfo?.seasonEpisodeTag ?? null,
         displayBadge: parsedInfo?.displayBadge ?? null,
     };
 }
 uiRouter.get('/layout', async (c) => {
     const pageTarget = c.req.query('page') || 'HOME';
+    const userLang = extractRequestLanguage(c);
     const user = c.get('user');
     const rails = await db.query.uiRails.findMany({
         where: (t, { and, eq }) => and(eq(t.pageTarget, pageTarget), eq(t.isActive, true)),
@@ -140,7 +145,7 @@ uiRouter.get('/layout', async (c) => {
             railType: rail.railType,
             cardStyle: rail.cardStyle,
             sortOrder: rail.sortOrder,
-            items: filteredItems.map(formatMediaItem),
+            items: filteredItems.map((it) => formatMediaItem(it, userLang)),
         };
     }));
     return c.json(hydratedRails);

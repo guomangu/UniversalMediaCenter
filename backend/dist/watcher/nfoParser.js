@@ -135,17 +135,21 @@ export function parseNfoXml(xmlContent, filePath) {
             if (v.durationinseconds) {
                 streamDetails.durationSeconds = parseInt(String(v.durationinseconds), 10);
             }
-            if (streamDetails.videoWidth) {
-                if (streamDetails.videoWidth >= 3800)
+            const w = streamDetails.videoWidth || 0;
+            const h = streamDetails.videoHeight || 0;
+            if (w > 0 || h > 0) {
+                if (w >= 3800 || h >= 2000)
                     streamDetails.videoQuality = '4K UHD';
-                else if (streamDetails.videoWidth >= 1900)
+                else if (w >= 1900 && h >= 1000)
                     streamDetails.videoQuality = '1080p FHD';
-                else if (streamDetails.videoWidth >= 1200)
+                else if (w >= 1900 && h >= 720)
+                    streamDetails.videoQuality = '1080p Scope';
+                else if (w >= 1200 || h >= 700)
                     streamDetails.videoQuality = '720p HD';
-                else if (streamDetails.videoWidth >= 600)
+                else if (h >= 480 || w >= 600)
                     streamDetails.videoQuality = '480p SD';
                 else
-                    streamDetails.videoQuality = `${streamDetails.videoWidth}p`;
+                    streamDetails.videoQuality = 'SD';
             }
         }
         const audios = Array.isArray(sd.audio) ? sd.audio : sd.audio ? [sd.audio] : [];

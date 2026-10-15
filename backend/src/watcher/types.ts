@@ -44,6 +44,8 @@ export interface ParsedNfo {
   originalTitle?: string;
   sortTitle?: string;
   showTitle?: string;
+  collectionName?: string;
+  collectionTmdbId?: number;
   seasonNumber?: number;
   episodeNumber?: number;
   absoluteEpisodeNumber?: number;

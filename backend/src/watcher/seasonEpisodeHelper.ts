@@ -7,14 +7,22 @@ export interface SeasonEpisodeInfo {
 }
 
 /**
- * Extrait le numéro de saison et d'épisode depuis le titre ou l'index
- * Détecte les formats: S01E05, S1E5, 1x05, E05, EP05, R1, R2, ou encodage orderIndex >= 1000 (saison * 1000 + episode)
+ * Extrait le numéro de saison et d'épisode depuis le titre ou l'index.
+ * DÉFENSE ABSOLUE :
+ * - Si le nœud est un film (MOVIE) ou une saga (COLLECTION), renvoie systématiquement NULL.
+ * - Si orderIndex est une année de cinéma (1880 - 2100), ne le convertit JAMAIS en saison/épisode mathématique.
  */
 export function parseSeasonEpisode(
   title: string,
-  orderIndex?: number | null
+  orderIndex?: number | null,
+  nodeType?: string | null
 ): SeasonEpisodeInfo | null {
-  const normTitle = title || '';
+  // Règle 1 : Un film, une saga ou un conteneur non-épisode n'a JAMAIS de badge d'épisode
+  if (nodeType && nodeType !== 'EPISODE' && nodeType !== 'SEASON') {
+    return null;
+  }
+
+  const normTitle = (title || '').trim();
 
   // 1. Format S01E02 ou S1E2
   const sPattern = /S(\d+)[\s._-]*E(\d+)/i.exec(normTitle);
@@ -33,7 +41,7 @@ export function parseSeasonEpisode(
   }
 
   // 2. Format 1x02
-  const xPattern = /(\d+)x(\\d+)/i.exec(normTitle);
+  const xPattern = /(\d+)x(\d+)/i.exec(normTitle);
   if (xPattern) {
     const s = parseInt(xPattern[1], 10);
     const e = parseInt(xPattern[2], 10);
@@ -70,8 +78,10 @@ export function parseSeasonEpisode(
     const e = parseInt(epPattern[1], 10);
     const eStr = String(e).padStart(2, '0');
 
-    // Si orderIndex indique une saison > 1 (ex: 2005 -> saison 2, épisode 5)
-    if (orderIndex && orderIndex >= 1000) {
+    // Si orderIndex indique une saison encodée (ex: 2005 -> saison 2, épisode 5)
+    // ATTENTION : Si orderIndex est entre 1880 et 2100, c'est une année de sortie, PAS une saison !
+    const isYear = orderIndex && orderIndex >= 1880 && orderIndex <= 2100;
+    if (orderIndex && orderIndex >= 1000 && !isYear) {
       const s = Math.floor(orderIndex / 1000);
       const effE = orderIndex % 1000;
       const sStr = String(s).padStart(2, '0');
@@ -93,30 +103,35 @@ export function parseSeasonEpisode(
     };
   }
 
-  // 5. Fallback sur orderIndex
-  if (orderIndex && orderIndex > 0) {
-    // Si orderIndex >= 1000, c'est l'encodage conventionnel d'une saison (season * 1000 + episode)
-    if (orderIndex >= 1000) {
-      const s = Math.floor(orderIndex / 1000);
-      const e = orderIndex % 1000;
-      const sStr = String(s).padStart(2, '0');
-      const eStr = String(e).padStart(2, '0');
-      return {
-        season: s,
-        episode: e,
-        seasonEpisodeTag: `S${sStr}E${eStr}`,
-        displayBadge: `S${sStr} • EP ${eStr}`,
-        sortRank: s * 10000 + e,
-      };
-    }
+  // 5. Fallback sur orderIndex UNIQUEMENT pour les épisodes ou saisons
+  // Ne JAMAIS inventer un épisode si nodeType est inconnu et qu'aucun motif n'est dans le titre
+  if (nodeType === 'EPISODE' || nodeType === 'SEASON') {
+    if (orderIndex && orderIndex > 0) {
+      const isYear = orderIndex >= 1880 && orderIndex <= 2100;
+      if (orderIndex >= 1000 && !isYear) {
+        const s = Math.floor(orderIndex / 1000);
+        const e = orderIndex % 1000;
+        const sStr = String(s).padStart(2, '0');
+        const eStr = String(e).padStart(2, '0');
+        return {
+          season: s,
+          episode: e,
+          seasonEpisodeTag: `S${sStr}E${eStr}`,
+          displayBadge: `S${sStr} • EP ${eStr}`,
+          sortRank: s * 10000 + e,
+        };
+      }
 
-    const eStr = String(orderIndex).padStart(2, '0');
-    return {
-      episode: orderIndex,
-      seasonEpisodeTag: `E${eStr}`,
-      displayBadge: `EP ${eStr}`,
-      sortRank: 10000 + orderIndex,
-    };
+      if (!isYear) {
+        const eStr = String(orderIndex).padStart(2, '0');
+        return {
+          episode: orderIndex,
+          seasonEpisodeTag: `E${eStr}`,
+          displayBadge: `EP ${eStr}`,
+          sortRank: 10000 + orderIndex,
+        };
+      }
+    }
   }
 
   return null;

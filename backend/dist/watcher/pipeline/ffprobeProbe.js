@@ -31,15 +31,21 @@ export async function probeMediaFile(filePath) {
                 videoWidth = st.width;
                 videoHeight = st.height;
                 aspectRatio = st.display_aspect_ratio || (videoWidth && videoHeight ? `${videoWidth}:${videoHeight}` : undefined);
-                if (videoHeight) {
-                    if (videoHeight >= 2100)
-                        videoQuality = '2160p';
-                    else if (videoHeight >= 1000)
-                        videoQuality = '1080p';
-                    else if (videoHeight >= 700)
-                        videoQuality = '720p';
+                const w = videoWidth || 0;
+                const h = videoHeight || 0;
+                if (w > 0 || h > 0) {
+                    if (w >= 3800 || h >= 2000)
+                        videoQuality = '4K UHD';
+                    else if (w >= 1900 && h >= 1000)
+                        videoQuality = '1080p FHD';
+                    else if (w >= 1900 && h >= 720)
+                        videoQuality = '1080p Scope';
+                    else if (w >= 1200 || h >= 700)
+                        videoQuality = '720p HD';
+                    else if (h >= 480 || w >= 600)
+                        videoQuality = '480p SD';
                     else
-                        videoQuality = '480p';
+                        videoQuality = 'SD';
                 }
             }
             else if (st.codec_type === 'audio') {

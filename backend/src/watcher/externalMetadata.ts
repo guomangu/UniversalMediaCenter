@@ -4,6 +4,13 @@ export interface ExternalActor {
   thumb?: string;
 }
 
+export interface ExternalCollection {
+  id: number;
+  name: string;
+  posterUrl?: string;
+  fanartUrl?: string;
+}
+
 export interface ExternalMediaMetadata {
   title?: string;
   originalTitle?: string;
@@ -15,6 +22,7 @@ export interface ExternalMediaMetadata {
   certification?: string;
   posterUrl?: string;
   fanartUrl?: string;
+  collection?: ExternalCollection;
   genres: string[];
   tags: string[];
   studios: string[];
@@ -24,6 +32,7 @@ export interface ExternalMediaMetadata {
   producers: string[];
   composers: string[];
   actors: ExternalActor[];
+  translations?: Record<string, { title?: string; overview?: string; tagline?: string }>;
 }
 
 const UA = 'UniversalMediaStack/3.0 (contact@ums.local)';
@@ -274,6 +283,7 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
   let enCrew: any[] = [];
   let enCast: any[] = [];
   let enOverview: string | undefined;
+  let enData: any = null;
   try {
     const enUrl = `https://api.themoviedb.org/3/tv/${tvId}?language=en-US&append_to_response=aggregate_credits`;
     const enRes = await fetch(enUrl, {
@@ -281,7 +291,7 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
       signal: AbortSignal.timeout(5000),
     });
     if (enRes.ok) {
-      const enData = await enRes.json();
+      enData = await enRes.json();
       enCrew = enData.aggregate_credits?.crew || [];
       enCast = enData.aggregate_credits?.cast || [];
       enOverview = enData.overview || undefined;
@@ -369,10 +379,24 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
     }
   }
 
+  const translations: Record<string, { title?: string; overview?: string; tagline?: string }> = {
+    fr: {
+      title: d.name || undefined,
+      overview: d.overview || finalOverview,
+      tagline: d.tagline || undefined,
+    },
+    en: {
+      title: enData?.name || d.original_name || undefined,
+      overview: enOverview || undefined,
+      tagline: enData?.tagline || undefined,
+    },
+  };
+
   return {
     title: d.name,
     originalTitle: d.original_name,
     overview: finalOverview,
+    translations,
     tagline: d.tagline || undefined,
     releaseYear: d.first_air_date ? parseInt(d.first_air_date.slice(0, 4), 10) : undefined,
     premiered: d.first_air_date || undefined,
@@ -423,6 +447,7 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
   let enCrew: any[] = [];
   let enCast: any[] = [];
   let enOverview: string | undefined;
+  let enData: any = null;
   try {
     const enUrl = `https://api.themoviedb.org/3/movie/${movieId}?language=en-US&append_to_response=credits`;
     const enRes = await fetch(enUrl, {
@@ -430,7 +455,7 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
       signal: AbortSignal.timeout(5000),
     });
     if (enRes.ok) {
-      const enData = await enRes.json();
+      enData = await enRes.json();
       enCrew = enData.credits?.crew || [];
       enCast = enData.credits?.cast || [];
       enOverview = enData.overview || undefined;
@@ -496,10 +521,39 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
     }
   }
 
+  let collection: ExternalCollection | undefined;
+  if (d.belongs_to_collection) {
+    collection = {
+      id: d.belongs_to_collection.id,
+      name: d.belongs_to_collection.name,
+      posterUrl: d.belongs_to_collection.poster_path
+        ? `https://image.tmdb.org/t/p/original${d.belongs_to_collection.poster_path}`
+        : undefined,
+      fanartUrl: d.belongs_to_collection.backdrop_path
+        ? `https://image.tmdb.org/t/p/original${d.belongs_to_collection.backdrop_path}`
+        : undefined,
+    };
+  }
+
+  const translations: Record<string, { title?: string; overview?: string; tagline?: string }> = {
+    fr: {
+      title: d.title || undefined,
+      overview: d.overview || finalOverview,
+      tagline: d.tagline || undefined,
+    },
+    en: {
+      title: enData?.title || d.original_title || undefined,
+      overview: enOverview || undefined,
+      tagline: enData?.tagline || undefined,
+    },
+  };
+
   return {
     title: d.title,
     originalTitle: d.original_title,
+    collection,
     overview: finalOverview,
+    translations,
     tagline: d.tagline || undefined,
     releaseYear: d.release_date ? parseInt(d.release_date.slice(0, 4), 10) : undefined,
     premiered: d.release_date || undefined,
