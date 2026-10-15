@@ -93,7 +93,7 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
 const styles = StyleSheet.create({
   container: { marginBottom: Spacing.four },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: Spacing.two },
-  categoryTitle: { fontSize: 18, fontWeight: '700', color: '#edeef2', letterSpacing: -0.3 },
+  categoryTitle: { fontSize: 44, fontWeight: '700', color: '#edeef2', letterSpacing: -0.5 },
   tagCountBadge: { backgroundColor: 'rgba(148, 163, 184, 0.12)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.pill },
   tagCountText: { color: '#8b97a8', fontSize: 11, fontWeight: '600' },
   verticalTagList: { marginTop: 4 },
