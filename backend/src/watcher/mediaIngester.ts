@@ -36,25 +36,6 @@ export async function ingestMediaNode(
   let folderArcTitle = parsed.folderTitle;
 
   if (parsed.type !== 'SHOW' && parsed.type !== 'COLLECTION') {
-    parentId = await resolveParentShowNodeId(nfoPath);
-
-    if (!parentId && parsed.showTitle) {
-      const canonicalShow = extractCanonicalShowTitle(parsed.showTitle);
-      const showByTitle = await db.query.mediaNodes.findFirst({
-        where: (t, { and: aOp, eq: eOp, or: oOp, ilike: iOp }) =>
-          aOp(
-            eOp(t.nodeType, 'SHOW'),
-            oOp(
-              iOp(t.title, canonicalShow),
-              iOp(t.sortTitle, canonicalShow),
-              eOp(t.title, parsed.showTitle!),
-              eOp(t.sortTitle, parsed.showTitle!)
-            )
-          ),
-      });
-      if (showByTitle) parentId = showByTitle.id;
-    }
-
     const filePathToCheck = adjacent.videoFilePath || nfoPath;
     if (isExtraMediaFile(filePathToCheck)) {
       isExtra = true;
@@ -78,7 +59,35 @@ export async function ingestMediaNode(
       }
     }
 
-    if (effectiveType === 'MOVIE' && !parentId) {
+    // 1. Parsing heuristique GuessIt avec validation stricte Kyoo
+    const guess = await parsePathWithGuessit(adjacent.videoFilePath || nfoPath);
+    if (guess.type === 'movie' && effectiveType !== 'COLLECTION' && effectiveType !== 'EPISODE' && !parsed.episodeNumber) {
+      effectiveType = 'MOVIE';
+    } else if (guess.type === 'episode' && effectiveType !== 'SHOW' && effectiveType !== 'COLLECTION') {
+      effectiveType = 'EPISODE';
+    }
+
+    if (effectiveType === 'EPISODE') {
+      parentId = await resolveParentShowNodeId(nfoPath);
+
+      if (!parentId && parsed.showTitle) {
+        const canonicalShow = extractCanonicalShowTitle(parsed.showTitle);
+        const showByTitle = await db.query.mediaNodes.findFirst({
+          where: (t, { and: aOp, eq: eOp, or: oOp, ilike: iOp }) =>
+            aOp(
+              eOp(t.nodeType, 'SHOW'),
+              oOp(
+                iOp(t.title, canonicalShow),
+                iOp(t.sortTitle, canonicalShow),
+                eOp(t.title, parsed.showTitle!),
+                eOp(t.sortTitle, parsed.showTitle!)
+              )
+            ),
+        });
+        if (showByTitle) parentId = showByTitle.id;
+      }
+    } else if (effectiveType === 'MOVIE') {
+      // Un film n'est JAMAIS rattaché à un SHOW, seulement à une COLLECTION (Saga)
       const folderSagaName = detectSagaNameFromFolder(nfoPath || adjacent.videoFilePath || '');
       if (folderSagaName) {
         const sagaNode = await findOrCreateCollectionNode(folderSagaName);
@@ -96,18 +105,7 @@ export async function ingestMediaNode(
   let orderIndex = 0;
   let absoluteOrderIndex: number | null = null;
 
-  // 1. Parsing heuristique GuessIt avec validation stricte Kyoo
   const guess = await parsePathWithGuessit(adjacent.videoFilePath || nfoPath);
-  if (guess.type === 'movie' && effectiveType !== 'COLLECTION' && effectiveType !== 'EPISODE' && !parsed.episodeNumber) {
-    effectiveType = 'MOVIE';
-  } else if (guess.type === 'episode' && effectiveType !== 'SHOW' && effectiveType !== 'COLLECTION') {
-    effectiveType = 'EPISODE';
-  }
-
-  if (effectiveType === 'EPISODE' && !parentId) {
-    parentId = await resolveParentShowNodeId(adjacent.videoFilePath || nfoPath);
-  }
-
   let effYear = parsed.year || guess.year;
   if (guess.year && (!effYear || Math.abs(effYear - guess.year) > 1)) {
     effYear = guess.year;
@@ -195,13 +193,25 @@ export async function ingestMediaNode(
     }
   }
 
+  // Héritage sécurisé du parentId sans pollution SHOW -> MOVIE
+  let effectiveParentId: string | null = parentId;
+  if (!effectiveParentId && existing?.parentId) {
+    const currentParent = await db.query.mediaNodes.findFirst({
+      where: (t, { eq: eOp }) => eOp(t.id, existing.parentId!),
+      columns: { id: true, nodeType: true },
+    });
+    if (currentParent && (effectiveType !== 'MOVIE' || currentParent.nodeType === 'COLLECTION')) {
+      effectiveParentId = currentParent.id;
+    }
+  }
+
   let nodeId: string;
   const canonicalTitle = effectiveType === 'SHOW'
     ? extractCanonicalShowTitle(parsed.title || path.basename(path.dirname(nfoPath)))
     : sanitizeReleaseTags(parsed.title);
 
   const payload = {
-    parentId: (parentId || existing?.parentId) ? String(parentId || existing?.parentId) : undefined,
+    parentId: effectiveParentId ? String(effectiveParentId) : undefined,
     nodeType: effectiveType,
     state: 'READY' as const,
     title: canonicalTitle,
@@ -224,10 +234,10 @@ export async function ingestMediaNode(
     chaptersJson: chapters,
     nfoSha256: sha256,
     videoFilePath: adjacent.videoFilePath,
-    posterPath: adjacent.posterPath,
-    fanartPath: adjacent.fanartPath,
-    clearlogoPath: adjacent.clearlogoPath,
-    thumbPath: adjacent.thumbPath,
+    posterPath: adjacent.posterPath || parsed.customArt?.poster,
+    fanartPath: adjacent.fanartPath || parsed.customArt?.fanart,
+    clearlogoPath: adjacent.clearlogoPath || parsed.customArt?.clearlogo,
+    thumbPath: adjacent.thumbPath || parsed.customArt?.thumb,
     nfoFilePath: nfoPath,
     updatedAt: new Date(),
   };
@@ -264,90 +274,103 @@ export async function ingestMediaNode(
       );
   }
 
-  // Tags et EAV
-  for (const g of parsed.genres) await linkTagToNode(nodeId, 'genre', g);
-  for (const s of parsed.tags) await linkTagToNode(nodeId, 'subject', s);
-  for (const st of parsed.studios) await linkTagToNode(nodeId, 'studio', st);
-  for (const c of parsed.countries) await linkTagToNode(nodeId, 'country', c);
-  if (parsed.certification) await linkTagToNode(nodeId, 'certification', parsed.certification);
-  if (folderArcTitle) await linkTagToNode(nodeId, 'arc', folderArcTitle);
-  if (edition) await linkTagToNode(nodeId, 'edition', edition);
-  if (isExtra) await linkTagToNode(nodeId, 'extra', extraType || 'bonus');
+  // Extraction et liaison des métadonnées vers le schéma EAV
+  const eavPromises: Promise<any>[] = [];
 
-  for (const d of parsed.directors) await linkTagToNode(nodeId, 'director', d);
-  for (const w of parsed.writers) await linkTagToNode(nodeId, 'writer', w);
-  if (parsed.producers) {
-    for (const pr of parsed.producers) await linkTagToNode(nodeId, 'producer', pr);
+  for (const genre of (parsed.genres || [])) {
+    eavPromises.push(linkTagToNode(nodeId, 'genre', genre));
   }
-  if (parsed.composers) {
-    for (const m of parsed.composers) await linkTagToNode(nodeId, 'composer', m);
+  for (const tag of (parsed.tags || [])) {
+    eavPromises.push(linkTagToNode(nodeId, 'subject', tag));
   }
-  for (const a of parsed.actors) {
-    await linkTagToNode(nodeId, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {});
+  for (const studio of (parsed.studios || [])) {
+    eavPromises.push(linkTagToNode(nodeId, 'studio', studio));
+  }
+  for (const country of (parsed.countries || [])) {
+    eavPromises.push(linkTagToNode(nodeId, 'country', country));
+  }
+  for (const dir of (parsed.directors || [])) {
+    eavPromises.push(linkTagToNode(nodeId, 'director', dir));
+  }
+  for (const writer of (parsed.credits || [])) {
+    eavPromises.push(linkTagToNode(nodeId, 'writer', writer));
+  }
+  for (const actor of (parsed.actors || [])) {
+    eavPromises.push(
+      linkTagToNode(
+        nodeId,
+        'actor',
+        actor.name,
+        actor.role,
+        actor.thumb ? { thumbUrl: actor.thumb } : undefined
+      )
+    );
   }
 
-  const sd = parsed.streamDetails;
-  const effQuality = probedQuality || sd?.videoQuality;
-  if (effQuality) await linkTagToNode(nodeId, 'video_quality', effQuality);
-  if (sd?.videoCodec) await linkTagToNode(nodeId, 'video_codec', sd.videoCodec.toUpperCase());
-  if (sd?.aspectRatio) await linkTagToNode(nodeId, 'aspect_ratio', sd.aspectRatio);
+  if (parsed.mpaa) {
+    eavPromises.push(linkTagToNode(nodeId, 'certification', parsed.mpaa));
+  }
 
-  if (sd?.audioTracks) {
-    for (const audio of sd.audioTracks) {
-      if (audio.language) await linkTagToNode(nodeId, 'audio_language', audio.language.toUpperCase());
-      if (audio.codec) await linkTagToNode(nodeId, 'audio_codec', audio.codec.toUpperCase());
-      if (audio.channels) {
-        const ch = audio.channels >= 6 ? (audio.channels === 8 ? '7.1' : '5.1') : `${audio.channels}.0`;
-        await linkTagToNode(nodeId, 'audio_channels', ch);
+  if (probedCodec) {
+    eavPromises.push(linkTagToNode(nodeId, 'video_codec', probedCodec));
+  }
+  if (probedQuality) {
+    eavPromises.push(linkTagToNode(nodeId, 'video_quality', probedQuality));
+  }
+  if (edition) {
+    eavPromises.push(linkTagToNode(nodeId, 'edition', edition));
+  }
+  if (isExtra && extraType) {
+    eavPromises.push(linkTagToNode(nodeId, 'extra', extraType));
+  }
+  if (folderArcTitle) {
+    eavPromises.push(linkTagToNode(nodeId, 'arc', folderArcTitle));
+  }
+
+  // Inspection profonde des flux vidéo/audio internes
+  if (adjacent.videoFilePath) {
+    try {
+      const containerInfo = await inspectContainerMetadata(adjacent.videoFilePath);
+      if (containerInfo.audioCodec) {
+        eavPromises.push(linkTagToNode(nodeId, 'audio_codec', containerInfo.audioCodec));
       }
-    }
+      if (containerInfo.audioChannels) {
+        eavPromises.push(linkTagToNode(nodeId, 'audio_channels', `${containerInfo.audioChannels}ch`));
+      }
+      if (containerInfo.audioLanguages?.length > 0) {
+        for (const lang of containerInfo.audioLanguages) {
+          eavPromises.push(linkTagToNode(nodeId, 'audio_language', lang));
+        }
+      }
+      if (containerInfo.subtitleLanguages?.length > 0) {
+        for (const sub of containerInfo.subtitleLanguages) {
+          eavPromises.push(linkTagToNode(nodeId, 'subtitle_language', sub));
+        }
+      }
+
+      if (!parsed.plot && !parsed.outline) {
+        const subNlp = await analyzeSubtitlesNlp(adjacent.videoFilePath);
+        if (subNlp.detectedLanguage) {
+          eavPromises.push(linkTagToNode(nodeId, 'audio_language', subNlp.detectedLanguage));
+        }
+        for (const kw of subNlp.keywords || []) {
+          eavPromises.push(linkTagToNode(nodeId, 'subject', kw));
+        }
+      }
+    } catch {}
   }
 
-  if (sd?.subtitleTracks) {
-    for (const sub of sd.subtitleTracks) {
-      if (sub.language) await linkTagToNode(nodeId, 'subtitle_language', sub.language.toUpperCase());
-      if (sub.codec) await linkTagToNode(nodeId, 'subtitle_codec', sub.codec.toUpperCase());
-    }
+  for (const [key, val] of Object.entries(parsed.customFields)) {
+    if (val === undefined || val === null || val === '') continue;
+    const strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+    eavPromises.push(linkTagToNode(nodeId, `custom_${key}`, strVal));
   }
 
-  for (const [key, val] of Object.entries(parsed.customFields || {})) {
-    await linkTagToNode(nodeId, `custom_${key.toLowerCase()}`, val);
-  }
-
-  const searchComponents = [
-    parsed.title,
-    parsed.originalTitle || '',
-    folderArcTitle || '',
-    edition || '',
-    ...parsed.genres,
-    ...parsed.tags,
-    ...parsed.directors,
-    ...parsed.writers,
-    ...parsed.actors.map((a) => a.name),
-    sd?.videoQuality || '',
-    sd?.videoCodec || '',
-    ...(sd?.audioTracks || []).map((a) => a.language || ''),
-    ...(sd?.subtitleTracks || []).map((s) => s.language || ''),
-  ];
-
-  await db
-    .update(mediaNodes)
-    .set({ searchVectorText: searchComponents.filter(Boolean).join(' ') })
-    .where(eq(mediaNodes.id, nodeId));
-
+  await Promise.all(eavPromises);
   return nodeId;
 }
 
-/**
- * Ingestion autonome de fichier vidéo sans NFO via le pipeline Waterfall Kyoo++
- */
-export async function ingestStandaloneVideoFile(videoPath: string): Promise<string> {
-  // Ignorer absolument les artefacts de trickplay
-  if (videoPath.includes('/.trickplay/') || videoPath.endsWith('.bif')) {
-    return '';
-  }
-
-  // 1. Si le fichier vidéo est déjà rattaché à un noeud existant avec NFO, ne pas créer de doublon
+export async function ingestMediaFile(videoPath: string): Promise<string> {
   const existing = await db.query.mediaNodes.findFirst({
     where: (t, { eq: eqOp }) => eqOp(t.videoFilePath, videoPath),
   });
@@ -359,7 +382,7 @@ export async function ingestStandaloneVideoFile(videoPath: string): Promise<stri
   const slug = `${generateSlug(meta.title)}-${meta.releaseYear || 'video'}`;
   const sortTitle = meta.title;
 
-  let parentId = await resolveParentShowNodeId(videoPath);
+  let parentId: string | null = null;
   const seriesCtx = await resolveSeriesRoot(videoPath);
 
   let isExtra = meta.isExtra;
@@ -388,7 +411,9 @@ export async function ingestStandaloneVideoFile(videoPath: string): Promise<stri
     }
   }
 
-  if (nodeType === 'MOVIE' && !parentId) {
+  if (nodeType === 'EPISODE') {
+    parentId = await resolveParentShowNodeId(videoPath);
+  } else if (nodeType === 'MOVIE') {
     const folderSagaName = detectSagaNameFromFolder(videoPath);
     if (folderSagaName) {
       const sagaNode = await findOrCreateCollectionNode(folderSagaName);
@@ -410,12 +435,24 @@ export async function ingestStandaloneVideoFile(videoPath: string): Promise<stri
     orderIndex = meta.seasonNumber;
   }
 
+  // Héritage sécurisé du parentId sans pollution SHOW -> MOVIE
+  let effectiveParentId: string | null = parentId;
+  if (!effectiveParentId && existing?.parentId) {
+    const currentParent = await db.query.mediaNodes.findFirst({
+      where: (t, { eq: eOp }) => eOp(t.id, existing.parentId!),
+      columns: { id: true, nodeType: true },
+    });
+    if (currentParent && (nodeType !== 'MOVIE' || currentParent.nodeType === 'COLLECTION')) {
+      effectiveParentId = currentParent.id;
+    }
+  }
+
   const canonicalTitle = nodeType === 'SHOW'
     ? extractCanonicalShowTitle(meta.title)
     : meta.title;
 
   const payload = {
-    parentId: (parentId || existing?.parentId) ? String(parentId || existing?.parentId) : undefined,
+    parentId: effectiveParentId ? String(effectiveParentId) : undefined,
     nodeType,
     title: canonicalTitle,
     originalTitle: meta.originalTitle,
@@ -453,3 +490,5 @@ export async function ingestStandaloneVideoFile(videoPath: string): Promise<stri
 
   return nodeId;
 }
+
+export const ingestStandaloneVideoFile = ingestMediaFile;

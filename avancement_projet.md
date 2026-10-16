@@ -177,3 +177,11 @@
     - Écouteurs `onFreshData` dans `tv.tsx` assurant l'éviction visuelle immédiate des anciennes chaînes en mémoire dès que le rafraîchissement asynchrone est complété.
   - **Restauration de la Fonction `resolveImageUrl` (`api.ts`) :**
     - Rétablissement de l'export `resolveImageUrl` dans `api.ts`, éliminant le crash TypeError `resolveImageUrl is not a function` sur l'écran de détail média `<MediaDetailScreen>`.
+
+- [x] **49. Réparation Majeure du Pipeline d'Indexation & Assainissement des Métadonnées :**
+  - **Éradication des 688 Faux SHOWs Parasites :** Remplacement de la clé étrangère auto-référencée par `ON DELETE SET NULL` pour éliminer les suppressions en cascade de films intacts, purge complète des pseudo-shows vides sans fichiers physiques.
+  - **Correction Métadonnées Totoro & Antigang :** Élimination de la pollution canadienne (Fear Thy Neighbor / Cream Productions) causée par la troncation aveugle TMDb, rétablissement des pays et studios réels (Totoro: Japon / Studio Ghibli, Antigang: France & UK).
+  - **Unification Canonique de Ghost in the Shell :** Restauration de la collection faîtière *Ghost in the Shell - Saga*, rattachement direct des 4 films et unification des séries *Stand Alone Complex* (58 épisodes et OAVs) et *Arise*.
+  - **Restauration de Soul Eater & Désambiguïsation de Soul (Pixar) :** Exclusion stricte des résolutions vidéo (`1920x804`, `1920x1080`) de la détection d'épisodes, requalification de 142 films Pixar/Disney en `MOVIE` et rétablissement du titre canonique *Soul Eater*.
+  - **Sécurisation de la Détection d'Affiches (`mediaFileDetector.ts`) :** Priorité absolue aux artworks dédiés (`<titre>-poster.jpg`), interdiction formelle d'attribuer `folder.jpg` aux films situés dans des dossiers partagés multi-fichiers.
+  - **Rétablissement de la Taxonomie Réalisateurs & Studios :** Inclusion des films en sagas dans les requêtes de taxonomie (`taxonomyRoutes.ts`), passant de 3 à plus de 40 réalisateurs et studios explorables.

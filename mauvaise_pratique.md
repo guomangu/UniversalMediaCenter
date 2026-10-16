@@ -236,3 +236,40 @@
 * **Bonnes Pratiques de Remédiation :**
   - **Vérification Systématique des Exports Publics :** Conserver immuables les fonctions socles partagées (`resolveImageUrl`, `getVideoStreamUrl`, `fetchMediaDetail`).
   - **Tests TypeScript Pré-Déploiement :** Valider l'intégrité de l'arborescence des imports avant de valider toute modification.
+
+---
+
+## 🛑 75. Cascade Destructive sur parentId (ON DELETE CASCADE sur media_nodes) et Disparition Silencieuse de Médias Physiques
+
+* **Problème / Symptôme :** Des films disparaissent soudainement de la bibliothèque lorsque l'utilisateur ou le scanner réorganise, fusionne ou supprime une collection ou un pseudo-show ("des films ont disparu").
+* **Conséquences :** Perte d'indexation en base de données de centaines de films intacts sur disque, nécessitant une ré-indexation complète.
+* **Causes Racines :** La clé étrangère parentId auto-référencée sur media_nodes était définie avec onDelete: 'cascade'. Dans un modèle EAV unifié où les films et les épisodes sont enfants de collections ou de séries, supprimer un nœud parent entraînait la suppression automatique en cascade de tous les médias descendants.
+* **Bonnes Pratiques de Remédiation :**
+  - **Contrainte ON DELETE SET NULL Inviolable :** Définir strictement parentId: uuid('parent_id').references((): AnyPgColumn => mediaNodes.id, { onDelete: 'set null' }) en Drizzle et en SQL PostgreSQL.
+  - **Déliaison Préventive avant Nettoyage :** Avant toute suppression de collection ou série, exécuter systématiquement UPDATE media_nodes SET parent_id = NULL WHERE parent_id = target_id.
+
+---
+
+## 🛑 76. Création Abusive de Pseudo-SHOWs pour les Films et Scraping par Troncation Arbitraire de Mots
+
+* **Problème / Symptôme :** Des films célèbres (Mon Voisin Totoro, Antigang) apparaissent étiquetés comme des séries canadiennes de meurtre / fait divers (Fear Thy Neighbor / Cream Productions), avec des cartes non-jouables (erreur 404 / illisibles) et des faux titres.
+* **Conséquences :** Pollution massive de la bibliothèque par des centaines de faux SHOW vides sans fichier vidéo, métadonnées corrompues, incohérence totale des filtres par pays et studios.
+* **Causes Racines :**
+  - resolveParentShowNodeId était invoqué sans garde préalable sur des films autonomes (MOVIE), générant un SHOW vide pour chaque film.
+  - Le scraper externe TMDb utilisait un fallback brutal tronquant le titre aux deux premiers mots ("Mon Voisin Totoro" -> "Mon Voisin") et acceptait aveuglément le premier résultat retourné sans calcul de similarité lexicale, capturant une série documentaire criminelle canadienne.
+* **Bonnes Pratiques de Remédiation :**
+  - **Garde d'Exclusion Stricte :** resolveParentShowNodeId ne doit être appelé QUE pour nodeType === 'EPISODE' et avec un contexte de série formel vérifié (resolveSeriesRoot). Un MOVIE ne doit JAMAIS générer ni dépendre d'un SHOW.
+  - **Validation de Similarité String (Trigrammes + Jaccard >= 0.60) :** Bannir toute troncation aveugle de titre. Tout résultat d'API externe doit présenter une similarité lexicale minimale de 60% avec le titre d'origine sous peine de rejet immédiat.
+
+---
+
+## 🛑 77. Écrasement d'Affiches Dédiées par folder.jpg dans les Dossiers Multi-Films et Collisions de Préfixes
+
+* **Problème / Symptôme :** Des dizaines de films dans un même répertoire partagent la même affiche erronée, et la série Soul Eater est renommée en "Soul" à cause du film d'animation Pixar Soul.
+* **Conséquences :** Confusion visuelle grave, métadonnées interverties entre séries et films homonymes.
+* **Causes Racines :**
+  - detectAdjacentFiles parcourait les entrées de répertoire sans différencier les dossiers mono-film des répertoires partagés contenant des dizaines de vidéos. L'image générique folder.jpg écrasait l'affiche dédiée spécifique (antigang-poster.jpg).
+  - L'expression régulière de détection d'épisode \d+x\d+ confondait les résolutions vidéo (1920x804, 1920x1080) avec le format SxxExx, requalifiant le film Soul en épisode et fusionnant abusivement son titre avec Soul Eater.
+* **Bonnes Pratiques de Remédiation :**
+  - **Priorité Absolue aux Artworks Spécifiques :** Les motifs <titre>-poster, <titre>-fanart, <titre>-logo priment impérativement. folder.jpg et poster.jpg ne sont tolérés QUE si le dossier ne contient qu'une seule vidéo ou est un dossier de série dédié.
+  - **Exclusion des Résolutions Vidéo dans la Détection d'Épisode :** Bannir \d+x\d+ sans bornage strict (< 50 saisons et < 100 épisodes) et exiger la présence d'un répertoire racine de série identifié.

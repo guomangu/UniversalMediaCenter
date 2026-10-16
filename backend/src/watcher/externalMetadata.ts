@@ -65,6 +65,34 @@ const TMDB_GENRE_MAP: Record<number, string> = {
 };
 
 /**
+ * Calcule la similarité textuelle robuste par trigrammes et inclusion
+ */
+function stringSimilarity(a: string, b: string): number {
+  const s1 = (a || '').toLowerCase().trim();
+  const s2 = (b || '').toLowerCase().trim();
+  if (s1 === s2) return 1.0;
+  if (!s1 || !s2) return 0;
+  if (s1.includes(s2) || s2.includes(s1)) return 0.85;
+
+  const getTrigrams = (str: string) => {
+    const padded = `  ${str} `;
+    const tr = new Set<string>();
+    for (let i = 0; i < padded.length - 2; i++) {
+      tr.add(padded.slice(i, i + 3));
+    }
+    return tr;
+  };
+
+  const t1 = getTrigrams(s1);
+  const t2 = getTrigrams(s2);
+  let intersection = 0;
+  for (const t of t1) {
+    if (t2.has(t)) intersection++;
+  }
+  return (2.0 * intersection) / (t1.size + t2.size);
+}
+
+/**
  * Nettoie les titres de fichiers ou de médias (retrait des préfixes numériques, balises d'équipes, résolutions, intégrales, etc.)
  */
 export function cleanShowTitle(rawTitle: string): string {
@@ -223,7 +251,6 @@ export async function fetchTmdbCollection(collectionName: string): Promise<Exter
   };
 }
 
-
 async function queryTmdbSearchId(query: string, endpoint: 'search/tv' | 'search/movie'): Promise<number | null> {
   const searchUrl = `https://api.themoviedb.org/3/${endpoint}?query=${encodeURIComponent(
     query
@@ -235,8 +262,28 @@ async function queryTmdbSearchId(query: string, endpoint: 'search/tv' | 'search/
     });
     if (!searchRes.ok) return null;
     const searchData = await searchRes.json();
-    if (searchData.results?.length > 0 && searchData.results[0]?.id) {
-      return searchData.results[0].id;
+    const results: any[] = Array.isArray(searchData.results) ? searchData.results : [];
+    if (results.length === 0) return null;
+
+    let bestId: number | null = null;
+    let bestSim = 0;
+
+    for (const item of results) {
+      const titleCandidate = item.name || item.title || '';
+      const origCandidate = item.original_name || item.original_title || '';
+      const sim1 = stringSimilarity(query, titleCandidate);
+      const sim2 = stringSimilarity(query, origCandidate);
+      const maxSim = Math.max(sim1, sim2);
+
+      if (maxSim > bestSim) {
+        bestSim = maxSim;
+        bestId = item.id;
+      }
+    }
+
+    // Garde anti-hallucination : Ne retenir un résultat que si la similarité textuelle est éprouvée (>= 0.60)
+    if (bestId && bestSim >= 0.60) {
+      return bestId;
     }
   } catch {}
   return null;
@@ -283,16 +330,6 @@ async function resolveFuzzyTmdbId(rawTitle: string, endpoint: 'search/tv' | 'sea
       }
     }
   } catch {}
-
-  // 4. Fallback sur les deux premiers tokens signifiants si le titre comporte plus de 2 mots
-  const tokens = clean.split(/\s+/).filter((t) => t.length > 2);
-  if (tokens.length >= 2) {
-    const truncated = tokens.slice(0, 2).join(' ');
-    if (truncated.toLowerCase() !== clean.toLowerCase()) {
-      const truncId = await queryTmdbSearchId(truncated, endpoint);
-      if (truncId) return truncId;
-    }
-  }
 
   return null;
 }

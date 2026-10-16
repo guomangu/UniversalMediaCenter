@@ -59,19 +59,19 @@ taxonomyRouter.get('/', async (c) => {
   // 4. Studios de Production
   const studiosRes = await db.execute(sql`
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count FROM (
-      SELECT l.value_id, n.id AS target_id FROM node_eav_links l JOIN media_nodes n ON l.node_id = n.id WHERE (n.node_type IN ('SHOW', 'COLLECTION') OR (n.node_type = 'MOVIE' AND n.parent_id IS NULL))
+      SELECT l.value_id, n.id AS target_id FROM node_eav_links l JOIN media_nodes n ON l.node_id = n.id WHERE n.node_type IN ('SHOW', 'COLLECTION', 'MOVIE')
       UNION
       SELECT cl.value_id, c.parent_id AS target_id FROM node_eav_links cl JOIN media_nodes c ON cl.node_id = c.id WHERE c.parent_id IS NOT NULL
     ) links JOIN eav_values v ON links.value_id = v.id JOIN eav_attributes a ON v.attribute_id = a.id WHERE a.code = 'studio' GROUP BY v.value_text, v.value_slug ORDER BY count DESC LIMIT 40;
   `);
 
-  // 5. Réalisateurs
+  // 5. Réalisateurs (Exclut les tags purement numériques erronés)
   const directorsRes = await db.execute(sql`
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count FROM (
-      SELECT l.value_id, n.id AS target_id FROM node_eav_links l JOIN media_nodes n ON l.node_id = n.id WHERE (n.node_type IN ('SHOW', 'COLLECTION') OR (n.node_type = 'MOVIE' AND n.parent_id IS NULL))
+      SELECT l.value_id, n.id AS target_id FROM node_eav_links l JOIN media_nodes n ON l.node_id = n.id WHERE n.node_type IN ('SHOW', 'COLLECTION', 'MOVIE')
       UNION
       SELECT cl.value_id, c.parent_id AS target_id FROM node_eav_links cl JOIN media_nodes c ON cl.node_id = c.id WHERE c.parent_id IS NOT NULL
-    ) links JOIN eav_values v ON links.value_id = v.id JOIN eav_attributes a ON v.attribute_id = a.id WHERE a.code = 'director' GROUP BY v.value_text, v.value_slug ORDER BY count DESC LIMIT 40;
+    ) links JOIN eav_values v ON links.value_id = v.id JOIN eav_attributes a ON v.attribute_id = a.id WHERE a.code = 'director' AND v.value_text !~ '^[0-9]+$' GROUP BY v.value_text, v.value_slug ORDER BY count DESC LIMIT 40;
   `);
 
   // 6. Qualité & Résolution
@@ -120,7 +120,7 @@ taxonomyRouter.get('/', async (c) => {
       END) AS slug,
       COUNT(DISTINCT target_id)::int AS count
     FROM (
-      SELECT l.value_id, n.id AS target_id FROM node_eav_links l JOIN media_nodes n ON l.node_id = n.id WHERE (n.node_type IN ('SHOW', 'COLLECTION') OR (n.node_type = 'MOVIE' AND n.parent_id IS NULL))
+      SELECT l.value_id, n.id AS target_id FROM node_eav_links l JOIN media_nodes n ON l.node_id = n.id WHERE n.node_type IN ('SHOW', 'COLLECTION', 'MOVIE')
       UNION
       SELECT cl.value_id, c.parent_id AS target_id FROM node_eav_links cl JOIN media_nodes c ON cl.node_id = c.id WHERE c.parent_id IS NOT NULL
     ) links
@@ -182,9 +182,7 @@ taxonomyRouter.get('/medias', async (c) => {
           JOIN node_eav_links cl ON cl.node_id = c.id 
           JOIN eav_values cv ON cl.value_id = cv.id 
           JOIN eav_attributes ca ON cv.attribute_id = ca.id 
-          WHERE c.parent_id IS NOT NULL AND ca.code = 'genre' AND (cv.value_slug = ${tag} OR cv.value_text ILIKE ${tag})
-        )
-      )`;
+          WHERE c.parent_id IS NOT NULL AND ca.code = 'genre' AND (cv.value_slug = ${tag} OR cv.value_text ILIKE ${tag})\n        )\n      )`;
     }
   } else if (category === 'movies' || category === 'films') {
     // Affiche uniquement les Films (MOVIE) ordonnés par Genre
@@ -203,7 +201,8 @@ taxonomyRouter.get('/medias', async (c) => {
     }
   } else {
     // Par défaut pour les autres catégories (Studios, Réalisateur, Qualité, Pays)
-    querySql = sql`${querySql} AND (n.node_type IN ('SHOW', 'COLLECTION') OR (n.node_type = 'MOVIE' AND n.parent_id IS NULL))`;
+    // Permet d'inclure les films (même rattachés à une saga), les séries et les collections
+    querySql = sql`${querySql} AND (n.node_type IN ('SHOW', 'COLLECTION', 'MOVIE'))`;
 
     if (category === 'studios' && tag) {
       querySql = sql`${querySql} AND (
@@ -281,19 +280,6 @@ taxonomyRouter.get('/medias', async (c) => {
           WHERE c.parent_id IS NOT NULL AND ca.code IN ('subject', 'tag') AND (cv.value_slug = ${tag} OR cv.value_text ILIKE ${tag})
         )
       )`;
-    } else if (category === 'genres' && tag) {
-      querySql = sql`${querySql} AND (
-        ((v.value_slug = ${tag} OR v.value_text ILIKE ${tag}) AND a.code = 'genre')
-        OR n.id IN (
-          SELECT c.parent_id FROM media_nodes c 
-          JOIN node_eav_links cl ON cl.node_id = c.id 
-          JOIN eav_values cv ON cl.value_id = cv.id 
-          JOIN eav_attributes ca ON cv.attribute_id = ca.id 
-          WHERE c.parent_id IS NOT NULL AND ca.code = 'genre' AND (cv.value_slug = ${tag} OR cv.value_text ILIKE ${tag})
-        )
-      )`;
-    } else if (tag) {
-      querySql = sql`${querySql} AND (v.value_slug = ${tag} OR v.value_text ILIKE ${tag} OR n.id IN (SELECT c.parent_id FROM media_nodes c JOIN node_eav_links cl ON cl.node_id = c.id JOIN eav_values cv ON cl.value_id = cv.id WHERE c.parent_id IS NOT NULL AND (cv.value_slug = ${tag} OR cv.value_text ILIKE ${tag})))`;
     }
   }
 
@@ -326,7 +312,7 @@ taxonomyRouter.get('/medias', async (c) => {
     title: item.title,
     nodeType: item.node_type,
     releaseYear: item.release_year,
-    posterPath: item.poster_path ? `/api/media/${item.id}/poster` : undefined,
+    posterPath: `/api/media/${item.id}/poster`,
     communityRating: item.community_rating,
   }));
 

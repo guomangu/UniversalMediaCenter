@@ -27,7 +27,7 @@ export const mediaNodes = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     parentId: uuid('parent_id').references((): AnyPgColumn => mediaNodes.id, {
-      onDelete: 'cascade',
+      onDelete: 'set null',
     }),
     nodeType: nodeTypeEnum('node_type').notNull(),
     state: nodeStateEnum('state').default('DISCOVERED').notNull(),
