@@ -169,6 +169,7 @@ export async function ingestMediaNode(
   let oshash: string | undefined;
   let crc32: string | undefined;
   let edition: string | undefined;
+  let probedData: any = null;
 
   if (adjacent.videoFilePath) {
     const [footprint, probed, lexical] = await Promise.all([
@@ -185,6 +186,7 @@ export async function ingestMediaNode(
       isExtra = true;
       extraType = lexical.extraType || extraType;
     }
+    probedData = probed;
     if (probed) {
       if (probed.videoQuality) probedQuality = probed.videoQuality;
       if (probed.videoCodec) probedCodec = probed.videoCodec;
@@ -292,7 +294,7 @@ export async function ingestMediaNode(
   for (const dir of (parsed.directors || [])) {
     eavPromises.push(linkTagToNode(nodeId, 'director', dir));
   }
-  for (const writer of (parsed.credits || [])) {
+  for (const writer of (parsed.writers || [])) {
     eavPromises.push(linkTagToNode(nodeId, 'writer', writer));
   }
   for (const actor of (parsed.actors || [])) {
@@ -307,8 +309,8 @@ export async function ingestMediaNode(
     );
   }
 
-  if (parsed.mpaa) {
-    eavPromises.push(linkTagToNode(nodeId, 'certification', parsed.mpaa));
+  if (parsed.certification) {
+    eavPromises.push(linkTagToNode(nodeId, 'certification', parsed.certification));
   }
 
   if (probedCodec) {
@@ -328,36 +330,27 @@ export async function ingestMediaNode(
   }
 
   // Inspection profonde des flux vidéo/audio internes
-  if (adjacent.videoFilePath) {
-    try {
-      const containerInfo = await inspectContainerMetadata(adjacent.videoFilePath);
-      if (containerInfo.audioCodec) {
-        eavPromises.push(linkTagToNode(nodeId, 'audio_codec', containerInfo.audioCodec));
-      }
-      if (containerInfo.audioChannels) {
-        eavPromises.push(linkTagToNode(nodeId, 'audio_channels', `${containerInfo.audioChannels}ch`));
-      }
-      if (containerInfo.audioLanguages?.length > 0) {
-        for (const lang of containerInfo.audioLanguages) {
-          eavPromises.push(linkTagToNode(nodeId, 'audio_language', lang));
-        }
-      }
-      if (containerInfo.subtitleLanguages?.length > 0) {
-        for (const sub of containerInfo.subtitleLanguages) {
-          eavPromises.push(linkTagToNode(nodeId, 'subtitle_language', sub));
-        }
-      }
+  if (adjacent.videoFilePath && probedData) {
+    for (const a of (probedData.audioTracks || [])) {
+      if (a.codec) eavPromises.push(linkTagToNode(nodeId, 'audio_codec', a.codec));
+      if (a.channels) eavPromises.push(linkTagToNode(nodeId, 'audio_channels', `${a.channels}ch`));
+      if (a.language) eavPromises.push(linkTagToNode(nodeId, 'audio_language', a.language));
+    }
+    for (const s of (probedData.subtitleTracks || [])) {
+      if (s.codec) eavPromises.push(linkTagToNode(nodeId, 'subtitle_codec', s.codec));
+      if (s.language) eavPromises.push(linkTagToNode(nodeId, 'subtitle_language', s.language));
+    }
 
-      if (!parsed.plot && !parsed.outline) {
+    if (!parsed.plot && !parsed.outline) {
+      try {
         const subNlp = await analyzeSubtitlesNlp(adjacent.videoFilePath);
-        if (subNlp.detectedLanguage) {
-          eavPromises.push(linkTagToNode(nodeId, 'audio_language', subNlp.detectedLanguage));
+        if (subNlp.detectedDisambiguation) {
+          for (const entity of subNlp.detectedDisambiguation.matchedEntities) {
+            eavPromises.push(linkTagToNode(nodeId, 'subject', entity));
+          }
         }
-        for (const kw of subNlp.keywords || []) {
-          eavPromises.push(linkTagToNode(nodeId, 'subject', kw));
-        }
-      }
-    } catch {}
+      } catch {}
+    }
   }
 
   for (const [key, val] of Object.entries(parsed.customFields)) {

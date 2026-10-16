@@ -497,7 +497,7 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
       WHERE parent_id IS NOT NULL AND node_type = 'EPISODE'
     );
   `);
-  report.phantomShowsRemoved += Number(deletedPhantoms.rowCount || 0);
+  report.phantomShowsRemoved += Number(((deletedPhantoms as any).count || (deletedPhantoms as any).rowCount) || 0);
 
   // 5. Récupérer tous les noeuds médias locaux non-LIVE pour vérification d'intégrité
   const allNodes = await db.query.mediaNodes.findMany({

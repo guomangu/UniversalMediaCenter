@@ -615,3 +615,64 @@ WHERE id = 'a56bf49d-3d5d-4b9f-b046-39cc2e270727';
   - *Iron Man* $\rightarrow$ **Iron Man 2** (Score 171.08), **Iron Man 3** (Score 115.61), **Spiderman Homecoming** (Score 90.78).
   - *Code Geass* $\rightarrow$ **Bleach** (Score 217.51), **Soul Eater** (Score 181.96), **Mushishi** (Score 171.31).
   - Temps moyen de réponse : **$< 18\text{ ms}$**.
+
+
+
+---
+
+## 13. Audit Spécifique : Tests Isolés des Profils de Fichiers, Éradication des Failles Résiduelles et Sanctuarisation de la Super-Fiabilité
+
+### 🔬 Contexte & Protocole de Test en Environnement Isolé
+Afin d'éradiquer définitivement les comportements non-déterministes et les corruptions de métadonnées, une suite d'évaluation isolée de 19 profils de fichiers multimédias hétérogènes a été exécutée directement contre les modules fondamentaux du système (`titleCleaner.ts`, `hierarchyResolver.ts`, `seasonEpisodeHelper.ts`, `folderGrouper.ts`, `mediaFileDetector.ts` et `externalMetadata.ts`).
+
+### 🚨 Les 5 Failles Persistantes Identifiées lors des Tests
+
+1. **Amnésie des épisodes d'animes et numéros de piste (`seasonEpisodeHelper.ts`) :**
+   - *Constat :* Les fichiers sous format absolu (`Bleach - 214 - ...mkv`), fansub (`[Neutrinome] Darling in the FranXX - 02 - ...mkv`) ou piste audio/vidéo simple (`7 - conjonctivite.avi`) ne portaient ni `SxxExx` ni `EPxx` explicite.
+   - *Impact :* `parseSeasonEpisode` renvoyait `null`, privant l'épisode de son badge visuel et compromettant son ordonnancement.
+   - *Remédiation :* Implémentation des motifs de capture entre tirets `/(?:^|\s)[-_–]\s*0*([1-9]\d{0,3})\s*[-_–]/i` et de tête de piste `/^0*([1-9]\d{0,2})\s*[-_–]\s+[a-zA-Z]/i`.
+
+2. **Collision critique entre notation de saison et résolutions d'écran (`seasonEpisodeHelper.ts`) :**
+   - *Constat :* L'expression `(\d+)x(\d+)` interceptait sans distinction les résolutions graphiques (`1920x1080`, `1920x804`, `1280x720`).
+   - *Impact :* 142 films Pixar/Disney se voyaient attribuer une saison 1920 et un épisode 804/1080, déclenchant leur déclassement en `EPISODE`.
+   - *Remédiation :* Bornage strict `\b([0-9]{1,2})x([0-9]{1,3})\b` avec validation arithmétique ($s < 50$ et $e < 150$).
+
+3. **Écrasement d'affiches dédiées par `folder.jpg` dans les répertoires partagés (`mediaFileDetector.ts`) :**
+   - *Constat :* Dans un dossier contenant plusieurs dizaines de films à plat (ex: `/film/`), un fichier `folder.jpg` ou `poster.jpg` générique écrasait l'affiche spécifique propre du film (`antigang-poster.jpg`).
+   - *Impact :* Mégamélange d'affiches entre films voisins sur la page d'accueil et la recherche.
+   - *Remédiation :* Règle de priorité stricte sanctuarisant les artworks spécifiques (`<base>-poster`, `<base>-backdrop`, `<base>-logo`). Les noms génériques ne sont tolérés que pour les dossiers mono-média ou les dossiers racine de séries.
+
+4. **Suppression silencieuse en cascade PostgreSQL (`nodes.ts`) :**
+   - *Constat :* La clé étrangère `parentId` était configurée avec `onDelete: 'cascade'`.
+   - *Impact :* La suppression ou fusion d'un pseudo-show ou d'une collection provoquait la disparition en cascade des films et épisodes sous-jacents pourtant intacts sur disque.
+   - *Remédiation :* Bascule en `ON DELETE SET NULL` en base PostgreSQL et dans le schéma Drizzle.
+
+5. **Amnésie des séparateurs d'abréviations lors du nettoyage de titres (`titleCleaner.ts`) :**
+   - *Constat :* Après substitution des points par des espaces, `(s.a.c)` devenait `(s a c)`, échouant sur le motif `s\.?a\.?c`.
+   - *Remédiation :* Motif tolérant les espaces multiples `s[\s.]*a[\s.]*c`.
+
+---
+
+### 📊 Matrice d'Évaluation des 19 Profils de Fichiers (Validation 100 %)
+
+| N° | Profil Multimédia Testé | Fichier Représentatif Réel | Comportement Attendu | Statut |
+|---|---|---|---|:---:|
+| 1 | Anime avec sous-dossier d'arc | `Bleach/04- Karakura's Battle/Bleach - 214 - ...mkv` | `SHOW: Bleach`, `EP: 214` | ✅ Validé |
+| 2 | Préfixe de tracker torrent | `[ Torrent911.rs ] Le.Flambeau...S01E04...mkv` | `SHOW: Le Flambeau...`, `S01E04` | ✅ Validé |
+| 3 | Fansub Anime épisode absolu | `[Neutrinome] Darling in the FranXX - 02...mkv` | `SHOW: Darling in the FranXX`, `EP: 2` | ✅ Validé |
+| 4 | Répertoire saison français | `south park/south park - saison 1/7 - conjonctivite.avi` | `SHOW: South Park`, `S01E07` | ✅ Validé |
+| 5 | Format Saison x Épisode | `south park/south park - saison 5/south park 5x07.avi` | `SHOW: South Park`, `S05E07` | ✅ Validé |
+| 6 | Film avec underscore de tri | `_LOW_QUALITY_720p/_American Sniper 720p (2014).mkv` | `MOVIE: American Sniper` | ✅ Validé |
+| 7 | Saga avec span d'années | `collection studio ghibli (1984 - 2023)...porco rosso.mkv` | `MOVIE: Porco Rosso`, `SAGA: Studio Ghibli` | ✅ Validé |
+| 8 | Film avec résolution vidéo | `The Pixar-Disney Collection/2017.Coco.1920x804...mkv` | `MOVIE: Coco`, `SAGA: Pixar-Disney` | ✅ Validé |
+| 9 | Bonus Anime avec CRC32 | `Angel Beats!/Bonus/NCED04 [1060C7B0].mkv` | `EXTRA: true`, `TYPE: other` | ✅ Validé |
+| 10 | Film avec mention française | `amityville - vf en entier.mp4` | `MOVIE: Amityville` | ✅ Validé |
+| 11 | Film avec sous-titre localisé | `Searching - Portée disparue (2018).mkv` | `MOVIE: Searching - Portée disparue` | ✅ Validé |
+| 12 | Film de franchise en saga | `ghost in the shell (1995-2015)/a. movies/2a. innocence...` | `MOVIE: Innocence`, `SAGA: Ghost in the Shell` | ✅ Validé |
+| 13 | Épisode de franchise en saga | `ghost in the shell/b. stand alone complex/2a. 2nd gig...` | `SHOW: SAC`, `S02E04`, `SAGA: GitS` | ✅ Validé |
+| 14 | Scène avec URL de site | `deadwood - saison 3/deadwood.s03e11...cinephile@zt.avi` | `SHOW: Deadwood`, `S03E11` | ✅ Validé |
+| 15 | Épisode multi-concaténé | `Friends/Season 1/Friends.S01E01-E02.1080p.mkv` | `SHOW: Friends`, `S01E01` | ✅ Validé |
+| 16 | Film avec année entre parenthèses | `The Avengers (2012).mkv` | `MOVIE: The Avengers` | ✅ Validé |
+| 17 | Chiffres romains normalisés | `Rocky III (1982).mkv` | `MOVIE: Rocky 3` | ✅ Validé |
+| 18 | Échantillon vidéo sample | `Inception (2010)/sample.mkv` | `EXTRA: true` | ✅ Validé |
+| 19 | Anime avec saison dans le titre | `Shingeki no Kyojin Season 3/Shingeki...S03E01.mkv` | `SHOW: Shingeki no Kyojin`, `S03E01` | ✅ Validé |

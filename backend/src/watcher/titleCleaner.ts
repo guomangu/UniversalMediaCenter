@@ -180,7 +180,7 @@ export function extractCanonicalShowTitle(raw: string | number): string {
   s = s.replace(/\s{2,}/g, ' ').trim();
 
   // 11. Cas canoniques connus pour Ghost In The Shell
-  if (/^stand\s*alone\s*complex/i.test(s) || /ghost\s*in\s*the\s*shell.*(?:s\.?a\.?c|stand\s*alone\s*complex)/i.test(s)) {
+  if (/^stand\s*alone\s*complex/i.test(s) || /ghost\s*in\s*the\s*shell.*(?:s[\s.]*a[\s.]*c|stand\s*alone\s*complex)/i.test(s)) {
     return 'Ghost in the Shell: Stand Alone Complex';
   }
   if (/^ghost\s*in\s*the\s*shell.*arise/i.test(s)) {

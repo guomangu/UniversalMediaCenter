@@ -71,4 +71,10 @@ export interface ParsedNfo {
   chapters: ParsedChapter[];
   streamDetails: ParsedStreamDetails;
   customFields: Record<string, string>;
+  customArt?: {
+    poster?: string;
+    fanart?: string;
+    clearlogo?: string;
+    thumb?: string;
+  };
 }

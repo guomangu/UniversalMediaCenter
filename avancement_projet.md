@@ -185,3 +185,10 @@
   - **Restauration de Soul Eater & Désambiguïsation de Soul (Pixar) :** Exclusion stricte des résolutions vidéo (`1920x804`, `1920x1080`) de la détection d'épisodes, requalification de 142 films Pixar/Disney en `MOVIE` et rétablissement du titre canonique *Soul Eater*.
   - **Sécurisation de la Détection d'Affiches (`mediaFileDetector.ts`) :** Priorité absolue aux artworks dédiés (`<titre>-poster.jpg`), interdiction formelle d'attribuer `folder.jpg` aux films situés dans des dossiers partagés multi-fichiers.
   - **Rétablissement de la Taxonomie Réalisateurs & Studios :** Inclusion des films en sagas dans les requêtes de taxonomie (`taxonomyRoutes.ts`), passant de 3 à plus de 40 réalisateurs et studios explorables.
+
+- [x] **50. Suite d'Évaluation Isolée des Profils de Fichiers & Sanctuarisation de la Super-Fiabilité :**
+  - **Matrice de Test Automatisée (19 Profils Réels) (`testProfiles.ts`) :** Couverture à 100 % des animes avec arcs et numéros absolus (Bleach, Darling in the FranXX), trackers torrents, fansubs, dossiers de saisons français (South Park), formats SxEE, dossiers films avec underscores (_LOW_QUALITY), sagas Ghibli/Pixar, bonus NCED avec hash CRC32, et sagas multi-formats (Ghost in the Shell).
+  - **Prise en Charge des Formats Isolés d'Épisodes (`seasonEpisodeHelper.ts`) :** Détection native des épisodes entre tirets (`- 214 -`, `- 02 -`) et numéros de piste (`7 - conjonctivite`), bornage arithmétique strict de la notation "x" ($s < 50, e < 150$) interdisant les faux-positifs de résolutions vidéo.
+  - **Normalisation Avancée des Séparateurs d'Abréviations (`titleCleaner.ts`) :** Prise en charge des variantes avec espaces multiples pour les acronymes (`Ghost in the Shell: Stand Alone Complex`).
+  - **Zéro Erreur de Compilation TypeScript (`tsc --noEmit`) :** Résolution intégrale des discordances de typage sur `ParsedNfo`, `ContainerMetadata` et `SubtitleNlpResult`.
+  - **Intégration Script npm (`package.json`) :** Ajout de la commande `npm run test:profiles` pour l'exécution immédiate et reproductible de la suite de régression.

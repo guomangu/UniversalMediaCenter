@@ -273,3 +273,25 @@
 * **Bonnes Pratiques de Remédiation :**
   - **Priorité Absolue aux Artworks Spécifiques :** Les motifs <titre>-poster, <titre>-fanart, <titre>-logo priment impérativement. folder.jpg et poster.jpg ne sont tolérés QUE si le dossier ne contient qu'une seule vidéo ou est un dossier de série dédié.
   - **Exclusion des Résolutions Vidéo dans la Détection d'Épisode :** Bannir \d+x\d+ sans bornage strict (< 50 saisons et < 100 épisodes) et exiger la présence d'un répertoire racine de série identifié.
+
+---
+
+## 🛑 78. Omission des Formats d'Épisodes Alternatifs (Pistes Simples & Numérotation Absolue Anime sans SxxExx)
+
+* **Problème / Symptôme :** Les épisodes de séries ou animes célèbres (`Bleach - 214 - ...mkv`, `Darling in the FranXX - 02 - ...mkv`, `7 - conjonctivite.avi`) ne reçoivent aucun badge d'épisode, ne sont pas triés correctement ou tombent en erreur d'ordonnancement.
+* **Conséquences :** Expérience utilisateur dégradée, perte de la navigation séquentielle et badges invisibles dans l'interface de lecture.
+* **Causes Racines :** L'algorithme `parseSeasonEpisode` ne recherchait que les motifs formels `S\d+E\d+` ou `\d+x\d+` et ignorait les motifs isolés entre tirets ` - 214 - ` ainsi que les numéros de pistes en tête de nom de fichier `7 - ...`.
+* **Bonnes Pratiques de Remédiation :**
+  - **Prise en Charge des Formats Isolés :** Détecter systématiquement `/(?:^|\s)[-_–]\s*0*([1-9]\d{0,3})\s*[-_–]/i` et `/^0*([1-9]\d{0,2})\s*[-_–]\s+[a-zA-Z]/i`.
+  - **Bornage Strict des Motifs "x" :** N'accepter `\d+x\d+` que si $s < 50$ et $e < 150$ pour interdire formellement les résolutions vidéo (`1920x1080`, `1280x720`).
+
+---
+
+## 🛑 79. Absence de Typage dans l'Ingestion EAV et Fausses Hypothèses d'Itérabilité sur les Champs NFO Optionnels
+
+* **Problème / Symptôme :** Crash brutal `TypeError: parsed.credits is not iterable` ou `parsed.mpaa` lors du traitement d'un fichier `.nfo`.
+* **Conséquences :** Arrêt immédiat de l'ingestion d'un média ou interruption d'un scan complet en arrière-plan.
+* **Causes Racines :** Utilisation aveugle de boucles `for (const x of parsed.field)` sans garde nulle préalable `(parsed.field || [])` et confusion sur les identifiants de propriétés de l'interface `ParsedNfo` (`writers` vs `credits`, `certification` vs `mpaa`).
+* **Bonnes Pratiques de Remédiation :**
+  - **Gardes Nulles Systématiques :** Toujours itérer sur `(parsed.field || [])`.
+  - **Validation Stricte TypeScript (`tsc --noEmit`) :** Vérifier que le code source compile sans aucune erreur de typage avant d'exécuter le pipeline.

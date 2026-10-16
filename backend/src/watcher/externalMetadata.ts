@@ -67,7 +67,7 @@ const TMDB_GENRE_MAP: Record<number, string> = {
 /**
  * Calcule la similarité textuelle robuste par trigrammes et inclusion
  */
-function stringSimilarity(a: string, b: string): number {
+export function stringSimilarity(a: string, b: string): number {
   const s1 = (a || '').toLowerCase().trim();
   const s2 = (b || '').toLowerCase().trim();
   if (s1 === s2) return 1.0;
