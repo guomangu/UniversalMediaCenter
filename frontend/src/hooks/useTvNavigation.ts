@@ -45,6 +45,7 @@ function isElementVisibleAndActive(el: HTMLElement): boolean {
     el.getAttribute('aria-hidden') === 'true' ||
     el.getAttribute('data-modal-backdrop') === 'true' ||
     el.getAttribute('data-focusable') === 'false' ||
+    el.getAttribute('data-player-container') === 'true' ||
     el.tabIndex < 0 ||
     el.style.display === 'none' ||
     el.hasAttribute('inert')
@@ -170,21 +171,17 @@ function moveFocus(dir: Direction): boolean {
     (current.getAttribute('data-player-topbar') === 'true' || !!current.closest('[data-player-topbar="true"]'));
 
   if (isTopBar && dir === 'down') {
-    const playerContainer = document.querySelector<HTMLElement>('[data-player-container="true"]');
-    if (playerContainer && isElementVisibleAndActive(playerContainer)) {
-      playerContainer.focus();
-      return true;
-    }
     const skipBtn = document.querySelector<HTMLElement>('[data-skip-intro="true"]');
     if (skipBtn && isElementVisibleAndActive(skipBtn)) {
       skipBtn.focus();
       return true;
     }
+    return true; // Rester sur la barre supérieure, ne jamais sélectionner le conteneur englobant
   }
 
   // C. Si l'élément actif est la vidéo ou le lecteur
   if (isVideoElement(current)) {
-    if (dir === 'up') {
+    if (dir === 'up' || dir === 'left' || dir === 'right') {
       const topBarFirst = document.querySelector<HTMLElement>(
         '[data-player-topbar="true"] [role="button"], [data-player-topbar="true"] button, [data-player-topbar="true"] [tabindex="0"]'
       );
@@ -204,8 +201,8 @@ function moveFocus(dir: Direction): boolean {
   const candidates = getCandidates();
   if (candidates.length === 0) return false;
 
-  // Si aucun focus initial actif ou focus sur le body
-  if (!current || current === document.body || !candidates.includes(current)) {
+  // Si aucun focus initial actif ou focus sur le body ou la vidéo
+  if (!current || current === document.body || isVideoElement(current) || !candidates.includes(current)) {
     // Si on est sur la page /player, favoriser en premier le premier bouton de la topBar
     const topBarFirst = document.querySelector<HTMLElement>(
       '[data-player-topbar="true"] [role="button"], [data-player-topbar="true"] button'
@@ -402,12 +399,9 @@ export function useTvNavigation() {
         return;
       }
 
-      // 3. Navigation sur lecteur vidéo : laisser usePlayerControls gérer le seek
-      // si le focus est sur le lecteur vidéo ou body
-      const isTopBarActive = active && (active.getAttribute('data-player-topbar') === 'true' || !!active.closest('[data-player-topbar="true"]'));
-      const isSkipIntroActive = active && (active.getAttribute('data-skip-intro') === 'true' || !!active.closest('[data-skip-intro="true"]'));
-
-      if (['ArrowLeft', 'ArrowRight'].includes(e.key) && (isVideo || (!isTopBarActive && !isSkipIntroActive && active === document.body))) {
+      // 3. Navigation sur lecteur vidéo :
+      // En plein écran, laisser usePlayerControls gérer le seek (ArrowLeft / ArrowRight)
+      if (isFullscreenActive() && ['ArrowLeft', 'ArrowRight'].includes(e.key)) {
         return;
       }
 

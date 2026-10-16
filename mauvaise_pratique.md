@@ -140,3 +140,75 @@
   - **Normalisation Phonétique Graphématique Universelle (`normalizePhoneticSpelling`) :** Dé-doubler les consonnes répétées (`vikinggs` -> `vikings`), normaliser les digraphes courants (`ck` -> `k`, `ph` -> `f`) de façon purement algorithmique sans dictionnaire statique.
   - **Résolution Hybride PostgreSQL Locale (`pg_trgm` + `dmetaphone` + `levenshtein`) :** Rapprocher les variantes d'un média à la volée en base locale dès lors que `dmetaphone(title) = dmetaphone(query)` ou `similarity(title, query) >= 0.65`.
   - **Cascade de Repli TMDb Résiliente (`resolveFuzzyTmdbId`) :** Si la recherche exacte TMDb échoue, déclencher la recherche phonétique puis l'API d'autocorrection linguistique Wikipedia OpenSearch ("Did you mean") pour obtenir le titre propre officiel.
+
+---
+
+## 🛑 68. Court-Circuitage d'HLS.js par `canPlayType` Faux-Positif et Défaillance de Téléchargement des Segments en Direct
+
+* **Problème / Symptôme :** Lors du visionnage d'une chaîne de télévision en direct (IPTV) dans `/player`, la lecture démarre puis s'arrête ou se fige irrémédiablement dans les 3 premières secondes.
+* **Conséquences :** Impossibilité totale de regarder la télévision en direct sur navigateur Web, le lecteur lisant le premier fragment puis s'interrompant définitivement.
+* **Causes Racines :**
+  - **Faux-Positif de `canPlayType` Court-Circuitant HLS.js (`VideoPlayerView.tsx`) :** Le composant conditionnait l'utilisation d'HLS.js à `Boolean(Hls.isSupported() && !canPlayNative)`. Or, sous Chromium/Linux, avec certains codecs système (GStreamer) ou avec des extensions de lecture HLS, `video.canPlayType('application/vnd.apple.mpegurl')` retourne une chaîne non vide ("maybe"), qui est évaluée comme `true` en JavaScript. Par conséquent, `!canPlayNative` valait `false` et HLS.js était purement et simplement DÉSACTIVÉ (`shouldUseHlsJs = false`).
+  - **Incapacité du Moteur HTML5 Natif à Gérer les Playlists HLS Glissantes :** Forcé en mode natif `<video src={streamUrl}>`, le navigateur télécharge le fichier m3u8 comme un simple fichier multimédia, lit le premier chunk audio/vidéo présent dans le buffer initial (~3 secondes), puis s'arrête net car il est incapable de rafraîchir la playlist en boucle sans MediaSource Extensions (MSE).
+  - **Chargement Asynchrone CDN Externe (`_layout.tsx`) :** L'injection tardive de `hls.min.js` depuis un CDN externe accentuait ce problème en n'étant pas disponible au montage du composant.
+* **Bonnes Pratiques de Remédiation :**
+  - **Priorité Souveraine à HLS.js sur le Web (`shouldUseHlsJs = Boolean(Hls.isSupported())`) :** Conformément aux spécifications officielles HLS.js, dès lors que le navigateur supporte les MediaSource Extensions (`Hls.isSupported() = true`), HLS.js DOIT impérativement prendre en charge le flux sur le Web. Seul iOS Safari (où MSE est bridé sur `<video>` et `Hls.isSupported()` est faux) doit utiliser le fallback natif.
+  - **Intégration Embarquée Pure de `hls.js` :** Importer `hls.js` statiquement dans le bundle (`import Hls from 'hls.js'`) pour garantir une disponibilité synchrone dès la première frame.
+  - **Auto-Reprise Résiliente sur Flux Live (`onWaiting`, `bufferStalledError`) :** Maintenir la relance continue et interdire le verrouillage de `userPausedRef` lors des micro-recalibrages de buffer direct.
+
+
+---
+
+## 🛑 69. Détection HLS Abusive sur `/stream` Bloquant les Médias VOD et Route `/api/user/favorites/check/:id` Manquante
+
+* **Problème / Symptôme :** Les vidéos VOD (films, épisodes) ne se lancent plus sur `/player`, la console du navigateur affiche `Failed to load resource: net::ERR_FAILED` et une erreur 404 sur `/api/user/favorites/check/:id`.
+* **Conséquences :** Blocage complet du lecteur vidéo sur les médias VOD et échec des vérifications d'état favori.
+* **Causes Racines :**
+  - **Condition HLS Trop Permissive (`streamUrl.includes('/stream')`) :** L'URL standard de streaming des médias VOD étant `/api/media/:id/stream`, tester `streamUrl.includes('/stream')` forçait Hls.js sur des fichiers volumineux (MKV/MP4 de plusieurs Go). Hls.js tentait de télécharger et analyser le binaire comme un fichier texte M3U8, entraînant un dépassement mémoire/XHR et un rejet `net::ERR_FAILED`.
+  - **Absence du Endpoint de Vérification (`userFavoritesRoutes.ts`) :** Le frontend appelait `GET /api/user/favorites/check/:id`, mais le routeur backend ne déclarait que `GET /favorites`, provoquant un 404 immédiat.
+* **Bonnes Pratiques de Remédiation :**
+  - **Ciblage Précis du Protocole HLS (`VideoPlayerView.tsx`) :** Réserver HLS exclusivement aux flux `.m3u8`, à l'IPTV (`/iptv/`) ou aux flux déclarés `isLive`. Les médias VOD traditionnels doivent être servis directement via la balise `<video src={streamUrl}>` avec support HTTP 206 Range.
+  - **En-têtes CORS et Support HEAD/OPTIONS (`mediaStream.ts`) :** Exposer explicitement `Access-Control-Allow-Origin: *`, `Access-Control-Expose-Headers` et gérer les requêtes `HEAD`/`OPTIONS` pour le pré-chargement et la validation de format du lecteur HTML5.
+  - **Exposition Exhaustive des Routes Favoris (`userFavoritesRoutes.ts`) :** Déclarer `GET /favorites/check/:id` et `GET /favorites/:id` renvoyant `{ isFavorite: boolean }`.
+
+---
+
+## 🛑 70. Collision entre Navigation Spatiale des Boutons et Progression Média sur la Page Lecteur
+
+* **Problème / Symptôme :** Lors de la navigation directionnelle au clavier ou à la télécommande dans la barre d'outils du lecteur (boutons Retour, Voix, Partager, Cast, Audio, ST, Plein Écran), chaque appui sur les flèches Gauche/Droite déclenchait simultanément le déplacement du focus ET le saut temporel dans la vidéo (recul ou avance de 10s).
+* **Conséquences :** Impossibilité de sélectionner un bouton sans dérégler la lecture en cours, expérience chaotique pour l'utilisateur.
+* **Causes Racines :**
+  - **Perte des Attributs `data-*` dans React Native Web :** Déclarer `data-player-topbar="true"` directement sur un `<View>` est ignoré par React Native Web, rendant inopérant le sélecteur `active.closest('[data-player-topbar="true"]')`.
+  - **Absence de Cloisonnement des Modes (Normal vs Plein Écran) :** Les écouteurs clavier exécutaient le seek média (`v.currentTime = next`) sans vérifier si l'interface affichait ses boutons de contrôle ou si le lecteur était en immersion plein écran.
+* **Bonnes Pratiques de Remédiation :**
+  - **Séparation Étanche des Deux Modes (`usePlayerControls.ts` & `useTvNavigation.ts`) :**
+    - **Mode Normal (`!isFullscreen`) :** Les flèches directionnelles sont strictement dédiées à la navigation spatiale entre les boutons de la barre supérieure et les overlays interactifs. Aucun seek média ne peut être déclenché.
+    - **Mode Plein Écran (`isFullscreen`) :** Les boutons d'interface étant masqués pour une immersion totale, les flèches Gauche/Droite gèrent exclusivement la progression temporelle (-10s / +10s) et Espace gère Lecture/Pause.
+  - **Attributs DOM Résilients (`dataSet`) :** Utiliser systématiquement `{...({ dataSet: { playerTopbar: 'true' } } as any)}` pour garantir la persistance des sélecteurs de ciblage dans le DOM HTML5.
+
+---
+
+## 🛑 71. Sélection Inutile du Conteneur Englobant du Lecteur Vidéo lors de la Navigation D-Pad Télécommande
+
+* **Problème / Symptôme :** Lors de la navigation à la télécommande sur la page `/player`, l'appui sur la touche Bas ou la navigation spatiale sélectionnait le conteneur plein écran global (`styles.videoPlaceholder`) et l'entourait d'une bordure violette inutile (`#6366f1`).
+* **Conséquences :** Pollution visuelle, focus piégé sur un bloc non interactif ne permettant aucune action utilisateur utile.
+* **Causes Racines :**
+  - **Conteneur Parent Rendu Cliquable (`<Pressable focusable={true}>`) :** Le conteneur vidéo était encapsulé dans un `<Pressable>` avec `focusable={true}` et `tabindex="0"`, s'insérant artificiellement dans la liste des cibles navigables `getCandidates()`.
+  - **Règle de Chute Descendante Inappropriée (`useTvNavigation.ts`) :** L'appui sur la flèche Bas depuis la barre d'outils ciblait en premier `playerContainer.focus()` au lieu de vérifier la présence d'un bouton d'action réel (comme « Passer l'intro »).
+* **Bonnes Pratiques de Remédiation :**
+  - **Neutralisation Définitive du Focus sur le Conteneur Média (`VideoPlayerView.tsx`) :** Utiliser un composant `<View>` pur avec `tabIndex={-1}`, `focusable={false}` et `dataSet={{ playerContainer: "true", focusable: "false" }}`.
+  - **Suppression des Styles de Focus Superflus (`PlayerScreen.styles.ts`) :** Éliminer la bordure active sur `videoPlaceholderFocused`.
+  - **Exclusion Explicite du Conteneur dans le Moteur TV (`useTvNavigation.ts`) :** Rejeter `el.getAttribute("data-player-container") === "true"` dans `isElementVisibleAndActive` et interdire la descente vers le conteneur vide.
+
+---
+
+## 🛑 72. Redirections Fixes Codées en Dur sur les Boutons de Retour au Lieu de Restaurer la Page Précédemment Visitée
+
+* **Problème / Symptôme :** Les boutons de retour (ex: `← Retour à l'Agora & salons` sur `/forum/[topic]`, `← Retour à l'accueil` sur `/media/[id]`) forçaient une redirection statique (ex: `router.push("/forum")` ou `router.push("/")`), ignorant la provenance réelle de l'utilisateur.
+* **Conséquences :** Rupture de la navigation : un utilisateur arrivant sur un topic forum depuis une fiche média ou depuis la recherche était expulsé sur l'agora au lieu de retrouver sa fiche média d'origine.
+* **Causes Racines :**
+  - **Absence de Restitution de l'Historique Navigateur :** Les composants utilisaient des appels impératifs `router.push("/...")` au lieu de consulter `window.history.back()` ou `router.back()`.
+  - **Intitulés Trompeurs Liés à une Destination Fixe :** Les libellés contenaient des destinations arbitraires (`← Retour à l'Agora & salons`, `← Retour à l'accueil`) au lieu du standard universel `← Retour`.
+* **Bonnes Pratiques de Remédiation :**
+  - **Fonction de Navigation Arrière Universelle (`goBackOrFallback`) :** Interroger en priorité `window.history.back()` (dès lors que `window.history.length > 1`) ou `router.back()` pour revenir exactement sur la page visitée, avec repli gracieux (`fallbackRoute`) uniquement si l'utilisateur a accédé directement à l'URL par lien direct.
+  - **Standardisation Visuelle et Ergonomique :** Libellé sobre et universel `← Retour` sur l'ensemble des vues applicatives.

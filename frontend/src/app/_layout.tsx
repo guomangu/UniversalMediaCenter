@@ -21,13 +21,7 @@ if (Platform.OS !== 'web') {
     script.async = true;
     document.head.appendChild(script);
   }
-  if (!document.getElementById('hls-player-script')) {
-    const hlsScript = document.createElement('script');
-    hlsScript.id = 'hls-player-script';
-    hlsScript.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';
-    hlsScript.async = true;
-    document.head.appendChild(hlsScript);
-  }
+
 }
 
 export default function RootLayout() {

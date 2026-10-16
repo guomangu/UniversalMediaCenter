@@ -127,3 +127,39 @@
     - Création de la fonction `getTfIdfSimilarMedias` et de l'endpoint `GET /api/media/:id/similar` calculant la proximité mathématique en algèbre relationnelle PostgreSQL.
     - Pondération de chaque tag partagé par sa rareté documentaire globale $\text{IDF} = \ln(1 + N_{\text{total}} / \text{DF})$ et son coefficient de catégorie (Franchise 3.5 > Réalisateur 3.0 > Scénariste 2.0 > Acteur 1.8 > Tag 1.2 > Genre 1.0).
     - Validation vérifiée : *Django Unchained* propulse *Once Upon a Time in Hollywood* en tête (score 78.72), *Iron Man* propulse la trilogie et l'univers Marvel (*Iron Man 2* score 171.08, *Spiderman Homecoming* score 90.78), et *Code Geass* propulse *Bleach* et *Soul Eater* en moins de 20 ms.
+- [x] **20. Éradication Définitive de l'Arrêt à 3 Secondes sur les Flux TV Live / IPTV (`VideoPlayerView.tsx`, `_layout.tsx`) :**
+  - **Priorité Absolue à `Hls.isSupported()` sur le Web (Élimination du Piège `!canPlayNative`) :**
+    - Résolution de la faille critique où `v.canPlayType('application/vnd.apple.mpegurl')` retournait une valeur truthy ("maybe") sous Linux/Chromium ou via des extensions, court-circuitant `Hls.js` (`shouldUseHlsJs` évalué à `false`) et forçant le lecteur natif HTML5 à lire le flux comme un fichier brut. Le navigateur ne téléchargeait alors qu'un seul fragment de 3 secondes avant de caler.
+    - Application de la recommandation officielle HLS : dès que `Hls.isSupported()` est vrai sur le Web (MediaSource Extensions), HLS.js prend le contrôle souverain du flux, assurant le rafraîchissement glissant des playlists et le rechargement perpétuel des segments en direct.
+  - **Intégration Embarquée Native de `hls.js` dans le Bundle Frontend :**
+    - Installation de `hls.js` dans les dépendances applicatives et import ES direct (`import Hls from 'hls.js'`).
+    - Suppression du script asynchrone externe CDN (`cdn.jsdelivr.net`) dans `_layout.tsx` éliminant les latences et aléas réseau.
+  - **Correction du Matcher d'URL HLS (`/stream`) :**
+    - Normalisation de la détection de flux : `streamUrl.includes('/stream')` sans barre oblique finale, garantissant l'activation instantanée du moteur HLS dès l'initialisation du lecteur.
+  - **Gestion Résiliente du Buffer et des Événements Pause/Stall sur Flux Live :**
+    - Découplage de `userPausedRef` sur flux direct : interdiction de verrouiller le lecteur en état de pause utilisateur lors des micro-coupures de bufferisation initiale ou des réalignements HLS.
+    - Écouteurs `onWaiting` et `bufferStalledError` assurant la reprise automatique et continue du flux en direct sans aucune intervention manuelle.
+
+- [x] **21. Séparation Étanche des Contrôles Clavier / Télécommande & Rétablissement de la Lecture VOD (`player/[id].tsx`, `VideoPlayerView.tsx`, `usePlayerControls.ts`, `userFavoritesRoutes.ts`, `mediaStream.ts`) :**
+  - **Neutralisation Définitive du Focus sur le Conteneur Lecteur (`VideoPlayerView.tsx`, `useTvNavigation.ts`, `PlayerScreen.styles.ts`) :** Remplacement du `<Pressable focusable={true}>` par un `<View>` passif non focusable (`tabIndex={-1}`, `focusable={false}`), suppression de la bordure violette `#6366f1` et exclusion stricte du conteneur dans l'algorithme de navigation TV. Seuls les vrais boutons d'action restent sélectionnables.
+  - **Affichage Éphémère du Bouton Passer l'intro (10 Premières Secondes) :** Conditionnement strict de `showBtn` à `curTime <= 10` dans `VideoPlayerView.tsx`. Le bouton n'encombre plus l'écran au-delà des 10 premières secondes et disparaît automatiquement si la lecture est reprise plus loin.
+  - **Séparation Stricte entre Navigation des Boutons et Progression Média :**
+    - En mode normal avec barre d'outils affichée (`!isFullscreen`) : les flèches directionnelles permettent de naviguer de manière fluide et exclusive entre les boutons d'action (Retour, Voix, Partager, Cast, Audio, ST, Plein Écran, Passer l'intro) sans déclencher aucun saut temporel dans la vidéo.
+    - En mode plein écran immersif (`isFullscreen`) : les bandeaux de boutons étant masqués, les flèches Gauche/Droite contrôlent directement la progression vidéo (recul -10s / avance +10s avec toasts visuels) et la barre d'espace contrôle la pause/lecture.
+    - Correction des attributs `dataSet={{ playerTopbar: "true" }}` pour React Native Web afin de fiabiliser la détection du conteneur dans le DOM.
+  - **Rétablissement de la Lecture Multimédia VOD (`VideoPlayerView.tsx`) :**
+    - Remplacement de la condition trop large `streamUrl.includes("/stream")` par `Boolean(isLive || streamUrl.includes(".m3u8") || streamUrl.includes("/iptv/"))` qui détournait à tort l'intégralité des films et épisodes VOD vers Hls.js au lieu de la balise vidéo native HTML5.
+    - Élimination de l'erreur `Failed to load resource: net::ERR_FAILED` provoquée par la tentative d'analyse textuelle de fichiers MKV/MP4 de plusieurs Go par Hls.js.
+  - **Résolution de l'Erreur 404 Favoris (`userFavoritesRoutes.ts`) :**
+    - Implémentation explicite des endpoints `GET /favorites/check/:id` et `GET /favorites/:id` renvoyant `{ isFavorite: boolean }` pour répondre aux appels de vérification du lecteur et des fiches médias.
+  - **Support Complet CORS, HEAD et OPTIONS pour le Streaming (`mediaStream.ts`) :**
+    - Exposition des en-têtes `Access-Control-Allow-Origin: *`, `Access-Control-Expose-Headers` et gestion des requêtes `HEAD` sans envoi de body lourd pour les vérifications de range et de métadonnées du navigateur.
+
+- [x] **22. Standardisation Universelle de la Navigation Arrière (`navigation.ts`, `forum/[topic].tsx`, `media/[id].tsx`, `forum/index.tsx`, `player/[id].tsx`, `user.tsx`, `login.tsx`) :**
+  - **Création du Module `goBackOrFallback` (`frontend/src/utils/navigation.ts`) :**
+    - Retourne systématiquement sur la page précédemment visitée par l'utilisateur (`window.history.back()` si `history.length > 1` ou `router.back()`).
+    - Ne redirige vers une page de repli (`fallbackRoute`) que si l'utilisateur a accédé à l'URL par lien direct (onglet neuf, session sans historique).
+  - **Élimination de Toutes les Redirections Fixes :**
+    - Remplacement de `router.push("/forum")` dans `/forum/[topic]` par `goBackOrFallback(router, "/forum")`.
+    - Remplacement de `router.push("/")` dans `/media/[id]`, `/forum/index`, `/user` par `goBackOrFallback(router, "/")`.
+    - Harmonisation visuelle avec l'intitulé universel « ← Retour ».

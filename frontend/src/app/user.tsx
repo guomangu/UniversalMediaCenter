@@ -21,6 +21,7 @@ import { MediaCard } from '@/components/MediaCard';
 import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { Platform } from 'react-native';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
+import { goBackOrFallback } from '@/utils/navigation';
 
 type UserTab = 'CONTINUE' | 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED';
 
@@ -78,8 +79,12 @@ export default function UserScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadAll} />}>
           {/* Header Bar */}
           <View style={styles.topNav}>
-            <Pressable focusable={true} onPress={() => router.push('/')} style={styles.navBtn}>
-              <Text style={styles.navBtnTxt}>← Accueil</Text>
+            <Pressable
+              focusable={true}
+              accessibilityRole="button"
+              onPress={() => goBackOrFallback(router, '/')}
+              style={styles.navBtn}>
+              <Text style={styles.navBtnTxt}>← Retour</Text>
             </Pressable>
             <Text style={styles.pageTitle}>👤 Mon Espace</Text>
             <Pressable focusable={true} onPress={handleLogout} style={[styles.navBtn, { backgroundColor: '#dc2626' }]}>

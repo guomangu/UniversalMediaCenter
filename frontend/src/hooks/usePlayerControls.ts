@@ -10,14 +10,15 @@ interface UsePlayerControlsProps {
   isModalOpen: boolean;
   activeCastTarget: any;
   showToast: (msg: string) => void;
+  isFullscreen?: boolean;
 }
 
 /**
  * Contrôleur média pour écran /player :
- * - Gestion plein écran via touche 'F', bouton télécommande ou bouton plein écran (avec debounce)
- * - Progression vidéo (ArrowLeft / ArrowRight) active lorsque l'utilisateur est en mode lecture
- * - Raccourci 'S' pour sauter le générique d'introduction
- * - La navigation directionnelle TV dans la barre supérieure n'interfère pas avec le seek
+ * - Mode plein écran (isFullscreen = true) : flèches directionnelles gèrent la progression média
+ * - Mode normal (isFullscreen = false) : flèches directionnelles réservées aux boutons de l'interface
+ * - Raccourci 'S' pour sauter l'intro
+ * - Raccourci 'F' / Plein Écran pour basculer le mode
  */
 export function usePlayerControls({
   videoRef,
@@ -26,6 +27,7 @@ export function usePlayerControls({
   isModalOpen,
   activeCastTarget,
   showToast,
+  isFullscreen = false,
 }: UsePlayerControlsProps) {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -37,15 +39,6 @@ export function usePlayerControls({
       const active = document.activeElement as HTMLElement | null;
       const isInput = !!(active && ['INPUT', 'TEXTAREA'].includes(active.tagName));
       if (isInput) return;
-
-      const isTopBar = !!(
-        active &&
-        (active.getAttribute('data-player-topbar') === 'true' || !!active.closest('[data-player-topbar="true"]'))
-      );
-      const isSkipIntro = !!(
-        active &&
-        (active.getAttribute('data-skip-intro') === 'true' || !!active.closest('[data-skip-intro="true"]'))
-      );
 
       // 1. Touche de raccourci 'S' pour sauter l'intro
       if (e.key === 's' || e.key === 'S') {
@@ -77,24 +70,31 @@ export function usePlayerControls({
       }
 
       // 3. Navigation Seek (ArrowLeft / ArrowRight) :
-      // Actif uniquement si le focus n'est PAS dans les boutons de la barre supérieure ou passer l'intro
+      // Strictement réservée au mode PLEIN ÉCRAN.
+      // En mode normal avec les boutons affichés, les flèches naviguent entre les boutons !
       if (e.key === 'ArrowLeft') {
-        if (isTopBar || isSkipIntro) return; // Laisse la navigation TV aller d'un bouton à l'autre
+        if (!isFullscreen) return;
         e.preventDefault();
         const next = Math.max(0, v.currentTime - 10);
         v.currentTime = next;
         showToast(`⏪ -10s (${Math.floor(next)}s)`);
         if (activeCastTarget) sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: next });
       } else if (e.key === 'ArrowRight') {
-        if (isTopBar || isSkipIntro) return; // Laisse la navigation TV aller d'un bouton à l'autre
+        if (!isFullscreen) return;
         e.preventDefault();
         const next = Math.min(v.duration || 7200, v.currentTime + 10);
         v.currentTime = next;
         showToast(`⏩ +10s (${Math.floor(next)}s)`);
         if (activeCastTarget) sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: next });
       } else if (e.key === ' ' || e.key === 'MediaPlayPause') {
-        if (isTopBar || isSkipIntro) return; // Laisser la touche espace activer le bouton sélectionné
-        if (active && ['BUTTON', 'A'].includes(active.tagName)) return;
+        // En mode normal avec un bouton sélectionné, laisser la touche espace activer le bouton
+        if (!isFullscreen && active) {
+          const isButton =
+            ['BUTTON', 'A'].includes(active.tagName) ||
+            active.getAttribute('role') === 'button' ||
+            active.getAttribute('role') === 'link';
+          if (isButton) return;
+        }
         e.preventDefault();
         const next = !isPlaying;
         next ? v.play() : v.pause();
@@ -106,5 +106,5 @@ export function usePlayerControls({
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [videoRef, isPlaying, isModalOpen, activeCastTarget]);
+  }, [videoRef, isPlaying, isModalOpen, activeCastTarget, isFullscreen]);
 }

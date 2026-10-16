@@ -99,8 +99,14 @@
 - `app/invite/[token].tsx` : Route dynamique Expo Router consommant les jetons d'invitation et authentifiant automatiquement l'utilisateur à chaud.
 
 ### Gestion Multimédia Avancée, Contrôle TV & Navigation Spatiale
+- `frontend/src/utils/navigation.ts` : Helper `goBackOrFallback(router, fallbackRoute)` garantissant que tous les boutons « ← Retour » restaurent toujours la page précédemment visitée par l'utilisateur (`window.history.back()` ou `router.back()`), avec repli dynamique uniquement lors d'un accès direct.
 - `frontend/src/utils/fullscreen.ts` : Gestionnaire universel Plein Écran multi-plateformes compatible WebKit, Blink, Gecko, Smart TV Samsung Tizen, LG WebOS et Android TV avec bascule transparente (`toggleFullscreen`, `isFullscreenActive`).
-- `frontend/src/hooks/usePlayerControls.ts` : Contrôleur média pour `/player/[id]` intégrant les raccourcis clavier et télécommande (touches `f`, `F`, `FullScreen`, keycodes 10071/10072/184/261) avec affichage d'un toast d'état.
+- `frontend/src/hooks/usePlayerControls.ts` : Contrôleur média pour `/player/[id]` avec isolation stricte des modes d'interaction :
+  - **Mode Normal (`!isFullscreen`) :** Les touches fléchées sont exclusivement réservées à la navigation spatiale entre les boutons d'action (Retour, Voix, Partager, Cast, Audio, ST, Plein Écran) sans interférer avec la timeline.
+  - **Mode Plein Écran (`isFullscreen`) :** Les flèches Gauche/Droite gèrent la progression temporelle de la vidéo (-10s / +10s) et la touche Espace gère la lecture/pause.
+  - Raccourci `S` pour sauter le générique et raccourcis de plein écran (`f`, `F`, `FullScreen`, keycodes 10071/10072/184/261).
+- `backend/src/routes/userFavoritesRoutes.ts` : Endpoints de gestion des favoris utilisateur (`GET /api/user/favorites`, `GET /api/user/favorites/check/:id`, `GET /api/user/favorites/:id`, `POST /api/user/favorites/:id`, `DELETE /api/user/favorites/:id`).
+- `backend/src/routes/mediaStream.ts` : Endpoint de streaming universel avec support direct des conteneurs locaux (MKV/MP4/WebM), streaming partiel HTTP 206 (Range), gestion native des requêtes `HEAD` et `OPTIONS`, et en-têtes universels CORS (`Access-Control-Allow-Origin: *`, `Access-Control-Expose-Headers`).
 - `frontend/src/hooks/useTvNavigation.ts` : Moteur de navigation spatiale D-Pad garantissant la cohérence directionnelle stricte (alignement ligne/colonne sans saut vertical lors des déplacements horizontaux) et raccourcis d'accès direct à la recherche (`/` ou touche Search) et au plein écran.
 - `frontend/src/components/VideoPlayerView.tsx` : Lecteur vidéo universel avec streaming HLS Live résilient (paramétrage anti-décrochage de buffer, auto-recovery transparent sur erreurs réseau/média, sanctuarisation du mode direct interdisant tout faux déclenchement de fin de lecture).
 - `frontend/src/components/TagSearchBar.tsx` : Barre de recherche de taxonomie avec découplage de saisie locale, éliminant tout rechargement synchrone intempestif et exécutant la recherche sur validation explicite (Entrée ou bouton « 🔍 Rechercher »).

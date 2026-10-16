@@ -20,6 +20,13 @@ const MIME_MAP: Record<string, string> = {
 
 const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
+function setStreamCors(c: any) {
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Origin, Range, Content-Type, Accept, Authorization');
+  c.header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+}
+
 async function findMediaByIdOrSlug(idOrSlug?: string) {
   if (!idOrSlug) return null;
   if (isUuid(idOrSlug)) {
@@ -32,16 +39,21 @@ async function findMediaByIdOrSlug(idOrSlug?: string) {
   });
 }
 
-streamRouter.get('/:id/stream', async (c) => {
+streamRouter.options('/:id/stream', (c) => {
+  setStreamCors(c);
+  return c.body(null, 204);
+});
+
+streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
+  setStreamCors(c);
   const id = c.req.param('id');
   const user = (c as any).get('user') as UserSession | null;
   const shareToken = c.req.query('share');
 
   const media = await findMediaByIdOrSlug(id);
-
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
-  // 1. Chaînes TV en direct ou flux externes : proxy HLS direct avec gestion d'erreurs diffuseur
+  // 1. Chaînes TV en direct ou flux externes
   if (media.nodeType === 'LIVE_CHANNEL' && media.streamUrl) {
     return await proxyLiveStream(c, media.streamUrl);
   }
@@ -85,6 +97,7 @@ streamRouter.get('/:id/stream', async (c) => {
   const fileSize = stat.size;
   const mimeType = MIME_MAP[ext] || 'video/mp4';
   const range = c.req.header('range');
+  const isHead = c.req.method === 'HEAD';
 
   if (range) {
     const parts = range.replace(/bytes=/, '').split('-');
@@ -97,21 +110,22 @@ streamRouter.get('/:id/stream', async (c) => {
     }
 
     const chunksize = end - start + 1;
-    const fileStream = fs.createReadStream(activeFilePath, { start, end });
-    const webStream = Readable.toWeb(fileStream);
-
     c.status(206);
     c.header('Content-Range', `bytes ${start}-${end}/${fileSize}`);
     c.header('Accept-Ranges', 'bytes');
     c.header('Content-Length', String(chunksize));
     c.header('Content-Type', mimeType);
-    return c.body(webStream as any);
+
+    if (isHead) return c.body(null);
+    const fileStream = fs.createReadStream(activeFilePath, { start, end });
+    return c.body(Readable.toWeb(fileStream) as any);
   }
 
-  const fileStream = fs.createReadStream(activeFilePath);
-  const webStream = Readable.toWeb(fileStream);
   c.header('Content-Length', String(fileSize));
   c.header('Content-Type', mimeType);
   c.header('Accept-Ranges', 'bytes');
-  return c.body(webStream as any);
+
+  if (isHead) return c.body(null);
+  const fileStream = fs.createReadStream(activeFilePath);
+  return c.body(Readable.toWeb(fileStream) as any);
 });

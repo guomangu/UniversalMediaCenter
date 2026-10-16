@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +22,7 @@ import {
 } from '@/services/sessionApi';
 import { styles } from '@/components/PlayerScreen.styles';
 import { toggleFullscreen, isFullscreenActive } from '@/utils/fullscreen';
+import { goBackOrFallback } from '@/utils/navigation';
 
 export default function PlayerScreen() {
   const { id, title, share, isLive: queryIsLive } = useLocalSearchParams<{ id: string; title?: string; share?: string; isLive?: string }>();
@@ -57,6 +58,7 @@ export default function PlayerScreen() {
       document.removeEventListener('MSFullscreenChange', updateFs);
     };
   }, []);
+
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
   const [isLive, setIsLive] = useState(isDirectLive);
   const [nextNode, setNextNode] = useState<any>(null);
@@ -86,6 +88,7 @@ export default function PlayerScreen() {
           if (isChannel) {
             setShowSkipIntro(false);
             setIntroChapter(null);
+            setInitialTime(0);
           } else {
             const chapters = res.media.chaptersJson || [];
             const foundIntro = chapters.find((ch: any) => ch.type === 'INTRO');
@@ -95,14 +98,14 @@ export default function PlayerScreen() {
             } else {
               setIntroChapter(null);
             }
-          }
 
-          if (res.media.positionSeconds && res.media.positionSeconds > 10 && !res.media.isCompleted && !isChannel) {
-            savedPosRef.current = res.media.positionSeconds;
-            setInitialTime(res.media.positionSeconds);
-            const m = Math.floor(res.media.positionSeconds / 60);
-            const s = Math.floor(res.media.positionSeconds % 60);
-            showToast(`Reprise de la lecture à ${m}:${String(s).padStart(2, '0')}`);
+            if (res.media.positionSeconds && res.media.positionSeconds > 10 && !res.media.isCompleted) {
+              savedPosRef.current = res.media.positionSeconds;
+              setInitialTime(res.media.positionSeconds);
+              const m = Math.floor(res.media.positionSeconds / 60);
+              const s = Math.floor(res.media.positionSeconds % 60);
+              showToast(`Reprise de la lecture à ${m}:${String(s).padStart(2, '0')}`);
+            }
           }
         }
       });
@@ -110,7 +113,10 @@ export default function PlayerScreen() {
   }, [id, title, share]);
 
   const mediaTitle = resolvedTitle || title || `Média #${id}`;
-  const showToast = (msg: string) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); };
+  const showToast = useCallback((msg: string) => {
+    setStatusMessage(msg);
+    setTimeout(() => setStatusMessage(''), 3000);
+  }, []);
 
   const streamUrl = useMemo(() => {
     if (!id) return '';
@@ -131,12 +137,14 @@ export default function PlayerScreen() {
     }
   }, [id]);
 
-  // Surveillance de la présence et des spectateurs en séance (rafraîchi toutes les 3s, solo ou groupe)
+  // Surveillance de la présence et des séances communautaires (uniquement pour VOD / contenus planifiés)
   useEffect(() => {
-    if (!id) return;
+    if (!id || isLive) return;
     const updatePresence = async () => {
-      // Signaler la lecture active (même solo)
-      reportPlaybackProgress(String(id), savedPosRef.current || 0, 0, true);
+      // Signaler la progression en base (uniquement pour films/séries VOD)
+      if (savedPosRef.current > 0) {
+        reportPlaybackProgress(String(id), savedPosRef.current || 0, 0, true);
+      }
 
       const res = await fetchMediaSessions(String(id));
       setViewersCount(Math.max(1, res.totalViewers));
@@ -159,11 +167,11 @@ export default function PlayerScreen() {
         leaveSession(activeSessionRef.current.id);
       }
     };
-  }, [id, isMuted]);
+  }, [id, isLive, isMuted]);
 
   // Nettoyage immédiat si l'utilisateur quitte l'onglet ou ferme la fenêtre
   useEffect(() => {
-    if (typeof window === 'undefined' || !id) return;
+    if (typeof window === 'undefined' || !id || isLive) return;
     const handleUnload = () => {
       leavePlayback(String(id));
       if (activeSessionRef.current) {
@@ -176,7 +184,7 @@ export default function PlayerScreen() {
       window.removeEventListener('beforeunload', handleUnload);
       window.removeEventListener('pagehide', handleUnload);
     };
-  }, [id]);
+  }, [id, isLive]);
 
   // Compte à rebours automatique Netflix
   useEffect(() => {
@@ -193,44 +201,60 @@ export default function PlayerScreen() {
     return () => clearTimeout(countdownTimer.current);
   }, [countdown, nextNode]);
 
-  const handlePlayNext = () => {
+  const handlePlayNext = useCallback(() => {
     if (!nextNode) return;
     setCountdown(null);
     router.replace({
       pathname: `/player/${nextNode.id}`,
       params: share ? { share, title: nextNode.title } : { title: nextNode.title },
     } as any);
-  };
+  }, [nextNode, router, share]);
 
-  const handleCancelNext = () => {
+  const handleCancelNext = useCallback(() => {
     isCancelledRef.current = true;
     setCountdown(null);
     if (countdownTimer.current) clearTimeout(countdownTimer.current);
     showToast('Enchaînement automatique annulé');
-  };
+  }, [showToast]);
 
-  const handleNearEnd = (remainingSec: number) => {
+  const handleNearEnd = useCallback((remainingSec: number) => {
     if (isLive) return; // Pas d'enchaînement de fin sur un flux live
     if (nextNode && !isCancelledRef.current && countdown === null) {
       setCountdown(Math.min(remainingSec, 8));
     }
-  };
+  }, [isLive, nextNode, countdown]);
 
-  const handleVideoEnded = () => {
+  const handleVideoEnded = useCallback(() => {
     if (isLive) return;
     if (nextNode && !isCancelledRef.current) {
       handlePlayNext();
     }
-  };
+  }, [isLive, nextNode, handlePlayNext]);
+
+  const handlePlay = useCallback(() => setIsPlaying(true), []);
+  const handlePause = useCallback(() => setIsPlaying(false), []);
+  const handleTimeUpdate = useCallback((t: number) => {
+    if (!isLive) {
+      savedPosRef.current = t;
+    }
+  }, [isLive]);
+
+  const handleSkipIntro = useCallback(() => {
+    if (isLive) return;
+    const target = introChapter ? introChapter.end : (videoRef.current?.currentTime || 0) + 85;
+    if (videoRef.current) videoRef.current.currentTime = target;
+    setShowSkipIntro(false);
+    showToast('Générique passé ⏩');
+  }, [isLive, introChapter, showToast]);
 
   useCastReceiver({
     id: String(id), mediaTitle, isPlaying, videoRef, setIsPlaying, setActiveAudio, setActiveSubtitle,
-    onStop: () => { if (router.canGoBack()) router.back(); else router.push('/'); },
+    onStop: () => goBackOrFallback(router, '/'),
     onLoad: (newId) => router.replace(`/player/${newId}`),
   });
 
   const isModalOpen = showAudio || showSubtitles || showShare || showCast;
-  usePlayerControls({ videoRef, isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast });
+  usePlayerControls({ videoRef, isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast, isFullscreen });
 
   return (
     <SafeAreaView style={styles.container}>
@@ -247,36 +271,30 @@ export default function PlayerScreen() {
         activeAudio={activeAudio}
         statusMessage={statusMessage}
         isFullscreen={isFullscreen}
-        onSkipIntro={() => {
-          if (isLive) return;
-          const target = introChapter ? introChapter.end : (videoRef.current?.currentTime || 0) + 85;
-          if (videoRef.current) videoRef.current.currentTime = target;
-          setShowSkipIntro(false);
-          showToast('Générique passé ⏩');
-        }}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onTimeUpdate={(t) => {
-          savedPosRef.current = t;
-        }}
+        onSkipIntro={handleSkipIntro}
+        onPlay={handlePlay}
+        onPause={handlePause}
+        onTimeUpdate={handleTimeUpdate}
         onNearEnd={handleNearEnd}
         onEnded={handleVideoEnded}
       />
 
       {!isFullscreen && (
-        <View style={styles.topBar} data-player-topbar="true">
+        <View
+          style={styles.topBar}
+          {...({ dataSet: { playerTopbar: 'true' } } as any)}
+        >
         <Pressable
           focusable={true}
           accessibilityRole="button"
-          onPress={() => { if (router.canGoBack()) router.back(); else router.push('/'); }}
+          onPress={() => goBackOrFallback(router, '/')}
           style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
         >
           <Text style={styles.topBtnText}>← Retour</Text>
         </Pressable>
 
         {/* Contrôles d'appel en direct ou vocal dès qu'au moins 2 spectateurs regardent un contenu */}
-        {viewersCount >= 2 || activeSession ? (
-          <Pressable
+        {viewersCount >= 2 || activeSession ? (<Pressable
             focusable={true}
             accessibilityRole="button"
             onPress={() => {

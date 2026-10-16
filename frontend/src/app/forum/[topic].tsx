@@ -16,6 +16,7 @@ import { MediaForumSection } from '@/components/MediaForumSection';
 import { fetchTopicContext, TopicContextResponse, TopicTagItem } from '@/services/forumApi';
 import { resolveImageUrl } from '@/services/api';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { goBackOrFallback } from '@/utils/navigation';
 
 export default function ForumTopicScreen() {
   const router = useRouter();
@@ -70,12 +71,13 @@ export default function ForumTopicScreen() {
         ref={scrollViewRef}
         contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + Spacing.three }]}
         showsVerticalScrollIndicator={false}>
-        {/* Bouton Retour vers le Forum */}
+        {/* Bouton Retour vers la page précédente */}
         <Pressable
           focusable={true}
-          onPress={() => router.push('/forum' as any)}
+          accessibilityRole="button"
+          onPress={() => goBackOrFallback(router, '/forum')}
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.8 }]}>
-          <Text style={styles.backTxt}>← Retour à l'Agora & salons</Text>
+          <Text style={styles.backTxt}>← Retour</Text>
         </Pressable>
 
         {/* ======================================================== */}

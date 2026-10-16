@@ -18,6 +18,7 @@ import { MediaForumSection } from '@/components/MediaForumSection';
 import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { CastModal } from '@/components/CastModal';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
+import { goBackOrFallback } from '@/utils/navigation';
 
 export default function MediaDetailScreen() {
   const { id, share } = useLocalSearchParams<{ id: string; share?: string }>();
@@ -188,8 +189,12 @@ export default function MediaDetailScreen() {
       <SiteHeader />
 
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]}>
-        <Pressable focusable={true} onPress={() => router.push('/')} style={styles.backBtn}>
-          <Text style={styles.backTxt}>← Retour à l'accueil</Text>
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          onPress={() => goBackOrFallback(router, '/')}
+          style={styles.backBtn}>
+          <Text style={styles.backTxt}>← Retour</Text>
         </Pressable>
 
         {/* ======================================================== */}

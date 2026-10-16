@@ -3,7 +3,7 @@
  * Gestion du cache hors-ligne et optimisation ultra-rapide des images & données
  */
 
-const CACHE_VERSION = 'ums-pwa-v2';
+const CACHE_VERSION = 'ums-pwa-v3';
 const STATIC_CACHE = `ums-static-${CACHE_VERSION}`;
 const IMAGE_CACHE = 'ums-images-cache-v1';
 const DATA_CACHE = 'ums-data-cache-v1';
@@ -52,15 +52,34 @@ function isImageRequest(request) {
   );
 }
 
+function isLiveOrStreamRequest(url) {
+  return (
+    url.includes('/stream') ||
+    url.includes('/hls') ||
+    url.includes('/cast') ||
+    url.includes('/progress') ||
+    url.includes('/sessions') ||
+    url.includes('/playback') ||
+    /\.(m3u8|ts|mpd|m4s|mp4|webm)(\?.*)?$/i.test(url)
+  );
+}
+
 function isCacheableApiRequest(request) {
   const url = request.url;
   if (request.method !== 'GET') return false;
-  if (url.includes('/stream') || url.includes('/hls') || url.includes('/cast')) return false;
+  // Exclure strictement tous les flux live, segments vidéo, sessions et progressions
+  if (isLiveOrStreamRequest(url)) return false;
   return url.includes('/api/ui/') || url.includes('/api/media/') || url.includes('/api/iptv/') || url.includes('/api/user/');
 }
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const url = request.url;
+
+  // 0. Bypasser immédiatement et totalement le cache pour tous les flux streaming et pings
+  if (isLiveOrStreamRequest(url)) {
+    return;
+  }
 
   // 1. Gestion des images : Cache-First agressif et tolérant opaque/cross-origin
   if (isImageRequest(request)) {

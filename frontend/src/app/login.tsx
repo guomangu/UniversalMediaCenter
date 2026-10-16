@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Platform, Pressable, useWindowDimensions } from
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { fetchAuthStatus, loginWithPassword, registerAccount, useCurrentUser } from '@/services/authStore';
 import { Radius, Spacing } from '@/constants/theme';
+import { goBackOrFallback } from '@/utils/navigation';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -259,10 +260,11 @@ export default function LoginScreen() {
         {params.returnUrl ? (
           <Pressable
             focusable={true}
-            onPress={() => router.back()}
+            accessibilityRole="button"
+            onPress={() => goBackOrFallback(router, '/')}
             style={styles.backBtn}
           >
-            <Text style={styles.backBtnText}>← Retour à la page précédente</Text>
+            <Text style={styles.backBtnText}>← Retour</Text>
           </Pressable>
         ) : null}
       </View>

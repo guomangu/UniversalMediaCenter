@@ -10,8 +10,8 @@ export const styles = StyleSheet.create({
     borderWidth: 2, borderColor: 'transparent',
   },
   videoPlaceholderFocused: {
-    borderColor: '#6366f1',
-    borderWidth: 2,
+    borderColor: 'transparent',
+    borderWidth: 0,
   },
   videoText: { fontSize: 22, fontWeight: '700', color: '#f8fafc' },
   subText: { fontSize: 13, color: '#94a3b8', marginTop: 4 },

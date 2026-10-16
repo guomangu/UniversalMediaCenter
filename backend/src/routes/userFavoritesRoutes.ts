@@ -21,6 +21,7 @@ function formatNode(node: any) {
 
 userFavoritesRouter.get('/favorites', async (c) => {
   const sessionUser = (c as any).get('user');
+  if (!sessionUser) return c.json([]);
   const items = await db
     .select({
       node: mediaNodes,
@@ -40,9 +41,34 @@ userFavoritesRouter.get('/favorites', async (c) => {
   );
 });
 
+userFavoritesRouter.get('/favorites/check/:id', async (c) => {
+  const sessionUser = (c as any).get('user');
+  const nodeId = c.req.param('id');
+  if (!sessionUser) return c.json({ isFavorite: false });
+
+  const existing = await db.query.userFavorites.findFirst({
+    where: (t, { and: a, eq: e }) => a(e(t.userId, sessionUser.id), e(t.nodeId, nodeId)),
+  });
+
+  return c.json({ isFavorite: Boolean(existing) });
+});
+
+userFavoritesRouter.get('/favorites/:id', async (c) => {
+  const sessionUser = (c as any).get('user');
+  const nodeId = c.req.param('id');
+  if (!sessionUser) return c.json({ isFavorite: false });
+
+  const existing = await db.query.userFavorites.findFirst({
+    where: (t, { and: a, eq: e }) => a(e(t.userId, sessionUser.id), e(t.nodeId, nodeId)),
+  });
+
+  return c.json({ isFavorite: Boolean(existing) });
+});
+
 userFavoritesRouter.post('/favorites/:id', async (c) => {
   const sessionUser = (c as any).get('user');
   const nodeId = c.req.param('id');
+  if (!sessionUser) return c.json({ error: 'Non authentifié' }, 401);
 
   const existing = await db.query.userFavorites.findFirst({
     where: (t, { and: a, eq: e }) => a(e(t.userId, sessionUser.id), e(t.nodeId, nodeId)),
@@ -55,16 +81,17 @@ userFavoritesRouter.post('/favorites/:id', async (c) => {
     });
   }
 
-  return c.json({ success: true, favorited: true });
+  return c.json({ success: true, isFavorite: true, favorited: true });
 });
 
 userFavoritesRouter.delete('/favorites/:id', async (c) => {
   const sessionUser = (c as any).get('user');
   const nodeId = c.req.param('id');
+  if (!sessionUser) return c.json({ error: 'Non authentifié' }, 401);
 
   await db
     .delete(userFavorites)
     .where(and(eq(userFavorites.userId, sessionUser.id), eq(userFavorites.nodeId, nodeId)));
 
-  return c.json({ success: true, favorited: false });
+  return c.json({ success: true, isFavorite: false, favorited: false });
 });

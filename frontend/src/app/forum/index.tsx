@@ -13,6 +13,7 @@ import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { ForumAssociationsModule } from '@/components/ForumAssociationsModule';
 import { fetchForumExplore, ForumExploreResponse, INITIAL_EXPLORE_DATA } from '@/services/forumApi';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { goBackOrFallback } from '@/utils/navigation';
 
 export default function ForumIndexScreen() {
   const router = useRouter();
@@ -39,8 +40,12 @@ export default function ForumIndexScreen() {
       <ScrollView
         contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]}
         showsVerticalScrollIndicator={false}>
-        <Pressable focusable={true} onPress={() => router.push('/')} style={styles.backBtn}>
-          <Text style={styles.backTxt}>← Retour à l'accueil</Text>
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          onPress={() => goBackOrFallback(router, '/')}
+          style={styles.backBtn}>
+          <Text style={styles.backTxt}>← Retour</Text>
         </Pressable>
 
         {/* Hero Banner Thématique */}
