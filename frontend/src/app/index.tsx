@@ -16,7 +16,12 @@ import { ThemedView } from '@/components/themed-view';
 import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { TagSearchBar } from '@/components/TagSearchBar';
 import { CategorySection } from '@/components/CategorySection';
-import { fetchTaxonomy, TaxonomyCategory, DEFAULT_TAXONOMY_CATEGORIES } from '@/services/taxonomyApi';
+import {
+  fetchTaxonomy,
+  TaxonomyCategory,
+  DEFAULT_TAXONOMY_CATEGORIES,
+  CACHE_KEY_CATEGORIES,
+} from '@/services/taxonomyApi';
 import { useCurrentUser } from '@/services/authStore';
 import { useTabState } from '@/hooks/useTabState';
 import { getCachedData } from '@/services/pwaDataCache';
@@ -24,7 +29,7 @@ import { Spacing, MaxContentWidth, Radius } from '@/constants/theme';
 
 let savedHomeScrollY = 0;
 let cachedCategories: TaxonomyCategory[] =
-  getCachedData<TaxonomyCategory[]>('taxonomy_categories') || DEFAULT_TAXONOMY_CATEGORIES;
+  getCachedData<TaxonomyCategory[]>(CACHE_KEY_CATEGORIES) || DEFAULT_TAXONOMY_CATEGORIES;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -33,7 +38,7 @@ export default function HomeScreen() {
   const isMobile = width < 860;
   const [categories, setCategories] = useState<TaxonomyCategory[]>(() => {
     if (cachedCategories && cachedCategories.length > 0) return cachedCategories;
-    return getCachedData<TaxonomyCategory[]>('taxonomy_categories') || DEFAULT_TAXONOMY_CATEGORIES;
+    return getCachedData<TaxonomyCategory[]>(CACHE_KEY_CATEGORIES) || DEFAULT_TAXONOMY_CATEGORIES;
   });
   const [activeCategoryId, setActiveCategoryId] = useState<string>(() => categories[0]?.id || 'sagas');
   const activeCatRef = useRef<string>(categories[0]?.id || 'sagas');
@@ -45,6 +50,7 @@ export default function HomeScreen() {
   const catPositions = useRef<Record<string, number>>({});
   const isRestoringScroll = useRef(savedHomeScrollY > 0);
   const scrollRestoredRef = useRef(false);
+  const isJumpingRef = useRef(false);
 
   const headerPaddingTop = useHeaderHeight(true);
 
@@ -61,6 +67,35 @@ export default function HomeScreen() {
 
   const updateActiveCategory = useCallback((scrollY: number) => {
     if (!categories.length) return;
+
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
+      if (scrollNode && scrollNode.scrollTop + scrollNode.clientHeight >= scrollNode.scrollHeight - 40) {
+        const lastCat = categories[categories.length - 1];
+        if (lastCat && lastCat.id !== activeCatRef.current) {
+          activeCatRef.current = lastCat.id;
+          setActiveCategoryId(lastCat.id);
+        }
+        return;
+      }
+
+      let currentId = categories[0]?.id || '';
+      for (const cat of categories) {
+        const el = document.getElementById(`cat-section-${cat.id}`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= headerPaddingTop + 50) {
+            currentId = cat.id;
+          }
+        }
+      }
+      if (currentId && currentId !== activeCatRef.current) {
+        activeCatRef.current = currentId;
+        setActiveCategoryId(currentId);
+      }
+      return;
+    }
+
     const threshold = scrollY + headerPaddingTop + 40;
     let currentId = categories[0]?.id || '';
     for (const cat of categories) {
@@ -76,7 +111,10 @@ export default function HomeScreen() {
   }, [categories, headerPaddingTop]);
 
   const loadData = async (force = false) => {
-    const list = await fetchTaxonomy(force);
+    const list = await fetchTaxonomy(force, (fresh) => {
+      cachedCategories = fresh;
+      setCategories(fresh);
+    });
     if (list && list.length > 0) {
       cachedCategories = list;
       setCategories(list);
@@ -99,7 +137,8 @@ export default function HomeScreen() {
     if (savedHomeScrollY > 0) {
       isRestoringScroll.current = true;
     }
-    loadData(false);
+    // Chargement frais dès le premier affichage pour garantir des catégories complètes
+    loadData(true);
   }, []);
 
   // Détection des interactions utilisateur réelles pour relâcher le mode restauration
@@ -135,12 +174,42 @@ export default function HomeScreen() {
 
   const handleJumpToCategory = (catId: string) => {
     isRestoringScroll.current = false;
+    isJumpingRef.current = true;
     activeCatRef.current = catId;
     setActiveCategoryId(catId);
-    const targetY = catPositions.current[catId];
-    if (typeof targetY === 'number') {
-      const adjustedY = Math.max(0, targetY - headerPaddingTop - 12);
-      scrollRef.current?.scrollTo({ y: adjustedY, animated: true });
+
+    // Relâche le verrouillage de saut après l'achèvement de l'animation
+    setTimeout(() => {
+      isJumpingRef.current = false;
+    }, 750);
+
+    let targetY: number | undefined = catPositions.current[catId];
+
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const el = document.getElementById(`cat-section-${catId}`);
+      if (el) {
+        const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
+        if (scrollNode) {
+          const scrollRect = scrollNode.getBoundingClientRect?.() || { top: 0 };
+          const elRect = el.getBoundingClientRect();
+          const currentScrollTop = scrollNode.scrollTop ?? 0;
+          targetY = Math.max(0, currentScrollTop + (elRect.top - scrollRect.top) - headerPaddingTop - 12);
+        }
+      }
+    }
+
+    if (typeof targetY === 'number' && !isNaN(targetY)) {
+      scrollRef.current?.scrollTo({ y: targetY, animated: true });
+      if (Platform.OS === 'web' && scrollRef.current) {
+        const node = (scrollRef.current as any).getScrollableNode?.() || (scrollRef.current as any);
+        if (node && node.scrollTop !== undefined) {
+          if (typeof node.scroll === 'function') {
+            node.scroll({ top: targetY, behavior: 'smooth' });
+          } else {
+            node.scrollTop = targetY;
+          }
+        }
+      }
     }
   };
 
@@ -188,7 +257,9 @@ export default function HomeScreen() {
             }
             if (y >= 0) {
               savedHomeScrollY = y;
-              updateActiveCategory(y);
+              if (!isJumpingRef.current) {
+                updateActiveCategory(y);
+              }
               if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
                 sessionStorage.setItem('ums_home_scroll_y', String(y));
               }
@@ -258,40 +329,36 @@ const styles = StyleSheet.create({
   emptyWelcomeBox: {
     backgroundColor: '#262c36',
     borderRadius: Radius.lg,
-    padding: Spacing.four,
-    borderWidth: 1,
-    borderColor: '#384354',
+    padding: 24,
+    marginVertical: 40,
     alignItems: 'center',
-    marginTop: 20,
-    gap: 12,
   },
   welcomeTitle: {
-    fontSize: 22,
-    fontWeight: '700',
     color: '#edeef2',
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 8,
   },
   welcomeDesc: {
-    fontSize: 14,
     color: '#8e9ab0',
+    fontSize: 14,
     textAlign: 'center',
-    maxWidth: 480,
+    marginBottom: 20,
+    lineHeight: 20,
   },
   quickActions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 12,
-    justifyContent: 'center',
-    marginTop: 8,
   },
   quickBtn: {
-    backgroundColor: '#38bdf8',
-    paddingVertical: 10,
+    backgroundColor: '#1b74e4',
     paddingHorizontal: 16,
-    borderRadius: Radius.md,
+    paddingVertical: 10,
+    borderRadius: Radius.pill,
   },
   quickBtnTxt: {
-    color: '#0d1117',
-    fontWeight: '700',
+    color: '#ffffff',
     fontSize: 13,
+    fontWeight: '700',
   },
 });

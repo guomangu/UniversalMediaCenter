@@ -17,6 +17,39 @@ export interface EpisodeSectionGroup {
   items: ParsedChildNode[];
 }
 
+const ONE_PACE_ARCS_MAP: Record<number, { season: number; name: string }> = {
+  1: { season: 1, name: 'Romance Dawn' },
+  8: { season: 2, name: 'Orange Town' },
+  23: { season: 3, name: 'Syrup Village' },
+  42: { season: 4, name: 'Gaimon' },
+  69: { season: 5, name: 'Arlong Park' },
+  96: { season: 6, name: 'Loguetown' },
+  101: { season: 7, name: 'Reverse Mountain' },
+  106: { season: 8, name: 'Whiskey Peak' },
+  115: { season: 9, name: 'Little Garden' },
+  130: { season: 10, name: 'Drum Island' },
+  155: { season: 11, name: 'Arabasta' },
+  237: { season: 12, name: 'Skypiea' },
+  304: { season: 13, name: 'Long Ring Long Land' },
+  322: { season: 14, name: 'Water Seven' },
+  375: { season: 15, name: 'Enies Lobby' },
+  431: { season: 16, name: 'Post-Enies Lobby' },
+  442: { season: 17, name: 'Thriller Bark' },
+  490: { season: 18, name: 'Sabaody Archipelago' },
+  514: { season: 19, name: 'Amazon Lily' },
+  525: { season: 20, name: 'Impel Down' },
+  549: { season: 21, name: 'Marineford' },
+  581: { season: 22, name: 'Post-War' },
+  598: { season: 23, name: 'Return to Sabaody' },
+  603: { season: 24, name: 'Fishman Island' },
+  654: { season: 25, name: 'Punk Hazard' },
+  700: { season: 26, name: 'Dressrosa' },
+  801: { season: 27, name: 'Zou' },
+  823: { season: 28, name: 'Whole Cake Island' },
+  903: { season: 29, name: 'Reverie' },
+  909: { season: 30, name: 'Wano' },
+};
+
 export function parseChildNode(c: any): ParsedChildNode {
   const rawTitle = c.title || '';
   const fsPath = c.videoFilePath || c.nfoFilePath || rawTitle;
@@ -26,7 +59,9 @@ export function parseChildNode(c: any): ParsedChildNode {
   let season: number | undefined;
   let episode: number | undefined;
 
-  const filmsMatch = /[/\\\\]Films?[/\\\\]/i.test(fsPath) || c.nodeType === 'MOVIE';
+  const isOnePace = /one pace|one_piece_kai|one piece kai/i.test(fsPath);
+  const isSpecial = /special/i.test(fsPath) || /april\s*fools/i.test(fsPath);
+  const filmsMatch = /[\\/]Films?[\\/]/i.test(fsPath) || c.nodeType === 'MOVIE';
   const picDramaMatch = /Picture Drama/i.test(fsPath) || /Picture Drama/i.test(rawTitle);
 
   // 1. Détection prioritaire par nom de fichier / titre explicite SxxExx
@@ -48,15 +83,49 @@ export function parseChildNode(c: any): ParsedChildNode {
   } else if (picDramaMatch) {
     groupName = 'Picture Drama';
     season = 998;
+  } else if (isSpecial && isOnePace) {
+    groupName = 'Spéciaux';
+    season = 0;
+  } else if (isOnePace) {
+    const paceMatch = /\[(?:one pace|kai)\]\[(\d+)(?:[-,\s]+(?:\d+|x+))?\]\s*([^/[\]]+)/i.exec(fsPath);
+    const chapterMatch = /chapter\s+(\d+)/i.exec(fsPath);
+
+    if (paceMatch) {
+      const startCh = parseInt(paceMatch[1], 10);
+      let foundSeason = 1;
+      let arcName = paceMatch[2].trim();
+      for (const k of Object.keys(ONE_PACE_ARCS_MAP).map(Number).sort((a, b) => b - a)) {
+        if (startCh >= k) {
+          foundSeason = ONE_PACE_ARCS_MAP[k].season;
+          arcName = ONE_PACE_ARCS_MAP[k].name;
+          break;
+        }
+      }
+      season = foundSeason;
+      groupName = `${String(season).padStart(2, '0')} • ${arcName}`;
+    } else if (chapterMatch) {
+      const startCh = parseInt(chapterMatch[1], 10);
+      let foundSeason = 1;
+      let arcName = 'Dressrosa';
+      for (const k of Object.keys(ONE_PACE_ARCS_MAP).map(Number).sort((a, b) => b - a)) {
+        if (startCh >= k) {
+          foundSeason = ONE_PACE_ARCS_MAP[k].season;
+          arcName = ONE_PACE_ARCS_MAP[k].name;
+          break;
+        }
+      }
+      season = foundSeason;
+      groupName = `${String(season).padStart(2, '0')} • ${arcName}`;
+    }
   } else if (!sMatch) {
     // A. Détection R1 / R2 (Code Geass, etc.)
-    const rMatch = /(?:^|[/\\\\]|[ _-])R([1-9])\b/i.exec(fsPath);
+    const rMatch = /(?:^|[\\/]|[ _-])R([1-9])\b/i.exec(fsPath);
     // B. Détection format anime: "01- Soul Society"
-    const arcMatch = /[/\\\\](\d{1,2})[-_ ]+([a-zA-Z0-9' ]+)[/\\\\]/i.exec(fsPath);
+    const arcMatch = /[\\/](\d{1,2})[-_ ]+([a-zA-Z0-9' ]+)[\\/]/i.exec(fsPath);
     // C. Détection standard: Season 1, Saison 2, Part 1, Cour 1
     const seasonDirMatch =
-      /[/\\\\](?:Season|Saison|Part|Cour|S)[-_ ]*(\d{1,2})[/\\\\]/i.exec(fsPath) ||
-      /[/\\\\]S(\d{1,2})[/\\\\]/i.exec(fsPath);
+      /[\\/](?:Season|Saison|Part|Cour|S)[-_ ]*(\d{1,2})[\\/]/i.exec(fsPath) ||
+      /[\\/]S(\d{1,2})[\\/]/i.exec(fsPath);
 
     if (rMatch) {
       season = parseInt(rMatch[1], 10);
@@ -80,7 +149,12 @@ export function parseChildNode(c: any): ParsedChildNode {
     if (season === undefined) season = calcSeason;
     if (episode === undefined) episode = calcEp;
     if (groupName === 'Épisodes' && season !== undefined) {
-      groupName = `Saison ${season}`;
+      const arcEntry = Object.values(ONE_PACE_ARCS_MAP).find((x) => x.season === season);
+      if (arcEntry && isOnePace) {
+        groupName = `${String(season).padStart(2, '0')} • ${arcEntry.name}`;
+      } else {
+        groupName = `Saison ${season}`;
+      }
     }
   }
 

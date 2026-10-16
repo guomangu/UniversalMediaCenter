@@ -2,6 +2,8 @@ import { db } from '../db/connection.js';
 import { verifySessionToken } from '../auth/token.js';
 import { getSiteParams } from '../config/paramManager.js';
 export async function authMiddleware(c, next) {
+    if (c.req.method === 'OPTIONS')
+        return await next();
     const authHeader = c.req.header('authorization');
     let userId = null;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -40,6 +42,7 @@ export async function authMiddleware(c, next) {
                     blockedValueIds: [],
                     allowedTags: [],
                     blockedTags: [],
+                    allowedFolders: [],
                     blockedFolders: [],
                     profileRole: 'ADMINISTRATEUR',
                 });
@@ -52,6 +55,9 @@ export async function authMiddleware(c, next) {
                 ...(user.blockedTags || []),
                 ...(matchedProfile?.blockedTags || []),
             ]));
+            const effectiveAllowedFolders = (user.allowedFolders && user.allowedFolders.length > 0)
+                ? user.allowedFolders
+                : (matchedProfile?.allowedFolders || []);
             const effectiveBlockedFolders = Array.from(new Set([
                 ...(user.blockedFolders || []),
                 ...(matchedProfile?.blockedFolders || []),
@@ -72,6 +78,7 @@ export async function authMiddleware(c, next) {
                 blockedValueIds: user.blockedValueIds || [],
                 allowedTags: effectiveAllowedTags,
                 blockedTags: effectiveBlockedTags,
+                allowedFolders: effectiveAllowedFolders,
                 blockedFolders: effectiveBlockedFolders,
             });
             return await next();
@@ -81,6 +88,8 @@ export async function authMiddleware(c, next) {
     return await next();
 }
 export async function requireAuth(c, next) {
+    if (c.req.method === 'OPTIONS')
+        return await next();
     const user = c.get('user');
     if (!user) {
         return c.json({ error: 'Connexion requise pour accéder à cette ressource', code: 'UNAUTHORIZED' }, 401);
@@ -88,6 +97,8 @@ export async function requireAuth(c, next) {
     return await next();
 }
 export async function requireAdmin(c, next) {
+    if (c.req.method === 'OPTIONS')
+        return await next();
     const user = c.get('user');
     if (!user) {
         return c.json({ error: 'Connexion requise', code: 'UNAUTHORIZED' }, 401);

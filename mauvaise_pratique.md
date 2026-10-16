@@ -295,3 +295,54 @@
 * **Bonnes Pratiques de Remédiation :**
   - **Gardes Nulles Systématiques :** Toujours itérer sur `(parsed.field || [])`.
   - **Validation Stricte TypeScript (`tsc --noEmit`) :** Vérifier que le code source compile sans aucune erreur de typage avant d'exécuter le pipeline.
+
+---
+
+## 🛑 80. Requêtes de Taxonomie Hardcodées sur Deux Qualités Fixes et Amnésie des Formats Réels (4K, 480p, SD)
+
+* **Problème / Symptôme :** Sur l'écran d'accueil, la catégorie Qualité n'affichait que du 720p (ou 1080p), ignorant la présence des médias 4K UHD, 480p SD, 576p ou 360p, donnant l'impression fausse que tous les médias sont en 720p.
+* **Conséquences :** Expérience utilisateur dégradée, incapacité d'explorer les formats haute fidélité (4K HDR) ou basse résolution, tags de filtres statiques déconnectés de la réalité de la collection.
+* **Causes Racines :** La route de taxonomie effectuait une union SQL statique `SELECT '1080p'... UNION SELECT '720p'...` codée en dur au lieu d'interroger dynamiquement les attributs EAV `video_quality`, les chemins et les vecteurs textuels des nœuds médias.
+* **Bonnes Pratiques de Remédiation :**
+  - **Agrégation Dynamique Universelle :** Extraire les qualités vidéo à partir des liens EAV (`code IN ('video_quality', 'quality', 'resolution')`) croisés avec la détection regex multi-formats (`4k`, `2160p`, `1080p`, `720p`, `576p`, `480p`, `360p`).
+  - **Tri Hiérarchique Déterministe :** Ordonner les tags de qualité par ordre qualitatif réel (4K > 1080p > 720p > 576p > 480p > 360p).
+  - **Résolution par Lot Instantanée :** Renvoyer la `videoQuality` réelle pour chaque média dans les résultats d'API pour permettre l'affichage visuel de badges dynamiques sur les cartes.
+
+---
+
+## 🛑 81. Rétention de Coordonnées Statiques d'Agencement (Stale onLayout) lors de l'Expansion Asynchrone de Contenus
+
+* **Problème / Symptôme :** Les clics sur les raccourcis de catégories de tags en tête de page (Studios, Réalisateur, Qualité, Pays) atterrissaient à de mauvais emplacements, provoquant un défilement erratique ou décalé.
+* **Conséquences :** Navigation brisée, frustration utilisateur et sentiment d'imprécision logicielle.
+* **Causes Racines :** L'événement React Native `onLayout` sur les conteneurs de catégories enregistrait la coordonnée `y` au montage initial, lorsque les rails étaient encore vides (hauteur totale de 400px). Dès que les listes de médias asynchrones chargeaient (faisant grandir chaque catégorie à 1500px+), `ResizeObserver` sur le web ne redéclenchait pas `onLayout` pour les éléments frères descendants dont seul le `top` avait glissé vers le bas.
+* **Bonnes Pratiques de Remédiation :**
+  - **Ancrage DOM Natif au Pixel Près :** Identifier chaque section de catégorie avec un attribut identifiant stable (`nativeID={`cat-section-${category.id}`}`).
+  - **Mesure Dynamique au Moment du Clic :** Utiliser `getBoundingClientRect()` pour calculer la position absolue actuelle en temps réel au moment précis où l'utilisateur clique sur le raccourci (`scrollNode.scrollTop + (elRect.top - scrollRect.top) - headerPaddingTop - 12`).
+  - **Synchronisation Précise du Scroll :** Écouter le défilement et calculer l'intersection visuelle directe avec le viewport plutôt que de comparer avec des valeurs numériques enregistrées au chargement initial.
+
+---
+
+## 🛑 82. Le Cache Trap LocalStorage sans Réconciliation d'État Réactif (`onFreshData`)
+
+* **Problème / Symptôme :** Après une mise à jour majeure du backend (ex: passage à des qualités dynamiques 4K, 1080p, 720p, 480p), le navigateur client continue d'afficher indéfiniment l'ancienne interface tronquée (seulement 720p).
+* **Conséquences :** Invalidation fantôme : les corrections serveur ne parviennent jamais aux utilisateurs, les maintenant prisonniers d'un cache local obsolète pendant des heures voire des jours.
+* **Causes Racines :**
+  - La fonction \`fetchWithCache\` servait le cache \`localStorage\` immédiatement pour la réactivité, mais effectuait la requête réseau fraîche en tâche de fond sans informer le composant React appelant (\`onFreshData\` non transmis).
+  - Absence de versionnage de clé de cache (\`taxonomy_categories\` au lieu de \`taxonomy_categories_v5\`), interdisant au client de détecter que le schéma de données a évolué.
+* **Bonnes Pratiques de Remédiation :**
+  - **Versionnage Systématique des Clés de Cache :** Préfixer les clés avec une version explicite (\`taxonomy_categories_v5\`).
+  - **Purge Automatique au Boot :** Parcourir \`localStorage\` à l'initialisation pour évincer toute entrée antérieure ne correspondant pas à la version courante.
+  - **Callback de Réconciliation Réactive (\`onFreshData\`) :** Transmettre systématiquement une fonction de mise à jour d'état à \`fetchWithCache\` afin que toute donnée fraîche reçue du serveur remplace instantanément la vue périmée.
+
+---
+
+## 🛑 83. Contournement du Répondeur de Défilement React Native au Profit d'Appels DOM Bruts sans Verrou Anti-Jitter
+
+* **Problème / Symptôme :** Les raccourcis de navigation entre catégories ne répondent plus aux clics, ou font sauter l'écran de façon erratique avant de se replier aussitôt sur la catégorie initiale (Sagas).
+* **Conséquences :** Rupture complète de la navigation par raccourcis sur l'écran d'accueil.
+* **Causes Racines :**
+  - Appel direct de \`scrollNode.scrollTo({ top, behavior })\` sur le nœud DOM au lieu de passer par le répondeur officiel React Native \`scrollRef.current.scrollTo({ y, animated: true })\`.
+  - Boucle de rétroaction (feedback loop) : pendant le défilement animé, l'événement \`onScroll\` recalculait la catégorie active à mi-course et écrasait brutalement \`activeCategoryId\` avec la section survolée au lieu de la section visée.
+* **Bonnes Pratiques de Remédiation :**
+  - **Utiliser Exclusivement \`scrollRef.current.scrollTo({ y, animated: true })\` :** C'est la seule méthode universellement comprise et synchronisée par le moteur React Native Web.
+  - **Verrou Anti-Jitter (\`isJumpingRef\`) :** Poser un verrouillage temporaire (750 ms) pendant l'animation de saut pour suspendre la détection intermédiaire de \`updateActiveCategory\` et garantir une arrivée fluide et stable sur la cible.

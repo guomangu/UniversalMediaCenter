@@ -24,17 +24,21 @@ import { taxonomyRouter } from './routes/taxonomyRoutes.js';
 import { inviteRouter } from './routes/inviteRoutes.js';
 const app = new Hono();
 app.use('*', cors({
-    origin: '*',
+    origin: (origin) => origin || '*',
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowHeaders: ['*'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-User-Id', 'Cache-Control', 'Accept', 'Origin', '*'],
     exposeHeaders: ['Content-Length', 'X-Total-Count', 'Content-Range'],
+    credentials: true,
+    maxAge: 86400,
 }));
 app.use('*', authMiddleware);
 app.onError((err, c) => {
     console.error('Unhandled API Error:', err);
-    c.header('Access-Control-Allow-Origin', '*');
+    const reqOrigin = c.req.header('origin') || '*';
+    c.header('Access-Control-Allow-Origin', reqOrigin);
+    c.header('Access-Control-Allow-Credentials', 'true');
     c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-    c.header('Access-Control-Allow-Headers', '*');
+    c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-User-Id, Cache-Control, Accept, Origin, *');
     return c.json({ success: false, error: err.message || 'Internal Server Error' }, 500);
 });
 app.get('/api/health', (c) => c.json({ status: 'ok', stack: 'Universal Media Stack v3.0' }));

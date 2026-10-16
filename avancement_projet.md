@@ -1,181 +1,3 @@
-- [x] **1. Élimination Totale des Erreurs CORS TMDb (`mediaArtworks.ts`) :**
-  - Remplacement du `c.redirect` 302 vers TMDb par un streaming proxy direct avec `Access-Control-Allow-Origin: *` et mise en cache immuable d'un an (`max-age=31536000`).
-  - Suppression définitive des rejets de requêtes cross-origin sur `/api/media/:id/poster` et `/api/media/:id/fanart`.
-- [x] **2. Pré-chargement Natif & Asynchrone des Images (`pwaImageCache.ts`, `sw.js`) :**
-  - Remplacement du `fetch(url, { mode: 'cors' })` par `new window.Image().src = url` pour alimenter le cache HTTP standard du navigateur sans restrictions opaque response / CORS.
-  - Pré-chargement opportuniste lors des temps d'inactivité réseau (`requestIdleCallback`).
-- [x] **3. Optimisation des Performances de Rendu & DOM (`TagCard.tsx`) :**
-  - Élimination des fuites mémoire et boucles d'événements grâce à `useCallback` et aux timers mémorisés pour l'agrandissement d'affiche au survol (délai 200 ms).
-  - Suppression du composant non-standard `<style jsx>` au profit de classes CSS pures injectées dans `index.html`.
-- [x] **4. Architecture de Persistance Sécurisée en Base de Données (`migrateSecondary.ts`, `index.ts`) :**
-  - Migration transactionnelle automatisée des colonnes `order_index` et `absolute_order_index` sous PostgreSQL avec tolérance aux doublons (`ON CONFLICT DO NOTHING`).
-  - Tolérance aux redémarrages et idempotence garantie des scripts de migration.
-- [x] **5. Système de Forum Contextuel Réactif (`forum/[topic].tsx`, `ForumAssociationsModule.tsx`) :**
-  - Création des modules complets d'affichage et de publication des discussions, commentaires et retours d'expérience contextuels liés aux tags et médias.
-  - Intégration fluide dans les onglets de fiches médias et tags sans latence ni perte d'état.
-- [x] **6. Robustesse TypeScript & Conformité Stricte (`tsconfig.json`, `api.ts`, `adminApi.ts`) :**
-  - Élimination de 100 % des erreurs de typage (`npx tsc --noEmit` avec code 0 sur frontend et backend).
-  - Validation des payloads JSON en entrée et sortie des contrôleurs Hono.
-- [x] **7. Amélioration de la Disponibilité du Service (`docker-compose.yml`, `Caddyfile`) :**
-  - Configuration du reverse-proxy Caddy avec terminaison TLS et headers de sécurité (`X-Frame-Options`, `Content-Security-Policy`).
-  - Résilience des conteneurs grâce à des directives `restart: unless-stopped`.
-- [x] **8. Architecture EAV & Watcher Haute Performance (`binaryHasher.ts`, `nfoParser.ts`) :**
-  - Calcul d'empreintes O(1) multi-algorithmes (OSHash 64-bit, AniDB ED2K MD4 pur sans OpenSSL legacy, CRC32).
-  - Extraction de métadonnées NFO zéro-perte vers le modèle EAV dynamique.
-- [x] **9. Contrôle d'Accès Tag-Based (ABAC) & Parental (`access.ts`) :**
-  - Filtrage granulaire des contenus par tags CSA, tranches d'âge et permissions personnalisées par utilisateur.
-  - Neutralisation des accès non autorisés au niveau du middleware Hono avant interrogation de la base de données.
-- [x] **10. Documentation Exhaustive & Traçabilité (`avancement_projet.md`, `mauvaise_pratique.md`, `stack_universelle.md`) :**
-  - Tenue à jour méticuleuse du journal de bord, des retours d'expérience et des pièges d'ingénierie identifiés.
-- [x] **11. Éradication des Injections Fantômes d'Autofill Gestionnaires de Mots de Passe (`AdminUsersTab.tsx`, `AdminUserRow.tsx`, `AdminCreateUserModal.tsx`, `AdminCreateInviteModal.tsx`) :**
-  - **Garde Anti-Autofill par Focus Actif :** Suivi dynamique du focus de la barre de recherche (`onFocus`/`onBlur`) ; rejet catégorique de toute modification `onChangeText` survenue sans focus utilisateur actif.
-  - **Balises Sémantiques Strictes :** Marquage avec `type="search"`, `name="admin_users_search_filter"`, `autoComplete="off"`, `data-lpignore="true"` et `data-form-type="other"`.
-  - **Leurres Absorbants Invisibles :** Insertion d'un champ factice `<input type="text" tabIndex={-1} readOnly autoComplete="username" ... />` dans chaque ligne de tableau avant le champ de mot de passe, détournant 100 % des heuristiques agressives des gestionnaires de mots de passe.
-  - **Démontage Intégral des Modales :** Retour immédiat `if (!visible) return null;` pour éliminer tout champ de formulaire dormant dans le DOM lorsqu'une modale est masquée.
-- [x] **12. Résolution des Décrochages TV, Plein Écran Universel, Navigation Spatiale & Pagination Optimisée :**
-  - **Élimination Définitive des Pauses Intempestives IPTV (`VideoPlayerView.tsx`, `player/[id].tsx`) :**
-    - Suppression du `lowLatencyMode: true` agressif dans Hls.js qui vidait le buffer des flux directs publics et déclenchait des pauses du navigateur.
-    - Configuration de buffer résilient (`liveSyncDurationCount: 3`, `liveMaxLatencyDurationCount: 10`, `maxBufferLength: 30`, `maxMaxBufferLength: 60`).
-    - Implémentation du protocole d'auto-recovery sur `Hls.Events.ERROR` (`hls.startLoad()` sur `NETWORK_ERROR` et `hls.recoverMediaError()` sur `MEDIA_ERROR`).
-    - Déconnexion des déclencheurs de fin de vidéo (`onNearEnd` Netflix et `onEnded`) lorsque le média est en direct (`isLive: true`).
-    - Auto-reprise fluide sur `canplay` lorsque le buffer se reconstitue sans intervention utilisateur.
-  - **Mode Plein Écran Universel Télécommande & Bouton Dédié (`fullscreen.ts`, `usePlayerControls.ts`, `useTvNavigation.ts`, `player/[id].tsx`) :**
-    - Création du module universel `fullscreen.ts` compatible avec l'ensemble des navigateurs et moteurs Smart TV (WebKit, Gecko, Blink, Tizen, WebOS).
-    - Ajout du bouton « ⛶ Plein Écran » dans la barre d'actions du lecteur vidéo `/player/[id]`.
-    - Détection des raccourcis clavier et touches de télécommandes TV (`f`, `F`, `FullScreen`, codes 10071, 10072, 184, 261 et bouton Start/Menu manette) avec feedback toast immédiat.
-  - **Navigation Spatiale D-Pad Alignée & Accès Direct Recherche (`useTvNavigation.ts`) :**
-    - Refonte du calcul directionnel : interdiction stricte de sauter verticalement (vers la barre de recherche en hauteur) lors d'un appui sur la touche Droite ou Gauche en l'absence de chevauchement sur la même rangée.
-    - Priorisation naturelle de l'axe vertical lors d'un appui sur Haut permettant d'atteindre facilement la barre de recherche et les filtres depuis le haut de la liste.
-    - Raccourci télécommande direct (`/` ou touche Search/Loupe) focalisant instantanément le champ de recherche.
-  - **Connexion Automatique 1 Clic Sans Rechargement (`authStore.ts`, `invite/[token].tsx`) :**
-    - Création de `setAuthSession(user, token)` dans `authStore.ts` hydratant immédiatement les variables mémoire vive et notifiant les abonnés React (`useCurrentUser`) avant la redirection.
-    - Suppression de l'erreur d'accès non autorisé et de l'obligation de recharger la page (F5) : l'utilisateur arrive authentifié en 0 ms sur la page d'accueil.
-  - **Formatage & Copie Complète des Identifiants d'Invitation (`AdminCreateInviteModal.tsx`, `AdminUsersTab.tsx`, `inviteRoutes.ts`) :**
-    - Bouton d'action principal « 📋 Copier l'invitation (Identifiant + MDP + Lien) » copiant le message complet pré-formaté avec identifiant, mot de passe et lien d'accès 1-clic.
-    - Enrichissement de la formulation du message personnalisé (`Bonjour [Nom] ! Voici tes accès personnels...`).
-  - **Pagination Progressive des Rails Horizontaux (10 initial, +10, +12 à la volée) (`TagCard.tsx`, `ForumAssociationsModule.tsx`, `MediaStudioSection.tsx`, `MediaRail.tsx`, `CategorySection.tsx`) :**
-    - Réduction du chargement initial à 10 éléments masquant l'overflow inutile pour économiser les ressources DOM et graphiques.
-    - Détection de fin de défilement horizontal (`onScroll`) chargeant automatiquement +10 éléments à la volée au premier seuil (total 20), puis +12 éléments aux seuils suivants (total 32, 44...).
-    - Tuile visuelle d'extension « +10 » / « +12 Afficher plus » avec indicateur de chargement.
-  - **Barre de Recherche Anti-Autocomplétion Synchrone (`TagSearchBar.tsx`) :**
-    - Découplage de la saisie via un état local différé `localText`.
-    - Déclenchement de la recherche uniquement sur validation explicite (touche Entrée / Remote OK ou clic sur le bouton « 🔍 Rechercher »).
-    - Restauration instantanée du catalogue complet au clic sur « ✕ ».
-- [x] **13. Résolution Complète des Interactions Clavier/Télécommande sur `/player` :**
-  - **Élimination de la Double Bascule Plein Écran sur Touche Entrée (`useTvNavigation.ts`, `fullscreen.ts`) :**
-    - Neutralisation de l'appel redondant `active.click()` dans la phase de capture globale pour tous les éléments déjà cliquables nativement (`BUTTON`, `A`, `[role="button"]`, `[role="link"]`), évitant l'activation instantanée x2 (entrée puis sortie immédiate du plein écran).
-    - Intégration d'un anti-rebond matériel de 450 ms dans `toggleFullscreen` garantissant l'état sans oscillation.
-  - **Suppression du Piège de Focus dans la Barre de Progression Média (`VideoPlayerView.tsx`, `useTvNavigation.ts`) :**
-    - Application de `tabIndex={-1}` sur l'élément `<video>` et élimination de `videoRef.current.focus()` au montage pour empêcher les contrôles Shadow DOM internes du navigateur (scrubber / slider) de capturer le focus spatial.
-    - Déblocage géométrique de la barre supérieure (`[data-player-topbar="true"]`) : franchissement direct des bordures de conteneurs superposés lors d'un appui sur la touche Haut.
-  - **Accessibilité Totale & Pérenne du Bouton « Passer l'intro » (`VideoPlayerView.tsx`, `PlayerScreen.styles.ts`, `usePlayerControls.ts`) :**
-    - Suppression de la condition `mouseActive` qui masquait le bouton après 3 secondes en l'absence de souris physique : le bouton reste désormais visible et interactif pendant toute la durée de l'intro.
-    - Style de focus visuel renforcé (`scale: 1.08`, fond `#4338ca`, bordure blanche `#ffffff`) lorsqu'il est sélectionné à la télécommande.
-    - Navigation bidirectionnelle directe : accessible par la touche Bas depuis la barre supérieure ou la vidéo, et retour vers le haut par la touche Haut.
-    - Ajout du raccourci clavier universel `S` / `s` permettant de sauter instantanément le générique sans quitter les yeux de l'écran.
-- [x] **14. Plein Écran Sans Pollution Visuelle & Modules Casting/Équipe pour les Films (`player/[id].tsx`, `media/[id].tsx`, `media.ts`) :**
-  - **Zéro Bouton en Mode Plein Écran (`player/[id].tsx`, `VideoPlayerView.tsx`, `useTvNavigation.ts`) :**
-    - Détection réactive de l'état plein écran (`fullscreenchange`, `webkitfullscreenchange`...) masquant intégralement la barre supérieure d'actions (`topBar`) et les boutons superposés lors de la lecture plein écran.
-    - Sortie instantanée du mode plein écran sur appui de la touche **Échap** ou de la touche **Retour** de télécommande / manette TV (`isEscape || isBackNav`), restaurant immédiatement la barre de contrôle et les actions.
-  - **Généralisation des Modules « Casting & Artistes » et « Réalisation & Équipe Créative » aux Films (`media/[id].tsx`, `media.ts`) :**
-    - Enrichissement dynamique et transparent à la volée dans l'API backend (`media.ts`) : interrogation automatique de TMDb dès qu'un film ou une série présente un `PERSON_CAROUSEL` vide, avec persistance immédiate dans PostgreSQL (`node_eav_links`).
-    - Réordonnancement prioritaire sur la page `/media/[id]` : positionnement des sections **Casting & Artistes** et **Réalisation & Équipe Créative** directement sous les métadonnées principales (Hero, Sagas et Extras), avant les sections Studios et Forum, garantissant une consultation immédiate et valorisante de la distribution pour tous les films et séries.
-- [x] **15. Éradication de la Fragmentation des Séries, Réparation Hiérarchique & Unification Canonique (ex. Peaky Blinders) :**
-  - **Résolution des 3 Failles Systémiques de l'Ingestion :**
-    - *Correction Faille n°1 (Dictature des Dossiers & NFO Tiers)* : Mise en place d'une garde prioritaire inviolable dans `guessitParser.ts` et `nfoParser.ts` : dès lors qu'un fichier comporte un motif explicite d'épisode (`SxxExx`, `\d+x\d+`, `saison \d+`), le type `EPISODE` prévaut de manière absolue, interdisant le déclassement erroné en `MOVIE` même sous des dossiers `/films/` ou avec des balises XML `<movie>`.
-    - *Correction Faille n°2 (Fragmentation des Saisons en Pseudo-Séries)* : Introduction de `extractCanonicalShowTitle` dans `titleCleaner.ts` épurant les motifs de saisons (`Saison 1 360p`), résolutions et codecs, permettant à `hierarchyResolver.ts` et `folderGrouper.ts` de rattacher automatiquement toutes les saisons au même nœud maître `SHOW`.
-    - *Correction Faille n°3 (Rigidité des Racines & Pollution TMDb)* : Ajout du singulier `/serie/` et `/série/` dans `SERIES_ROOT_CATEGORIES` (sauvant 209 épisodes orphelins sur `/My Passport`), et assainissement des requêtes TMDb assurant un taux de matching de 100 % sur les séries.
-  - **Moteur de Réparation & Fusion Rétroactive (`hierarchyRepair.ts`) :**
-    - Requalification automatique des 6 épisodes de Peaky Blinders Saison 4 (notamment `0a41e021-c33b-4437-ae70-96d389c35ea6`) de `MOVIE` vers `EPISODE`.
-    - Déduplication et fusion de 14 séries fragmentées dans la base : élection du master show (`a56bf49d-3d5d-4b9f-b046-39cc2e270727`), migration sans collision des métadonnées et tags EAV, réaffiliation de 302 nœuds et recalcul strict des `order_index` séquentiels.
-    - Enrichissement TMDb complet de la série unifiée *Peaky Blinders* (Posters HD, Fanarts, synopsis officiel, note 8.5/10) regroupant désormais les 42 épisodes des 4 saisons sous une seule fiche unifiée.
-- [x] **16. Épuration du Lecteur `/player` (Retrait Sélecteur Qualité) & Découplage de la Progression Média :**
-  - **Suppression du Choix de Qualité Inopérant (`player/[id].tsx`, `PlayerQualityModal.tsx`) :**
-    - Retrait complet du bouton « ⚙️ Qualité » dans la barre d'action, de l'état `showQuality`/`activeQuality`, de la modale `PlayerQualityModal` et du paramètre d'URL `?quality=` inopérant. Le lecteur s'appuie désormais sur le flux HLS natif adaptatif direct sans encombrer l'interface utilisateur.
-  - **Zone de Progression Média Dédiée et Franchissable (`VideoPlayerView.tsx`, `useTvNavigation.ts`, `PlayerScreen.styles.ts`) :**
-    - Transformation du conteneur lecteur en un composant interactif focalisable (`Pressable` avec `data-player-container="true"`, `data-focusable="true"`, `tabIndex={0}` et contour visuel `#6366f1` au focus).
-    - Clic et frappe clavier sur la vidéo native déportés vers le conteneur parent (`tabIndex={-1}` et `onFocus={() => containerRef.current?.focus?.()}`) pour interdire au navigateur de piéger le focus dans le Shadow DOM du slider/scrubber natif.
-    - Navigation bidirectionnelle sans accroc hors plein écran : la touche **Haut** accède directement aux boutons de la barre supérieure (`[data-player-topbar="true"]` : Retour, Discussion, Partager, Cast, Audio, ST, Plein Écran), la touche **Bas** redescend instantanément dans la zone de progression pour naviguer à gauche/droite (-10s / +10s) ou vers le bouton de générique « Passer l'intro » sans jamais être bloqué.
-- [x] **17. Élimination Totale du Bouton « Passer l'intro » sur les Médias et Chaînes IPTV en Direct :**
-  - **Désactivation Systémique du Bouton d'Intro en Direct (`VideoPlayerView.tsx`, `player/[id].tsx`) :**
-    - Conditionnement strict de `showBtn` dans `VideoPlayerView.tsx` avec `!isLive` : tout flux direct interdit catégoriquement l'affichage du bouton de saut d'intro.
-    - Initialisation immédiate de l'état `isLive` via le paramètre de requête `isLive=1` depuis `TvChannelCard.tsx` et `MediaCard.tsx`, et confirmation lors du chargement des détails (`res.media.nodeType === 'LIVE_CHANNEL' || Boolean(res.media.streamUrl)`).
-    - Neutralisation des chapitres d'intro (`setIntroChapter(null)`) et désactivation explicite de `showSkipIntro` pour tous les flux IPTV, interdisant également les sauts intempestifs via raccourci clavier ou télécommande.
-- [x] **18. Moteur Universel de Normalisation Phonétique & Résolution Floue (Suppression des Regex en Dur) :**
-  - **Suppression Définitive du Dictionnaire en Dur (`titleCleaner.ts`) :**
-    - Retrait de toutes les regex spécifiques de séries (`/^peac?ky/`, `breaking bad`, `prison break`, etc.) au profit d'un algorithme de dé-bruitage phonétique universel.
-    - Création de `normalizePhoneticSpelling` traitant algorithmiquement les consonnes redoublées (`vikinggs` -> `vikings`, `stopp` -> `stop`), les équivalences graphématiques (`ck` -> `k`, `ph` -> `f`) et les séparateurs.
-  - **Recherche Hybride In-Database PostgreSQL (`hierarchyResolver.ts`, `hierarchyRepair.ts`) :**
-    - Couplage natif de `dmetaphone(title) = dmetaphone(query)`, `similarity(title, query) >= 0.65` et `levenshtein(lower(title), lower(query)) <= 2`.
-    - Rapprochement instantané en < 1 ms en base locale sans solliciter le réseau externe.
-    - Groupement et déduplication des séries fragmentées dans `hierarchyRepair.ts` indexés par clé phonétique.
-  - **Cascade de Repli TMDb Résiliente & Autocorrection Linguistique (`externalMetadata.ts`) :**
-    - Intégration de `resolveFuzzyTmdbId` pour les films et séries : si la recherche exacte échoue (0 résultat), exécution automatique de la variante phonétique, puis interrogation de l'API Wikipedia OpenSearch ("Did You Mean") pour obtenir le titre canonique propre et relancer TMDb avec succès.
-- [x] **19. Déploiement des 4 Piliers Algorithmiques Avancés (Unicode/Romains, Extras, Cropdetect, TF-IDF SQL) :**
-  - **Pilier 1 (Canonisation Unicode NFKC, Ligatures & Numérotation Romaine) (`titleCleaner.ts`) :**
-    - Application systématique de `.normalize('NFKC')` sur les flux textuels et normalisation des ligatures latines (`œ` -> `oe`, `æ` -> `ae`).
-    - Standardisation des deux-points pleine chasse Windows/NTFS (`：` U+FF1A -> `:`) et tirets cadratins.
-    - Convertisseur bidirectionnel de chiffres romains terminaux (`normalizeRomanNumerals`) unifiant automatiquement `Rocky III` et `Rocky 3`, `Saw IV` et `Saw 4` vers la même clé canonique.
-  - **Pilier 2 (Détection & Sanctuarisation des Bonus et Extras) (`folderGrouper.ts`, `mediaIngester.ts`, `hierarchyRepair.ts`) :**
-    - Détection universelle des dossiers (`bonus`, `extras`, `featurettes`, `deleted scenes`, `behind the scenes`, `samples`, `trailers`) et des suffixes de fichiers (`-trailer`, `.sample.`, `NCOP`, `NCED`, `PV`, `CM`).
-    - Typage strict en `node_type = 'EXTRA'` avec `is_extra = true` et `extra_type` qualifié (`trailer`, `behindthescenes`, `deleted`, `featurette`, `other`).
-    - Rattachement déterministe au film ou à la série maîtresse (`parent_id`) et exclusion systématique des grilles et rails d'accueil, avec exposition dédiée sous `extras` sur `/api/media/:id`.
-  - **Pilier 3 (Analyseur Heuristique de Ratios d'Image Réels par `cropdetect`) (`ffprobeProbe.ts`) :**
-    - Analyse par échantillonnage non-bloquant à 3 points (25%, 50%, 75% du film) via le filtre C natif `ffmpeg cropdetect`.
-    - Calcul de la médiane des hauteurs détectées pour éliminer les faux-positifs de fondus au noir, et requalification souveraine des conteneurs 1920x1080 letterboxés en `1080p Scope` (2.39:1 / 2.40:1).
-  - **Pilier 4 (Recommandations Connexes par Pondération TF-IDF / BM25 SQL) (`mediaRelated.ts`, `media.ts`) :**
-    - Création de la fonction `getTfIdfSimilarMedias` et de l'endpoint `GET /api/media/:id/similar` calculant la proximité mathématique en algèbre relationnelle PostgreSQL.
-    - Pondération de chaque tag partagé par sa rareté documentaire globale $\text{IDF} = \ln(1 + N_{\text{total}} / \text{DF})$ et son coefficient de catégorie (Franchise 3.5 > Réalisateur 3.0 > Scénariste 2.0 > Acteur 1.8 > Tag 1.2 > Genre 1.0).
-    - Validation vérifiée : *Django Unchained* propulse *Once Upon a Time in Hollywood* en tête (score 78.72), *Iron Man* propulse la trilogie et l'univers Marvel (*Iron Man 2* score 171.08, *Spiderman Homecoming* score 90.78), et *Code Geass* propulse *Bleach* et *Soul Eater* en moins de 20 ms.
-- [x] **20. Éradication Définitive de l'Arrêt à 3 Secondes sur les Flux TV Live / IPTV (`VideoPlayerView.tsx`, `_layout.tsx`) :**
-  - **Priorité Absolue à `Hls.isSupported()` sur le Web (Élimination du Piège `!canPlayNative`) :**
-    - Résolution de la faille critique où `v.canPlayType('application/vnd.apple.mpegurl')` retournait une valeur truthy ("maybe") sous Linux/Chromium ou via des extensions, court-circuitant `Hls.js` (`shouldUseHlsJs` évalué à `false`) et forçant le lecteur natif HTML5 à lire le flux comme un fichier brut. Le navigateur ne téléchargeait alors qu'un seul fragment de 3 secondes avant de caler.
-    - Application de la recommandation officielle HLS : dès que `Hls.isSupported()` est vrai sur le Web (MediaSource Extensions), HLS.js prend le contrôle souverain du flux, assurant le rafraîchissement glissant des playlists et le rechargement perpétuel des segments en direct.
-  - **Intégration Embarquée Native de `hls.js` dans le Bundle Frontend :**
-    - Installation de `hls.js` dans les dépendances applicatives et import ES direct (`import Hls from 'hls.js'`).
-    - Suppression du script asynchrone externe CDN (`cdn.jsdelivr.net`) dans `_layout.tsx` éliminant les latences et aléas réseau.
-  - **Correction du Matcher d'URL HLS (`/stream`) :**
-    - Normalisation de la détection de flux : `streamUrl.includes('/stream')` sans barre oblique finale, garantissant l'activation instantanée du moteur HLS dès l'initialisation du lecteur.
-  - **Gestion Résiliente du Buffer et des Événements Pause/Stall sur Flux Live :**
-    - Découplage de `userPausedRef` sur flux direct : interdiction de verrouiller le lecteur en état de pause utilisateur lors des micro-coupures de bufferisation initiale ou des réalignements HLS.
-    - Écouteurs `onWaiting` et `bufferStalledError` assurant la reprise automatique et continue du flux en direct sans aucune intervention manuelle.
-
-- [x] **21. Séparation Étanche des Contrôles Clavier / Télécommande & Rétablissement de la Lecture VOD (`player/[id].tsx`, `VideoPlayerView.tsx`, `usePlayerControls.ts`, `userFavoritesRoutes.ts`, `mediaStream.ts`) :**
-  - **Neutralisation Définitive du Focus sur le Conteneur Lecteur (`VideoPlayerView.tsx`, `useTvNavigation.ts`, `PlayerScreen.styles.ts`) :** Remplacement du `<Pressable focusable={true}>` par un `<View>` passif non focusable (`tabIndex={-1}`, `focusable={false}`), suppression de la bordure violette `#6366f1` et exclusion stricte du conteneur dans l'algorithme de navigation TV. Seuls les vrais boutons d'action restent sélectionnables.
-  - **Affichage Éphémère du Bouton Passer l'intro (10 Premières Secondes) :** Conditionnement strict de `showBtn` à `curTime <= 10` dans `VideoPlayerView.tsx`. Le bouton n'encombre plus l'écran au-delà des 10 premières secondes et disparaît automatiquement si la lecture est reprise plus loin.
-  - **Séparation Stricte entre Navigation des Boutons et Progression Média :**
-    - En mode normal avec barre d'outils affichée (`!isFullscreen`) : les flèches directionnelles permettent de naviguer de manière fluide et exclusive entre les boutons d'action (Retour, Voix, Partager, Cast, Audio, ST, Plein Écran, Passer l'intro) sans déclencher aucun saut temporel dans la vidéo.
-    - En mode plein écran immersif (`isFullscreen`) : les bandeaux de boutons étant masqués, les flèches Gauche/Droite contrôlent directement la progression vidéo (recul -10s / avance +10s avec toasts visuels) et la barre d'espace contrôle la pause/lecture.
-    - Correction des attributs `dataSet={{ playerTopbar: "true" }}` pour React Native Web afin de fiabiliser la détection du conteneur dans le DOM.
-  - **Rétablissement de la Lecture Multimédia VOD (`VideoPlayerView.tsx`) :**
-    - Remplacement de la condition trop large `streamUrl.includes("/stream")` par `Boolean(isLive || streamUrl.includes(".m3u8") || streamUrl.includes("/iptv/"))` qui détournait à tort l'intégralité des films et épisodes VOD vers Hls.js au lieu de la balise vidéo native HTML5.
-    - Élimination de l'erreur `Failed to load resource: net::ERR_FAILED` provoquée par la tentative d'analyse textuelle de fichiers MKV/MP4 de plusieurs Go par Hls.js.
-  - **Résolution de l'Erreur 404 Favoris (`userFavoritesRoutes.ts`) :**
-    - Implémentation explicite des endpoints `GET /favorites/check/:id` et `GET /favorites/:id` renvoyant `{ isFavorite: boolean }` pour répondre aux appels de vérification du lecteur et des fiches médias.
-  - **Support Complet CORS, HEAD et OPTIONS pour le Streaming (`mediaStream.ts`) :**
-    - Exposition des en-têtes `Access-Control-Allow-Origin: *`, `Access-Control-Expose-Headers` et gestion des requêtes `HEAD` sans envoi de body lourd pour les vérifications de range et de métadonnées du navigateur.
-
-- [x] **22. Standardisation Universelle de la Navigation Arrière (`navigation.ts`, `forum/[topic].tsx`, `media/[id].tsx`, `forum/index.tsx`, `player/[id].tsx`, `user.tsx`, `login.tsx`) :**
-  - **Création du Module `goBackOrFallback` (`frontend/src/utils/navigation.ts`) :**
-    - Retourne systématiquement sur la page précédemment visitée par l'utilisateur (`window.history.back()` si `history.length > 1` ou `router.back()`).
-    - Ne redirige vers une page de repli (`fallbackRoute`) que si l'utilisateur a accédé à l'URL par lien direct (onglet neuf, session sans historique).
-  - **Élimination de Toutes les Redirections Fixes :**
-    - Remplacement de `router.push("/forum")` dans `/forum/[topic]` par `goBackOrFallback(router, "/forum")`.
-    - Remplacement de `router.push("/")` dans `/media/[id]`, `/forum/index`, `/user` par `goBackOrFallback(router, "/")`.
-    - Harmonisation visuelle avec l'intitulé universel « ← Retour ».
-- [x] **23. Nettoyage et Synchronisation Idempotente des Chaînes IPTV (`iptvSources.ts`, `channelIngester.ts`, `iptv.ts`, `pwaDataCache.ts`, `adminApi.ts`, `tv.tsx`, `api.ts`) :**
-  - **Purge Totale des Chaînes Orphelines et Doublons :**
-    - Suppression en base de 509 entrées obsolètes dans `media_nodes` (`node_type = 'LIVE_CHANNEL'`), éliminant 100 % des 283 flux non supportés en web issus de playlists externes supprimées (`plugin://plugin.video.vavooto/`) ainsi que 217 doublons résiduels aux titres tronqués (`France 4 HD (` vs `France 4 HD (1080p)`).
-    - Alignement strict de la base sur la source active enregistrée (197 chaînes uniques 1:1 sans aucun orphelin).
-  - **Liaison en Clé Étrangère avec Cascade Automatique (`nodes.ts`, `migrateSecondary.ts`) :**
-    - Ajout de la colonne `iptv_source_id UUID REFERENCES iptv_sources(id) ON DELETE CASCADE` sur `media_nodes` avec index dédié.
-    - Toute suppression ultérieure d'une source IPTV via `/admin` cascade automatiquement et instantanément en base, supprimant les chaînes `LIVE_CHANNEL`, leurs programmes EPG et liens taxonomiques associés.
-  - **Filtrage Strict des Catégories Actives (`iptv.ts`) :**
-    - Requête `GET /api/iptv/categories` jointe avec `node_eav_links` et `media_nodes` : restitution exclusive des 33 catégories réelles associées aux chaînes vivantes.
-  - **Invalidation et Revalidation Réactive du Cache PWA (`pwaDataCache.ts`, `adminApi.ts`, `tv.tsx`) :**
-    - Implémentation d'`invalidateCacheByPrefix('iptv_')` déclenchée dès l'ajout, la modification, la resynchronisation ou la suppression d'une source IPTV.
-    - Écouteurs `onFreshData` dans `tv.tsx` assurant l'éviction visuelle immédiate des anciennes chaînes en mémoire dès que le rafraîchissement asynchrone est complété.
-  - **Restauration de la Fonction `resolveImageUrl` (`api.ts`) :**
     - Rétablissement de l'export `resolveImageUrl` dans `api.ts`, éliminant le crash TypeError `resolveImageUrl is not a function` sur l'écran de détail média `<MediaDetailScreen>`.
 
 - [x] **49. Réparation Majeure du Pipeline d'Indexation & Assainissement des Métadonnées :**
@@ -192,3 +14,78 @@
   - **Normalisation Avancée des Séparateurs d'Abréviations (`titleCleaner.ts`) :** Prise en charge des variantes avec espaces multiples pour les acronymes (`Ghost in the Shell: Stand Alone Complex`).
   - **Zéro Erreur de Compilation TypeScript (`tsc --noEmit`) :** Résolution intégrale des discordances de typage sur `ParsedNfo`, `ContainerMetadata` et `SubtitleNlpResult`.
   - **Intégration Script npm (`package.json`) :** Ajout de la commande `npm run test:profiles` pour l'exécution immédiate et reproductible de la suite de régression.
+
+- [x] **51. Système d'Autorisation Exclusive & Interdiction de Dossiers Physiques + Studio Server-Driven UI (`AdminPhysicalFolderSelector.tsx`, `folderExplorer.ts`, `AdminLayoutTab.tsx`) :**
+  - **Visualisation & Sélection des Dossiers Physiques en Direct (`AdminPhysicalFolderSelector.tsx`, `folderExplorer.ts`, `adminFolderRoutes.ts`) :**
+    - Découverte dynamique de l'ensemble des répertoires physiques sur disque (`/home/tele/Vidéos/drive`, `/run/media/tele/My Passport`, `/run/media/tele/gudbug`) et croisement en temps réel avec les 3 642 nœuds médias indexés en base.
+    - Vue arborescente interactive avec badges du nombre de médias par dossier, profondeur d'indentation, repli/dépli et recherche textuelle instantanée.
+    - Actions 1-clic : `+ Autoriser` exclusivement (Whitelist), `- Interdire` (Blacklist) ou réinitialiser.
+  - **Autorisation Exclusive (Whitelist) de Dossiers (`paramSchema.ts`, `access.ts`, `mediaAccess.ts`, `users.ts`) :**
+    - Ajout de `allowedFolders` dans `ProfileTypeDefinition`, `UserSession` et table PostgreSQL `users`.
+    - Contrôle d'accès ABAC strict : si un profil dispose d'un ou plusieurs dossiers autorisés exclusivement, seuls les médias appartenant à ces répertoires physiques sont visibles/accessibles.
+    - Sanctuarisation inviolable du compte Administrateur (tout autorisé obligatoirement).
+  - **Studio Server-Driven UI & Ordonnancement Modulaire (`AdminLayoutTab.tsx`, `admin.tsx`) :**
+    - Intégration de l'onglet « 🎨 Rails & Layout » dans l'espace administrateur permettant de réordonner les rails d'accueil (Monter/Descendre), d'activer/désactiver les rails, de cycler les formats de cartes (`POSTER`, `BACKDROP`, `BANNER`, `CIRCLE`, `LIST`) et de configurer les zones de tags (`HERO_PRIMARY`, `BELOW_PLAYER`, `DETAILS_MODAL`, `SEARCH_FILTER`).
+  - **Attribution Immédiate du Profil / Pack à la Création (`AdminCreateUserModal.tsx`, `AdminUsersTab.tsx`) :**
+    - Possibilité d'assigner immédiatement un type de profil / pack (Membre, Administrateur, Enfant, Safezone...) dès la modale de création d'utilisateur.
+  - **Audit Exhaustif des Carences & Risques de l'Espace Administrateur :**
+    - Recensement et analyse critique des points faibles restants et recommandations d'évolutions futures (protection CSRF/RBAC poussée, pagination de réconciliation, gestion avancée des quotas).
+
+- [x] **52. Système Flexible de Langues & Repli Automatique des Sous-titres (VOSTFR Intelligent) :**
+  - **Configuration Globale dans `param.yaml` (`paramSchema.ts`, `param.yaml`) :**
+    - Définition de `media.defaultAudioLanguage` (par défaut `'fra'`) et `media.defaultSubtitleLanguage` (par défaut `'fra'`).
+    - Introduction de `media.subtitleMode` avec 3 politiques flexibles :
+      - `fallback_if_audio_missing` (Recommandé / Par défaut) : active automatiquement les sous-titres par défaut si la piste audio par défaut n'est pas présente dans le média (VOSTFR intelligent).
+      - `always` : active systématiquement les sous-titres dans la langue par défaut pour tous les médias.
+      - `never` : conserve les sous-titres désactivés par défaut (activation manuelle par l'utilisateur).
+  - **Administration Ergonomique dans l'Onglet param.yaml (`AdminConfigTab.tsx`) :**
+    - Section visuelle dédiée « 🎬 Langues & Sous-Titres par Défaut des Médias » respectant les critères d'UX moderne (glassmorphism, cartes de sélection radio interactives avec badges, pills de langues avec drapeaux 🇫🇷, 🇬🇧, 🇯🇵, 🇪🇸, 🇩🇪, 🇮🇹 et saisie libre de codes ISO multiples).
+  - **Moteur d'Inspection & Correspondance Sémantique (`mediaTracks.ts`) :**
+    - Dictionnaire de normalisation synonymique ISO 639-1 / ISO 639-2 (`fra`, `fre`, `fr`, `french`, `vostfr`, `vf`, `vff` pour le français, `eng`, `en` pour l'anglais, `jpn`, `ja` pour le japonais, etc.).
+    - Prise en charge des listes prioritaires séparées par des virgules (ex: `fra, fre, fr`).
+    - Détection intelligente des pistes intégrées et des fichiers externes (`.srt`, `.vtt`, `.VOSTFR.srt`).
+    - Calcul en amont de `defaultAudioTrack`, `defaultSubtitle`, `isDefaultAudioAvailable` et `subtitleFallbackTriggered`.
+  - **Activation Automatique & Toast Utilisateur dans le Lecteur (`player/[id].tsx`, `mediaTracksApi.ts`) :**
+    - Application immédiate au lancement du média de la piste audio préférée ou remuxing dynamique si une piste spécifique est sélectionnée.
+    - Engagement transparent du sous-titre adéquat (`track:X` ou `file:Y`) en cas de déclenchement du repli VOST.
+    - Notification toast informative instantanée : *« VOST : Sous-titres activés automatiquement »*.
+  - **Suite de Tests Dédiée (`testLanguageDefaults.ts`, `package.json`) :**
+    - 5 scénarios automatisés couvrant la normalisation linguistique, la détection audio, le repli VOSTFR sur sous-titre interne et fichier `.srt` externe, ainsi que les modes `always` et `never` (`npm run test:lang`).
+
+- [x] **53. Prise en Charge Universelle des Séries Animées Condensées (Éditions Kai, One Pace & Fan-Edits) :**
+  - **Moteur Algorithmique & Résolveur Canonique (`kaiPaceResolver.ts`, `titleCleaner.ts`) :**
+    - Cartographie chronologique `ONE_PACE_ARCS_MAP` couvrant 30 arcs narratifs (Saison 1 *Romance Dawn* jusqu'à Saison 30 *Wano*, et Saison 0 *Specials*).
+    - Déduction arithmétique des épisodes d'arc à partir des numéros de chapitres manga (ex: Dressrosa ch. 700-701 $\rightarrow$ Ep 1 via $\lfloor(ch-700)/2\rfloor + 1$).
+    - Ordonnancement strict et déterministe `orderIndex = season * 1000 + episode` éliminant tout risque de collision.
+  - **Éradication des Faux-Positifs Théâtraux & Affiches Corrompues (`externalMetadata.ts`, `mediaIngester.ts`) :**
+    - Bannissement absolu du TMDb ID `1710755` (*« Guerra e pace (Teatro) - Prima parte »*).
+    - Détection $O(1)$ et rejet des 293 affiches corrompues de 217 213 octets (MD5 `a4d5e52df6fc6de1b20070552a1ba0da`) et des fichiers NFO pollués.
+    - Fallback intelligent lors de la recherche TMDb vers la franchise canonique officielle (*One Piece* TMDb `37854`, *Dragon Ball Z* TMDb `12971`).
+  - **Générateur Dynamique de Vignettes Vidéo par ffmpeg (`mediaArtworks.ts`) :**
+    - Capture automatique à la volée d'une image à `00:02:30` en cas d'absence d'affiche ou de rejet d'artwork pollué, avec cache disque dans `~/.cache/ums/thumbnails/`.
+  - **Structuration par Arcs Narratifs dans l'UI (`mediaHierarchy.ts`) :**
+    - Regroupement automatique des épisodes par saisons virtuelles d'arcs avec tri chronologique absolu.
+  - **Assainissement de la Base de Données en Production (`repairOnePieceKai.ts`) :**
+    - 343 épisodes ré-indexés et rattachés au nœud SHOW parent *One Piece Kai* (`9f1ed2da-1970-4ebe-91c8-e8aff3304a25`).
+    - 293 affiches corrompues purgées de la base PostgreSQL.
+  - **Extension de la Suite de Tests Isolés (25 Profils Multimédias à 100 %) (`testProfiles.ts`) :**
+    - Ajout de 6 nouveaux profils représentatifs (Profils 20 à 25) couvrant les formats arcs One Pace, plages de chapitres manga, mapping Dressrosa, hors-séries spéciaux, Dragon Ball Z Kai standard et arc tardif Wano.
+    - Résultat : **25 tests passés sur 25 (100 % de succès)**.
+
+- [x] **54. Dynamisation Complète des Formats/Qualités Vidéo & Navigation Précise par Ancrage DOM des Raccourcis de Tags :**
+  - **Dynamisation Intégrale de la Taxonomie Qualité (`taxonomyRoutes.ts`, `taxonomyApi.ts`) :**
+    - Éradication de la requête statique limitée à 720p/1080p.
+    - Extraction dynamique universelle $O(1)$ de l'ensemble des formats réels présents en base (`4K UHD`, `1080p FHD`, `720p HD`, `576p`, `480p SD`, `360p`) combinant les métadonnées EAV (`video_quality`, `quality`, `resolution`), les chemins physiques et les vecteurs de recherche plein texte.
+    - Ordonnancement qualitatif descendant déterministe (4K > 1080p > 720p > 576p > 480p > 360p).
+  - **Éradication du Cache Trap LocalStorage (`pwaDataCache.ts`, `taxonomyApi.ts`) :**
+    - Migration sur la clé versionnée `taxonomy_categories_v5` et purge automatique au démarrage des entrées `ums_cache_tax*` antérieures.
+    - Ajout du callback `onFreshData` permettant à l'état React de s'actualiser immédiatement dès réception de la réponse réseau fraîche.
+    - Désactivation de l'exclusion inter-tags sur la catégorie Qualité afin que chaque rail (4K, 1080p, 720p, 480p) affiche l'intégralité de son catalogue.
+  - **Résolution & Badges de Qualité Réelle sur chaque Média (`MediaTile.tsx`, `taxonomyRoutes.ts`) :**
+    - Résolution par lot instantanée (32 ms) de la résolution vidéo exacte de chaque média retourné dans `/api/ui/taxonomy/medias`.
+    - Affichage d'un badge vitré élégant en bas à gauche de chaque carte média (`4K`, `1080p`, `720p`, `480p`) sans collision avec le badge de séance active.
+    - Enrichissement de la barre de filtres (`TagSearchBar.tsx`) avec sélection rapide `4K`, `1080p`, `720p`, `480p`, `Films`, `Séries`.
+  - **Navigation par Ancrage DOM & Verrouillage Anti-Jitter (`index.tsx`, `CategorySection.tsx`) :**
+    - Déclenchement via le répondeur officiel React Native `scrollRef.current.scrollTo({ y, animated: true })` combiné à `node.scroll({ top, behavior: 'smooth' })`.
+    - Verrou de saut `isJumpingRef` désactivant temporairement les écouteurs de scroll pendant l'animation pour éliminer tout saut ou rebond de sélection intempestif.
+    - Synchronisation dynamique et fluide du chip actif lors du défilement utilisateur, y compris pour les dernières sections situées en bas de page.

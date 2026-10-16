@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, TextInput, ScrollView, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
-const FILTER_TAGS = ['Tous', '1080p', '720p', 'MOVIE', 'SHOW', 'Action', 'Animation', 'Comédie'];
+const FILTER_TAGS = ['Tous', '4K', '1080p', '720p', '480p', 'MOVIE', 'SHOW', 'Action', 'Animation', 'Comédie'];
 
 interface Props {
   searchQuery: string;
@@ -100,63 +100,86 @@ const styles = StyleSheet.create({
   inputWrap: {
     flex: 1,
     position: 'relative',
+    justifyContent: 'center',
   },
   input: {
-    backgroundColor: 'rgba(38, 44, 54, 0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.16)',
+    backgroundColor: 'rgba(38, 44, 54, 0.85)',
     borderRadius: Radius.pill,
     paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingVertical: 10,
     paddingRight: 36,
     color: '#edeef2',
-    fontSize: 13,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.16)',
   },
   clearBtn: {
     position: 'absolute',
     right: 12,
-    top: 9,
-    padding: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#3b4554',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   clearText: {
-    color: '#8894a4',
-    fontSize: 13,
-    fontWeight: '700',
+    color: '#edeef2',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   searchBtn: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    backgroundColor: '#3b4554',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.16)',
   },
   searchBtnPressed: {
     opacity: 0.8,
   },
   searchBtnActive: {
-    backgroundColor: '#0284c7',
-    borderColor: '#38bdf8',
+    backgroundColor: '#4e5d73',
+    borderColor: '#7c8fa6',
   },
   searchBtnTxt: {
-    color: '#f0f9ff',
+    color: '#edeef2',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  filterRow: {
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  filterPrefix: {
+    color: '#7c8797',
     fontSize: 12,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(38, 44, 54, 0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.1)',
+  },
+  activeChip: {
+    backgroundColor: '#3b4554',
+    borderColor: 'rgba(160, 175, 195, 0.4)',
+  },
+  filterText: {
+    color: '#9ba7b7',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  activeText: {
+    color: '#edeef2',
     fontWeight: '700',
   },
-  filterRow: { gap: 6, alignItems: 'center' },
-  filterPrefix: { color: '#7c8797', fontSize: 11, fontWeight: '600', marginRight: 4 },
-  filterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(42, 48, 58, 0.6)',
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.14)',
-  },
-  activeChip: { backgroundColor: 'rgba(70, 85, 105, 0.5)', borderColor: 'rgba(148, 163, 184, 0.4)' },
-  filterText: { color: '#8e9ab0', fontSize: 11, fontWeight: '600' },
-  activeText: { color: '#edeef2', fontWeight: '700' },
 });

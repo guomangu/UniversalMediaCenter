@@ -5,7 +5,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test:profiles": "tsx src/watcher/testProfiles.ts"
+    "test:profiles": "tsx src/watcher/testProfiles.ts",
+    "test:lang": "tsx src/watcher/testLanguageDefaults.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

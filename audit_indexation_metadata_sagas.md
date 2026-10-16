@@ -623,7 +623,7 @@ WHERE id = 'a56bf49d-3d5d-4b9f-b046-39cc2e270727';
 ## 13. Audit Spécifique : Tests Isolés des Profils de Fichiers, Éradication des Failles Résiduelles et Sanctuarisation de la Super-Fiabilité
 
 ### 🔬 Contexte & Protocole de Test en Environnement Isolé
-Afin d'éradiquer définitivement les comportements non-déterministes et les corruptions de métadonnées, une suite d'évaluation isolée de 19 profils de fichiers multimédias hétérogènes a été exécutée directement contre les modules fondamentaux du système (`titleCleaner.ts`, `hierarchyResolver.ts`, `seasonEpisodeHelper.ts`, `folderGrouper.ts`, `mediaFileDetector.ts` et `externalMetadata.ts`).
+Afin d'éradiquer définitivement les comportements non-déterministes et les corruptions de métadonnées, une suite d'évaluation isolée de 25 profils de fichiers multimédias hétérogènes (incluant 6 profils Kai / One Pace) a été exécutée directement contre les modules fondamentaux du système (`titleCleaner.ts`, `hierarchyResolver.ts`, `seasonEpisodeHelper.ts`, `folderGrouper.ts`, `mediaFileDetector.ts` et `externalMetadata.ts`).
 
 ### 🚨 Les 5 Failles Persistantes Identifiées lors des Tests
 
@@ -653,7 +653,7 @@ Afin d'éradiquer définitivement les comportements non-déterministes et les co
 
 ---
 
-### 📊 Matrice d'Évaluation des 19 Profils de Fichiers (Validation 100 %)
+### 📊 Matrice d'Évaluation des 25 Profils de Fichiers (Validation 100 %)
 
 | N° | Profil Multimédia Testé | Fichier Représentatif Réel | Comportement Attendu | Statut |
 |---|---|---|---|:---:|
@@ -676,3 +676,88 @@ Afin d'éradiquer définitivement les comportements non-déterministes et les co
 | 17 | Chiffres romains normalisés | `Rocky III (1982).mkv` | `MOVIE: Rocky 3` | ✅ Validé |
 | 18 | Échantillon vidéo sample | `Inception (2010)/sample.mkv` | `EXTRA: true` | ✅ Validé |
 | 19 | Anime avec saison dans le titre | `Shingeki no Kyojin Season 3/Shingeki...S03E01.mkv` | `SHOW: Shingeki no Kyojin`, `S03E01` | ✅ Validé |
+| 20 | One Pace format standard Arc & Épisode | `one_piece_kai/.../[1] romance dawn 01...mkv` | `SHOW: One Piece Kai`, `S01E01` | ✅ Validé |
+| 21 | One Pace Arc avec chapitres manga | `one_piece_kai/.../[11-16] orange town 02...mkv` | `SHOW: One Piece Kai`, `S02E02` | ✅ Validé |
+| 22 | One Pace Dressrosa mapping arithmétique | `one_piece_kai/.../chapter 700-701 [720p]...mkv` | `SHOW: One Piece Kai`, `S26E01` | ✅ Validé |
+| 23 | One Pace Spécial (Poisson d'avril Gaimon) | `one_piece_kai/.../april fools...gaimon.mkv` | `SHOW: One Piece Kai`, `S00E42` | ✅ Validé |
+| 24 | Anime Kai standard (Dragon Ball Z Kai) | `Dragon Ball Z Kai/Dragon.Ball.Z.Kai.S01E05.mkv` | `SHOW: Dragon Ball Z Kai`, `S01E05` | ✅ Validé |
+| 25 | One Pace Arc tardif Wano (Chapitre 909+) | `one_piece_kai/.../[909-910] wano 01...mkv` | `SHOW: One Piece Kai`, `S30E01` | ✅ Validé |
+
+---
+
+## 14. Audit Spécifique : Prise en Charge Universelle des Séries Animées Condensées (Éditions Kai, One Pace & Fan-Edits) [Cas d'École One Piece Kai]
+
+### 🚨 Contexte et Constat du Dysfonctionnement
+Lors de l'indexation de la bibliothèque d'animes sur support externe (`/run/media/tele/My Passport/anime/one_piece_kai`), un dysfonctionnement sévère a été identifié sur l'arborescence de la série condensée *One Pace / One Piece Kai* (343 épisodes répartis sur 30 arcs narratifs) :
+1. **La Fausse Piste Théâtrale TMDb (*Guerra e pace*) :**
+   - Les scrapers automatisés (TinyMediaManager, scrapers NFO tiers) ont pris le mot-clé "One Pace" pour la pièce de théâtre italienne *« Guerra e pace (Teatro) - Prima parte »* (TMDb ID `1710755`).
+   - 293 fichiers `.nfo` locaux contenaient le titre parasite *« Guerra e pace »* et pointaient vers une affiche fantôme identique de **217 213 octets** (MD5 : `a4d5e52df6fc6de1b20070552a1ba0da`).
+2. **Chaos de la Numérotation et de l'Ordonnancement :**
+   - Les épisodes utilisent une nomenclature basée sur les chapitres du manga original (ex: `[one pace][700-701] Dressrosa 01...mkv` ou `chapter 700-701...mkv`).
+   - Le moteur heuristique GuessIt extrayait systématiquement le numéro de chapitre manga `700` comme s'il s'agissait du numéro d'épisode, provoquant des ruptures d'arborescence, des doublons d'index et l'amnésie des saisons d'arcs.
+3. **Fragmentation en Pseudo-Séries Multiples :**
+   - Chaque dossier d'arc (`[one pace][700-800] dressrosa [720p]`) était susceptible d'être classé comme une série orpheline distincte, brisant l'expérience utilisateur.
+
+---
+
+### 🔬 Autopsie Détaillée des 3 Causes Racines
+
+#### 1. L'Absence de Biais Contextuel pour les Fan-Edits et le Piège TMDb
+Les bases de données officielles (TMDb / TVDb) ne référencent pas nativement les montages communautaires de type *Kai* ou *Pace*. Lors de la recherche floue d'identifiants TMDb, le terme "Pace" déclenchait une correspondance de score maximal vers la tragédie théâtrale de Tolstoï au lieu de se rabattre sur la série canonique *One Piece* (TMDb ID `37854`).
+
+#### 2. La Confusion Sémantique entre Chapitres Manga et Numéros d'Épisodes
+Dans le projet *One Pace*, un épisode correspond généralement à 2 chapitres de manga (ex: Dressrosa 01 = chapitres 700 et 701 ; Dressrosa 02 = chapitres 702 et 703). Sans table de correspondance arithmétique, l'indexeur attribuait l'épisode 700 à la saison courante, générant des collisions d'ordonnancement majeures (`orderIndex = season * 1000 + episode`).
+
+#### 3. La Propagation Virale de l'Affiche Parasite
+L'affiche polluée de 217 213 octets générée par les scrapers tiers était injectée dans 293 dossiers d'épisodes. Même après correction du titre, cette image indésirable s'affichait sur l'ensemble des miniatures de la série.
+
+---
+
+### 🛡️ Remédiations Architecturales Déployées
+
+#### 1. Module Canonique de Résolution Kai & Pace (`kaiPaceResolver.ts`)
+- **Cartographie Chronologique des 30 Arcs (`ONE_PACE_ARCS_MAP`) :**
+  Définition exhaustive des 30 saisons virtuelles représentant la progression fidèle du manga :
+  - Saison 1 : *Romance Dawn* (chapitres 1-7)
+  - Saison 2 : *Orange Town* (chapitres 8-21)
+  - ...
+  - Saison 26 : *Dressrosa* (chapitres 700-801)
+  - Saison 30 : *Wano* (chapitres 909+)
+  - Saison 0 : *Specials* (épisodes hors-série communautaires)
+- **Détection Automatique & Extraction Arithmétique (`parseKaiEpisodeInfo`) :**
+  - Identification des motifs `[One Pace]`, `One Piece Kai`, `DBZ Kai`.
+  - Résolution arithmétique pour les fichiers Dressrosa : $\text{épisode} = \lfloor(\text{chapitre} - 700) / 2\rfloor + 1$.
+  - Attribution d'un ordonnancement déterministe absolu : `orderIndex = season * 1000 + episode` (ex: Dressrosa 01 $\rightarrow$ `26001`, Dressrosa 02 $\rightarrow$ `26002`).
+
+#### 2. Bannissement TMDb & Assainissement des Métadonnées (`externalMetadata.ts`, `mediaIngester.ts`)
+- **Bannissement Strict du TMDb ID 1710755 :** Interdiction absolue de l'identifiant de la pièce théâtrale dans `fetchTmdbTvShow` et `fetchTmdbMovie`.
+- **Rejet Systématique des NFO et Affiches Polluées :**
+  - `isTaintedNfo` : détection et rejet immédiat des NFO mentionnant "Guerra e pace".
+  - `isTaintedArtwork` : détection $O(1)$ de la taille corrompue exacte (217 213 octets) et du hash MD5 `a4d5e52df6fc6de1b20070552a1ba0da`.
+- **Rattachement Canonique à la Franchise Mère :** Normalisation des recherches floues TMDb en épurant les suffixes "Kai", "Pace", "Fan-edit" pour lier l'entité SHOW parente à la fiche officielle *One Piece* (ID `37854`).
+
+#### 3. Génération Dynamique de Vignettes Vidéo par ffmpeg (`mediaArtworks.ts`)
+- Lorsque l'affiche locale est absente ou identifiée comme corrompue, le backend extrait à la volée une vignette représentative de l'épisode via `ffmpeg -ss 00:02:30 -i ... -frames:v 1`.
+- Mise en cache performante dans `~/.cache/ums/thumbnails/${media.id}.jpg`.
+
+#### 4. Structuration par Arcs Narratifs dans l'UI (`mediaHierarchy.ts`)
+- Le frontend regroupe dynamiquement les épisodes par arcs narratifs propres (`01 • Romance Dawn`, `02 • Orange Town` ... `26 • Dressrosa`, `30 • Wano`), offrant une navigation fluide et fidèle au manga.
+
+---
+
+### 📊 Validation des Métadonnées en Base de Données
+
+```sql
+SELECT title, original_title, release_year, node_type, order_index, poster_path, backdrop_path
+FROM media_nodes
+WHERE title ILIKE '%One Piece Kai%' OR title ILIKE '%Dressrosa%'
+ORDER BY order_index ASC
+LIMIT 5;
+```
+
+**Résultat extrait en production :**
+- **Nœud SHOW Parent :** ID `9f1ed2da-1970-4ebe-91c8-e8aff3304a25`, Titre : *One Piece Kai*, TMDb ID : `37854`.
+- **Épisodes Unifiés :** 343 épisodes indexés et rattachés au nœud SHOW parent.
+- **Affiches Assainies :** 293 affiches parasites de 217 213 octets éradiquées de la base PostgreSQL.
+- **Dressrosa Ordonnancement :** `26001` (Dressrosa 01), `26002` (Dressrosa 02), `26003` (Dressrosa 03), zéro collision.
+- **Suite de Tests de Régression :** **25 profils validés sur 25 (100 %)** via `npm run test:profiles`.

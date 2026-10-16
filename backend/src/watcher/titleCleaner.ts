@@ -1,4 +1,3 @@
-
 // Mapping Chiffres Romains <-> Arabes (jusqu'à 30)
 const ROMAN_TO_ARABIC: Record<string, number> = {
   I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10,
@@ -69,7 +68,7 @@ export function cleanMediaTitle(
     }
 
     // 2. Si le titre brut n'est pas préfixé par le show et n'est pas un code SxxExx
-    if (!new RegExp(`^${showEscaped}\\b`, 'i').test(t) && !/^S\d+E\d+$/i.test(t)) {
+    if (!new RegExp(`^${showEscaped}\\b`, 'i').test(t) && !/^S\\d+E\\d+$/i.test(t)) {
       const sanitized = sanitizeReleaseTags(t);
       if (sanitized && sanitized !== showTitle && sanitized.length > 2) {
         return sanitized;
@@ -179,12 +178,18 @@ export function extractCanonicalShowTitle(raw: string | number): string {
   s = s.replace(/`/g, "'");
   s = s.replace(/\s{2,}/g, ' ').trim();
 
-  // 11. Cas canoniques connus pour Ghost In The Shell
+  // 11. Cas canoniques connus pour Ghost In The Shell & Kai / Pace Animes
   if (/^stand\s*alone\s*complex/i.test(s) || /ghost\s*in\s*the\s*shell.*(?:s[\s.]*a[\s.]*c|stand\s*alone\s*complex)/i.test(s)) {
     return 'Ghost in the Shell: Stand Alone Complex';
   }
   if (/^ghost\s*in\s*the\s*shell.*arise/i.test(s)) {
     return 'Ghost in the Shell: Arise';
+  }
+  if (/^(?:one\s*piece\s*kai|one_piece_kai|one\s*pace)$/i.test(s.trim())) {
+    return 'One Piece Kai';
+  }
+  if (/^(?:dragon\s*ball\s*z\s*kai|dbz\s*kai|dragon\s*ball\s*kai)$/i.test(s.trim())) {
+    return 'Dragon Ball Z Kai';
   }
 
   // 12. Capitalisation soignée si tout est en minuscules

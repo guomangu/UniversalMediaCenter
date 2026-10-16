@@ -5,7 +5,7 @@ import { geometryPoint } from './spatial.js';
 export const mediaNodes = pgTable('media_nodes', {
     id: uuid('id').defaultRandom().primaryKey(),
     parentId: uuid('parent_id').references(() => mediaNodes.id, {
-        onDelete: 'cascade',
+        onDelete: 'set null',
     }),
     nodeType: nodeTypeEnum('node_type').notNull(),
     state: nodeStateEnum('state').default('DISCOVERED').notNull(),

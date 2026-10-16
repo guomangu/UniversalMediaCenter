@@ -45,7 +45,7 @@ export function cleanMediaTitle(raw, original, showTitle, season, episode) {
     if (showTitle) {
         const showEscaped = showTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         // 1. Extraire le titre d'épisode s'il est préfixé par le nom du show et le numéro
-        const prefixRegex = new RegExp(`^(?:${showEscaped}\\s*[-_ ]+)?(?:S\\d+E\\d+|\\d+x\\d+|EP\\s*\\d+|E\\d+|0*\\d{1,4})\\s*[-_ ]+(.+)$`, 'i');
+        const prefixRegex = new RegExp(`^(?:${showEscaped}\\s*[-_ ]+)?(?:S\\d+E\\d+|\\b\\d{1,2}x\\d{1,3}\\b|EP\\s*\\d+|E\\d+|0*\\d{1,4})\\s*[-_ ]+(.+)$`, 'i');
         const match = t.match(prefixRegex);
         if (match && match[1]?.trim()) {
             const candidateTitle = match[1].trim();
@@ -86,8 +86,8 @@ export function sanitizeReleaseTags(raw) {
     t = t.replace(/\.(mkv|mp4|avi|mov|ts|m4v|webm)$/i, '');
     // Nettoyage des années préfixées (ex: "1962 Dr. No", "1995 - Goldeneye", "2012.Skyfall")
     t = t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, '');
-    // Nettoyage des préfixes ordonnés (ex: "01 Iron Man", "03 Iron Man 2", "07 - Iron Man 3")
-    t = t.replace(/^[0-9]{1,3}\s*[-._– ]\s*/, '');
+    // Nettoyage des préfixes ordonnés (ex: "01 Iron Man", "03 Iron Man 2", "07 - Iron Man 3", "1a. ")
+    t = t.replace(/^(?:[0-9]{1,3}[a-z]?|[a-z])\s*[-._– ]\s*/i, '');
     t = t.replace(/[\s._]\d{3,4}x\d{3,4}.*$/i, '');
     t = t.replace(/\s*[–-]\s*(Action|Comedy|Drama|Aventure)?\s*\d{4}\s*.*$/i, '');
     t = t.replace(/\s*\(?\d{4}\)?\s*(VFF|VF|VOSTFR|MULTi|ENG|FRENCH|AC3|DTS|BluRay|BDRip|1080p|720p|x264|x265|WEB).*$/i, '');
@@ -103,6 +103,7 @@ export function sanitizeReleaseTags(raw) {
 }
 /**
  * Extrait le titre canonique pur d'une série télévisée ou anime en éliminant :
+ * - Les mentions d'intégrale (ex: "Soul Eater - iNTEGRALE" -> "Soul Eater")
  * - Les mentions de saison (ex: " - Saison 4 (2017)", " - Saison 1 360p", " Season 2", " S02")
  * - Les résolutions (360p, 720p, 1080p...) et formats (HDTV, WEBRip, XviD...)
  * - Les équipes et domaines de téléchargement (Zone-Telechargement, Cpasbien...)
@@ -122,28 +123,47 @@ export function extractCanonicalShowTitle(raw) {
     s = s.replace(/^\s*\[.*?\]\s*/g, '');
     s = s.replace(/\s*\[.*?\]/g, '');
     s = s.replace(/\b(?:w+w\.)?[a-zA-Z0-9-]+\.(?:ws|com|pw|cm|org|to|me|cx|net)\b/gi, '');
-    // 4. Nettoyer les codes d'épisodes s'ils sont dans le nom
+    // 4. Nettoyer les préfixes ordonnés (ex: "01 ", "1a. ", "1. ", "7. ", "b. ")
+    s = s.replace(/^(?:[0-9]{1,3}[a-z]?|[a-z])[\s._–-]+\s*/i, '');
+    // 5. Nettoyer les mentions d'intégrale / boxset AVANT les saisons et résolutions
+    s = s.replace(/\s*[-_–]\s*(?:iNTEGRALE|int[ée]grale|complete|intégral|integrale|boxset)\b.*$/i, '');
+    s = s.replace(/\b(?:iNTEGRALE|int[ée]grale|complete|intégral|integrale)\b.*$/i, '');
+    // 6. Nettoyer les codes d'épisodes s'ils sont dans le nom
     s = s.replace(/\s*[-_–]\s*S\d+.*$/i, '');
     s = s.replace(/\s+S\d+E\d+.*$/i, '');
     s = s.replace(/\s+S\d+\b.*$/i, '');
-    s = s.replace(/\b\d+x\d+\b.*$/i, '');
-    // 5. Supprimer les mentions de saison françaises et anglaises
-    s = s.replace(/\s*[-_–]\s*(?:saison|season|séries?|series?|part|partie|cour|vol|volume)\s*0*\d+.*$/i, '');
-    s = s.replace(/\s+\b(?:saison|season|séries?|series?|part|partie|cour|vol|volume)\s*0*\d+.*$/i, '');
-    // 6. Supprimer les années résiduelles (2017) ou (1990)
-    s = s.replace(/\s*\((?:19|20)\d{2}\)\s*$/i, '');
-    s = s.replace(/\s+-\s+(?:19|20)\d{2}\s*$/i, '');
-    // 7. Supprimer les résolutions, formats, qualités, langues
+    s = s.replace(/\b\d{1,2}x\d{1,3}\b.*$/i, '');
+    // 7. Supprimer les mentions de saison françaises et anglaises ou arcs anime
+    s = s.replace(/\s*[-_–]\s*(?:saison|season|séries?|series?|part|partie|cour|vol|volume|\d+(?:st|nd|rd|th)?\s*gig)\s*0*\d*.*$/i, '');
+    s = s.replace(/\s+\b(?:saison|season|séries?|series?|part|partie|cour|vol|volume|\d+(?:st|nd|rd|th)?\s*gig)\s*0*\d*.*$/i, '');
+    // 8. Supprimer les résolutions, formats, qualités, langues
     s = s.replace(/\b(360p|480p|576p|720p|1080p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|xvid|divx|x264|x265|hevc|h264|h265|vostfr|vff|vf|french|truefrench|multi|fastsub|subita|ld|final|repack|proper|remastered|extended)\b.*$/i, '');
-    // 8. Remplacer les points et underscores par des espaces
+    // 9. Supprimer les années résiduelles (2017) ou (1990)
+    s = s.replace(/\s*\(?(?:19|20)\d{2}\)?\s*$/i, '');
+    s = s.replace(/\s+-\s+(?:19|20)\d{2}\s*$/i, '');
+    s = s.replace(/[\s-_–()]+\s*$/i, '');
+    // 10. Remplacer les points et underscores par des espaces
     s = s.replace(/[._]/g, ' ');
     s = s.replace(/`/g, "'");
     s = s.replace(/\s{2,}/g, ' ').trim();
-    // 9. Capitalisation soignée si tout est en minuscules
+    // 11. Cas canoniques connus pour Ghost In The Shell & Kai / Pace Animes
+    if (/^stand\s*alone\s*complex/i.test(s) || /ghost\s*in\s*the\s*shell.*(?:s[\s.]*a[\s.]*c|stand\s*alone\s*complex)/i.test(s)) {
+        return 'Ghost in the Shell: Stand Alone Complex';
+    }
+    if (/^ghost\s*in\s*the\s*shell.*arise/i.test(s)) {
+        return 'Ghost in the Shell: Arise';
+    }
+    if (/^(?:one\s*piece\s*kai|one_piece_kai|one\s*pace)$/i.test(s.trim())) {
+        return 'One Piece Kai';
+    }
+    if (/^(?:dragon\s*ball\s*z\s*kai|dbz\s*kai|dragon\s*ball\s*kai)$/i.test(s.trim())) {
+        return 'Dragon Ball Z Kai';
+    }
+    // 12. Capitalisation soignée si tout est en minuscules
     if (s === s.toLowerCase() && s.length > 2) {
         s = s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
     }
-    // 10. Normalisation des chiffres romains terminaux (Rocky III -> Rocky 3)
+    // 13. Normalisation des chiffres romains terminaux (Rocky III -> Rocky 3)
     s = normalizeRomanNumerals(s);
     return s;
 }

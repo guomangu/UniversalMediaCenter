@@ -10,6 +10,7 @@ export const defaultProfileTypes = [
         maxCsaAgeLimit: null,
         allowedTags: [],
         blockedTags: [],
+        allowedFolders: [],
         blockedFolders: [],
     },
     {
@@ -23,6 +24,7 @@ export const defaultProfileTypes = [
         maxCsaAgeLimit: null,
         allowedTags: [],
         blockedTags: [],
+        allowedFolders: [],
         blockedFolders: [],
     },
     {
@@ -36,6 +38,7 @@ export const defaultProfileTypes = [
         maxCsaAgeLimit: 10,
         allowedTags: ['Animation', 'Jeunesse', 'Famille', 'Kids'],
         blockedTags: ['Horreur', '+18', 'Gore', 'Violence', 'Thriller'],
+        allowedFolders: [],
         blockedFolders: ['/Films/Horreur', '/Films/Adultes', 'Horreur'],
     },
     {
@@ -49,6 +52,7 @@ export const defaultProfileTypes = [
         maxCsaAgeLimit: 12,
         allowedTags: [],
         blockedTags: ['Horreur', '+18', 'Gore', 'Épouvante'],
+        allowedFolders: [],
         blockedFolders: ['/Films/Adultes', 'Horreur'],
     },
     {
@@ -62,6 +66,7 @@ export const defaultProfileTypes = [
         maxCsaAgeLimit: null,
         allowedTags: ['Marvel', 'Super-héros', 'MCU', 'Avengers'],
         blockedTags: [],
+        allowedFolders: [],
         blockedFolders: [],
     },
 ];
@@ -91,6 +96,7 @@ export const defaultSiteParams = {
         defaultBlockedTags: [],
         defaultAllowedTags: [],
         defaultBlockedFolders: [],
+        defaultAllowedFolders: [],
     },
     profileTypes: defaultProfileTypes,
     ui: {
@@ -112,5 +118,6 @@ export const defaultSiteParams = {
         globalExcludedFolders: ['@eaDir', '#recycle', '.git', 'lost+found'],
         defaultAudioLanguage: 'fra',
         defaultSubtitleLanguage: 'fra',
+        subtitleMode: 'fallback_if_audio_missing',
     },
 };

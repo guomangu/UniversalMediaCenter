@@ -12,14 +12,16 @@ import { linkTagToNode } from '../watcher/tagExtractor.js';
 import { configRouter } from './configRoutes.js';
 import { userAdminRouter } from './userAdminRoutes.js';
 import { profileTypesRouter } from './profileTypesRoutes.js';
+import { adminFolderRouter } from './adminFolderRoutes.js';
 
 export const adminRouter = new Hono();
 adminRouter.use('*', requireAdmin);
 
-// Sous-routeurs modulaires pour la configuration, les utilisateurs et les types de profils (Packs)
+// Sous-routeurs modulaires pour la configuration, les utilisateurs, les types de profils (Packs) et l'explorateur de dossiers
 adminRouter.route('/config', configRouter);
 adminRouter.route('/users', userAdminRouter);
 adminRouter.route('/profile-types', profileTypesRouter);
+adminRouter.route('/folders', adminFolderRouter);
 
 adminRouter.post('/library/refresh', async (c) => {
   const body = await c.req.json().catch(() => ({}));
@@ -165,6 +167,20 @@ adminRouter.post('/rails/reorder', async (c) => {
       .set({ sortOrder: item.sortOrder })
       .where(eq(uiRails.id, item.id));
   }
+  return c.json({ success: true });
+});
+
+adminRouter.patch('/rails/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const updates: Record<string, any> = {};
+
+  if (body.title !== undefined) updates.title = body.title;
+  if (body.cardStyle !== undefined) updates.cardStyle = body.cardStyle;
+  if (body.isActive !== undefined) updates.isActive = Boolean(body.isActive);
+  if (body.sortOrder !== undefined) updates.sortOrder = Number(body.sortOrder);
+
+  await db.update(uiRails).set(updates).where(eq(uiRails.id, id));
   return c.json({ success: true });
 });
 

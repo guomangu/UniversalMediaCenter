@@ -46,18 +46,30 @@ export async function resolveSeriesRoot(filePath) {
         if (SERIES_ROOT_CATEGORIES.has(grandParentName)) {
             return { showDir: parent, tvshowNfoPath: null, showTitleCandidate: path.basename(parent) };
         }
-        // Détection d'un dossier de saison autonome (ex: "Peaky Blinders - Saison 4 (2017)")
-        if (/(?:^|[-_ ])(?:saison|season|s)\s*0*\d+/i.test(currentName)) {
+        // Détection d'un dossier de saison ou arc (ex: "Peaky Blinders - Saison 4 (2017)", "1a. 1st gig (2002-03)")
+        const isSeasonOrArc = /(?:^|[-_ ])(?:saison|season|\d+(?:st|nd|rd|th)?\s*gig)\s*0*\d+/i.test(currentName) ||
+            /\bS0*\d{1,2}\b/i.test(currentName);
+        if (isSeasonOrArc) {
+            // Si le dossier parent porte le nom de la série (ex: "b. stand alone complex (2002-06)")
+            if (parent && parent !== rootLimit && !SERIES_ROOT_CATEGORIES.has(parentName) && !GENRE_OR_INTERMEDIATE_CATEGORIES.has(parentName)) {
+                return { showDir: parent, tvshowNfoPath: null, showTitleCandidate: path.basename(parent) };
+            }
             return { showDir: checkDir, tvshowNfoPath: null, showTitleCandidate: currentName };
         }
         checkDir = parent;
     }
-    // 2. Si aucun répertoire parent formel n'a été trouvé mais que le fichier porte un code SxxExx
+    // 2. Si aucun répertoire parent formel n'a été trouvé mais que le fichier porte un code SxxExx formel
     const fileName = path.basename(filePath);
-    if (/S\d+[\s._-]*E\d+|\b\d+x\d+\b/i.test(fileName)) {
-        const candidate = extractCanonicalShowTitle(fileName) || extractCanonicalShowTitle(path.basename(currentDir));
-        if (candidate && candidate.length > 2) {
-            return { showDir: currentDir, tvshowNfoPath: null, showTitleCandidate: candidate };
+    const hasEpisodeCode = /\b(?:S\d{1,2}[\s._-]*E\d{1,3}|\b\d{1,2}x\d{1,3}\b|EP\s*\d{1,3})\b/i.test(fileName);
+    if (hasEpisodeCode) {
+        // Vérifier qu'il ne s'agit pas d'une résolution vidéo (ex: 1920x1080, 1920x804, 1280x720)
+        const xMatch = fileName.match(/\b(\d{1,4})x(\d{1,4})\b/i);
+        const isResolution = xMatch && (parseInt(xMatch[1], 10) >= 300 || parseInt(xMatch[2], 10) >= 300);
+        if (!isResolution) {
+            const candidate = extractCanonicalShowTitle(fileName) || extractCanonicalShowTitle(path.basename(currentDir));
+            if (candidate && candidate.length > 2) {
+                return { showDir: currentDir, tvshowNfoPath: null, showTitleCandidate: candidate };
+            }
         }
     }
     return null;
@@ -68,7 +80,10 @@ export async function resolveSeriesRoot(filePath) {
  */
 export async function resolveParentShowNodeId(filePath) {
     const seriesCtx = await resolveSeriesRoot(filePath);
-    let rawCandidate = seriesCtx ? seriesCtx.showTitleCandidate : path.basename(filePath);
+    // GARDE CRITIQUE : Si le fichier n'est pas dans un contexte de série formel, ne JAMAIS créer de SHOW
+    if (!seriesCtx)
+        return null;
+    let rawCandidate = seriesCtx.showTitleCandidate;
     if (GENRE_OR_INTERMEDIATE_CATEGORIES.has(rawCandidate.toLowerCase().trim())) {
         rawCandidate = path.basename(filePath);
     }
@@ -76,7 +91,7 @@ export async function resolveParentShowNodeId(filePath) {
     if (!cleanedTitle || cleanedTitle.length < 2)
         return null;
     // 1. Recherche par tvshowNfoPath exact si disponible
-    if (seriesCtx?.tvshowNfoPath) {
+    if (seriesCtx.tvshowNfoPath) {
         const altPath = seriesCtx.tvshowNfoPath.startsWith('/var/home/')
             ? seriesCtx.tvshowNfoPath.replace('/var/home/', '/home/')
             : seriesCtx.tvshowNfoPath.replace('/home/', '/var/home/');
@@ -93,19 +108,29 @@ export async function resolveParentShowNodeId(filePath) {
     if (showByName)
         return showByName.id;
     // 3. Recherche par racine si un SHOW préexistant porte un suffixe de saison (ex: "Peaky Blinders - Saison 1 360p")
-    const showByPrefix = await db.query.mediaNodes.findFirst({
+    // Protégé : Ne jamais matcher un mot différent (ex: "Soul Eater" ne doit JAMAIS matcher "Soul")
+    const showsWithPrefix = await db.query.mediaNodes.findMany({
         where: (t, { and: aOp, eq: eOp, ilike: iOp }) => aOp(eOp(t.nodeType, 'SHOW'), iOp(t.title, `${cleanedTitle}%`)),
+        limit: 10,
+    });
+    const validSeasonSuffixRegex = /^(?:\s*[-_–]\s*|\s+)(?:saison|season|s\d+|part|partie|vol|volume|cour|\d{3,4}p)\b/i;
+    const showByPrefix = showsWithPrefix.find((s) => {
+        if (s.title.toLowerCase().trim() === cleanedTitle.toLowerCase().trim())
+            return true;
+        const remainder = s.title.slice(cleanedTitle.length);
+        return validSeasonSuffixRegex.test(remainder);
     });
     if (showByPrefix) {
-        // Promouvoir ce SHOW au titre canonique propre
-        await db
-            .update(mediaNodes)
-            .set({
-            title: cleanedTitle,
-            sortTitle: cleanedTitle,
-            updatedAt: new Date(),
-        })
-            .where(eq(mediaNodes.id, showByPrefix.id));
+        if (showByPrefix.title.toLowerCase().trim() !== cleanedTitle.toLowerCase().trim()) {
+            await db
+                .update(mediaNodes)
+                .set({
+                title: cleanedTitle,
+                sortTitle: cleanedTitle,
+                updatedAt: new Date(),
+            })
+                .where(eq(mediaNodes.id, showByPrefix.id));
+        }
         return showByPrefix.id;
     }
     // 4. Recherche hybride Phonétique + Trigrammes + Levenshtein (Loi n°2 White Paper)
@@ -119,10 +144,9 @@ export async function resolveParentShowNodeId(filePath) {
       FROM media_nodes
       WHERE node_type = 'SHOW'
         AND (
-          similarity(title, ${cleanedTitle}) >= 0.65
-          OR dmetaphone(title) = dmetaphone(${cleanedTitle})
-          OR (length(${cleanedTitle}) >= 4 AND levenshtein(lower(title), lower(${cleanedTitle})) <= 2 AND similarity(title, ${cleanedTitle}) >= 0.50)
-          ${phoneticCandidate !== cleanedTitle ? sql `OR similarity(title, ${phoneticCandidate}) >= 0.70 OR dmetaphone(title) = dmetaphone(${phoneticCandidate})` : sql ``}
+          similarity(title, ${cleanedTitle}) >= 0.75
+          OR (length(${cleanedTitle}) >= 5 AND levenshtein(lower(title), lower(${cleanedTitle})) <= 2 AND similarity(title, ${cleanedTitle}) >= 0.65)
+          ${phoneticCandidate !== cleanedTitle ? sql `OR similarity(title, ${phoneticCandidate}) >= 0.75` : sql ``}
         )
       ORDER BY
         dm_match DESC,
@@ -139,7 +163,7 @@ export async function resolveParentShowNodeId(filePath) {
         try {
             const fallbackShows = await db.execute(sql `
         SELECT id FROM media_nodes
-        WHERE node_type = 'SHOW' AND similarity(title, ${cleanedTitle}) >= 0.65
+        WHERE node_type = 'SHOW' AND similarity(title, ${cleanedTitle}) >= 0.75
         ORDER BY similarity(title, ${cleanedTitle}) DESC
         LIMIT 1;
       `);
@@ -151,12 +175,21 @@ export async function resolveParentShowNodeId(filePath) {
         catch { }
     }
     // 5. Si aucun SHOW n'existe pour cette série, créer le SHOW canonique unique
+    // Vérifier si cette série appartient à une saga / franchise parente (ex: Ghost In The Shell)
+    let parentCollectionId;
+    const folderSaga = detectSagaNameFromFolder(filePath);
+    if (folderSaga) {
+        const colNode = await findOrCreateCollectionNode(folderSaga);
+        if (colNode)
+            parentCollectionId = colNode.id;
+    }
     const cleanSort = cleanedTitle.replace(/^(le|la|les|the|l')\s+/i, '').trim() || cleanedTitle;
     const slug = `${generateSlug(cleanedTitle)}-show`;
     const [createdShow] = await db
         .insert(mediaNodes)
         .values({
         nodeType: 'SHOW',
+        parentId: parentCollectionId,
         title: cleanedTitle,
         sortTitle: cleanSort,
         slug: `${slug}-${Date.now().toString().slice(-4)}`,
@@ -168,7 +201,7 @@ export async function resolveParentShowNodeId(filePath) {
     return createdShow.id;
 }
 /**
- * Trouve ou crée de façon déterministe le nœud COLLECTION pour un film
+ * Trouve ou crée de façon déterministe le nœud COLLECTION pour un film ou une saga
  */
 export async function findOrCreateCollectionNode(collectionName, extraMeta) {
     const cleanName = collectionName.trim();
@@ -210,33 +243,44 @@ export async function findOrCreateCollectionNode(collectionName, extraMeta) {
         .returning();
     return created;
 }
+const ROOT_PATH_SEGMENTS = new Set([
+    '', 'var', 'home', 'tele', 'run', 'media', 'gudbug', 'my passport', 'partaged',
+    'films', 'film', 'series', 'serie', 'animes', 'anime', 'vidéos', 'videos', 'chaos',
+    'downloads', 'telechargement',
+]);
 /**
- * Détecte si un fichier se trouve dans un dossier représentant une Saga ou Intégrale de films
+ * Détecte si un fichier se trouve dans un dossier représentant une Saga ou Intégrale de films/univers
+ * Remonte l'arborescence pour trouver le dossier englobant (ex: Ghost In The Shell, Studio Ghibli, Pixar)
  */
 export function detectSagaNameFromFolder(filePath) {
     const norm = filePath.replace(/\\/g, '/');
     const parts = norm.split('/').filter(Boolean);
     if (parts.length < 2)
         return null;
-    const parentFolder = parts[parts.length - 2];
-    const isSagaFolder = /\b(int[ée]grale|saga|collection|trilogie|quadrilogie|boxset|anthologie)\b/i.test(parentFolder) ||
-        /\bfilms?\s*\(\s*(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\s*\)/i.test(parentFolder);
-    if (!isSagaFolder)
-        return null;
-    // Nettoyage pour obtenir le nom de la franchise
-    let baseName = parentFolder
-        .replace(/\s*[-–]\s*int[ée]grale.*$/i, '')
-        .replace(/\s*int[ée]grale.*$/i, '')
-        .replace(/\s*[-–]\s*saga.*$/i, '')
-        .replace(/\s*collection.*$/i, '')
-        .replace(/\s*[-–]\s*boxset.*$/i, '')
-        .replace(/\s*\(.*?\)/g, '')
-        .trim();
-    if (baseName.length < 2)
-        return null;
-    // Title case basique si tout en minuscules
-    if (baseName === baseName.toLowerCase()) {
-        baseName = baseName.replace(/\b\w/g, (c) => c.toUpperCase());
+    for (let i = 0; i < parts.length - 1; i++) {
+        const folder = parts[i];
+        if (ROOT_PATH_SEGMENTS.has(folder.toLowerCase()))
+            continue;
+        const isSagaFolder = /\b(int[ée]grale|saga|collection|trilogie|quadrilogie|boxset|anthologie|franchise|pack)\b/i.test(folder) ||
+            /\b(?:films?|movies?)\s*\(\s*(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\s*\)/i.test(folder) ||
+            /\((?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\).*(?:movies|films|series|ovas)/i.test(folder) ||
+            /\b\d+\s*(?:movies|films)\b/i.test(folder);
+        if (isSagaFolder) {
+            let baseName = folder
+                .replace(/^collection\s+/i, '')
+                .replace(/\s*[-_–]\s*\d+\s*(?:movies|films|ovas|series).*$/i, '')
+                .replace(/\s*[-_–]\s*(?:int[ée]grale|saga|collection|boxset).*$/i, '')
+                .replace(/\s*collection\b.*$/i, '')
+                .replace(/\s*\(.*?\).*$/i, '')
+                .replace(/^[0-9]+[a-z]?[\s._–-]+\s*/i, '')
+                .trim();
+            if (baseName.length >= 2) {
+                if (baseName === baseName.toLowerCase()) {
+                    baseName = baseName.replace(/\b\w/g, (c) => c.toUpperCase());
+                }
+                return `${baseName} - Saga`;
+            }
+        }
     }
-    return `${baseName} - Saga`;
+    return null;
 }

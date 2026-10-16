@@ -188,10 +188,70 @@ const testCases: TestCase[] = [
     expectedEpisode: 1,
     expectedIsExtra: false,
   },
+  // 20. Profil Kai 1 : One Pace format standard Arc & Épisode dans sous-dossier
+  {
+    name: 'One Pace Standard Arc & Episode in Folder',
+    filePath: '/run/media/tele/My Passport/anime/one_piece_kai/one piece kai/[one pace][1-7] romance dawn [1080p]/[one pace][1] romance dawn 01 [1080p][d767799c].mkv',
+    expectedType: 'EPISODE',
+    expectedShowTitle: 'One Piece Kai',
+    expectedSeason: 1,
+    expectedEpisode: 1,
+    expectedIsExtra: false,
+  },
+  // 21. Profil Kai 2 : One Pace avec plage de chapitres manga dans le nom de fichier
+  {
+    name: 'One Pace Arc with Chapter Range in Filename',
+    filePath: '/run/media/tele/My Passport/anime/one_piece_kai/one piece kai/[one pace][11-16] orange town [480p]/[one pace][11-16] orange town 02 [480p][488b0a5c].mkv',
+    expectedType: 'EPISODE',
+    expectedShowTitle: 'One Piece Kai',
+    expectedSeason: 2,
+    expectedEpisode: 2,
+    expectedIsExtra: false,
+  },
+  // 22. Profil Kai 3 : One Pace Dressrosa avec numérotation de chapitres (700-701)
+  {
+    name: 'One Pace Dressrosa Arc Chapter Mapping',
+    filePath: '/run/media/tele/My Passport/anime/one_piece_kai/one piece kai/[one pace][700-800] dressrosa [720p]/[one pace] chapter 700-701 [720p][1bdf0d43].mkv',
+    expectedType: 'EPISODE',
+    expectedShowTitle: 'One Piece Kai',
+    expectedSeason: 26,
+    expectedEpisode: 1,
+    expectedIsExtra: false,
+  },
+  // 23. Profil Kai 4 : Épisode spécial One Pace (Gaimon April Fools)
+  {
+    name: 'One Pace Special April Fools Gaimon',
+    filePath: '/run/media/tele/My Passport/anime/one_piece_kai/one piece kai/[one pace] specials/april fools specials/[one pace][42,22] gaimon [480p][eff6059a].mkv',
+    expectedType: 'EPISODE',
+    expectedShowTitle: 'One Piece Kai',
+    expectedSeason: 0,
+    expectedEpisode: 42,
+    expectedIsExtra: false,
+  },
+  // 24. Profil Kai 5 : Dragon Ball Z Kai en nomenclature standard S01E05
+  {
+    name: 'Dragon Ball Z Kai Standard Episode',
+    filePath: '/home/tele/Vidéos/drive/Animes/Dragon Ball Z Kai/Dragon.Ball.Z.Kai.S01E05.1080p.mkv',
+    expectedType: 'EPISODE',
+    expectedShowTitle: 'Dragon Ball Z Kai',
+    expectedSeason: 1,
+    expectedEpisode: 5,
+    expectedIsExtra: false,
+  },
+  // 25. Profil Kai 6 : One Pace Arc Wano (Saison 30, Chapitre 909+)
+  {
+    name: 'One Pace Wano Arc Late Season Mapping',
+    filePath: '/run/media/tele/My Passport/anime/one_piece_kai/one piece kai/[one pace][909-xxx] wano [1080p]/[one pace][909-910] wano 01 [1080p][abc12345].mkv',
+    expectedType: 'EPISODE',
+    expectedShowTitle: 'One Piece Kai',
+    expectedSeason: 30,
+    expectedEpisode: 1,
+    expectedIsExtra: false,
+  },
 ];
 
 async function runTests() {
-  console.log('🧪 Starting isolated profile test suite...');
+  console.log('🧪 Starting isolated profile test suite (25 Profiles)...');
   let passed = 0;
   let failed = 0;
 
@@ -233,7 +293,7 @@ async function runTests() {
 
     // Test 5: Season & Episode extraction
     if (tc.expectedSeason !== undefined || tc.expectedEpisode !== undefined) {
-      const se = parseSeasonEpisode(path.basename(tc.filePath));
+      const se = parseSeasonEpisode(tc.filePath) || parseSeasonEpisode(path.basename(tc.filePath));
       const grouping = seriesCtx ? analyzeFolderGrouping(tc.filePath, seriesCtx.showDir) : null;
       const actualSeason = grouping?.seasonNumber ?? se?.season;
       const actualEpisode = se?.episode;

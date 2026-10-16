@@ -19,6 +19,7 @@ export interface UserSession {
   blockedValueIds: string[];
   allowedTags: string[];
   blockedTags: string[];
+  allowedFolders: string[];
   blockedFolders: string[];
 }
 
@@ -70,6 +71,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
           blockedValueIds: [],
           allowedTags: [],
           blockedTags: [],
+          allowedFolders: [],
           blockedFolders: [],
           profileRole: 'ADMINISTRATEUR',
         });
@@ -84,6 +86,10 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
         ...(user.blockedTags || []),
         ...(matchedProfile?.blockedTags || []),
       ]));
+
+      const effectiveAllowedFolders = (user.allowedFolders && user.allowedFolders.length > 0)
+        ? user.allowedFolders
+        : (matchedProfile?.allowedFolders || []);
 
       const effectiveBlockedFolders = Array.from(new Set([
         ...(user.blockedFolders || []),
@@ -107,6 +113,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
         blockedValueIds: user.blockedValueIds || [],
         allowedTags: effectiveAllowedTags,
         blockedTags: effectiveBlockedTags,
+        allowedFolders: effectiveAllowedFolders,
         blockedFolders: effectiveBlockedFolders,
       });
       return await next();

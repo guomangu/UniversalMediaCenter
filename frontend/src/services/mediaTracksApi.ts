@@ -6,6 +6,13 @@ export interface MediaTracksData {
   qualities: { label: string; value: string }[];
   intro?: { start: number; end: number };
   duration?: number;
+  defaultAudioTrack?: string;
+  defaultSubtitle?: string;
+  isDefaultAudioAvailable?: boolean;
+  subtitleFallbackTriggered?: boolean;
+  configuredAudioLanguage?: string;
+  configuredSubtitleLanguage?: string;
+  subtitleMode?: string;
 }
 
 export async function fetchMediaTracks(id: string): Promise<MediaTracksData> {

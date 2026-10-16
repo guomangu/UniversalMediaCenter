@@ -130,12 +130,25 @@ export default function PlayerScreen() {
 
   useEffect(() => {
     if (id) {
-      fetchMediaTracks(String(id)).then(setTracks);
+      setActiveAudio('auto');
+      setActiveSubtitle('off');
+      fetchMediaTracks(String(id)).then((data) => {
+        setTracks(data);
+        if (data.defaultAudioTrack && data.defaultAudioTrack !== 'auto') {
+          setActiveAudio(data.defaultAudioTrack);
+        }
+        if (data.defaultSubtitle && data.defaultSubtitle !== 'off') {
+          setActiveSubtitle(data.defaultSubtitle);
+          if (data.subtitleFallbackTriggered) {
+            showToast('VOST : Sous-titres activés automatiquement');
+          }
+        }
+      });
       isCancelledRef.current = false;
       setCountdown(null);
       fetchNextMedia(String(id)).then(setNextNode);
     }
-  }, [id]);
+  }, [id, showToast]);
 
   // Surveillance de la présence et des séances communautaires (uniquement pour VOD / contenus planifiés)
   useEffect(() => {
@@ -294,7 +307,8 @@ export default function PlayerScreen() {
         </Pressable>
 
         {/* Contrôles d'appel en direct ou vocal dès qu'au moins 2 spectateurs regardent un contenu */}
-        {viewersCount >= 2 || activeSession ? (<Pressable
+        {viewersCount >= 2 || activeSession ? (
+          <Pressable
             focusable={true}
             accessibilityRole="button"
             onPress={() => {

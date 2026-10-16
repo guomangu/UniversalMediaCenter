@@ -10,10 +10,11 @@ import { styles } from '@/components/AdminScreen.styles';
 import { AdminConfigTab } from '@/components/AdminConfigTab';
 import { AdminProfileTypesTab } from '@/components/AdminProfileTypesTab';
 import { AdminUsersTab } from '@/components/AdminUsersTab';
+import { AdminLayoutTab } from '@/components/AdminLayoutTab';
 import { AdminIptvTab } from '@/components/AdminIptvTab';
 import { AdminScanTab } from '@/components/AdminScanTab';
 
-type Tab = 'CONFIG' | 'PROFILE_TYPES' | 'USERS' | 'LIBRARY' | 'IPTV';
+type Tab = 'LIBRARY' | 'PROFILE_TYPES' | 'USERS' | 'LAYOUT' | 'CONFIG' | 'IPTV';
 
 export default function AdminScreen() {
   const router = useRouter();
@@ -61,7 +62,7 @@ export default function AdminScreen() {
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]}>
         <Text style={styles.heading}>Panneau d’Administration Centralisé</Text>
         <View style={styles.tabRow}>
-          {(['LIBRARY', 'PROFILE_TYPES', 'USERS', 'CONFIG', 'IPTV'] as const).map((t) => (
+          {(['LIBRARY', 'PROFILE_TYPES', 'USERS', 'LAYOUT', 'CONFIG', 'IPTV'] as const).map((t) => (
             <Pressable
               key={t}
               focusable={true}
@@ -75,6 +76,8 @@ export default function AdminScreen() {
                   ? '🏷️ Types de Profils'
                   : t === 'USERS'
                   ? '👥 Comptes'
+                  : t === 'LAYOUT'
+                  ? '🎨 Rails & Layout'
                   : t === 'CONFIG'
                   ? '⚙️ param.yaml'
                   : '📡 Sources IPTV'}
@@ -86,6 +89,7 @@ export default function AdminScreen() {
         {tab === 'LIBRARY' && <AdminScanTab />}
         {tab === 'PROFILE_TYPES' && <AdminProfileTypesTab />}
         {tab === 'USERS' && <AdminUsersTab />}
+        {tab === 'LAYOUT' && <AdminLayoutTab />}
         {tab === 'CONFIG' && <AdminConfigTab />}
         {tab === 'IPTV' && <AdminIptvTab />}
       </ScrollView>

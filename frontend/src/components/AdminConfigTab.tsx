@@ -54,7 +54,7 @@ export function AdminConfigTab() {
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>⚙️ Configuration Globale & Dynamique (param.yaml)</Text>
-      <Text style={styles.cardSub}>Personnalisez la plateforme, les règles de profils par défaut et l’indexation.</Text>
+      <Text style={styles.cardSub}>Personnalisez la plateforme, les règles de profils par défaut, l’indexation et les langues.</Text>
 
       <Text style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>Nom de la Plateforme</Text>
       <TextInput
@@ -143,6 +143,201 @@ export function AdminConfigTab() {
         >
           <Text style={styles.submitText}>+ Exclure</Text>
         </Pressable>
+      </View>
+
+      {/* 🎬 Langues et Sous-titres par Défaut des Médias */}
+      <View style={{ marginTop: 8, marginBottom: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(71, 85, 105, 0.4)' }}>
+        <Text style={{ color: '#cbd5e1', fontSize: 14, fontWeight: '800', marginBottom: 4 }}>
+          🎬 Langues & Sous-Titres par Défaut des Médias
+        </Text>
+        <Text style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12, lineHeight: 18 }}>
+          Configurez les langues prioritaires et l'activation automatique des sous-titres (ex: VOSTFR intelligent si la VF est absente).
+        </Text>
+
+        {/* 1. Langue Audio par Défaut */}
+        <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '700', marginBottom: 4 }}>
+          🔊 Langue Audio par Défaut
+        </Text>
+        <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 6 }}>
+          Piste audio sélectionnée en priorité (ex: fra, eng, jpn ou codes multiples séparés par une virgule).
+        </Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Code langue (ex: fra, fre, fr)"
+          placeholderTextColor="#64748b"
+          value={config.media?.defaultAudioLanguage || ''}
+          onChangeText={(t) => setConfig({ ...config, media: { ...config.media, defaultAudioLanguage: t } })}
+        />
+        {/* Presets rapides de langue audio */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+          {[
+            { label: '🇫🇷 Français (fra)', code: 'fra' },
+            { label: '🇬🇧 Anglais (eng)', code: 'eng' },
+            { label: '🇯🇵 Japonais (jpn)', code: 'jpn' },
+            { label: '🇪🇸 Espagnol (spa)', code: 'spa' },
+            { label: '🇩🇪 Allemand (deu)', code: 'deu' },
+            { label: '🇮🇹 Italien (ita)', code: 'ita' },
+          ].map((item) => {
+            const isSelected = (config.media?.defaultAudioLanguage || '').toLowerCase().includes(item.code);
+            return (
+              <Pressable
+                key={item.code}
+                focusable={true}
+                onPress={() => setConfig({ ...config, media: { ...config.media, defaultAudioLanguage: item.code } })}
+                style={[
+                  styles.statusPill,
+                  {
+                    backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.3)' : 'rgba(51, 65, 85, 0.4)',
+                    borderWidth: 1,
+                    borderColor: isSelected ? '#6366f1' : 'rgba(100, 116, 139, 0.3)',
+                    paddingVertical: 5,
+                    paddingHorizontal: 10,
+                  },
+                ]}
+              >
+                <Text style={{ color: isSelected ? '#a5b4fc' : '#cbd5e1', fontSize: 11, fontWeight: '600' }}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* 2. Langue des Sous-titres par Défaut */}
+        <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '700', marginBottom: 4 }}>
+          💬 Langue des Sous-Titres par Défaut
+        </Text>
+        <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 6 }}>
+          Langue des sous-titres recherchée dans les pistes intégrées ou les fichiers externes (.srt, .vtt).
+        </Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Code sous-titres (ex: fra, fre, fr)"
+          placeholderTextColor="#64748b"
+          value={config.media?.defaultSubtitleLanguage || ''}
+          onChangeText={(t) => setConfig({ ...config, media: { ...config.media, defaultSubtitleLanguage: t } })}
+        />
+        {/* Presets rapides de langue sous-titres */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+          {[
+            { label: '🇫🇷 Français (fra)', code: 'fra' },
+            { label: '🇬🇧 Anglais (eng)', code: 'eng' },
+            { label: '🇪🇸 Espagnol (spa)', code: 'spa' },
+            { label: '🇩🇪 Allemand (deu)', code: 'deu' },
+            { label: '🇯🇵 Japonais (jpn)', code: 'jpn' },
+          ].map((item) => {
+            const isSelected = (config.media?.defaultSubtitleLanguage || '').toLowerCase().includes(item.code);
+            return (
+              <Pressable
+                key={item.code}
+                focusable={true}
+                onPress={() => setConfig({ ...config, media: { ...config.media, defaultSubtitleLanguage: item.code } })}
+                style={[
+                  styles.statusPill,
+                  {
+                    backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.3)' : 'rgba(51, 65, 85, 0.4)',
+                    borderWidth: 1,
+                    borderColor: isSelected ? '#6366f1' : 'rgba(100, 116, 139, 0.3)',
+                    paddingVertical: 5,
+                    paddingHorizontal: 10,
+                  },
+                ]}
+              >
+                <Text style={{ color: isSelected ? '#a5b4fc' : '#cbd5e1', fontSize: 11, fontWeight: '600' }}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* 3. Règle d'activation des Sous-titres */}
+        <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '700', marginBottom: 4 }}>
+          ⚙️ Règle d'Activation Automatique des Sous-Titres
+        </Text>
+        <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 8 }}>
+          Choisissez quand les sous-titres doivent être engagés par défaut au lancement de la vidéo.
+        </Text>
+
+        <View style={{ gap: 8, marginBottom: 14 }}>
+          {[
+            {
+              id: 'fallback_if_audio_missing',
+              icon: '🎯',
+              badge: 'Recommandé (VOSTFR)',
+              title: "Activer si l'audio par défaut est absent (VOST)",
+              desc: "Engage automatiquement les sous-titres par défaut uniquement si la piste audio par défaut n'existe pas dans le média.",
+            },
+            {
+              id: 'always',
+              icon: '👁️',
+              badge: 'Systématique',
+              title: 'Toujours activer les sous-titres par défaut',
+              desc: 'Active immédiatement les sous-titres dans la langue par défaut pour tous les médias lus.',
+            },
+            {
+              id: 'never',
+              icon: '🔇',
+              badge: 'Manuel uniquement',
+              title: 'Désactivé par défaut',
+              desc: 'Les sous-titres restent éteints par défaut et ne sont affichés que si le spectateur clique sur ST.',
+            },
+          ].map((mode) => {
+            const currentMode = config.media?.subtitleMode || 'fallback_if_audio_missing';
+            const isSelected = currentMode === mode.id;
+            return (
+              <Pressable
+                key={mode.id}
+                focusable={true}
+                onPress={() => setConfig({ ...config, media: { ...config.media, subtitleMode: mode.id } })}
+                style={{
+                  backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.15)' : 'rgba(15, 23, 42, 0.5)',
+                  borderWidth: 1,
+                  borderColor: isSelected ? '#6366f1' : 'rgba(71, 85, 105, 0.4)',
+                  borderRadius: 10,
+                  padding: 10,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                }}
+              >
+                <Text style={{ fontSize: 20 }}>{mode.icon}</Text>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <Text style={{ color: isSelected ? '#ffffff' : '#e2e8f0', fontSize: 13, fontWeight: '700' }}>
+                      {mode.title}
+                    </Text>
+                    {mode.badge && (
+                      <View style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.3)' : 'rgba(51, 65, 85, 0.5)', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                        <Text style={{ color: isSelected ? '#a5b4fc' : '#94a3b8', fontSize: 10, fontWeight: '700' }}>
+                          {mode.badge}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={{ color: '#94a3b8', fontSize: 11, lineHeight: 15 }}>
+                    {mode.desc}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    borderWidth: 2,
+                    borderColor: isSelected ? '#6366f1' : '#64748b',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {isSelected && (
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#6366f1' }} />
+                  )}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       {/* Rôles et Variables par Défaut pour les Nouveaux Profils */}

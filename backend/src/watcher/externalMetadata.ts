@@ -300,13 +300,13 @@ async function resolveFuzzyTmdbId(rawTitle: string, endpoint: 'search/tv' | 'sea
 
   // 1. Recherche directe avec le titre nettoyé
   const exactId = await queryTmdbSearchId(clean, endpoint);
-  if (exactId) return exactId;
+  if (exactId && exactId !== 1710755) return exactId;
 
   // 2. Recherche avec normalisation phonétique (dé-doublement des consonnes, ck->k, ph->f)
   const phonetic = normalizePhoneticSpelling(clean);
   if (phonetic && phonetic.toLowerCase() !== clean.toLowerCase()) {
     const phoneticId = await queryTmdbSearchId(phonetic, endpoint);
-    if (phoneticId) return phoneticId;
+    if (phoneticId && phoneticId !== 1710755) return phoneticId;
   }
 
   // 3. Autocorrection linguistique universelle via Wikipedia OpenSearch (Did You Mean)
@@ -325,11 +325,18 @@ async function resolveFuzzyTmdbId(rawTitle: string, endpoint: 'search/tv' | 'sea
         const sanitized = suggestion.replace(/\s*\((?:tv series|film|série télévisée|série|franchise|miniseries)\)/gi, '').trim();
         if (sanitized && sanitized.toLowerCase() !== clean.toLowerCase()) {
           const wikiTmdbId = await queryTmdbSearchId(sanitized, endpoint);
-          if (wikiTmdbId) return wikiTmdbId;
+          if (wikiTmdbId && wikiTmdbId !== 1710755) return wikiTmdbId;
         }
       }
     }
   } catch {}
+
+  // 4. Fallback franchise originale pour les versions Kai / Fan-edits / Recuts (ex: "One Piece Kai" -> "One Piece")
+  const strippedAnime = clean.replace(/\b(kai|pace|fan-?edit|recut)\b/gi, '').trim();
+  if (strippedAnime && strippedAnime.toLowerCase() !== clean.toLowerCase()) {
+    const animeId = await queryTmdbSearchId(strippedAnime, endpoint);
+    if (animeId && animeId !== 1710755) return animeId;
+  }
 
   return null;
 }
@@ -340,9 +347,11 @@ async function resolveFuzzyTmdbId(rawTitle: string, endpoint: 'search/tv' | 'sea
 async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<ExternalMediaMetadata | null> {
   let tvId: number | null = typeof tmdbIdOrTitle === 'number' ? tmdbIdOrTitle : null;
 
+  if (tvId === 1710755) return null;
+
   if (!tvId) {
     tvId = await resolveFuzzyTmdbId(String(tmdbIdOrTitle), 'search/tv');
-    if (!tvId) return null;
+    if (!tvId || tvId === 1710755) return null;
   }
 
   // Requête française pour le synopsis et les genres
@@ -353,6 +362,7 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
   });
   if (!detailRes.ok) return null;
   const d = await detailRes.json();
+  if (d.name && /guerra e pace/i.test(d.name)) return null;
 
   // Requête en-US pour obtenir les noms romanisés des créateurs, réalisateurs et acteurs ainsi que le synopsis en secours
   let enCrew: any[] = [];
@@ -384,36 +394,36 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
   const producers: string[] = [];
 
   for (const cr of crewSource) {
-    const jobs = (cr.jobs || []).map((j: any) => j.job || '').join(' ').toLowerCase();
+    const job = (cr.jobs?.[0]?.job || '').toLowerCase();
     const dept = cr.department || '';
     const name = cr.name;
     if (!name) continue;
 
-    if (dept === 'Directing' || jobs.includes('director')) {
+    if (dept === 'Directing' || job === 'director') {
       if (!directors.includes(name)) directors.push(name);
     }
     if (
       dept === 'Writing' ||
-      jobs.includes('writer') ||
-      jobs.includes('creator') ||
-      jobs.includes('screenplay') ||
-      jobs.includes('story')
+      job.includes('writer') ||
+      job.includes('screenplay') ||
+      job.includes('story') ||
+      job.includes('creator')
     ) {
       if (!writers.includes(name)) writers.push(name);
     }
     if (
       dept === 'Sound' ||
       dept === 'Music' ||
-      jobs.includes('music') ||
-      jobs.includes('composer') ||
-      jobs.includes('original music')
+      job.includes('music') ||
+      job.includes('composer') ||
+      job.includes('original music composer')
     ) {
       if (!composers.includes(name)) composers.push(name);
     }
     if (
       dept === 'Production' ||
-      jobs.includes('producer') ||
-      jobs.includes('executive producer')
+      job === 'producer' ||
+      job === 'executive producer'
     ) {
       if (!producers.includes(name)) producers.push(name);
     }
@@ -425,7 +435,7 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
     .slice(0, 30)
     .map((a: any) => ({
       name: a.name,
-      role: (a.roles || [])[0]?.character || undefined,
+      role: a.roles?.[0]?.character || undefined,
       thumb: a.profile_path ? `https://image.tmdb.org/t/p/w185${a.profile_path}` : undefined,
     }));
 
@@ -489,9 +499,11 @@ async function fetchTmdbTvShow(tmdbIdOrTitle: string | number): Promise<External
 async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalMediaMetadata | null> {
   let movieId: number | null = typeof tmdbIdOrTitle === 'number' ? tmdbIdOrTitle : null;
 
+  if (movieId === 1710755) return null;
+
   if (!movieId) {
     movieId = await resolveFuzzyTmdbId(String(tmdbIdOrTitle), 'search/movie');
-    if (!movieId) return null;
+    if (!movieId || movieId === 1710755) return null;
   }
 
   // Requête française principale
@@ -502,6 +514,7 @@ async function fetchTmdbMovie(tmdbIdOrTitle: string | number): Promise<ExternalM
   });
   if (!detailRes.ok) return null;
   const d = await detailRes.json();
+  if (d.title && /guerra e pace/i.test(d.title)) return null;
 
   // Requête en-US en parallèle pour le synopsis original et noms romanisés
   let enCrew: any[] = [];

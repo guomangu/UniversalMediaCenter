@@ -1,3 +1,5 @@
+import { isKaiOrPaceMedia, parseKaiEpisodeInfo } from './kaiPaceResolver.js';
+
 export interface SeasonEpisodeInfo {
   season?: number;
   episode?: number;
@@ -24,6 +26,22 @@ export function parseSeasonEpisode(
   }
 
   const normTitle = (title || '').trim();
+
+  // 0. Priorité Kai / One Pace (Arcs narratifs chronologiques & éditions condensées)
+  if (isKaiOrPaceMedia(normTitle)) {
+    const kai = parseKaiEpisodeInfo(normTitle);
+    if (kai) {
+      const sStr = String(kai.season).padStart(2, '0');
+      const eStr = String(kai.episode).padStart(2, '0');
+      return {
+        season: kai.season,
+        episode: kai.episode,
+        seasonEpisodeTag: kai.seasonEpisodeTag,
+        displayBadge: kai.displayBadge,
+        sortRank: kai.season * 10000 + kai.episode,
+      };
+    }
+  }
 
   // 1. Format S01E02 ou S1E2
   const sPattern = /S(\d+)[\s._-]*E(\d+)/i.exec(normTitle);

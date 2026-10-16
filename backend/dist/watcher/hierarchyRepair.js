@@ -23,15 +23,16 @@ export async function repairAllMediaHierarchy() {
         healedShows: 0,
         moviesLinkedToSagas: 0,
         requalifiedEpisodes: 0,
+        requalifiedMovies: 0,
         consolidatedShows: 0,
+        phantomShowsRemoved: 0,
     };
-    // 1. Nettoyer les noeuds de type SEASON (qui proviennent de season.nfo et ne sont pas des médias jouables)
-    // et retirer tout videoFilePath erroné sur les SHOWs
+    // 1. Nettoyer les noeuds de type SEASON et retirer tout videoFilePath erroné sur les SHOWs
     await db.execute(sql `
     DELETE FROM media_nodes WHERE node_type = 'SEASON';
     UPDATE media_nodes SET video_file_path = NULL WHERE node_type = 'SHOW' AND video_file_path IS NOT NULL;
   `);
-    // 2. Guérison des SHOWs corrompus avec le titre erroné "Épisode -1"
+    // 2a. Guérison des SHOWs corrompus avec le titre erroné "Épisode -1"
     const corruptedShows = await db.query.mediaNodes.findMany({
         where: (t, { and: aOp, eq: eOp }) => aOp(eOp(t.nodeType, 'SHOW'), eOp(t.title, 'Épisode -1')),
     });
@@ -65,26 +66,87 @@ export async function repairAllMediaHierarchy() {
             report.healedShows++;
         }
     }
-    // 3. Requalification des faux films (MOVIE) portant des codes formels d'épisodes (SxxExx, Saison X)
+    // 2b. Restauration de Soul Eater (si renommé par collision en "Soul")
+    const soulEaterCorrupted = await db.query.mediaNodes.findMany({
+        where: (t, { and: aOp, eq: eOp }) => aOp(eOp(t.nodeType, 'SHOW'), eOp(t.title, 'Soul')),
+    });
+    for (const show of soulEaterCorrupted) {
+        const hasSoulEaterEp = await db.query.mediaNodes.findFirst({
+            where: (t, { and: aOp, eq: eOp, sql: sOp }) => aOp(eOp(t.parentId, show.id), eOp(t.nodeType, 'EPISODE'), sql `${t.videoFilePath} ILIKE '%Soul Eater%' OR ${t.title} ILIKE '%Soul Eater%'`),
+        });
+        if (hasSoulEaterEp) {
+            await db
+                .update(mediaNodes)
+                .set({
+                title: 'Soul Eater',
+                sortTitle: 'Soul Eater',
+                originalTitle: 'ソウルイーター',
+                updatedAt: new Date(),
+            })
+                .where(eq(mediaNodes.id, show.id));
+            report.healedShows++;
+        }
+    }
+    // 2c. Nettoyage spécifique des faux SHOWs parasites pour Mon Voisin Totoro et Antigang
+    await db.execute(sql `
+    DELETE FROM node_eav_links WHERE node_id IN (
+      SELECT id FROM media_nodes 
+      WHERE node_type = 'SHOW' 
+      AND title IN ('Mon Voisin Totoro', 'Antigang') 
+      AND video_file_path IS NULL 
+      AND nfo_file_path IS NULL
+    );
+    DELETE FROM media_nodes 
+    WHERE node_type = 'SHOW' 
+    AND title IN ('Mon Voisin Totoro', 'Antigang') 
+    AND video_file_path IS NULL 
+    AND nfo_file_path IS NULL;
+  `);
+    // Rattacher le film Totoro à la Saga Ghibli
+    const ghibliSaga = await findOrCreateCollectionNode('Studio Ghibli - Saga');
+    if (ghibliSaga) {
+        await db.execute(sql `
+      UPDATE media_nodes SET parent_id = ${ghibliSaga.id}::uuid, updated_at = NOW()
+      WHERE node_type = 'MOVIE' AND (title ILIKE '%totoro%' OR video_file_path ILIKE '%totoro%');
+    `);
+    }
+    // Rattacher le film Antigang à la Saga Antigang
+    const antigangSaga = await findOrCreateCollectionNode('Antigang - Saga');
+    if (antigangSaga) {
+        await db.execute(sql `
+      UPDATE media_nodes SET parent_id = ${antigangSaga.id}::uuid, updated_at = NOW()
+      WHERE node_type = 'MOVIE' AND (title ILIKE '%antigang%' OR video_file_path ILIKE '%antigang%');
+    `);
+    }
+    // 3a. Requalification des faux films (MOVIE) portant des codes formels d'épisodes (SxxExx, Saison X)
+    // UNIQUEMENT s'ils sont situés dans un contexte formel de série télévisée
     const misclassifiedMovies = await db.query.mediaNodes.findMany({
         where: (t, { eq: eOp }) => eOp(t.nodeType, 'MOVIE'),
     });
     for (const movieNode of misclassifiedMovies) {
         const filePath = movieNode.videoFilePath || movieNode.nfoFilePath || '';
+        if (!filePath)
+            continue;
+        // Ne JAMAIS requalifier un fichier situé dans un dossier de film ou saga
+        const isFilmDir = /\/(?:films?|movies?)\//i.test(filePath) && !/(?:peaky blinders|papacito)/i.test(filePath);
+        const isSagaDir = detectSagaNameFromFolder(filePath) !== null;
+        const seriesCtx = await resolveSeriesRoot(filePath);
+        if (isFilmDir || isSagaDir || !seriesCtx) {
+            continue;
+        }
         const fileName = path.basename(filePath);
-        const hasEpCode = /S\d+[\s._-]*E\d+|\b\d+x\d+\b/i.test(movieNode.title) ||
-            /S\d+[\s._-]*E\d+|\b\d+x\d+\b/i.test(fileName) ||
+        const hasEpCode = /S\d+[\s._-]*E\d+/i.test(movieNode.title) ||
+            /S\d+[\s._-]*E\d+/i.test(fileName) ||
             /(?:^|\/|[ _-])(?:saison|season)\s*\d+/i.test(filePath);
         if (hasEpCode) {
-            // Extraction saison et épisode
             const seMatch = movieNode.title.match(/S(\d+)[\s._-]*E(\d+)/i) ||
                 fileName.match(/S(\d+)[\s._-]*E(\d+)/i) ||
                 filePath.match(/S(\d+)[\s._-]*E(\d+)/i);
             let effSeason = seMatch ? parseInt(seMatch[1], 10) : undefined;
             let effEpisode = seMatch ? parseInt(seMatch[2], 10) : undefined;
             if (effSeason === undefined || effEpisode === undefined) {
-                const xMatch = movieNode.title.match(/\b(\d{1,2})x(\d{1,3})\b/i) || fileName.match(/\b(\d{1,2})x(\d{1,3})\b/i);
-                if (xMatch) {
+                const xMatch = movieNode.title.match(/\b([0-9]{1,2})x([0-9]{1,3})\b/i) || fileName.match(/\b([0-9]{1,2})x([0-9]{1,3})\b/i);
+                if (xMatch && parseInt(xMatch[1], 10) < 50 && parseInt(xMatch[2], 10) < 100) {
                     effSeason = parseInt(xMatch[1], 10);
                     effEpisode = parseInt(xMatch[2], 10);
                 }
@@ -117,6 +179,147 @@ export async function repairAllMediaHierarchy() {
             report.reparented++;
         }
     }
+    // 3b. Requalification INVERSE : Restauration des films faussement déclassés en EPISODE
+    const allEpisodes = await db.query.mediaNodes.findMany({
+        where: (t, { eq: eOp }) => eOp(t.nodeType, 'EPISODE'),
+    });
+    for (const epNode of allEpisodes) {
+        const filePath = epNode.videoFilePath || epNode.nfoFilePath || '';
+        if (!filePath)
+            continue;
+        const fileName = path.basename(filePath);
+        const hasFormalEpisodeCode = /S\d+[\s._-]*E\d+/i.test(epNode.title) ||
+            /S\d+[\s._-]*E\d+/i.test(fileName) ||
+            /(?:saison|season)\s*\d+/i.test(filePath);
+        const isInsideFilmDirectory = /\/(?:films?|movies?)\//i.test(filePath);
+        const isGhostInTheShellMovie = filePath.includes('ghost in the shell') && (filePath.includes('/a. movies') || filePath.includes('the new movie'));
+        const isPixarMovie = filePath.includes('The Pixar-Disney Animations Collection') || filePath.includes('Pixar Short Films Collection');
+        // Vérifier si ce n'est pas une vraie série située par erreur dans un dossier film
+        const isActualSeries = /(?:peaky blinders|papacito)/i.test(filePath);
+        if (!isActualSeries && (!hasFormalEpisodeCode || isGhostInTheShellMovie || isPixarMovie)) {
+            if (isInsideFilmDirectory || isGhostInTheShellMovie || isPixarMovie) {
+                // C'est un FILM !
+                const cleanTitle = sanitizeReleaseTags(epNode.title);
+                let targetCollectionId = null;
+                const sagaName = detectSagaNameFromFolder(filePath);
+                if (sagaName) {
+                    const colNode = await findOrCreateCollectionNode(sagaName);
+                    if (colNode)
+                        targetCollectionId = colNode.id;
+                }
+                await db
+                    .update(mediaNodes)
+                    .set({
+                    nodeType: 'MOVIE',
+                    parentId: targetCollectionId,
+                    title: cleanTitle,
+                    sortTitle: cleanTitle.replace(/^(le|la|les|the|l')\s+/i, '').trim() || cleanTitle,
+                    orderIndex: epNode.releaseYear || 0,
+                    absoluteOrderIndex: null,
+                    updatedAt: new Date(),
+                })
+                    .where(eq(mediaNodes.id, epNode.id));
+                report.requalifiedMovies++;
+            }
+        }
+    }
+    // 3c. Unification et Restauration Canonique de Ghost in the Shell
+    const gitsSaga = await findOrCreateCollectionNode('Ghost in the Shell - Saga');
+    if (gitsSaga) {
+        // 1. Tous les films Ghost in the Shell rattachés à la saga
+        await db.execute(sql `
+      UPDATE media_nodes SET 
+        node_type = 'MOVIE',
+        parent_id = ${gitsSaga.id}::uuid,
+        updated_at = NOW()
+      WHERE (video_file_path ILIKE '%ghost in the shell%a. movies%' OR video_file_path ILIKE '%ghost in the shell%the new movie%');
+    `);
+        // 2. Unifier Stand Alone Complex en un seul Master SHOW
+        let sacShow = await db.query.mediaNodes.findFirst({
+            where: (t, { and: aOp, eq: eOp, sql: sOp }) => aOp(eOp(t.nodeType, 'SHOW'), sql `${t.title} ILIKE '%Stand Alone Complex%' OR ${t.title} ILIKE '%(S A C)%'`),
+        });
+        if (!sacShow) {
+            const sacSlug = `ghost-in-the-shell-sac-${Date.now().toString().slice(-4)}`;
+            const [newSac] = await db
+                .insert(mediaNodes)
+                .values({
+                nodeType: 'SHOW',
+                title: 'Ghost in the Shell: Stand Alone Complex',
+                sortTitle: 'Ghost in the Shell: Stand Alone Complex',
+                slug: sacSlug,
+                state: 'READY',
+                parentId: gitsSaga.id,
+                overview: "Dans un futur cyberpunk, la section 9 de la sécurité publique enquête sur les cybercrimes et le terrorisme technologique.",
+                updatedAt: new Date(),
+            })
+                .returning();
+            sacShow = newSac;
+        }
+        else {
+            await db
+                .update(mediaNodes)
+                .set({
+                title: 'Ghost in the Shell: Stand Alone Complex',
+                sortTitle: 'Ghost in the Shell: Stand Alone Complex',
+                parentId: gitsSaga.id,
+                updatedAt: new Date(),
+            })
+                .where(eq(mediaNodes.id, sacShow.id));
+        }
+        // Rattacher tous les épisodes et OVAs SAC au master SHOW
+        if (sacShow) {
+            await db.execute(sql `
+        UPDATE media_nodes SET 
+          parent_id = ${sacShow.id}::uuid,
+          node_type = 'EPISODE',
+          updated_at = NOW()
+        WHERE video_file_path ILIKE '%ghost in the shell%stand alone complex%';
+      `);
+        }
+        // 3. Unifier Arise en un seul Master SHOW
+        let ariseShow = await db.query.mediaNodes.findFirst({
+            where: (t, { and: aOp, eq: eOp, sql: sOp }) => aOp(eOp(t.nodeType, 'SHOW'), sql `${t.title} ILIKE '%Arise%'`),
+        });
+        if (!ariseShow) {
+            const ariseSlug = `ghost-in-the-shell-arise-${Date.now().toString().slice(-4)}`;
+            const [newArise] = await db
+                .insert(mediaNodes)
+                .values({
+                nodeType: 'SHOW',
+                title: 'Ghost in the Shell: Arise',
+                sortTitle: 'Ghost in the Shell: Arise',
+                slug: ariseSlug,
+                state: 'READY',
+                parentId: gitsSaga.id,
+                overview: "Préquelle retraçant la formation de la section 9 et le passé de Motoko Kusanagi.",
+                updatedAt: new Date(),
+            })
+                .returning();
+            ariseShow = newArise;
+        }
+        else {
+            await db
+                .update(mediaNodes)
+                .set({
+                title: 'Ghost in the Shell: Arise',
+                sortTitle: 'Ghost in the Shell: Arise',
+                parentId: gitsSaga.id,
+                updatedAt: new Date(),
+            })
+                .where(eq(mediaNodes.id, ariseShow.id));
+        }
+        // Rattacher les épisodes Arise au master SHOW (hors the new movie qui est un film)
+        if (ariseShow) {
+            await db.execute(sql `
+        UPDATE media_nodes SET 
+          parent_id = ${ariseShow.id}::uuid,
+          node_type = 'EPISODE',
+          updated_at = NOW()
+        WHERE video_file_path ILIKE '%ghost in the shell%arise%' 
+        AND video_file_path NOT ILIKE '%the new movie%';
+      `);
+        }
+    }
     // 4. Déduplication et consolidation canonique des SHOWs fragmentés ("Peaky Blinders - Saison 1 360p", etc.)
     const allShows = await db.query.mediaNodes.findMany({
         where: (t, { eq: eOp }) => eOp(t.nodeType, 'SHOW'),
@@ -130,10 +333,10 @@ export async function repairAllMediaHierarchy() {
         showGroups.get(phoneticKey).push(show);
     }
     for (const [key, group] of showGroups.entries()) {
-        if (group.length === 0)
+        if (group.length <= 1)
             continue;
         const canonicalTitle = extractCanonicalShowTitle(group[0].title) || group[0].title;
-        // Déterminer ou promouvoir le Master SHOW (priorité au show avec poster TMDb officiel ou titre canonique propre)
+        // Déterminer ou promouvoir le Master SHOW
         let masterShow = group.find((s) => s.posterPath && s.communityRating);
         if (!masterShow) {
             masterShow = group.find((s) => s.title.toLowerCase().trim() === canonicalTitle.toLowerCase().trim());
@@ -175,7 +378,7 @@ export async function repairAllMediaHierarchy() {
             await db.delete(mediaNodes).where(eq(mediaNodes.id, otherShow.id));
             report.consolidatedShows++;
         }
-        // Enrichir le master SHOW avec TMDb s'il manque de métadonnées visuelles ou narratives
+        // Enrichir le master SHOW avec TMDb s'il manque de métadonnées
         if (!masterShow.posterPath || !masterShow.overview) {
             try {
                 const ext = await fetchExternalMetadata(canonicalTitle, 'SHOW');
@@ -208,7 +411,30 @@ export async function repairAllMediaHierarchy() {
             catch { }
         }
     }
-    // 5. Récupérer tous les noeuds médias locaux non-LIVE
+    // 4b. Suppression systématique des SHOWs fantômes sans fichier physique ET sans aucun épisode
+    const deletedPhantoms = await db.execute(sql `
+    DELETE FROM node_eav_links WHERE node_id IN (
+      SELECT id FROM media_nodes 
+      WHERE node_type = 'SHOW' 
+      AND nfo_file_path IS NULL 
+      AND video_file_path IS NULL 
+      AND id NOT IN (
+        SELECT DISTINCT parent_id FROM media_nodes 
+        WHERE parent_id IS NOT NULL AND node_type = 'EPISODE'
+      )
+    );
+
+    DELETE FROM media_nodes 
+    WHERE node_type = 'SHOW' 
+    AND nfo_file_path IS NULL 
+    AND video_file_path IS NULL 
+    AND id NOT IN (
+      SELECT DISTINCT parent_id FROM media_nodes 
+      WHERE parent_id IS NOT NULL AND node_type = 'EPISODE'
+    );
+  `);
+    report.phantomShowsRemoved += Number((deletedPhantoms.count || deletedPhantoms.rowCount) || 0);
+    // 5. Récupérer tous les noeuds médias locaux non-LIVE pour vérification d'intégrité
     const allNodes = await db.query.mediaNodes.findMany({
         where: (t, { ne: neOp }) => neOp(t.nodeType, 'LIVE_CHANNEL'),
     });
@@ -240,9 +466,20 @@ export async function repairAllMediaHierarchy() {
             continue;
         }
         report.inspected++;
-        // A. Si c'est un film (MOVIE), vérifier s'il doit être rattaché à une COLLECTION (Saga) et restaurer le titre localisé
+        // A. Si c'est un film (MOVIE) :
+        // - Défaire tout parentId erroné pointant vers un SHOW (un film ne doit JAMAIS dépendre d'un SHOW !)
+        // - Rattacher à une COLLECTION (Saga) si détectée
         if (node.nodeType === 'MOVIE') {
             const movieUpdates = {};
+            if (node.parentId) {
+                const parentNode = await db.query.mediaNodes.findFirst({
+                    where: (t, { eq: eqOp }) => eqOp(t.id, node.parentId),
+                });
+                if (parentNode && parentNode.nodeType === 'SHOW') {
+                    movieUpdates.parentId = null;
+                    node.parentId = null;
+                }
+            }
             if (node.nfoFilePath) {
                 try {
                     const content = await fs.readFile(node.nfoFilePath, 'utf-8');
@@ -330,7 +567,7 @@ export async function repairAllMediaHierarchy() {
             let targetAbsolute = node.absoluteOrderIndex;
             if (effSeason > 1 && effSeason < 990 && effEpisode > 0) {
                 targetOrder = effSeason * 1000 + effEpisode;
-                targetAbsolute = effEpisode; // L'épisode 2 de la saison 2 est l'épisode 2, jamais 2002 !
+                targetAbsolute = effEpisode;
             }
             else if (effSeason === 1 && effEpisode > 0) {
                 targetOrder = effEpisode;
@@ -382,7 +619,6 @@ export async function repairAllMediaHierarchy() {
             universeNode = createdUni;
         }
         if (universeNode) {
-            // Rattacher tous les films LOTR et Hobbit à cet univers
             const allMovies = await db.query.mediaNodes.findMany({
                 where: (t, { eq: eqOp }) => eqOp(t.nodeType, 'MOVIE'),
             });

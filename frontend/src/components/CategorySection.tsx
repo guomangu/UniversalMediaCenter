@@ -4,6 +4,7 @@ import { TaxonomyCategory, getCachedTaxonomyMedias } from '@/services/taxonomyAp
 import { TagCard } from './TagCard';
 import { ClickableTopicText } from './ClickableTopicText';
 import { Radius, Spacing } from '@/constants/theme';
+import { useHeaderHeight } from './SiteHeader';
 
 interface Props {
   category: TaxonomyCategory;
@@ -17,6 +18,7 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
   const [counts, setCounts] = useState<Record<string, number>>({});
   const visibleTags = category.tags.slice(0, tagLimit);
   const hasMore = category.tags.length > tagLimit;
+  const headerPaddingTop = useHeaderHeight(true);
 
   // Hydratation synchrone immédiate (0 ms) des IDs en cache pour éliminer tout effet de cascade
   const [mediasByTag, setMediasByTag] = useState<Record<string, string[]>>(() => {
@@ -59,7 +61,14 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
   const matchedCount = Object.values(counts).filter((c) => c > 0).length;
 
   return (
-    <View onLayout={handleLayout} style={styles.container}>
+    <View
+      nativeID={`cat-section-${category.id}`}
+      {...(Platform.OS === 'web' ? { id: `cat-section-${category.id}` } : {})}
+      onLayout={handleLayout}
+      style={[
+        styles.container,
+        Platform.OS === 'web' ? ({ scrollMarginTop: headerPaddingTop + 16 } as any) : null,
+      ]}>
       <View style={styles.titleRow}>
         <ClickableTopicText
           text={category.title}
@@ -76,10 +85,10 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
 
       <View style={styles.verticalTagList}>
         {visibleTags.map((tag, index) => {
-          // Déduplication intra-catégorie : exclure tous les médias déjà affichés par les tags précédents
-          const excludeIds = visibleTags
-            .slice(0, index)
-            .flatMap((t) => mediasByTag[t.slug] || []);
+          // Déduplication intra-catégorie pour sagas/studios, mais indépendance totale pour les rails de qualité
+          const excludeIds = category.id === 'qualities'
+            ? []
+            : visibleTags.slice(0, index).flatMap((t) => mediasByTag[t.slug] || []);
 
           return (
             <TagCard

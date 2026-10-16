@@ -285,7 +285,6 @@ export function AdminUsersTab() {
           onFocus={() => setIsSearchFocused(true)}
           onBlur={() => setIsSearchFocused(false)}
           onChangeText={(text) => {
-            // Rejette l'injection automatique par le navigateur en arrière-plan quand le champ n'a pas le focus actif
             if (!isSearchFocused && text.length > 0) {
               return;
             }
@@ -344,6 +343,7 @@ export function AdminUsersTab() {
 
       <AdminCreateUserModal
         visible={showCreate}
+        profileTypes={profileTypes}
         onClose={() => setShowCreate(false)}
         onCreated={loadData}
       />

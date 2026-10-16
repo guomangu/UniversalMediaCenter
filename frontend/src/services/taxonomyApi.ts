@@ -4,6 +4,25 @@ import { fetchWithCache, getCachedData } from './pwaDataCache';
 import { prefetchImages } from './pwaImageCache';
 import { resolveImageUrl } from './api';
 
+export const TAXONOMY_CACHE_VERSION = 'v5';
+export const CACHE_KEY_CATEGORIES = `taxonomy_categories_${TAXONOMY_CACHE_VERSION}`;
+
+// Purge immédiate et transparente des anciens caches de taxonomie obsolètes au démarrage
+if (typeof window !== 'undefined' && window.localStorage) {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (
+        k &&
+        (k.startsWith('ums_cache_taxonomy_categories') || k.startsWith('ums_cache_tax_')) &&
+        !k.includes(TAXONOMY_CACHE_VERSION)
+      ) {
+        localStorage.removeItem(k);
+      }
+    }
+  } catch {}
+}
+
 export interface TaxonomyTag {
   label: string;
   slug: string;
@@ -77,28 +96,31 @@ export const DEFAULT_TAXONOMY_CATEGORIES: TaxonomyCategory[] = [
     id: 'directors',
     title: 'Réalisateur',
     tags: [
-      { label: 'Tom Harper', slug: 'tom-harper', count: 6 },
-      { label: 'David Katzenberg', slug: 'david-katzenberg', count: 2 },
-      { label: 'Jérémie Galan', slug: 'jeremie-galan', count: 2 },
-      { label: 'Jon Favreau', slug: 'jon-favreau', count: 2 },
+      { label: 'Hayao Miyazaki', slug: 'hayao-miyazaki', count: 12 },
+      { label: 'Peter Jackson', slug: 'peter-jackson', count: 7 },
+      { label: 'Quentin Tarantino', slug: 'quentin-tarantino', count: 5 },
+      { label: 'Isao Takahata', slug: 'isao-takahata', count: 6 },
     ],
   },
   {
     id: 'qualities',
     title: 'Qualité',
     tags: [
-      { label: '1080p', slug: '1080p', count: 274 },
-      { label: '720p', slug: '720p', count: 170 },
+      { label: '4K UHD', slug: '4k', count: 13 },
+      { label: '1080p FHD', slug: '1080p', count: 180 },
+      { label: '720p HD', slug: '720p', count: 376 },
+      { label: '576p', slug: '576p', count: 4 },
+      { label: '480p SD', slug: '480p', count: 158 },
     ],
   },
   {
     id: 'countries',
     title: 'Pays',
     tags: [
-      { label: 'États-Unis', slug: 'etats-unis', count: 163 },
-      { label: 'Royaume-Uni', slug: 'royaume-uni', count: 41 },
-      { label: 'France', slug: 'france', count: 41 },
-      { label: 'Japon', slug: 'japon', count: 20 },
+      { label: 'États-Unis', slug: 'etats-unis', count: 285 },
+      { label: 'France', slug: 'france', count: 80 },
+      { label: 'Japon', slug: 'japon', count: 61 },
+      { label: 'Royaume-Uni', slug: 'royaume-uni', count: 55 },
     ],
   },
 ];
@@ -114,6 +136,7 @@ export interface MediaTileItem {
   seasonEpisodeTag?: string | null;
   activeSessionsCount?: number;
   activeViewersCount?: number;
+  videoQuality?: string | null;
 }
 
 export interface TaxonomyMediasResult {
@@ -122,10 +145,16 @@ export interface TaxonomyMediasResult {
   totalReturned: number;
 }
 
-export async function fetchTaxonomy(forceRefresh = false): Promise<TaxonomyCategory[]> {
-  const cached = getCachedData<TaxonomyCategory[]>('taxonomy_categories');
+export async function fetchTaxonomy(
+  forceRefresh = false,
+  onFresh?: (categories: TaxonomyCategory[]) => void
+): Promise<TaxonomyCategory[]> {
+  const cached = getCachedData<TaxonomyCategory[]>(CACHE_KEY_CATEGORIES);
+  const qualCat = cached?.find((c) => c.id === 'qualities');
+  const needsRefresh = forceRefresh || !cached || !qualCat || qualCat.tags.length < 4;
+
   return fetchWithCache<TaxonomyCategory[]>(
-    'taxonomy_categories',
+    CACHE_KEY_CATEGORIES,
     async () => {
       try {
         const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy`, {
@@ -140,7 +169,7 @@ export async function fetchTaxonomy(forceRefresh = false): Promise<TaxonomyCateg
         return cached || DEFAULT_TAXONOMY_CATEGORIES;
       }
     },
-    { forceRefresh, staleTime: 1000 * 60 * 5 }
+    { forceRefresh: needsRefresh, staleTime: 1000 * 60 * 5, onFreshData: onFresh }
   );
 }
 
@@ -153,7 +182,7 @@ export function buildTaxonomyCacheKey(params: {
   excludeIds?: string[];
 }): string {
   const excludeKey = (params.excludeIds || []).slice().sort().join(',');
-  return `tax_${params.category}_${params.tag}_${params.filter || ''}_${params.q || ''}_${params.limit || 15}_${excludeKey}`;
+  return `tax_${TAXONOMY_CACHE_VERSION}_${params.category}_${params.tag}_${params.filter || ''}_${params.q || ''}_${params.limit || 15}_${excludeKey}`;
 }
 
 export function getCachedTaxonomyMedias(params: {

@@ -17,26 +17,45 @@ import { analyzeFolderGrouping, isExtraMediaFile } from './folderGrouper.js';
 import { sanitizeReleaseTags, extractYearFromText, extractCanonicalShowTitle } from './titleCleaner.js';
 import { parsePathWithGuessit } from './pipeline/guessitParser.js';
 import { isAnimeMedia, resolveAnimeSeasonEpisode } from './pipeline/animeMapping.js';
+import { isKaiOrPaceMedia, parseKaiEpisodeInfo, isTaintedNfo, isTaintedArtwork } from './kaiPaceResolver.js';
 export async function ingestMediaNode(nfoPath, parsed, sha256) {
     const adjacent = await detectAdjacentFiles(nfoPath);
-    const slug = `${generateSlug(parsed.title)}-${parsed.year || 'media'}`;
+    if (adjacent.posterPath && (await isTaintedArtwork(adjacent.posterPath))) {
+        adjacent.posterPath = undefined;
+    }
+    if (adjacent.thumbPath && (await isTaintedArtwork(adjacent.thumbPath))) {
+        adjacent.thumbPath = undefined;
+    }
+    const filePathToCheck = adjacent.videoFilePath || nfoPath;
+    const isKai = isKaiOrPaceMedia(filePathToCheck, parsed.title);
+    let kaiInfo = isKai ? parseKaiEpisodeInfo(filePathToCheck) : null;
+    const slug = `${generateSlug(kaiInfo ? kaiInfo.title : parsed.title)}-${parsed.year || 'media'}`;
     const sortTitle = parsed.sortTitle || parsed.title;
     let parentId = null;
     let isExtra = false;
     let extraType;
     let effectiveType = parsed.type;
     let folderArcTitle = parsed.folderTitle;
-    if (parsed.type !== 'SHOW' && parsed.type !== 'COLLECTION') {
-        parentId = await resolveParentShowNodeId(nfoPath);
-        if (!parentId && parsed.showTitle) {
-            const canonicalShow = extractCanonicalShowTitle(parsed.showTitle);
-            const showByTitle = await db.query.mediaNodes.findFirst({
-                where: (t, { and: aOp, eq: eOp, or: oOp, ilike: iOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(iOp(t.title, canonicalShow), iOp(t.sortTitle, canonicalShow), eOp(t.title, parsed.showTitle), eOp(t.sortTitle, parsed.showTitle))),
-            });
-            if (showByTitle)
-                parentId = showByTitle.id;
+    if (kaiInfo) {
+        effectiveType = 'EPISODE';
+        const tmdbIdCandidate = parsed.customFields?.tmdbid || parsed.customFields?.uniqueid;
+        if (isTaintedNfo(parsed.title, tmdbIdCandidate) ||
+            !parsed.title ||
+            /guerra/i.test(parsed.title) ||
+            /teatro/i.test(parsed.title) ||
+            /pace/i.test(parsed.title)) {
+            parsed.title = kaiInfo.title;
+            parsed.showTitle = kaiInfo.showTitle;
+            if (parsed.customFields) {
+                if (parsed.customFields.tmdbid === '1710755')
+                    delete parsed.customFields.tmdbid;
+                if (parsed.customFields.uniqueid === '1710755')
+                    delete parsed.customFields.uniqueid;
+            }
         }
-        const filePathToCheck = adjacent.videoFilePath || nfoPath;
+        folderArcTitle = kaiInfo.arcName;
+    }
+    if (parsed.type !== 'SHOW' && parsed.type !== 'COLLECTION') {
         if (isExtraMediaFile(filePathToCheck)) {
             isExtra = true;
             effectiveType = 'EXTRA';
@@ -50,14 +69,63 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
                 isExtra = true;
                 extraType = grouping.extraType;
             }
-            if (grouping.isMovie && !parsed.episodeNumber && effectiveType !== 'EPISODE') {
+            if (grouping.isMovie && !parsed.episodeNumber && effectiveType !== 'EPISODE' && !kaiInfo) {
                 effectiveType = 'MOVIE';
             }
             if (grouping.groupTitle && !folderArcTitle) {
                 folderArcTitle = grouping.groupTitle;
             }
         }
-        if (effectiveType === 'MOVIE' && !parentId) {
+        // 1. Parsing heuristique GuessIt avec validation stricte Kyoo
+        const guess = await parsePathWithGuessit(adjacent.videoFilePath || nfoPath);
+        if (!kaiInfo) {
+            if (guess.type === 'movie' && effectiveType !== 'COLLECTION' && effectiveType !== 'EPISODE' && !parsed.episodeNumber) {
+                effectiveType = 'MOVIE';
+            }
+            else if (guess.type === 'episode' && effectiveType !== 'SHOW' && effectiveType !== 'COLLECTION') {
+                effectiveType = 'EPISODE';
+            }
+        }
+        if (effectiveType === 'EPISODE') {
+            if (isKai) {
+                const showTitleToFind = kaiInfo ? kaiInfo.showTitle : 'One Piece Kai';
+                const showNode = await db.query.mediaNodes.findFirst({
+                    where: (t, { and: aOp, eq: eOp, ilike: iOp }) => aOp(eOp(t.nodeType, 'SHOW'), iOp(t.title, showTitleToFind)),
+                });
+                if (showNode) {
+                    parentId = showNode.id;
+                }
+                else {
+                    const showSlug = `${generateSlug(showTitleToFind)}-show`;
+                    const [newShow] = await db
+                        .insert(mediaNodes)
+                        .values({
+                        nodeType: 'SHOW',
+                        title: showTitleToFind,
+                        sortTitle: showTitleToFind,
+                        slug: `${showSlug}-${Date.now().toString().slice(-4)}`,
+                        state: 'READY',
+                        releaseYear: 1999,
+                        overview: 'Version condensée fidèle au manga sans les scènes de remplissage.',
+                    })
+                        .returning();
+                    parentId = newShow.id;
+                }
+            }
+            else {
+                parentId = await resolveParentShowNodeId(nfoPath);
+                if (!parentId && parsed.showTitle) {
+                    const canonicalShow = extractCanonicalShowTitle(parsed.showTitle);
+                    const showByTitle = await db.query.mediaNodes.findFirst({
+                        where: (t, { and: aOp, eq: eOp, or: oOp, ilike: iOp }) => aOp(eOp(t.nodeType, 'SHOW'), oOp(iOp(t.title, canonicalShow), iOp(t.sortTitle, canonicalShow), eOp(t.title, parsed.showTitle), eOp(t.sortTitle, parsed.showTitle))),
+                    });
+                    if (showByTitle)
+                        parentId = showByTitle.id;
+                }
+            }
+        }
+        else if (effectiveType === 'MOVIE') {
+            // Un film n'est JAMAIS rattaché à un SHOW, seulement à une COLLECTION (Saga)
             const folderSagaName = detectSagaNameFromFolder(nfoPath || adjacent.videoFilePath || '');
             if (folderSagaName) {
                 const sagaNode = await findOrCreateCollectionNode(folderSagaName);
@@ -73,17 +141,7 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
     // Calcul d'index d'ordre unifié et sans collision entre saisons
     let orderIndex = 0;
     let absoluteOrderIndex = null;
-    // 1. Parsing heuristique GuessIt avec validation stricte Kyoo
     const guess = await parsePathWithGuessit(adjacent.videoFilePath || nfoPath);
-    if (guess.type === 'movie' && effectiveType !== 'COLLECTION' && effectiveType !== 'EPISODE' && !parsed.episodeNumber) {
-        effectiveType = 'MOVIE';
-    }
-    else if (guess.type === 'episode' && effectiveType !== 'SHOW' && effectiveType !== 'COLLECTION') {
-        effectiveType = 'EPISODE';
-    }
-    if (effectiveType === 'EPISODE' && !parentId) {
-        parentId = await resolveParentShowNodeId(adjacent.videoFilePath || nfoPath);
-    }
     let effYear = parsed.year || guess.year;
     if (guess.year && (!effYear || Math.abs(effYear - guess.year) > 1)) {
         effYear = guess.year;
@@ -97,39 +155,45 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
         absoluteOrderIndex = effYear || null;
     }
     else if (effectiveType === 'EPISODE') {
-        // 2. Résolution des cas complexes Animes (TheXEM & Anime-Lists)
-        const showName = parsed.showTitle || guess.title;
-        const candidateAbs = parsed.absoluteEpisodeNumber || guess.absoluteEpisode || (guess.episode && guess.episode > 24 ? guess.episode : undefined);
-        if (candidateAbs && isAnimeMedia(showName, nfoPath)) {
-            const animeRes = resolveAnimeSeasonEpisode(showName, candidateAbs, nfoPath);
-            if (animeRes) {
-                orderIndex = animeRes.season * 1000 + animeRes.episode;
-                absoluteOrderIndex = animeRes.absoluteEpisode;
-            }
+        if (kaiInfo) {
+            orderIndex = kaiInfo.orderIndex;
+            absoluteOrderIndex = kaiInfo.episode;
         }
-        if (!orderIndex) {
-            if (parsed.absoluteEpisodeNumber != null && parsed.absoluteEpisodeNumber > 0) {
-                orderIndex = parsed.absoluteEpisodeNumber;
-                absoluteOrderIndex = parsed.absoluteEpisodeNumber;
+        else {
+            // 2. Résolution des cas complexes Animes (TheXEM & Anime-Lists)
+            const showName = parsed.showTitle || guess.title;
+            const candidateAbs = parsed.absoluteEpisodeNumber || guess.absoluteEpisode || (guess.episode && guess.episode > 24 ? guess.episode : undefined);
+            if (candidateAbs && isAnimeMedia(showName, nfoPath)) {
+                const animeRes = resolveAnimeSeasonEpisode(showName, candidateAbs, nfoPath);
+                if (animeRes) {
+                    orderIndex = animeRes.season * 1000 + animeRes.episode;
+                    absoluteOrderIndex = animeRes.absoluteEpisode;
+                }
             }
-            else {
-                const effSeason = parsed.seasonNumber || guess.season || (guess.episode && guess.episode > 1000 ? Math.floor(guess.episode / 1000) : 1);
-                const effEpisode = parsed.episodeNumber || (guess.episode && guess.episode > 1000 ? guess.episode % 1000 : guess.episode) || 1;
-                if (effSeason > 1 && effSeason < 990 && effEpisode > 0) {
-                    orderIndex = effSeason * 1000 + effEpisode;
-                    absoluteOrderIndex = effEpisode;
+            if (!orderIndex) {
+                if (parsed.absoluteEpisodeNumber != null && parsed.absoluteEpisodeNumber > 0) {
+                    orderIndex = parsed.absoluteEpisodeNumber;
+                    absoluteOrderIndex = parsed.absoluteEpisodeNumber;
                 }
-                else if (effSeason === 1 && effEpisode > 0) {
-                    orderIndex = effEpisode;
-                    absoluteOrderIndex = effEpisode;
-                }
-                else if (effSeason === 998 && effEpisode > 0) {
-                    orderIndex = 998000 + effEpisode;
-                    absoluteOrderIndex = effEpisode;
-                }
-                else if (effEpisode > 0) {
-                    orderIndex = effEpisode;
-                    absoluteOrderIndex = effEpisode;
+                else {
+                    const effSeason = parsed.seasonNumber || guess.season || (guess.episode && guess.episode > 1000 ? Math.floor(guess.episode / 1000) : 1);
+                    const effEpisode = parsed.episodeNumber || (guess.episode && guess.episode > 1000 ? guess.episode % 1000 : guess.episode) || 1;
+                    if (effSeason > 1 && effSeason < 990 && effEpisode > 0) {
+                        orderIndex = effSeason * 1000 + effEpisode;
+                        absoluteOrderIndex = effEpisode;
+                    }
+                    else if (effSeason === 1 && effEpisode > 0) {
+                        orderIndex = effEpisode;
+                        absoluteOrderIndex = effEpisode;
+                    }
+                    else if (effSeason === 998 && effEpisode > 0) {
+                        orderIndex = 998000 + effEpisode;
+                        absoluteOrderIndex = effEpisode;
+                    }
+                    else if (effEpisode > 0) {
+                        orderIndex = effEpisode;
+                        absoluteOrderIndex = effEpisode;
+                    }
                 }
             }
         }
@@ -147,6 +211,7 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
     let oshash;
     let crc32;
     let edition;
+    let probedData = null;
     if (adjacent.videoFilePath) {
         const [footprint, probed, lexical] = await Promise.all([
             computeBinaryFootprint(adjacent.videoFilePath),
@@ -160,6 +225,7 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
             isExtra = true;
             extraType = lexical.extraType || extraType;
         }
+        probedData = probed;
         if (probed) {
             if (probed.videoQuality)
                 probedQuality = probed.videoQuality;
@@ -171,12 +237,24 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
                 durationSeconds = probed.durationSeconds;
         }
     }
+    // Héritage sécurisé du parentId sans pollution SHOW -> MOVIE
+    let effectiveParentId = parentId;
+    if (!effectiveParentId && existing?.parentId) {
+        const currentParent = await db.query.mediaNodes.findFirst({
+            where: (t, { eq: eOp }) => eOp(t.id, existing.parentId),
+            columns: { id: true, nodeType: true },
+        });
+        if (currentParent && (effectiveType !== 'MOVIE' || currentParent.nodeType === 'COLLECTION')) {
+            effectiveParentId = currentParent.id;
+        }
+    }
     let nodeId;
     const canonicalTitle = effectiveType === 'SHOW'
         ? extractCanonicalShowTitle(parsed.title || path.basename(path.dirname(nfoPath)))
         : sanitizeReleaseTags(parsed.title);
+    const finalSlug = `${generateSlug(canonicalTitle)}-${effYear || 'media'}`;
     const payload = {
-        parentId: (parentId || existing?.parentId) ? String(parentId || existing?.parentId) : undefined,
+        parentId: effectiveParentId ? String(effectiveParentId) : undefined,
         nodeType: effectiveType,
         state: 'READY',
         title: canonicalTitle,
@@ -199,10 +277,10 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
         chaptersJson: chapters,
         nfoSha256: sha256,
         videoFilePath: adjacent.videoFilePath,
-        posterPath: adjacent.posterPath,
-        fanartPath: adjacent.fanartPath,
-        clearlogoPath: adjacent.clearlogoPath,
-        thumbPath: adjacent.thumbPath,
+        posterPath: adjacent.posterPath || parsed.customArt?.poster,
+        fanartPath: adjacent.fanartPath || parsed.customArt?.fanart,
+        clearlogoPath: adjacent.clearlogoPath || parsed.customArt?.clearlogo,
+        thumbPath: adjacent.thumbPath || parsed.customArt?.thumb,
         nfoFilePath: nfoPath,
         updatedAt: new Date(),
     };
@@ -214,7 +292,7 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
         const [inserted] = await db
             .insert(mediaNodes)
             .values({
-            slug: `${slug}-${Date.now().toString().slice(-4)}`,
+            slug: `${finalSlug}-${Date.now().toString().slice(-4)}`,
             ...payload,
         })
             .returning();
@@ -228,99 +306,85 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
             .set({ parentId: nodeId })
             .where(and(isNull(mediaNodes.parentId), ne(mediaNodes.id, nodeId), or(like(mediaNodes.nfoFilePath, `${showDir}/%`), like(mediaNodes.videoFilePath, `${showDir}/%`))));
     }
-    // Tags et EAV
-    for (const g of parsed.genres)
-        await linkTagToNode(nodeId, 'genre', g);
-    for (const s of parsed.tags)
-        await linkTagToNode(nodeId, 'subject', s);
-    for (const st of parsed.studios)
-        await linkTagToNode(nodeId, 'studio', st);
-    for (const c of parsed.countries)
-        await linkTagToNode(nodeId, 'country', c);
-    if (parsed.certification)
-        await linkTagToNode(nodeId, 'certification', parsed.certification);
-    if (folderArcTitle)
-        await linkTagToNode(nodeId, 'arc', folderArcTitle);
-    if (edition)
-        await linkTagToNode(nodeId, 'edition', edition);
-    if (isExtra)
-        await linkTagToNode(nodeId, 'extra', extraType || 'bonus');
-    for (const d of parsed.directors)
-        await linkTagToNode(nodeId, 'director', d);
-    for (const w of parsed.writers)
-        await linkTagToNode(nodeId, 'writer', w);
-    if (parsed.producers) {
-        for (const pr of parsed.producers)
-            await linkTagToNode(nodeId, 'producer', pr);
+    // Extraction et liaison des métadonnées vers le schéma EAV
+    const eavPromises = [];
+    for (const genre of (parsed.genres || [])) {
+        eavPromises.push(linkTagToNode(nodeId, 'genre', genre));
     }
-    if (parsed.composers) {
-        for (const m of parsed.composers)
-            await linkTagToNode(nodeId, 'composer', m);
+    for (const tag of (parsed.tags || [])) {
+        eavPromises.push(linkTagToNode(nodeId, 'subject', tag));
     }
-    for (const a of parsed.actors) {
-        await linkTagToNode(nodeId, 'actor', a.name, a.role, a.thumb ? { thumbUrl: a.thumb } : {});
+    for (const studio of (parsed.studios || [])) {
+        eavPromises.push(linkTagToNode(nodeId, 'studio', studio));
     }
-    const sd = parsed.streamDetails;
-    const effQuality = probedQuality || sd?.videoQuality;
-    if (effQuality)
-        await linkTagToNode(nodeId, 'video_quality', effQuality);
-    if (sd?.videoCodec)
-        await linkTagToNode(nodeId, 'video_codec', sd.videoCodec.toUpperCase());
-    if (sd?.aspectRatio)
-        await linkTagToNode(nodeId, 'aspect_ratio', sd.aspectRatio);
-    if (sd?.audioTracks) {
-        for (const audio of sd.audioTracks) {
-            if (audio.language)
-                await linkTagToNode(nodeId, 'audio_language', audio.language.toUpperCase());
-            if (audio.codec)
-                await linkTagToNode(nodeId, 'audio_codec', audio.codec.toUpperCase());
-            if (audio.channels) {
-                const ch = audio.channels >= 6 ? (audio.channels === 8 ? '7.1' : '5.1') : `${audio.channels}.0`;
-                await linkTagToNode(nodeId, 'audio_channels', ch);
+    for (const country of (parsed.countries || [])) {
+        eavPromises.push(linkTagToNode(nodeId, 'country', country));
+    }
+    for (const dir of (parsed.directors || [])) {
+        eavPromises.push(linkTagToNode(nodeId, 'director', dir));
+    }
+    for (const writer of (parsed.writers || [])) {
+        eavPromises.push(linkTagToNode(nodeId, 'writer', writer));
+    }
+    for (const actor of (parsed.actors || [])) {
+        eavPromises.push(linkTagToNode(nodeId, 'actor', actor.name, actor.role, actor.thumb ? { thumbUrl: actor.thumb } : undefined));
+    }
+    if (parsed.certification) {
+        eavPromises.push(linkTagToNode(nodeId, 'certification', parsed.certification));
+    }
+    if (probedCodec) {
+        eavPromises.push(linkTagToNode(nodeId, 'video_codec', probedCodec));
+    }
+    if (probedQuality) {
+        eavPromises.push(linkTagToNode(nodeId, 'video_quality', probedQuality));
+    }
+    if (edition) {
+        eavPromises.push(linkTagToNode(nodeId, 'edition', edition));
+    }
+    if (isExtra && extraType) {
+        eavPromises.push(linkTagToNode(nodeId, 'extra', extraType));
+    }
+    if (folderArcTitle) {
+        eavPromises.push(linkTagToNode(nodeId, 'arc', folderArcTitle));
+    }
+    // Inspection profonde des flux vidéo/audio internes
+    if (adjacent.videoFilePath && probedData) {
+        for (const a of (probedData.audioTracks || [])) {
+            if (a.codec)
+                eavPromises.push(linkTagToNode(nodeId, 'audio_codec', a.codec));
+            if (a.channels)
+                eavPromises.push(linkTagToNode(nodeId, 'audio_channels', `${a.channels}ch`));
+            if (a.language)
+                eavPromises.push(linkTagToNode(nodeId, 'audio_language', a.language));
+        }
+        for (const s of (probedData.subtitleTracks || [])) {
+            if (s.codec)
+                eavPromises.push(linkTagToNode(nodeId, 'subtitle_codec', s.codec));
+            if (s.language)
+                eavPromises.push(linkTagToNode(nodeId, 'subtitle_language', s.language));
+        }
+        if (!parsed.plot && !parsed.outline) {
+            try {
+                const subNlp = await analyzeSubtitlesNlp(adjacent.videoFilePath);
+                if (subNlp.detectedDisambiguation) {
+                    for (const entity of subNlp.detectedDisambiguation.matchedEntities) {
+                        eavPromises.push(linkTagToNode(nodeId, 'subject', entity));
+                    }
+                }
             }
+            catch { }
         }
     }
-    if (sd?.subtitleTracks) {
-        for (const sub of sd.subtitleTracks) {
-            if (sub.language)
-                await linkTagToNode(nodeId, 'subtitle_language', sub.language.toUpperCase());
-            if (sub.codec)
-                await linkTagToNode(nodeId, 'subtitle_codec', sub.codec.toUpperCase());
-        }
+    for (const [key, val] of Object.entries(parsed.customFields)) {
+        if (val === undefined || val === null || val === '')
+            continue;
+        const strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+        eavPromises.push(linkTagToNode(nodeId, `custom_${key}`, strVal));
     }
-    for (const [key, val] of Object.entries(parsed.customFields || {})) {
-        await linkTagToNode(nodeId, `custom_${key.toLowerCase()}`, val);
-    }
-    const searchComponents = [
-        parsed.title,
-        parsed.originalTitle || '',
-        folderArcTitle || '',
-        edition || '',
-        ...parsed.genres,
-        ...parsed.tags,
-        ...parsed.directors,
-        ...parsed.writers,
-        ...parsed.actors.map((a) => a.name),
-        sd?.videoQuality || '',
-        sd?.videoCodec || '',
-        ...(sd?.audioTracks || []).map((a) => a.language || ''),
-        ...(sd?.subtitleTracks || []).map((s) => s.language || ''),
-    ];
-    await db
-        .update(mediaNodes)
-        .set({ searchVectorText: searchComponents.filter(Boolean).join(' ') })
-        .where(eq(mediaNodes.id, nodeId));
+    await Promise.all(eavPromises);
     return nodeId;
 }
-/**
- * Ingestion autonome de fichier vidéo sans NFO via le pipeline Waterfall Kyoo++
- */
-export async function ingestStandaloneVideoFile(videoPath) {
-    // Ignorer absolument les artefacts de trickplay
-    if (videoPath.includes('/.trickplay/') || videoPath.endsWith('.bif')) {
-        return '';
-    }
-    // 1. Si le fichier vidéo est déjà rattaché à un noeud existant avec NFO, ne pas créer de doublon
+export async function ingestMediaFile(videoPath) {
     const existing = await db.query.mediaNodes.findFirst({
         where: (t, { eq: eqOp }) => eqOp(t.videoFilePath, videoPath),
     });
@@ -330,59 +394,107 @@ export async function ingestStandaloneVideoFile(videoPath) {
     const meta = await identifyVideoFile(videoPath);
     const slug = `${generateSlug(meta.title)}-${meta.releaseYear || 'video'}`;
     const sortTitle = meta.title;
-    let parentId = await resolveParentShowNodeId(videoPath);
+    let parentId = null;
     const seriesCtx = await resolveSeriesRoot(videoPath);
     let isExtra = meta.isExtra;
     let extraType = meta.extraType;
     let nodeType = meta.nodeType;
     let arcTitle;
-    if (isExtraMediaFile(videoPath)) {
-        isExtra = true;
-        nodeType = 'EXTRA';
-        const extraGrouping = analyzeFolderGrouping(videoPath, path.dirname(videoPath));
-        extraType = extraGrouping.extraType || extraType || 'featurette';
-    }
-    if (seriesCtx) {
-        const grouping = analyzeFolderGrouping(videoPath, seriesCtx.showDir);
-        if (grouping.isExtra) {
-            isExtra = true;
-            extraType = grouping.extraType || extraType;
-        }
-        if (grouping.isMovie && !meta.episodeNumber && !meta.seasonNumber) {
-            nodeType = 'MOVIE';
-        }
-        if (grouping.groupTitle) {
-            arcTitle = grouping.groupTitle;
-        }
-    }
-    if (nodeType === 'MOVIE' && !parentId) {
-        const folderSagaName = detectSagaNameFromFolder(videoPath);
-        if (folderSagaName) {
-            const sagaNode = await findOrCreateCollectionNode(folderSagaName);
-            if (sagaNode)
-                parentId = sagaNode.id;
-        }
-    }
     let orderIndex = 0;
     let absoluteOrderIndex = null;
-    if (meta.absoluteEpisodeNumber != null && meta.absoluteEpisodeNumber > 0) {
-        orderIndex = meta.absoluteEpisodeNumber;
-        absoluteOrderIndex = meta.absoluteEpisodeNumber;
+    const isKai = isKaiOrPaceMedia(videoPath);
+    let kaiInfo = isKai ? parseKaiEpisodeInfo(videoPath) : null;
+    if (kaiInfo) {
+        nodeType = 'EPISODE';
+        arcTitle = kaiInfo.arcName;
+        orderIndex = kaiInfo.orderIndex;
+        absoluteOrderIndex = kaiInfo.episode;
+        meta.title = kaiInfo.title;
+        const showTitleToFind = kaiInfo.showTitle;
+        const showNode = await db.query.mediaNodes.findFirst({
+            where: (t, { and: aOp, eq: eOp, ilike: iOp }) => aOp(eOp(t.nodeType, 'SHOW'), iOp(t.title, showTitleToFind)),
+        });
+        if (showNode) {
+            parentId = showNode.id;
+        }
+        else {
+            const showSlug = `${generateSlug(showTitleToFind)}-show`;
+            const [newShow] = await db
+                .insert(mediaNodes)
+                .values({
+                nodeType: 'SHOW',
+                title: showTitleToFind,
+                sortTitle: showTitleToFind,
+                slug: `${showSlug}-${Date.now().toString().slice(-4)}`,
+                state: 'READY',
+                releaseYear: 1999,
+                overview: 'Version condensée fidèle au manga sans les scènes de remplissage.',
+            })
+                .returning();
+            parentId = newShow.id;
+        }
     }
-    else if (meta.episodeNumber != null && meta.episodeNumber > 0) {
-        orderIndex = (meta.seasonNumber && meta.seasonNumber > 1)
-            ? meta.seasonNumber * 1000 + meta.episodeNumber
-            : meta.episodeNumber;
-        absoluteOrderIndex = meta.episodeNumber;
+    else {
+        if (isExtraMediaFile(videoPath)) {
+            isExtra = true;
+            nodeType = 'EXTRA';
+            const extraGrouping = analyzeFolderGrouping(videoPath, path.dirname(videoPath));
+            extraType = extraGrouping.extraType || extraType || 'featurette';
+        }
+        if (seriesCtx) {
+            const grouping = analyzeFolderGrouping(videoPath, seriesCtx.showDir);
+            if (grouping.isExtra) {
+                isExtra = true;
+                extraType = grouping.extraType || extraType;
+            }
+            if (grouping.isMovie && !meta.episodeNumber && !meta.seasonNumber) {
+                nodeType = 'MOVIE';
+            }
+            if (grouping.groupTitle) {
+                arcTitle = grouping.groupTitle;
+            }
+        }
+        if (nodeType === 'EPISODE') {
+            parentId = await resolveParentShowNodeId(videoPath);
+        }
+        else if (nodeType === 'MOVIE') {
+            const folderSagaName = detectSagaNameFromFolder(videoPath);
+            if (folderSagaName) {
+                const sagaNode = await findOrCreateCollectionNode(folderSagaName);
+                if (sagaNode)
+                    parentId = sagaNode.id;
+            }
+        }
+        if (meta.absoluteEpisodeNumber != null && meta.absoluteEpisodeNumber > 0) {
+            orderIndex = meta.absoluteEpisodeNumber;
+            absoluteOrderIndex = meta.absoluteEpisodeNumber;
+        }
+        else if (meta.episodeNumber != null && meta.episodeNumber > 0) {
+            orderIndex = (meta.seasonNumber && meta.seasonNumber > 1)
+                ? meta.seasonNumber * 1000 + meta.episodeNumber
+                : meta.episodeNumber;
+            absoluteOrderIndex = meta.episodeNumber;
+        }
+        else if (meta.seasonNumber != null && meta.seasonNumber > 0) {
+            orderIndex = meta.seasonNumber;
+        }
     }
-    else if (meta.seasonNumber != null && meta.seasonNumber > 0) {
-        orderIndex = meta.seasonNumber;
+    // Héritage sécurisé du parentId sans pollution SHOW -> MOVIE
+    let effectiveParentId = parentId;
+    if (!effectiveParentId && existing?.parentId) {
+        const currentParent = await db.query.mediaNodes.findFirst({
+            where: (t, { eq: eOp }) => eOp(t.id, existing.parentId),
+            columns: { id: true, nodeType: true },
+        });
+        if (currentParent && (nodeType !== 'MOVIE' || currentParent.nodeType === 'COLLECTION')) {
+            effectiveParentId = currentParent.id;
+        }
     }
     const canonicalTitle = nodeType === 'SHOW'
         ? extractCanonicalShowTitle(meta.title)
         : meta.title;
     const payload = {
-        parentId: (parentId || existing?.parentId) ? String(parentId || existing?.parentId) : undefined,
+        parentId: effectiveParentId ? String(effectiveParentId) : undefined,
         nodeType,
         title: canonicalTitle,
         originalTitle: meta.originalTitle,
@@ -419,3 +531,4 @@ export async function ingestStandaloneVideoFile(videoPath) {
     }
     return nodeId;
 }
+export const ingestStandaloneVideoFile = ingestMediaFile;

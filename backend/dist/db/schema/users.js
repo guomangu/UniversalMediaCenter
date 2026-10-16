@@ -20,6 +20,7 @@ export const users = pgTable('users', {
     blockedValueIds: jsonb('blocked_value_ids').$type().default([]),
     allowedTags: jsonb('allowed_tags').$type().default([]),
     blockedTags: jsonb('blocked_tags').$type().default([]),
+    allowedFolders: jsonb('allowed_folders').$type().default([]),
     blockedFolders: jsonb('blocked_folders').$type().default([]),
     createdAt: timestamp('created_at').defaultNow().notNull(),
 });

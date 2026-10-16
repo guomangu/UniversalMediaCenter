@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, Pressable, Modal, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, Modal, ActivityIndicator, StyleSheet, ScrollView } from 'react-native';
 import { createAdminUser } from '@/services/adminApi';
 import { Radius, Spacing } from '@/constants/theme';
 
 interface Props {
   visible: boolean;
+  profileTypes?: any[];
   onClose: () => void;
   onCreated: () => void;
 }
 
-export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
+export function AdminCreateUserModal({ visible, profileTypes = [], onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [selectedRole, setSelectedRole] = useState('MEMBRE');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const firstInputRef = useRef<any>(null);
@@ -29,6 +30,8 @@ export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
 
   if (!visible) return null;
 
+  const isAdminSelected = selectedRole === 'ADMINISTRATEUR';
+
   const handleCreate = async () => {
     if (!name.trim()) return setErr('Le nom d’affichage est requis');
     if (!email.trim() || !email.includes('@')) return setErr('Une adresse email valide est requise');
@@ -41,12 +44,13 @@ export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
       displayName: name.trim(),
       email: email.trim().toLowerCase(),
       password: password.trim() || undefined,
-      isAdmin,
+      profileRole: selectedRole,
+      isAdmin: isAdminSelected,
     });
     setLoading(false);
 
     if (res.success) {
-      setName(''); setEmail(''); setPassword(''); setIsAdmin(false);
+      setName(''); setEmail(''); setPassword(''); setSelectedRole('MEMBRE');
       onCreated();
       onClose();
     } else {
@@ -123,31 +127,38 @@ export function AdminCreateUserModal({ visible, onClose, onCreated }: Props) {
             />
           </View>
 
-          <Pressable
-            focusable={true}
-            onPress={() => setIsAdmin(!isAdmin)}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              padding: 10,
-              borderRadius: Radius.md,
-              backgroundColor: isAdmin ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.04)',
-              borderWidth: 1,
-              borderColor: isAdmin ? '#6366f1' : 'rgba(255, 255, 255, 0.08)',
-              marginBottom: 16,
-            }}
-          >
-            <Text style={{ fontSize: 16 }}>{isAdmin ? '👑' : '👤'}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: '#f8fafc', fontWeight: '700', fontSize: 12 }}>
-                Privilèges Administrateur
-              </Text>
-              <Text style={{ color: '#94a3b8', fontSize: 11 }}>
-                {isAdmin ? 'Accès illimité à l’Agora, TV, réglages serveur et studio' : 'Utilisateur standard / profil famille'}
-              </Text>
-            </View>
-          </Pressable>
+          {/* Sélecteur de type de profil / Pack */}
+          <View style={modalStyles.inputGroup}>
+            <Text style={modalStyles.inputLabel}>Pack / Type de Profil assigné</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 4 }}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {(profileTypes.length > 0 ? profileTypes : [
+                  { id: 'MEMBRE', label: 'Membre Standard' },
+                  { id: 'ADMINISTRATEUR', label: 'Administrateur' },
+                  { id: 'ENFANT', label: 'Enfant (Jeunesse)' },
+                  { id: 'SAFEZONE', label: 'Safezone' },
+                ]).map((pt) => {
+                  const active = selectedRole === pt.id;
+                  return (
+                    <Pressable
+                      key={pt.id}
+                      focusable={true}
+                      style={[
+                        modalStyles.rolePill,
+                        active && modalStyles.rolePillActive,
+                      ]}
+                      onPress={() => setSelectedRole(pt.id)}
+                    >
+                      <Text style={[modalStyles.rolePillTxt, active && modalStyles.rolePillTxtActive]}>
+                        {pt.id === 'ADMINISTRATEUR' ? '👑 ' : pt.id === 'ENFANT' ? '🧒 ' : '👤 '}
+                        {pt.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
 
           <Pressable
             focusable={true}
@@ -177,7 +188,7 @@ const modalStyles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 440,
+    maxWidth: 460,
     backgroundColor: 'rgba(29, 33, 39, 0.98)',
     borderRadius: Radius.xl,
     padding: Spacing.four,
@@ -236,6 +247,27 @@ const modalStyles = StyleSheet.create({
     paddingVertical: 10,
     color: '#f8fafc',
     fontSize: 13,
+  },
+  rolePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  rolePillActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    borderColor: '#6366f1',
+  },
+  rolePillTxt: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  rolePillTxtActive: {
+    color: '#c7d2fe',
+    fontWeight: '800',
   },
   primaryBtn: {
     backgroundColor: '#6366f1',

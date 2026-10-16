@@ -28,7 +28,7 @@ export async function linkTagToNode(nodeId, attributeCode, valueText, contextRol
     if (!cleanText)
         return;
     const valueSlug = generateSlug(cleanText) || 'tag';
-    // 1. Trouver ou créer l'attribut EAV
+    // 1. Trouver ou créer l'attribut EAV de façon concurrente et sécurisée
     const attrQuery = await db.query.eavAttributes.findFirst({
         where: (t, { eq }) => eq(t.code, attributeCode),
     });
@@ -36,7 +36,6 @@ export async function linkTagToNode(nodeId, attributeCode, valueText, contextRol
     let attributeId;
     if (attrQuery) {
         attributeId = attrQuery.id;
-        // Mise à jour de la zone d'affichage si nécessaire
         if (defaults && attrQuery.uiZone !== defaults.uiZone) {
             await db
                 .update(eavAttributes)
@@ -51,29 +50,49 @@ export async function linkTagToNode(nodeId, attributeCode, valueText, contextRol
         }
     }
     else {
-        const isCustom = attributeCode.startsWith('custom_');
-        const [newAttr] = await db
-            .insert(eavAttributes)
-            .values({
-            code: attributeCode,
-            displayName: defaults?.displayName || (isCustom ? attributeCode.replace('custom_', 'Tag: ') : attributeCode),
-            uiZone: defaults?.uiZone || (isCustom ? 'TECHNICAL_DRAWER' : 'PRIMARY_PILL'),
-            iconName: defaults?.iconName || 'Tag',
-            colorTheme: defaults?.colorTheme || 'slate',
-            displayOrder: defaults?.displayOrder ?? (isCustom ? 200 : 100),
-            isDynamicCatchAll: isCustom,
-        })
-            .returning();
-        attributeId = newAttr.id;
+        try {
+            const isCustom = attributeCode.startsWith('custom_');
+            const [newAttr] = await db
+                .insert(eavAttributes)
+                .values({
+                code: attributeCode,
+                displayName: defaults?.displayName || (isCustom ? attributeCode.replace('custom_', 'Tag: ') : attributeCode),
+                uiZone: defaults?.uiZone || (isCustom ? 'TECHNICAL_DRAWER' : 'PRIMARY_PILL'),
+                iconName: defaults?.iconName || 'Tag',
+                colorTheme: defaults?.colorTheme || 'slate',
+                displayOrder: defaults?.displayOrder ?? (isCustom ? 200 : 100),
+                isDynamicCatchAll: isCustom,
+            })
+                .onConflictDoNothing()
+                .returning();
+            if (newAttr) {
+                attributeId = newAttr.id;
+            }
+            else {
+                const existingAttr = await db.query.eavAttributes.findFirst({
+                    where: (t, { eq }) => eq(t.code, attributeCode),
+                });
+                if (!existingAttr)
+                    return;
+                attributeId = existingAttr.id;
+            }
+        }
+        catch {
+            const existingAttr = await db.query.eavAttributes.findFirst({
+                where: (t, { eq }) => eq(t.code, attributeCode),
+            });
+            if (!existingAttr)
+                return;
+            attributeId = existingAttr.id;
+        }
     }
-    // 2. Trouver ou créer la valeur EAV
+    // 2. Trouver ou créer la valeur EAV de façon concurrente et sécurisée
     const valQuery = await db.query.eavValues.findFirst({
         where: (t, { and, eq }) => and(eq(t.attributeId, attributeId), eq(t.valueSlug, valueSlug)),
     });
     let valueId;
     if (valQuery) {
         valueId = valQuery.id;
-        // Si la nouvelle métadonnée apporte une information précieuse (ex: URL photo acteur), on enrichit
         if (metadata && Object.keys(metadata).length > 0) {
             const currentMeta = valQuery.metadataJson || {};
             const merged = { ...currentMeta, ...metadata };
@@ -83,16 +102,37 @@ export async function linkTagToNode(nodeId, attributeCode, valueText, contextRol
         }
     }
     else {
-        const [newVal] = await db
-            .insert(eavValues)
-            .values({
-            attributeId,
-            valueText: cleanText,
-            valueSlug,
-            metadataJson: metadata || {},
-        })
-            .returning();
-        valueId = newVal.id;
+        try {
+            const [newVal] = await db
+                .insert(eavValues)
+                .values({
+                attributeId,
+                valueText: cleanText,
+                valueSlug,
+                metadataJson: metadata || {},
+            })
+                .onConflictDoNothing()
+                .returning();
+            if (newVal) {
+                valueId = newVal.id;
+            }
+            else {
+                const existingVal = await db.query.eavValues.findFirst({
+                    where: (t, { and, eq }) => and(eq(t.attributeId, attributeId), eq(t.valueSlug, valueSlug)),
+                });
+                if (!existingVal)
+                    return;
+                valueId = existingVal.id;
+            }
+        }
+        catch {
+            const existingVal = await db.query.eavValues.findFirst({
+                where: (t, { and, eq }) => and(eq(t.attributeId, attributeId), eq(t.valueSlug, valueSlug)),
+            });
+            if (!existingVal)
+                return;
+            valueId = existingVal.id;
+        }
     }
     // 3. Lier la valeur au Media Node (Idempotent et protégé contre les doublons)
     try {

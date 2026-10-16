@@ -16,6 +16,7 @@ export interface ProfileDefaultsParams {
   defaultBlockedTags: string[];
   defaultAllowedTags: string[];
   defaultBlockedFolders: string[];
+  defaultAllowedFolders: string[];
 }
 
 export interface ProfileTypeDefinition {
@@ -29,6 +30,7 @@ export interface ProfileTypeDefinition {
   maxCsaAgeLimit?: number | null;
   allowedTags?: string[];
   blockedTags?: string[];
+  allowedFolders?: string[];
   blockedFolders?: string[];
 }
 
@@ -61,6 +63,7 @@ export interface MediaParams {
   globalExcludedFolders?: string[];
   defaultAudioLanguage?: string;
   defaultSubtitleLanguage?: string;
+  subtitleMode?: 'fallback_if_audio_missing' | 'always' | 'never';
 }
 
 export interface SiteParams {
@@ -84,6 +87,7 @@ export const defaultProfileTypes: ProfileTypeDefinition[] = [
     maxCsaAgeLimit: null,
     allowedTags: [],
     blockedTags: [],
+    allowedFolders: [],
     blockedFolders: [],
   },
   {
@@ -97,6 +101,7 @@ export const defaultProfileTypes: ProfileTypeDefinition[] = [
     maxCsaAgeLimit: null,
     allowedTags: [],
     blockedTags: [],
+    allowedFolders: [],
     blockedFolders: [],
   },
   {
@@ -110,6 +115,7 @@ export const defaultProfileTypes: ProfileTypeDefinition[] = [
     maxCsaAgeLimit: 10,
     allowedTags: ['Animation', 'Jeunesse', 'Famille', 'Kids'],
     blockedTags: ['Horreur', '+18', 'Gore', 'Violence', 'Thriller'],
+    allowedFolders: [],
     blockedFolders: ['/Films/Horreur', '/Films/Adultes', 'Horreur'],
   },
   {
@@ -123,6 +129,7 @@ export const defaultProfileTypes: ProfileTypeDefinition[] = [
     maxCsaAgeLimit: 12,
     allowedTags: [],
     blockedTags: ['Horreur', '+18', 'Gore', 'Épouvante'],
+    allowedFolders: [],
     blockedFolders: ['/Films/Adultes', 'Horreur'],
   },
   {
@@ -136,6 +143,7 @@ export const defaultProfileTypes: ProfileTypeDefinition[] = [
     maxCsaAgeLimit: null,
     allowedTags: ['Marvel', 'Super-héros', 'MCU', 'Avengers'],
     blockedTags: [],
+    allowedFolders: [],
     blockedFolders: [],
   },
 ];
@@ -166,6 +174,7 @@ export const defaultSiteParams: SiteParams = {
     defaultBlockedTags: [],
     defaultAllowedTags: [],
     defaultBlockedFolders: [],
+    defaultAllowedFolders: [],
   },
   profileTypes: defaultProfileTypes,
   ui: {
@@ -187,5 +196,6 @@ export const defaultSiteParams: SiteParams = {
     globalExcludedFolders: ['@eaDir', '#recycle', '.git', 'lost+found'],
     defaultAudioLanguage: 'fra',
     defaultSubtitleLanguage: 'fra',
+    subtitleMode: 'fallback_if_audio_missing',
   },
 };

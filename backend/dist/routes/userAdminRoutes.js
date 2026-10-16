@@ -23,6 +23,7 @@ userAdminRouter.get('/', async (c) => {
         maxCsaAgeLimit: u.maxCsaAgeLimit,
         allowedTags: u.allowedTags || [],
         blockedTags: u.blockedTags || [],
+        allowedFolders: u.allowedFolders || [],
         blockedFolders: u.blockedFolders || [],
         hasPassword: !!(u.passwordHash && u.passwordHash.length > 0),
         createdAt: u.createdAt,
@@ -31,7 +32,7 @@ userAdminRouter.get('/', async (c) => {
 });
 userAdminRouter.post('/', async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const { displayName, email, password, isAdmin = false, profileRole = 'STANDARD', canDownload = true, canTranscode = true, canWatchIptv = true, maxCsaAgeLimit = null, allowedTags = [], blockedTags = [], blockedFolders = [], } = body;
+    const { displayName, email, password, isAdmin = false, profileRole = 'STANDARD', canDownload = true, canTranscode = true, canWatchIptv = true, maxCsaAgeLimit = null, allowedTags = [], blockedTags = [], allowedFolders = [], blockedFolders = [], } = body;
     if (!displayName || typeof displayName !== 'string' || !displayName.trim()) {
         return c.json({ error: 'Le nom d’affichage est obligatoire' }, 400);
     }
@@ -64,6 +65,7 @@ userAdminRouter.post('/', async (c) => {
         maxCsaAgeLimit: isRoleAdmin ? null : (maxCsaAgeLimit !== null && maxCsaAgeLimit !== undefined && maxCsaAgeLimit !== '' ? Number(maxCsaAgeLimit) : null),
         allowedTags: isRoleAdmin ? [] : (Array.isArray(allowedTags) ? allowedTags : []),
         blockedTags: isRoleAdmin ? [] : (Array.isArray(blockedTags) ? blockedTags : []),
+        allowedFolders: isRoleAdmin ? [] : (Array.isArray(allowedFolders) ? allowedFolders : []),
         blockedFolders: isRoleAdmin ? [] : (Array.isArray(blockedFolders) ? blockedFolders : []),
     })
         .returning();
@@ -78,7 +80,7 @@ userAdminRouter.post('/', async (c) => {
 userAdminRouter.patch('/:id', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json().catch(() => ({}));
-    const { displayName, email, password, isAdmin, profileRole, canDownload, canTranscode, canWatchIptv, maxCsaAgeLimit, allowedTags, blockedTags, blockedFolders, } = body;
+    const { displayName, email, password, isAdmin, profileRole, canDownload, canTranscode, canWatchIptv, maxCsaAgeLimit, allowedTags, blockedTags, allowedFolders, blockedFolders, } = body;
     const targetUser = await db.query.users.findFirst({
         where: (t, { eq }) => eq(t.id, id),
     });
@@ -120,6 +122,7 @@ userAdminRouter.patch('/:id', async (c) => {
         updatePayload.maxCsaAgeLimit = null;
         updatePayload.allowedTags = [];
         updatePayload.blockedTags = [];
+        updatePayload.allowedFolders = [];
         updatePayload.blockedFolders = [];
     }
     else {
@@ -138,6 +141,8 @@ userAdminRouter.patch('/:id', async (c) => {
             updatePayload.allowedTags = Array.isArray(allowedTags) ? allowedTags : [];
         if (blockedTags !== undefined)
             updatePayload.blockedTags = Array.isArray(blockedTags) ? blockedTags : [];
+        if (allowedFolders !== undefined)
+            updatePayload.allowedFolders = Array.isArray(allowedFolders) ? allowedFolders : [];
         if (blockedFolders !== undefined)
             updatePayload.blockedFolders = Array.isArray(blockedFolders) ? blockedFolders : [];
     }
@@ -162,6 +167,7 @@ userAdminRouter.patch('/:id', async (c) => {
             maxCsaAgeLimit: u.maxCsaAgeLimit,
             allowedTags: u.allowedTags || [],
             blockedTags: u.blockedTags || [],
+            allowedFolders: u.allowedFolders || [],
             blockedFolders: u.blockedFolders || [],
             hasPassword: !!(u.passwordHash && u.passwordHash.length > 0),
             createdAt: u.createdAt,
@@ -174,17 +180,17 @@ userAdminRouter.delete('/:id', async (c) => {
     if (currentUser && currentUser.id === id) {
         return c.json({ error: 'Vous ne pouvez pas supprimer votre propre compte administrateur actif' }, 400);
     }
-    const targetUser = await db.query.users.findFirst({
+    const target = await db.query.users.findFirst({
         where: (t, { eq }) => eq(t.id, id),
     });
-    if (!targetUser)
+    if (!target)
         return c.json({ error: 'Utilisateur introuvable' }, 404);
-    if (targetUser.isAdmin) {
+    if (target.isAdmin) {
         const adminCount = await db.select({ val: count() }).from(users).where(eq(users.isAdmin, true));
         if ((adminCount[0]?.val ?? 0) <= 1) {
-            return c.json({ error: 'Impossible de supprimer le dernier administrateur de la plateforme' }, 400);
+            return c.json({ error: 'Impossible de supprimer le dernier administrateur du système' }, 400);
         }
     }
     await db.delete(users).where(eq(users.id, id));
-    return c.json({ success: true, message: `Utilisateur ${targetUser.displayName} supprimé` });
+    return c.json({ success: true, message: `Utilisateur ${target.displayName} supprimé` });
 });

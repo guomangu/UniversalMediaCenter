@@ -1,46 +1,55 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { TvSearchBar } from '@/components/TvSearchBar';
 import { TvChannelCard } from '@/components/TvChannelCard';
-import { fetchLiveChannels, fetchIptvCategories } from '@/services/api';
-import { useTabState } from '@/hooks/useTabState';
-import { getCachedData } from '@/services/pwaDataCache';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { fetchLiveChannels } from '@/services/api';
+import { Spacing, MaxContentWidth } from '@/constants/theme';
 
 export default function TvScreen() {
   const headerPaddingTop = useHeaderHeight(false);
-  const [searchQuery, setSearchQuery] = useTabState('tv_search_query', '');
-  const [activeCategory, setActiveCategory] = useTabState('tv_active_category', 'ALL');
-
-  const initialCachedChannels = getCachedData<any[]>(`iptv_channels_${searchQuery}_${activeCategory}_0`) || [];
-  const initialCachedCategories = getCachedData<string[]>('iptv_categories') || [];
-
-  const [channels, setChannels] = useState<any[]>(initialCachedChannels);
-  const [categories, setCategories] = useState<string[]>(initialCachedCategories);
-  const [loading, setLoading] = useState(initialCachedChannels.length === 0);
-
-  const loadData = async (q = searchQuery, cat = activeCategory) => {
-    if (channels.length === 0) setLoading(true);
-    const [chList, catList] = await Promise.all([
-      fetchLiveChannels(
-        { q: q.trim() || undefined, category: cat !== 'ALL' ? cat : undefined },
-        { onFreshData: (fresh) => setChannels(fresh) }
-      ),
-      fetchIptvCategories({ onFreshData: (fresh) => setCategories(fresh) }),
-    ]);
-    setChannels(chList);
-    if (catList && catList.length > 0) setCategories(catList);
-    setLoading(false);
-  };
+  const [channels, setChannels] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('ALL');
 
   useEffect(() => {
-    loadData(searchQuery, activeCategory);
+    let isMounted = true;
+    async function load() {
+      setLoading(true);
+      try {
+        const data = await fetchLiveChannels({
+          category: activeCategory === 'ALL' ? undefined : activeCategory,
+          q: searchQuery.trim() || undefined,
+        });
+        if (isMounted) {
+          setChannels(data);
+        }
+      } catch (err) {
+        console.error('Erreur chargement chaînes IPTV:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    const timer = setTimeout(load, 200);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [searchQuery, activeCategory]);
 
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    channels.forEach((c) => {
+      if (c.groupTitle) set.add(c.groupTitle);
+    });
+    return Array.from(set);
+  }, [channels]);
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <SiteHeader />
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]} showsVerticalScrollIndicator={false}>
         <View style={styles.headerHero}>
@@ -52,9 +61,9 @@ export default function TvScreen() {
 
         <TvSearchBar
           searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
+          onSearchChange={setSearchQuery}
           activeCategory={activeCategory}
-          setActiveCategory={setActiveCategory}
+          onSelectCategory={setActiveCategory}
           categories={categories}
         />
 
@@ -85,14 +94,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F1014',
   },
   content: {
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing.xxl * 2,
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.five * 2,
     maxWidth: MaxContentWidth,
     width: '100%',
     alignSelf: 'center',
   },
   headerHero: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.three,
   },
   heroTitle: {
     fontSize: 26,
@@ -107,19 +116,19 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   loaderCenter: {
-    paddingVertical: Spacing.xxl * 2,
+    paddingVertical: Spacing.five * 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.md,
-    marginTop: Spacing.md,
+    gap: Spacing.two,
+    marginTop: Spacing.two,
   },
   emptyState: {
     width: '100%',
-    paddingVertical: Spacing.xxl * 2,
+    paddingVertical: Spacing.five * 2,
     alignItems: 'center',
     justifyContent: 'center',
   },

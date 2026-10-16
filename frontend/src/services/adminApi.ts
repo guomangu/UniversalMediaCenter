@@ -2,6 +2,28 @@ import { invalidateCacheByPrefix } from './pwaDataCache';
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders } from './authStore';
 
+export interface PhysicalFolderItem {
+  path: string;
+  name: string;
+  rootPath: string;
+  parentPath: string | null;
+  relativePath: string;
+  mediaCount: number;
+  directMediaCount: number;
+  subfolderCount: number;
+  depth: number;
+  existsOnDisk: boolean;
+}
+
+export interface PhysicalFoldersResponse {
+  success: boolean;
+  roots: string[];
+  folders: PhysicalFolderItem[];
+  totalFolders: number;
+  totalMedia: number;
+  error?: string;
+}
+
 export async function fetchPublicConfig(): Promise<any> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/auth/config`);
@@ -56,6 +78,7 @@ export async function createAdminUser(payload: {
   maxCsaAgeLimit?: number | null;
   allowedTags?: string[];
   blockedTags?: string[];
+  allowedFolders?: string[];
   blockedFolders?: string[];
 }): Promise<any> {
   try {
@@ -143,6 +166,74 @@ export async function deleteProfileType(id: string): Promise<any> {
   }
 }
 
+export async function fetchPhysicalFolders(): Promise<PhysicalFoldersResponse> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/folders`, { headers: getAuthHeaders() });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, roots: [], folders: [], totalFolders: 0, totalMedia: 0, error: err.message };
+  }
+}
+
+export async function fetchAdminRails(): Promise<any[]> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/rails`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    return data.rails || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function reorderAdminRails(railOrders: { id: string; sortOrder: number }[]): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/rails/reorder`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ railOrders }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateAdminRail(id: string, updates: any): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/rails/${id}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchAdminTags(): Promise<any[]> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/tags`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    return data.tags || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function updateAdminTag(id: string, updates: any): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/admin/tags/${id}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function fetchIptvSources(): Promise<any[]> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources`, { headers: getAuthHeaders() });
@@ -154,7 +245,7 @@ export async function fetchIptvSources(): Promise<any[]> {
 }
 
 export async function createIptvSource(payload: { name: string; m3uUrl: string; epgXmltvUrl?: string }): Promise<any> {
-    invalidateCacheByPrefix('iptv_');
+  invalidateCacheByPrefix('iptv_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources`, {
       method: 'POST',
@@ -168,7 +259,7 @@ export async function createIptvSource(payload: { name: string; m3uUrl: string; 
 }
 
 export async function syncIptvSource(id: string): Promise<any> {
-    invalidateCacheByPrefix('iptv_');
+  invalidateCacheByPrefix('iptv_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources/${id}/sync`, {
       method: 'POST',
@@ -181,7 +272,7 @@ export async function syncIptvSource(id: string): Promise<any> {
 }
 
 export async function updateIptvSource(id: string, updates: any): Promise<any> {
-    invalidateCacheByPrefix('iptv_');
+  invalidateCacheByPrefix('iptv_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources/${id}`, {
       method: 'PATCH',
@@ -195,7 +286,7 @@ export async function updateIptvSource(id: string, updates: any): Promise<any> {
 }
 
 export async function deleteIptvSource(id: string): Promise<any> {
-    invalidateCacheByPrefix('iptv_');
+  invalidateCacheByPrefix('iptv_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources/${id}`, {
       method: 'DELETE',

@@ -23,6 +23,7 @@ export function AdminProfileTypesTab() {
   const [csaAge, setCsaAge] = useState('');
   const [allowedTags, setAllowedTags] = useState<string[]>([]);
   const [blockedTags, setBlockedTags] = useState<string[]>([]);
+  const [allowedFolders, setAllowedFolders] = useState<string[]>([]);
   const [blockedFolders, setBlockedFolders] = useState<string[]>([]);
 
   const loadTypes = async () => {
@@ -38,7 +39,7 @@ export function AdminProfileTypesTab() {
     setEditingId(null);
     setId(''); setLabel(''); setDesc('');
     setIsAdmin(false); setCanDownload(true); setCanWatchIptv(true); setCsaAge('');
-    setAllowedTags([]); setBlockedTags([]); setBlockedFolders([]);
+    setAllowedTags([]); setBlockedTags([]); setAllowedFolders([]); setBlockedFolders([]);
   };
 
   const handleEdit = (pt: any) => {
@@ -52,6 +53,7 @@ export function AdminProfileTypesTab() {
     setCsaAge(pt.maxCsaAgeLimit ? String(pt.maxCsaAgeLimit) : '');
     setAllowedTags(pt.allowedTags || []);
     setBlockedTags(pt.blockedTags || []);
+    setAllowedFolders(pt.allowedFolders || []);
     setBlockedFolders(pt.blockedFolders || []);
   };
 
@@ -76,6 +78,7 @@ export function AdminProfileTypesTab() {
       maxCsaAgeLimit: isTargetAdmin ? null : (csaAge ? Number(csaAge) : null),
       allowedTags: isTargetAdmin ? [] : allowedTags,
       blockedTags: isTargetAdmin ? [] : blockedTags,
+      allowedFolders: isTargetAdmin ? [] : allowedFolders,
       blockedFolders: isTargetAdmin ? [] : blockedFolders,
     };
 
@@ -111,7 +114,7 @@ export function AdminProfileTypesTab() {
     <View style={s.card}>
       <Text style={s.title}>🏷️ Types de Profils & Packs Paramétrables</Text>
       <Text style={s.sub}>
-        Définissez des modèles de profils (Enfant, Safezone, Pack Marvel, Membre, Admin) et associez-les aux utilisateurs.
+        Définissez des modèles de profils (Enfant, Safezone, Pack Marvel, Membre, Admin) et associez-les aux utilisateurs avec filtrage par dossiers physiques et tags.
       </Text>
 
       {/* Liste des Packs Existants */}
@@ -137,14 +140,17 @@ export function AdminProfileTypesTab() {
                 {pt.description && <Text style={s.typeDesc}>{pt.description}</Text>}
 
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                  {(pt.allowedFolders || []).map((f: string) => (
+                    <Text key={f} style={[s.tagMini, { borderColor: '#10b981', color: '#34d399' }]}>📁✓ {f}</Text>
+                  ))}
                   {(pt.allowedTags || []).map((t: string) => (
                     <Text key={t} style={[s.tagMini, { borderColor: '#10b981', color: '#34d399' }]}>✓ {t}</Text>
                   ))}
+                  {(pt.blockedFolders || []).map((f: string) => (
+                    <Text key={f} style={[s.tagMini, { borderColor: '#ef4444', color: '#f87171' }]}>📁✕ {f}</Text>
+                  ))}
                   {(pt.blockedTags || []).map((t: string) => (
                     <Text key={t} style={[s.tagMini, { borderColor: '#ef4444', color: '#f87171' }]}>✕ {t}</Text>
-                  ))}
-                  {(pt.blockedFolders || []).map((f: string) => (
-                    <Text key={f} style={[s.tagMini, { borderColor: '#f59e0b', color: '#fbbf24' }]}>📁 {f}</Text>
                   ))}
                 </View>
               </View>
@@ -248,16 +254,18 @@ export function AdminProfileTypesTab() {
               👑 Droits Totaux Obligatoires
             </Text>
             <Text style={{ color: '#fef9c3', fontSize: 12, lineHeight: 18 }}>
-              Le type de compte Administrateur as tous les accès, tags, dossiers et flux TV obligatoirement et intégralement autorisés sans aucune restriction possible.
+              Le type de compte Administrateur a tous les accès, tags, dossiers et flux TV obligatoirement et intégralement autorisés sans aucune restriction possible.
             </Text>
           </View>
         ) : (
           <AdminUserTagManager
             allowedTags={allowedTags}
             blockedTags={blockedTags}
+            allowedFolders={allowedFolders}
             blockedFolders={blockedFolders}
             onChangeAllowedTags={setAllowedTags}
             onChangeBlockedTags={setBlockedTags}
+            onChangeAllowedFolders={setAllowedFolders}
             onChangeBlockedFolders={setBlockedFolders}
           />
         )}

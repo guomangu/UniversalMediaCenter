@@ -128,3 +128,4 @@ media:
     - "lost+found"
   defaultAudioLanguage: fra
   defaultSubtitleLanguage: fra
+  subtitleMode: fallback_if_audio_missing

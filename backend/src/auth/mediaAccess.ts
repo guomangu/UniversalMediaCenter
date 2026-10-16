@@ -6,6 +6,7 @@ export function isMediaAllowedForUser(
   media: {
     videoFilePath?: string | null;
     nfoFilePath?: string | null;
+    posterPath?: string | null;
     searchVectorText?: string | null;
     nodeType?: string | null;
   }
@@ -13,17 +14,31 @@ export function isMediaAllowedForUser(
   if (!user || user.isAdmin) return true;
   if (media.nodeType === 'LIVE_CHANNEL' && user.canWatchIptv === false) return false;
 
-  // Exclusion de dossiers pour le profil
+  const paths = `${media.videoFilePath || ''} ${media.nfoFilePath || ''} ${media.posterPath || ''}`.replace(/\\/g, '/').toLowerCase();
+
+  // 1. Autorisation exclusive de dossiers (Whitelist)
+  // Si au moins un dossier est configuré en autorisation exclusive, le média DOIT impérativement appartenir à l'un de ces dossiers
+  if (user.allowedFolders && user.allowedFolders.length > 0) {
+    const isAllowed = user.allowedFolders.some((folder) => {
+      const clean = (folder || '').trim().replace(/\\/g, '/').toLowerCase();
+      return clean.length > 0 && paths.includes(clean);
+    });
+    if (!isAllowed) {
+      return false;
+    }
+  }
+
+  // 2. Exclusion / interdiction de dossiers pour le profil (Blacklist)
   if (user.blockedFolders && user.blockedFolders.length > 0) {
-    const paths = `${media.videoFilePath || ''} ${media.nfoFilePath || ''}`.toLowerCase();
     for (const folder of user.blockedFolders) {
-      if (folder && folder.trim() && paths.includes(folder.trim().toLowerCase())) {
+      const clean = (folder || '').trim().replace(/\\/g, '/').toLowerCase();
+      if (clean.length > 0 && paths.includes(clean)) {
         return false;
       }
     }
   }
 
-  // Interdiction de tags spécifiques (Blacklist)
+  // 3. Interdiction de tags spécifiques (Blacklist)
   if (user.blockedTags && user.blockedTags.length > 0) {
     const searchVec = (media.searchVectorText || '').toLowerCase();
     for (const tag of user.blockedTags) {
@@ -33,7 +48,7 @@ export function isMediaAllowedForUser(
     }
   }
 
-  // Tags autorisés uniquement (Whitelist)
+  // 4. Tags autorisés uniquement (Whitelist)
   if (user.allowedTags && user.allowedTags.length > 0) {
     const searchVec = (media.searchVectorText || '').toLowerCase();
     const hasAllowed = user.allowedTags.some(
@@ -54,6 +69,7 @@ export function checkMediaAccess(
   mediaData?: {
     videoFilePath?: string | null;
     nfoFilePath?: string | null;
+    posterPath?: string | null;
     searchVectorText?: string | null;
   }
 ): boolean {

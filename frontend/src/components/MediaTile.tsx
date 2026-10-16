@@ -44,9 +44,16 @@ export function MediaTile({ item }: { item: MediaTileItem }) {
           </View>
         ) : null}
 
+        {/* Badge Résolution / Qualité dynamique */}
+        {item.videoQuality ? (
+          <View style={[styles.qualityBadge, activeSession && styles.qualityBadgeWithSession]}>
+            <Text style={styles.qualityBadgeTxt}>{item.videoQuality}</Text>
+          </View>
+        ) : null}
+
         {/* Année */}
         {item.releaseYear ? (
-          <View style={styles.yr}>
+          <View style={[styles.yr, activeSession && styles.yrWithSession]}>
             <Text style={styles.yrTxt}>{item.releaseYear}</Text>
           </View>
         ) : null}
@@ -109,6 +116,26 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
   },
   sessionBadgeTopTxt: { color: '#ffffff', fontSize: 9.5, fontWeight: '700', letterSpacing: 0.5 },
+  qualityBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(26, 31, 40, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(130, 170, 255, 0.3)',
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: Radius.sm,
+  },
+  qualityBadgeWithSession: {
+    bottom: 26,
+  },
+  qualityBadgeTxt: {
+    color: '#93b6ff',
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
   yr: {
     position: 'absolute',
     bottom: 8,
@@ -117,6 +144,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: Radius.sm,
+  },
+  yrWithSession: {
+    bottom: 26,
   },
   yrTxt: { color: '#8a95a5', fontSize: 10, fontWeight: '600' },
   sessionBottomBar: {

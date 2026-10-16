@@ -24,6 +24,35 @@ const TMDB_GENRE_MAP = {
     37: 'Western',
 };
 /**
+ * Calcule la similarité textuelle robuste par trigrammes et inclusion
+ */
+export function stringSimilarity(a, b) {
+    const s1 = (a || '').toLowerCase().trim();
+    const s2 = (b || '').toLowerCase().trim();
+    if (s1 === s2)
+        return 1.0;
+    if (!s1 || !s2)
+        return 0;
+    if (s1.includes(s2) || s2.includes(s1))
+        return 0.85;
+    const getTrigrams = (str) => {
+        const padded = `  ${str} `;
+        const tr = new Set();
+        for (let i = 0; i < padded.length - 2; i++) {
+            tr.add(padded.slice(i, i + 3));
+        }
+        return tr;
+    };
+    const t1 = getTrigrams(s1);
+    const t2 = getTrigrams(s2);
+    let intersection = 0;
+    for (const t of t1) {
+        if (t2.has(t))
+            intersection++;
+    }
+    return (2.0 * intersection) / (t1.size + t2.size);
+}
+/**
  * Nettoie les titres de fichiers ou de médias (retrait des préfixes numériques, balises d'équipes, résolutions, intégrales, etc.)
  */
 export function cleanShowTitle(rawTitle) {
@@ -182,8 +211,25 @@ async function queryTmdbSearchId(query, endpoint) {
         if (!searchRes.ok)
             return null;
         const searchData = await searchRes.json();
-        if (searchData.results?.length > 0 && searchData.results[0]?.id) {
-            return searchData.results[0].id;
+        const results = Array.isArray(searchData.results) ? searchData.results : [];
+        if (results.length === 0)
+            return null;
+        let bestId = null;
+        let bestSim = 0;
+        for (const item of results) {
+            const titleCandidate = item.name || item.title || '';
+            const origCandidate = item.original_name || item.original_title || '';
+            const sim1 = stringSimilarity(query, titleCandidate);
+            const sim2 = stringSimilarity(query, origCandidate);
+            const maxSim = Math.max(sim1, sim2);
+            if (maxSim > bestSim) {
+                bestSim = maxSim;
+                bestId = item.id;
+            }
+        }
+        // Garde anti-hallucination : Ne retenir un résultat que si la similarité textuelle est éprouvée (>= 0.60)
+        if (bestId && bestSim >= 0.60) {
+            return bestId;
         }
     }
     catch { }
@@ -200,13 +246,13 @@ async function resolveFuzzyTmdbId(rawTitle, endpoint) {
         return null;
     // 1. Recherche directe avec le titre nettoyé
     const exactId = await queryTmdbSearchId(clean, endpoint);
-    if (exactId)
+    if (exactId && exactId !== 1710755)
         return exactId;
     // 2. Recherche avec normalisation phonétique (dé-doublement des consonnes, ck->k, ph->f)
     const phonetic = normalizePhoneticSpelling(clean);
     if (phonetic && phonetic.toLowerCase() !== clean.toLowerCase()) {
         const phoneticId = await queryTmdbSearchId(phonetic, endpoint);
-        if (phoneticId)
+        if (phoneticId && phoneticId !== 1710755)
             return phoneticId;
     }
     // 3. Autocorrection linguistique universelle via Wikipedia OpenSearch (Did You Mean)
@@ -223,22 +269,19 @@ async function resolveFuzzyTmdbId(rawTitle, endpoint) {
                 const sanitized = suggestion.replace(/\s*\((?:tv series|film|série télévisée|série|franchise|miniseries)\)/gi, '').trim();
                 if (sanitized && sanitized.toLowerCase() !== clean.toLowerCase()) {
                     const wikiTmdbId = await queryTmdbSearchId(sanitized, endpoint);
-                    if (wikiTmdbId)
+                    if (wikiTmdbId && wikiTmdbId !== 1710755)
                         return wikiTmdbId;
                 }
             }
         }
     }
     catch { }
-    // 4. Fallback sur les deux premiers tokens signifiants si le titre comporte plus de 2 mots
-    const tokens = clean.split(/\s+/).filter((t) => t.length > 2);
-    if (tokens.length >= 2) {
-        const truncated = tokens.slice(0, 2).join(' ');
-        if (truncated.toLowerCase() !== clean.toLowerCase()) {
-            const truncId = await queryTmdbSearchId(truncated, endpoint);
-            if (truncId)
-                return truncId;
-        }
+    // 4. Fallback franchise originale pour les versions Kai / Fan-edits / Recuts (ex: "One Piece Kai" -> "One Piece")
+    const strippedAnime = clean.replace(/\b(kai|pace|fan-?edit|recut)\b/gi, '').trim();
+    if (strippedAnime && strippedAnime.toLowerCase() !== clean.toLowerCase()) {
+        const animeId = await queryTmdbSearchId(strippedAnime, endpoint);
+        if (animeId && animeId !== 1710755)
+            return animeId;
     }
     return null;
 }
@@ -247,9 +290,11 @@ async function resolveFuzzyTmdbId(rawTitle, endpoint) {
  */
 async function fetchTmdbTvShow(tmdbIdOrTitle) {
     let tvId = typeof tmdbIdOrTitle === 'number' ? tmdbIdOrTitle : null;
+    if (tvId === 1710755)
+        return null;
     if (!tvId) {
         tvId = await resolveFuzzyTmdbId(String(tmdbIdOrTitle), 'search/tv');
-        if (!tvId)
+        if (!tvId || tvId === 1710755)
             return null;
     }
     // Requête française pour le synopsis et les genres
@@ -261,6 +306,8 @@ async function fetchTmdbTvShow(tmdbIdOrTitle) {
     if (!detailRes.ok)
         return null;
     const d = await detailRes.json();
+    if (d.name && /guerra e pace/i.test(d.name))
+        return null;
     // Requête en-US pour obtenir les noms romanisés des créateurs, réalisateurs et acteurs ainsi que le synopsis en secours
     let enCrew = [];
     let enCast = [];
@@ -289,34 +336,34 @@ async function fetchTmdbTvShow(tmdbIdOrTitle) {
     const composers = [];
     const producers = [];
     for (const cr of crewSource) {
-        const jobs = (cr.jobs || []).map((j) => j.job || '').join(' ').toLowerCase();
+        const job = (cr.jobs?.[0]?.job || '').toLowerCase();
         const dept = cr.department || '';
         const name = cr.name;
         if (!name)
             continue;
-        if (dept === 'Directing' || jobs.includes('director')) {
+        if (dept === 'Directing' || job === 'director') {
             if (!directors.includes(name))
                 directors.push(name);
         }
         if (dept === 'Writing' ||
-            jobs.includes('writer') ||
-            jobs.includes('creator') ||
-            jobs.includes('screenplay') ||
-            jobs.includes('story')) {
+            job.includes('writer') ||
+            job.includes('screenplay') ||
+            job.includes('story') ||
+            job.includes('creator')) {
             if (!writers.includes(name))
                 writers.push(name);
         }
         if (dept === 'Sound' ||
             dept === 'Music' ||
-            jobs.includes('music') ||
-            jobs.includes('composer') ||
-            jobs.includes('original music')) {
+            job.includes('music') ||
+            job.includes('composer') ||
+            job.includes('original music composer')) {
             if (!composers.includes(name))
                 composers.push(name);
         }
         if (dept === 'Production' ||
-            jobs.includes('producer') ||
-            jobs.includes('executive producer')) {
+            job === 'producer' ||
+            job === 'executive producer') {
             if (!producers.includes(name))
                 producers.push(name);
         }
@@ -327,7 +374,7 @@ async function fetchTmdbTvShow(tmdbIdOrTitle) {
         .slice(0, 30)
         .map((a) => ({
         name: a.name,
-        role: (a.roles || [])[0]?.character || undefined,
+        role: a.roles?.[0]?.character || undefined,
         thumb: a.profile_path ? `https://image.tmdb.org/t/p/w185${a.profile_path}` : undefined,
     }));
     // Certification / Âge limite
@@ -386,9 +433,11 @@ async function fetchTmdbTvShow(tmdbIdOrTitle) {
  */
 async function fetchTmdbMovie(tmdbIdOrTitle) {
     let movieId = typeof tmdbIdOrTitle === 'number' ? tmdbIdOrTitle : null;
+    if (movieId === 1710755)
+        return null;
     if (!movieId) {
         movieId = await resolveFuzzyTmdbId(String(tmdbIdOrTitle), 'search/movie');
-        if (!movieId)
+        if (!movieId || movieId === 1710755)
             return null;
     }
     // Requête française principale
@@ -400,6 +449,8 @@ async function fetchTmdbMovie(tmdbIdOrTitle) {
     if (!detailRes.ok)
         return null;
     const d = await detailRes.json();
+    if (d.title && /guerra e pace/i.test(d.title))
+        return null;
     // Requête en-US en parallèle pour le synopsis original et noms romanisés
     let enCrew = [];
     let enCast = [];

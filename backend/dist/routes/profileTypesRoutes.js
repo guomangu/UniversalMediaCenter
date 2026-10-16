@@ -12,7 +12,7 @@ profileTypesRouter.get('/', (c) => {
 profileTypesRouter.post('/', async (c) => {
     try {
         const body = await c.req.json().catch(() => ({}));
-        const { id, label, description, isAdmin, canDownload, canTranscode, canWatchIptv, maxCsaAgeLimit, allowedTags, blockedTags, blockedFolders } = body;
+        const { id, label, description, isAdmin, canDownload, canTranscode, canWatchIptv, maxCsaAgeLimit, allowedTags, blockedTags, allowedFolders, blockedFolders } = body;
         if (!id || !label) {
             return c.json({ error: 'L’identifiant et le libellé du type de profil sont obligatoires' }, 400);
         }
@@ -33,6 +33,7 @@ profileTypesRouter.post('/', async (c) => {
             maxCsaAgeLimit: maxCsaAgeLimit !== null && maxCsaAgeLimit !== undefined && maxCsaAgeLimit !== '' ? Number(maxCsaAgeLimit) : null,
             allowedTags: Array.isArray(allowedTags) ? allowedTags : [],
             blockedTags: Array.isArray(blockedTags) ? blockedTags : [],
+            allowedFolders: Array.isArray(allowedFolders) ? allowedFolders : [],
             blockedFolders: Array.isArray(blockedFolders) ? blockedFolders : [],
         };
         const updatedTypes = [...(params.profileTypes || []), newType];
@@ -75,6 +76,7 @@ profileTypesRouter.put('/:id', async (c) => {
             maxCsaAgeLimit: isIdAdmin ? null : (body.maxCsaAgeLimit !== undefined ? (body.maxCsaAgeLimit === '' || body.maxCsaAgeLimit === null ? null : Number(body.maxCsaAgeLimit)) : prev.maxCsaAgeLimit),
             allowedTags: isIdAdmin ? [] : (body.allowedTags !== undefined ? (Array.isArray(body.allowedTags) ? body.allowedTags : []) : prev.allowedTags),
             blockedTags: isIdAdmin ? [] : (body.blockedTags !== undefined ? (Array.isArray(body.blockedTags) ? body.blockedTags : []) : prev.blockedTags),
+            allowedFolders: isIdAdmin ? [] : (body.allowedFolders !== undefined ? (Array.isArray(body.allowedFolders) ? body.allowedFolders : []) : (prev.allowedFolders || [])),
             blockedFolders: isIdAdmin ? [] : (body.blockedFolders !== undefined ? (Array.isArray(body.blockedFolders) ? body.blockedFolders : []) : prev.blockedFolders),
         };
         currentTypes[index] = updated;

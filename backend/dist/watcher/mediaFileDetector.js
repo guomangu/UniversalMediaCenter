@@ -11,30 +11,42 @@ export async function detectAdjacentFiles(nfoPath) {
     const isShowOrSeasonNfo = nfoBase === 'tvshow' || nfoBase === 'season';
     try {
         const entries = await fs.readdir(dir, { withFileTypes: true });
+        // Compter les vidéos du dossier pour savoir si c'est un dossier multi-films à plat
+        let videoCount = 0;
+        for (const entry of entries) {
+            if (!entry.isFile())
+                continue;
+            const ext = path.extname(entry.name).toLowerCase();
+            if (VIDEO_EXTENSIONS.has(ext)) {
+                videoCount++;
+                const base = path.basename(entry.name, ext).toLowerCase();
+                if (!isShowOrSeasonNfo && base === nfoBase) {
+                    result.videoFilePath = path.join(dir, entry.name);
+                }
+            }
+        }
         // 1. Détection du fichier vidéo principal adjacent (sans déplacement)
-        if (!isShowOrSeasonNfo) {
-            // Chercher d'abord un fichier vidéo avec exactement le même nom de base
+        if (!isShowOrSeasonNfo && !result.videoFilePath && videoCount === 1) {
             for (const entry of entries) {
                 if (!entry.isFile())
                     continue;
                 const ext = path.extname(entry.name).toLowerCase();
-                if (!VIDEO_EXTENSIONS.has(ext))
-                    continue;
-                const base = path.basename(entry.name, ext).toLowerCase();
-                if (base === nfoBase) {
+                if (VIDEO_EXTENSIONS.has(ext)) {
                     result.videoFilePath = path.join(dir, entry.name);
                     break;
                 }
             }
-            // Si pas de match exact, et si c'est un film unique dans son dossier (movie.nfo ou unique vidéo)
-            if (!result.videoFilePath) {
-                const videoFiles = entries.filter((e) => e.isFile() && VIDEO_EXTENSIONS.has(path.extname(e.name).toLowerCase()));
-                if (videoFiles.length === 1) {
-                    result.videoFilePath = path.join(dir, videoFiles[0].name);
-                }
-            }
         }
-        // 2. Détection des artworks locaux
+        // 2. Détection des artworks locaux avec priorité absolue aux fichiers spécifiques au média
+        const isSingleMediaFolder = videoCount <= 1 || isShowOrSeasonNfo;
+        let specificPoster;
+        let genericPoster;
+        let specificFanart;
+        let genericFanart;
+        let specificLogo;
+        let genericLogo;
+        let specificThumb;
+        let genericThumb;
         for (const entry of entries) {
             if (!entry.isFile())
                 continue;
@@ -43,19 +55,52 @@ export async function detectAdjacentFiles(nfoPath) {
                 continue;
             const base = path.basename(entry.name, ext).toLowerCase();
             const fullPath = path.join(dir, entry.name);
-            if (base === 'poster' || base === 'cover' || base === 'folder' || base === `${nfoBase}-poster`) {
-                result.posterPath = fullPath;
+            // Artworks spécifiques au fichier (ex: antigang-poster.jpg, antigang-backdrop.jpg, antigang.jpg)
+            if (base === `${nfoBase}-poster` || base === `${nfoBase}.poster` || base === `${nfoBase}-cover`) {
+                specificPoster = fullPath;
             }
-            else if (base === 'fanart' || base === 'backdrop' || base === `${nfoBase}-fanart`) {
-                result.fanartPath = fullPath;
+            else if (base === `${nfoBase}-fanart` || base === `${nfoBase}-backdrop` || base === `${nfoBase}.fanart`) {
+                specificFanart = fullPath;
             }
-            else if (base === 'clearlogo' || base === 'logo') {
-                result.clearlogoPath = fullPath;
+            else if (base === `${nfoBase}-logo` || base === `${nfoBase}-clearlogo` || base === `${nfoBase}.clearlogo`) {
+                specificLogo = fullPath;
             }
-            else if (base === 'thumb' || base === `${nfoBase}-thumb`) {
-                result.thumbPath = fullPath;
+            else if (base === `${nfoBase}-thumb` || base === `${nfoBase}-landscape` || base === `${nfoBase}.thumb`) {
+                specificThumb = fullPath;
+            }
+            else if (base === nfoBase) {
+                // Ex: antigang.jpg
+                if (!specificPoster)
+                    specificPoster = fullPath;
+            }
+            // Artworks génériques de dossier (uniquement si dossier dédié à une oeuvre unique ou série)
+            if (isSingleMediaFolder) {
+                if (base === 'poster' || base === 'cover') {
+                    if (!genericPoster)
+                        genericPoster = fullPath;
+                }
+                else if (base === 'folder') {
+                    if (!genericPoster)
+                        genericPoster = fullPath;
+                }
+                else if (base === 'fanart' || base === 'backdrop') {
+                    if (!genericFanart)
+                        genericFanart = fullPath;
+                }
+                else if (base === 'clearlogo' || base === 'logo') {
+                    if (!genericLogo)
+                        genericLogo = fullPath;
+                }
+                else if (base === 'thumb' || base === 'landscape') {
+                    if (!genericThumb)
+                        genericThumb = fullPath;
+                }
             }
         }
+        result.posterPath = specificPoster || genericPoster;
+        result.fanartPath = specificFanart || genericFanart;
+        result.clearlogoPath = specificLogo || genericLogo;
+        result.thumbPath = specificThumb || genericThumb;
     }
     catch (err) {
         console.warn(`Could not inspect adjacent files in ${dir}:`, err);
