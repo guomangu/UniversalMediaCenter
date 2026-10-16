@@ -12,7 +12,7 @@ export async function proxyLiveStream(c, streamUrl) {
                 'User-Agent': 'UniversalMediaStack/3.0 (compatible; VLC/3.0.18)',
                 'Accept': '*/*',
             },
-            signal: AbortSignal.timeout(6000),
+            signal: AbortSignal.timeout(8000),
         });
         if (!upstreamRes.ok) {
             const status = upstreamRes.status;
@@ -37,8 +37,19 @@ export async function proxyLiveStream(c, streamUrl) {
                 .split('\n')
                 .map((line) => {
                 const trimmed = line.trim();
-                if (!trimmed || trimmed.startsWith('#'))
+                if (!trimmed)
                     return line;
+                if (trimmed.startsWith('#')) {
+                    // Réécrire les URI="..." relatives contenues dans les en-têtes HLS (#EXT-X-MEDIA, #EXT-X-MAP, #EXT-X-KEY)
+                    return line.replace(/URI=["']([^"']+)["']/g, (match, relUri) => {
+                        try {
+                            return `URI="${new URL(relUri, baseUrl).toString()}"`;
+                        }
+                        catch {
+                            return match;
+                        }
+                    });
+                }
                 try {
                     return new URL(trimmed, baseUrl).toString();
                 }

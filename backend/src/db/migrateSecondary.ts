@@ -2,7 +2,8 @@ import { sqlClient } from './connection.js';
 
 export async function createSecondaryTables(): Promise<void> {
   await sqlClient.unsafe(`
-    CREATE TABLE IF NOT EXISTS eav_values (\n      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    CREATE TABLE IF NOT EXISTS eav_values (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       attribute_id UUID NOT NULL REFERENCES eav_attributes(id) ON DELETE CASCADE,
       value_text TEXT NOT NULL,
       value_slug TEXT NOT NULL,
@@ -189,7 +190,10 @@ export async function createSecondaryTables(): Promise<void> {
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS is_extra BOOLEAN DEFAULT FALSE NOT NULL;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS extra_type TEXT;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS translations_json JSONB DEFAULT '{}'::jsonb;
-    CREATE INDEX IF NOT EXISTS idx_media_nodes_confidence ON media_nodes (confidence_score);\n    CREATE INDEX IF NOT EXISTS idx_media_nodes_is_extra ON media_nodes (is_extra);
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS iptv_source_id UUID REFERENCES iptv_sources(id) ON DELETE CASCADE;
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_iptv_source ON media_nodes (iptv_source_id);
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_confidence ON media_nodes (confidence_score);
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_is_extra ON media_nodes (is_extra);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_oshash ON media_nodes (oshash);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_trgm ON media_nodes USING gin (search_vector_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_eav_values_trgm ON eav_values USING gin (value_text gin_trgm_ops);

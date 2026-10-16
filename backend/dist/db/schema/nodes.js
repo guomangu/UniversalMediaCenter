@@ -21,6 +21,7 @@ export const mediaNodes = pgTable('media_nodes', {
     nfoFilePath: text('nfo_file_path'),
     nfoSha256: text('nfo_sha256'),
     streamUrl: text('stream_url'),
+    iptvSourceId: uuid('iptv_source_id'),
     posterPath: text('poster_path'),
     fanartPath: text('fanart_path'),
     clearlogoPath: text('clearlogo_path'),
@@ -45,6 +46,7 @@ export const mediaNodes = pgTable('media_nodes', {
     parentIdx: index('idx_media_nodes_parent').on(table.parentId),
     typeIdx: index('idx_media_nodes_type').on(table.nodeType),
     nfoPathIdx: uniqueIndex('idx_media_nodes_nfo_path').on(table.nfoFilePath),
+    iptvSourceIdx: index('idx_media_nodes_iptv_source').on(table.iptvSourceId),
     trgmSearchIdx: index('idx_media_nodes_trgm_search').using('gin', sql `${table.searchVectorText} gin_trgm_ops`),
     spatialIdx: index('idx_media_nodes_spatial').using('gist', table.location),
 }));

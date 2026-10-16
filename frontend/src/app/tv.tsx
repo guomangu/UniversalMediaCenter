@@ -24,11 +24,14 @@ export default function TvScreen() {
   const loadData = async (q = searchQuery, cat = activeCategory) => {
     if (channels.length === 0) setLoading(true);
     const [chList, catList] = await Promise.all([
-      fetchLiveChannels({ q: q.trim() || undefined, category: cat !== 'ALL' ? cat : undefined }),
-      categories.length === 0 ? fetchIptvCategories() : Promise.resolve(categories),
+      fetchLiveChannels(
+        { q: q.trim() || undefined, category: cat !== 'ALL' ? cat : undefined },
+        { onFreshData: (fresh) => setChannels(fresh) }
+      ),
+      fetchIptvCategories({ onFreshData: (fresh) => setCategories(fresh) }),
     ]);
     setChannels(chList);
-    if (categories.length === 0) setCategories(catList);
+    if (catList && catList.length > 0) setCategories(catList);
     setLoading(false);
   };
 
@@ -49,30 +52,26 @@ export default function TvScreen() {
 
         <TvSearchBar
           searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          categories={categories}
+          setSearchQuery={setSearchQuery}
           activeCategory={activeCategory}
-          onSelectCategory={setActiveCategory}
+          setActiveCategory={setActiveCategory}
+          categories={categories}
         />
 
-        <View style={styles.countRow}>
-          <Text style={styles.countTxt}>
-            {loading ? 'Chargement...' : `${channels.length} chaîne${channels.length > 1 ? 's' : ''} disponible${channels.length > 1 ? 's' : ''}`}
-          </Text>
-        </View>
-
         {loading ? (
-          <ActivityIndicator color="#6366f1" size="large" style={{ marginVertical: 40 }} />
-        ) : channels.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyTitle}>Aucune chaîne trouvée</Text>
-            <Text style={styles.emptySub}>Essayez un autre mot-clé ou sélectionnez une autre catégorie.</Text>
+          <View style={styles.loaderCenter}>
+            <ActivityIndicator size="large" color="#E5A00D" />
           </View>
         ) : (
-          <View style={styles.grid}>
-            {channels.map((ch) => (
-              <TvChannelCard key={ch.id} channel={ch} />
+          <View style={styles.gridContainer}>
+            {channels.map((channel) => (
+              <TvChannelCard key={channel.id} channel={channel} />
             ))}
+            {channels.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>Aucune chaîne trouvée correspondant à vos critères.</Text>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -81,15 +80,52 @@ export default function TvScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', padding: Spacing.three, paddingTop: 64, paddingBottom: 40 },
-  headerHero: { marginBottom: Spacing.three },
-  heroTitle: { color: '#f8fafc', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
-  heroSub: { color: '#94a3b8', fontSize: 13, marginTop: 4, lineHeight: 18 },
-  countRow: { marginBottom: 12 },
-  countTxt: { color: '#818cf8', fontSize: 12, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'flex-start' },
-  emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 50, gap: 6 },
-  emptyTitle: { color: '#f8fafc', fontSize: 16, fontWeight: '700' },
-  emptySub: { color: '#64748b', fontSize: 12 },
+  container: {
+    flex: 1,
+    backgroundColor: '#0F1014',
+  },
+  content: {
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.xxl * 2,
+    maxWidth: MaxContentWidth,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  headerHero: {
+    marginBottom: Spacing.lg,
+  },
+  heroTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  heroSub: {
+    fontSize: 14,
+    color: '#94A3B8',
+    lineHeight: 20,
+  },
+  loaderCenter: {
+    paddingVertical: Spacing.xxl * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  emptyState: {
+    width: '100%',
+    paddingVertical: Spacing.xxl * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 15,
+    color: '#64748B',
+    fontStyle: 'italic',
+  },
 });

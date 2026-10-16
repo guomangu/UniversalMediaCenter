@@ -112,41 +112,54 @@ export async function searchMedia(query: string): Promise<any> {
 }
 export const searchCatalog = searchMedia;
 
-export async function fetchLiveChannels(params?: { q?: string; category?: string; limit?: number }): Promise<any[]> {
+export async function fetchLiveChannels(
+  params?: { q?: string; category?: string; limit?: number },
+  options?: { forceRefresh?: boolean; onFreshData?: (fresh: any[]) => void }
+): Promise<any[]> {
   const cacheKey = `iptv_channels_${params?.q || ''}_${params?.category || ''}_${params?.limit || 0}`;
-  return fetchWithCache(cacheKey, async () => {
-    try {
-      const sp = new URLSearchParams();
-      if (params?.q) sp.set('q', params.q);
-      if (params?.category && params.category !== 'ALL') sp.set('category', params.category);
-      if (params?.limit) sp.set('limit', String(params.limit));
-      const qs = sp.toString();
-      const url = `${getApiBaseUrl()}/api/iptv/channels${qs ? `?${qs}` : ''}`;
-      const res = await fetch(url, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      return data.channels || [];
-    } catch {
-      return [];
-    }
-  });
+  return fetchWithCache(
+    cacheKey,
+    async () => {
+      try {
+        const sp = new URLSearchParams();
+        if (params?.q) sp.set('q', params.q);
+        if (params?.category && params.category !== 'ALL') sp.set('category', params.category);
+        if (params?.limit) sp.set('limit', String(params.limit));
+        const qs = sp.toString();
+        const url = `${getApiBaseUrl()}/api/iptv/channels${qs ? `?${qs}` : ''}`;
+        const res = await fetch(url, {
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return data.channels || [];
+      } catch {
+        return [];
+      }
+    },
+    options
+  );
 }
 
-export async function fetchIptvCategories(): Promise<string[]> {
-  return fetchWithCache('iptv_categories', async () => {
-    try {
-      const res = await fetch(`${getApiBaseUrl()}/api/iptv/categories`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      return data.categories || [];
-    } catch {
-      return [];
-    }
-  });
+export async function fetchIptvCategories(
+  options?: { forceRefresh?: boolean; onFreshData?: (fresh: string[]) => void }
+): Promise<string[]> {
+  return fetchWithCache(
+    'iptv_categories',
+    async () => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/api/iptv/categories`, {
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return data.categories || [];
+      } catch {
+        return [];
+      }
+    },
+    options
+  );
 }
 
 export async function saveWatchProgress(

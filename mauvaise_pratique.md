@@ -1,4 +1,4 @@
-  - **Restauration Transparente d'Erreurs :** Écouter `Hls.Events.ERROR` et appeler systématiquement `hls.startLoad()` sur `NETWORK_ERROR` et `hls.recoverMediaError()` sur `MEDIA_ERROR`.
+- **Restauration Transparente d'Erreurs :** Écouter `Hls.Events.ERROR` et appeler systématiquement `hls.startLoad()` sur `NETWORK_ERROR` et `hls.recoverMediaError()` sur `MEDIA_ERROR`.
   - **Sanctuaire Live vs VOD :** Désactiver formellement les déclencheurs de fin de lecture (`onNearEnd`, compte à rebours de suite) lorsque le média est identifié comme flux direct (`isLive = true`), et relancer immédiatement la lecture en cas d'événement `ended` intempestif.
 
 ---
@@ -212,3 +212,27 @@
 * **Bonnes Pratiques de Remédiation :**
   - **Fonction de Navigation Arrière Universelle (`goBackOrFallback`) :** Interroger en priorité `window.history.back()` (dès lors que `window.history.length > 1`) ou `router.back()` pour revenir exactement sur la page visitée, avec repli gracieux (`fallbackRoute`) uniquement si l'utilisateur a accédé directement à l'URL par lien direct.
   - **Standardisation Visuelle et Ergonomique :** Libellé sobre et universel `← Retour` sur l'ensemble des vues applicatives.
+---
+
+## 🛑 73. Rétention Indéfinie des Chaînes IPTV Orphelines lors de la Suppression d'une Source Playlist
+
+* **Problème / Symptôme :** Après la suppression d'une source IPTV dans le panneau `/admin` (notamment des playlists non fonctionnelles ou contenant des flux incompatibles type `plugin://plugin.video.vavooto/`), les chaînes restaient visibles et persistantes sur `/tv` et dans les catégories de la base de données.
+* **Conséquences :** Pollution de l'interface TV avec des centaines de chaînes inopérantes, accumulation de catégories fantômes, doublons de noms avec des variantes tronquées.
+* **Causes Racines :**
+  - **Absence de Clé Étrangère et de Cascade :** La table `media_nodes` ne conservait aucun lien relationnel (`iptv_source_id`) vers `iptv_sources`. La route `DELETE /api/iptv/sources/:id` supprimait uniquement la ligne dans `iptv_sources`, laissant orphelines toutes les entrées `LIVE_CHANNEL` dans `media_nodes`.
+  - **Mise en Cache PWA Rigide :** Le cache persistant `iptv_channels_*` et `iptv_categories` n'était jamais invalidé lors des modifications de sources dans l'administration.
+* **Bonnes Pratiques de Remédiation :**
+  - **Lien Relationnel PostgreSQL avec `ON DELETE CASCADE` :** Ajouter la colonne `iptv_source_id UUID REFERENCES iptv_sources(id) ON DELETE CASCADE` sur `media_nodes`. Toute suppression d'une source IPTV purge automatiquement toutes les chaînes associées en base.
+  - **Invalidation Globale du Cache (`invalidateCacheByPrefix`) :** Déclencher l'invalidation automatique du cache `iptv_` dès qu'une source est créée, synchronisée, modifiée ou supprimée.
+  - **Jointure Stricte sur les Catégories Vivantes :** Lier les catégories dans `GET /api/iptv/categories` aux chaînes `LIVE_CHANNEL` réellement existantes.
+
+---
+
+## 🛑 74. Omission d'Exports Utilitaires Critiques lors des Refactorisations d'API (`resolveImageUrl`)
+
+* **Problème / Symptôme :** Crash au chargement de la fiche de détail média `<MediaDetailScreen>` avec l'erreur `TypeError: resolveImageUrl is not a function`.
+* **Conséquences :** Écran rouge ou page blanche sur `/media/[id]` et dans les bulles de forum associées.
+* **Causes Racines :** Remplacement accidentel de la totalité du fichier `api.ts` au lieu d'une mise à jour ciblée, supprimant l'export de `resolveImageUrl` indispensable à la conversion des chemins d'affiches et de fanarts.
+* **Bonnes Pratiques de Remédiation :**
+  - **Vérification Systématique des Exports Publics :** Conserver immuables les fonctions socles partagées (`resolveImageUrl`, `getVideoStreamUrl`, `fetchMediaDetail`).
+  - **Tests TypeScript Pré-Déploiement :** Valider l'intégrité de l'arborescence des imports avant de valider toute modification.

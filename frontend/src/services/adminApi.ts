@@ -1,3 +1,4 @@
+import { invalidateCacheByPrefix } from './pwaDataCache';
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders } from './authStore';
 
@@ -153,6 +154,7 @@ export async function fetchIptvSources(): Promise<any[]> {
 }
 
 export async function createIptvSource(payload: { name: string; m3uUrl: string; epgXmltvUrl?: string }): Promise<any> {
+    invalidateCacheByPrefix('iptv_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources`, {
       method: 'POST',
@@ -166,6 +168,7 @@ export async function createIptvSource(payload: { name: string; m3uUrl: string; 
 }
 
 export async function syncIptvSource(id: string): Promise<any> {
+    invalidateCacheByPrefix('iptv_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources/${id}/sync`, {
       method: 'POST',
@@ -178,6 +181,7 @@ export async function syncIptvSource(id: string): Promise<any> {
 }
 
 export async function updateIptvSource(id: string, updates: any): Promise<any> {
+    invalidateCacheByPrefix('iptv_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources/${id}`, {
       method: 'PATCH',
@@ -191,6 +195,7 @@ export async function updateIptvSource(id: string, updates: any): Promise<any> {
 }
 
 export async function deleteIptvSource(id: string): Promise<any> {
+    invalidateCacheByPrefix('iptv_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources/${id}`, {
       method: 'DELETE',

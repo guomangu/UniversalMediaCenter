@@ -163,3 +163,17 @@
     - Remplacement de `router.push("/forum")` dans `/forum/[topic]` par `goBackOrFallback(router, "/forum")`.
     - Remplacement de `router.push("/")` dans `/media/[id]`, `/forum/index`, `/user` par `goBackOrFallback(router, "/")`.
     - Harmonisation visuelle avec l'intitulé universel « ← Retour ».
+- [x] **23. Nettoyage et Synchronisation Idempotente des Chaînes IPTV (`iptvSources.ts`, `channelIngester.ts`, `iptv.ts`, `pwaDataCache.ts`, `adminApi.ts`, `tv.tsx`, `api.ts`) :**
+  - **Purge Totale des Chaînes Orphelines et Doublons :**
+    - Suppression en base de 509 entrées obsolètes dans `media_nodes` (`node_type = 'LIVE_CHANNEL'`), éliminant 100 % des 283 flux non supportés en web issus de playlists externes supprimées (`plugin://plugin.video.vavooto/`) ainsi que 217 doublons résiduels aux titres tronqués (`France 4 HD (` vs `France 4 HD (1080p)`).
+    - Alignement strict de la base sur la source active enregistrée (197 chaînes uniques 1:1 sans aucun orphelin).
+  - **Liaison en Clé Étrangère avec Cascade Automatique (`nodes.ts`, `migrateSecondary.ts`) :**
+    - Ajout de la colonne `iptv_source_id UUID REFERENCES iptv_sources(id) ON DELETE CASCADE` sur `media_nodes` avec index dédié.
+    - Toute suppression ultérieure d'une source IPTV via `/admin` cascade automatiquement et instantanément en base, supprimant les chaînes `LIVE_CHANNEL`, leurs programmes EPG et liens taxonomiques associés.
+  - **Filtrage Strict des Catégories Actives (`iptv.ts`) :**
+    - Requête `GET /api/iptv/categories` jointe avec `node_eav_links` et `media_nodes` : restitution exclusive des 33 catégories réelles associées aux chaînes vivantes.
+  - **Invalidation et Revalidation Réactive du Cache PWA (`pwaDataCache.ts`, `adminApi.ts`, `tv.tsx`) :**
+    - Implémentation d'`invalidateCacheByPrefix('iptv_')` déclenchée dès l'ajout, la modification, la resynchronisation ou la suppression d'une source IPTV.
+    - Écouteurs `onFreshData` dans `tv.tsx` assurant l'éviction visuelle immédiate des anciennes chaînes en mémoire dès que le rafraîchissement asynchrone est complété.
+  - **Restauration de la Fonction `resolveImageUrl` (`api.ts`) :**
+    - Rétablissement de l'export `resolveImageUrl` dans `api.ts`, éliminant le crash TypeError `resolveImageUrl is not a function` sur l'écran de détail média `<MediaDetailScreen>`.

@@ -71,6 +71,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(71, 85, 105, 0.35)',
     padding: Spacing.two,
     width: 200,
+    margin: 6,
     justifyContent: 'space-between',
   },
   topArea: {

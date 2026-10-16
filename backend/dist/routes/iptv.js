@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
-import { mediaNodes, iptvSources, eavValues, eavAttributes } from '../db/schema/index.js';
+import { mediaNodes, iptvSources, eavValues, eavAttributes, nodeEavLinks } from '../db/schema/index.js';
 import { eq, and, or, ilike, asc, not } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
 import { iptvSourcesRouter } from './iptvSources.js';
@@ -37,7 +37,9 @@ iptvRouter.get('/categories', async (c) => {
             .selectDistinct({ name: eavValues.valueText })
             .from(eavValues)
             .innerJoin(eavAttributes, eq(eavValues.attributeId, eavAttributes.id))
-            .where(eq(eavAttributes.code, 'iptv_category'))
+            .innerJoin(nodeEavLinks, eq(eavValues.id, nodeEavLinks.valueId))
+            .innerJoin(mediaNodes, eq(nodeEavLinks.nodeId, mediaNodes.id))
+            .where(and(eq(eavAttributes.code, 'iptv_category'), eq(mediaNodes.nodeType, 'LIVE_CHANNEL')))
             .orderBy(asc(eavValues.valueText));
         const categories = rows.map((r) => r.name).filter(Boolean);
         return c.json({ categories });

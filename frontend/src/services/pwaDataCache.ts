@@ -49,6 +49,39 @@ export function setCachedData<T>(key: string, data: T, ttl: number = DEFAULT_TTL
   }
 }
 
+export function invalidateCache(key: string): void {
+  const fullKey = CACHE_PREFIX + key;
+  memoryStore.delete(fullKey);
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.removeItem(fullKey);
+    } catch {}
+  }
+}
+
+export function invalidateCacheByPrefix(prefix: string): void {
+  const fullPrefix = CACHE_PREFIX + prefix;
+  for (const k of Array.from(memoryStore.keys())) {
+    if (k.startsWith(fullPrefix)) {
+      memoryStore.delete(k);
+    }
+  }
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(fullPrefix)) {
+          keysToRemove.push(k);
+        }
+      }
+      for (const k of keysToRemove) {
+        localStorage.removeItem(k);
+      }
+    } catch {}
+  }
+}
+
 export async function fetchWithCache<T>(
   key: string,
   fetcher: () => Promise<T>,
