@@ -23,6 +23,7 @@ export interface UserSession {
 }
 
 export async function authMiddleware(c: Context, next: Next): Promise<Response | void> {
+  if (c.req.method === 'OPTIONS') return await next();
   const authHeader = c.req.header('authorization');
   let userId: string | null = null;
 
@@ -117,6 +118,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
 }
 
 export async function requireAuth(c: Context, next: Next): Promise<Response | void> {
+  if (c.req.method === 'OPTIONS') return await next();
   const user = c.get('user');
   if (!user) {
     return c.json({ error: 'Connexion requise pour accéder à cette ressource', code: 'UNAUTHORIZED' }, 401);
@@ -125,6 +127,7 @@ export async function requireAuth(c: Context, next: Next): Promise<Response | vo
 }
 
 export async function requireAdmin(c: Context, next: Next): Promise<Response | void> {
+  if (c.req.method === 'OPTIONS') return await next();
   const user = c.get('user');
   if (!user) {
     return c.json({ error: 'Connexion requise', code: 'UNAUTHORIZED' }, 401);
