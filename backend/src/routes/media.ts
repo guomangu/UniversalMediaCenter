@@ -15,7 +15,7 @@ import { localizeMediaNode, extractRequestLanguage } from '../watcher/pipeline/l
 import { fetchExternalMetadata, cleanShowTitle } from '../watcher/externalMetadata.js';
 import { linkTagToNode } from '../watcher/tagExtractor.js';
 import { createShareToken } from '../auth/shareToken.js';
-import { checkMediaAccess } from '../auth/mediaAccess.js';
+import { checkMediaAccess, isMediaAllowedForUser } from '../auth/mediaAccess.js';
 import { requireAuth } from '../middleware/access.js';
 import type { UserSession } from '../middleware/access.js';
 import { recordActivePlayback, removeActivePlayback } from '../watcher/presenceStore.js';
@@ -170,15 +170,28 @@ mediaRouter.post('/:id/share-token', requireAuth, async (c) => {
 
 mediaRouter.get('/:id/extras', async (c) => {
   const id = c.req.param('id');
+  const user = (c as any).get('user') as UserSession | undefined;
+  const shareToken = c.req.query('share_token');
   const media = await findMediaByIdOrSlug(id);
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
+    videoFilePath: media.videoFilePath,
+    nfoFilePath: media.nfoFilePath,
+    searchVectorText: media.searchVectorText,
+  });
+  if (!isAuthorized) {
+    return c.json({ error: 'Accès non autorisé', code: 'FORBIDDEN' }, 403);
+  }
 
   const extras = await db.query.mediaNodes.findMany({
     where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, true)),
   });
 
+  const allowedExtras = extras.filter((ex) => isMediaAllowedForUser(user, ex));
+
   return c.json(
-    extras.map((ex) => ({
+    allowedExtras.map((ex) => ({
       ...ex,
       posterPath: ex.posterPath ? `/api/media/${ex.id}/poster` : (media.posterPath ? `/api/media/${media.id}/poster` : undefined),
       thumbPath: ex.thumbPath ? `/api/media/${ex.id}/thumb` : undefined,
@@ -235,33 +248,59 @@ mediaRouter.get('/:id', async (c) => {
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
+  // Pour les conteneurs (SHOW, COLLECTION, SEASON), récupérer les chemins physiques de leurs enfants pour contrôle ABAC
+  let containerChildPaths: string[] = [];
+  if (media.nodeType === 'SHOW' || media.nodeType === 'COLLECTION' || media.nodeType === 'SEASON') {
+    const containerSamples = await db.execute(sql`
+      SELECT c.video_file_path, c.nfo_file_path FROM media_nodes c
+      WHERE (c.parent_id = ${media.id}::uuid OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = ${media.id}::uuid))
+        AND (c.video_file_path IS NOT NULL OR c.nfo_file_path IS NOT NULL)
+      LIMIT 30
+    `);
+    containerChildPaths = Array.from(containerSamples)
+      .flatMap((r: any) => [r.video_file_path, r.nfo_file_path])
+      .filter((p): p is string => Boolean(p));
+  }
+
   const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
     videoFilePath: media.videoFilePath,
     nfoFilePath: media.nfoFilePath,
     searchVectorText: media.searchVectorText,
+    childPaths: containerChildPaths,
   });
   if (!isAuthorized) {
     return c.json(
       {
-        error: 'Connexion requise pour accéder à ce contenu ou lien de partage expiré',
-        code: 'UNAUTHORIZED',
+        error: "Accès refusé : ce contenu ou son dossier physique n'est pas autorisé pour votre profil",
+        code: 'FORBIDDEN',
       },
-      401
+      403
     );
   }
 
   // 1. Récupération des enfants (films d'une collection/saga ou épisodes d'une série)
-  const childNodes = await db.query.mediaNodes.findMany({
+  const rawChildNodes = await db.query.mediaNodes.findMany({
     where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, false)),
   });
+  const childNodes = rawChildNodes.filter((child) => isMediaAllowedForUser(user, child));
 
-  const extraNodes = await db.query.mediaNodes.findMany({
+  const rawExtraNodes = await db.query.mediaNodes.findMany({
     where: (t, { eq, and }) => and(eq(t.parentId, media.id), eq(t.isExtra, true)),
   });
+  const extraNodes = rawExtraNodes.filter((extra) => isMediaAllowedForUser(user, extra));
+
+  // Si le conteneur a des enfants réels mais qu'aucun n'est autorisé pour l'utilisateur
+  if (rawChildNodes.length > 0 && childNodes.length === 0) {
+    return c.json(
+      {
+        error: "Accès refusé : tous les contenus de ce dossier sont restreints pour votre profil",
+        code: 'FORBIDDEN',
+      },
+      403
+    );
+  }
 
   // 2. Fusion et héritage des métadonnées culturelles et techniques pour les sagas/collections
-  // Si le média possède des films ou épisodes enfants, on fusionne les tags de tous ses enfants
-  // ordonnés par fréquence d'apparition dans la saga (acteurs récurrents, réalisateurs, compositeurs, studios...)
   const linkedTags = childNodes.length > 0
     ? await db.execute(sql`
         SELECT a.code AS attr_code, a.display_name, a.ui_zone, a.color_theme, a.icon_name,
@@ -294,7 +333,6 @@ mediaRouter.get('/:id', async (c) => {
     PERSON_CAROUSEL: [],
     TECHNICAL_DRAWER: [],
     HIDDEN_SEARCHABLE: [],
-    // Short aliases for cross-compatibility
     HERO: [],
     PILLS: [],
     ACCORDION: [],
@@ -310,22 +348,23 @@ mediaRouter.get('/:id', async (c) => {
       attributeCode: row.attr_code,
       display_name: row.display_name,
       displayName: row.display_name,
-      ui_zone: row.ui_zone,
-      uiZone: row.ui_zone,
-      color_theme: row.color_theme,
-      colorTheme: row.color_theme,
-      icon_name: row.icon_name,
-      iconName: row.icon_name,
+      ui_zone: zone,
+      uiZone: zone,
+      color_theme: row.color_theme || 'slate',
+      colorTheme: row.color_theme || 'slate',
+      icon_name: row.icon_name || 'Tag',
+      iconName: row.icon_name || 'Tag',
       value_text: row.value_text,
       value: row.value_text,
       value_slug: row.value_slug,
       slug: row.value_slug,
       context_role: row.context_role,
       contextRole: row.context_role,
-      metadata_json: row.metadata_json || {},
-      metadata: row.metadata_json || {},
-      order_index: row.order_index,
-      orderIndex: row.order_index,
+      metadata_json: row.metadata_json,
+      metadata: row.metadata_json,
+      order_index: row.order_index || 0,
+      orderIndex: row.order_index || 0,
+      movie_occurrence_count: row.movie_occurrence_count ? Number(row.movie_occurrence_count) : undefined,
     };
     tagsByZone[zone].push(item);
     if (zone === 'HERO_BADGE') tagsByZone.HERO.push(item);
@@ -333,9 +372,7 @@ mediaRouter.get('/:id', async (c) => {
     if (zone === 'TECHNICAL_DRAWER') tagsByZone.ACCORDION.push(item);
   }
 
-  // 2.5 Enrichissement à la volée du Casting & Équipe Créative pour les Films et Séries
-  // Si le média n'a pas encore de tags dans PERSON_CAROUSEL, on interroge TMDb pour récupérer
-  // le casting complet (acteurs avec photos, rôles), réalisateurs, scénaristes, compositeurs et producteurs
+  // 2.5 Enrichissement à la volée du Casting & Équipe Créative
   if (
     tagsByZone.PERSON_CAROUSEL.length === 0 &&
     (media.nodeType === 'MOVIE' || media.nodeType === 'SHOW')
@@ -491,7 +528,7 @@ mediaRouter.get('/:id', async (c) => {
     } catch {}
   }
 
-  // 3. Calcul ou héritage des métriques globales (Note spectateurs moyenne et plage d'années)
+  // 3. Calcul ou héritage des métriques globales
   let effectiveCommunityRating = media.communityRating;
   if ((!effectiveCommunityRating || Number(effectiveCommunityRating) === 0) && childNodes.length > 0) {
     const validRatings = childNodes
@@ -548,7 +585,6 @@ mediaRouter.get('/:id', async (c) => {
   let resumePositionSeconds: number = 0;
 
   if (childNodes.length > 0) {
-    // 1. Chercher un épisode en cours de lecture non terminé
     const inProgressEpisode = childNodes.find((ch) => {
       const p = progressMap.get(ch.id);
       return p && p.progressPercent > 0 && !p.isCompleted;
@@ -560,7 +596,6 @@ mediaRouter.get('/:id', async (c) => {
       resumeTitle = inProgressEpisode.title;
       resumePositionSeconds = p.positionSeconds;
     } else {
-      // 2. Chercher le premier épisode non terminé
       const nextUnfinished = childNodes.find((ch) => {
         const p = progressMap.get(ch.id);
         return !p || !p.isCompleted;
@@ -646,7 +681,7 @@ mediaRouter.get('/:id', async (c) => {
     thumbPath: ex.thumbPath ? `/api/media/${ex.id}/thumb` : undefined,
   }));
 
-  // 4. Saga parente et films de la saga (si le média actuel est un film appartenant à une saga)
+  // 4. Saga parente et films de la saga
   let parentSaga: any = null;
   let targetParentId = media.parentId;
 
@@ -681,10 +716,12 @@ mediaRouter.get('/:id', async (c) => {
       where: (t, { eq }) => eq(t.id, targetParentId!),
     });
     if (pNode) {
-      const sagaSiblings = await db.query.mediaNodes.findMany({
+      const rawSagaSiblings = await db.query.mediaNodes.findMany({
         where: (t, { eq, and }) => and(eq(t.parentId, targetParentId!), eq(t.isExtra, false)),
         orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.releaseYear), asc(t.title)],
       });
+      const sagaSiblings = rawSagaSiblings.filter((s) => isMediaAllowedForUser(user, s));
+
       parentSaga = {
         id: pNode.id,
         title: pNode.title,
@@ -711,7 +748,8 @@ mediaRouter.get('/:id', async (c) => {
 
   const studioFilmsRows = await db.execute(sql`
     SELECT DISTINCT v.value_text AS studio_name,
-           m.id, m.title, m.release_year, m.poster_path, m.community_rating, m.node_type
+           m.id, m.title, m.release_year, m.poster_path, m.community_rating, m.node_type,
+           m.video_file_path, m.nfo_file_path, m.search_vector_text
     FROM node_eav_links l
     JOIN eav_values v ON l.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
@@ -744,6 +782,9 @@ mediaRouter.get('/:id', async (c) => {
 
   const rawStudioList = Array.isArray(studioFilmsRows) ? studioFilmsRows : (studioFilmsRows as any).rows || [];
   for (const row of rawStudioList) {
+    // Filtrage strict ABAC sur les suggestions studio
+    if (!isMediaAllowedForUser(user, row)) continue;
+
     const sName = row.studio_name;
     if (!studioMap.has(sName)) studioMap.set(sName, []);
     if (studioMap.get(sName)!.length < 15) {
@@ -764,7 +805,8 @@ mediaRouter.get('/:id', async (c) => {
   }));
 
   const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId);
-  const similarMedias = await getTfIdfSimilarMedias(media.id, 12);
+  const rawSimilar = await getTfIdfSimilarMedias(media.id, 12);
+  const similarMedias = rawSimilar.filter((sim: any) => isMediaAllowedForUser(user, sim));
 
   return c.json({
     media: formattedMedia,
@@ -780,9 +822,11 @@ mediaRouter.get('/:id', async (c) => {
 
 mediaRouter.get('/:id/similar', async (c) => {
   const id = c.req.param('id');
+  const user = (c as any).get('user') as UserSession | undefined;
   const limit = parseInt(c.req.query('limit') || '12', 10);
   const similar = await getTfIdfSimilarMedias(id, limit);
-  return c.json({ similar });
+  const allowedSimilar = similar.filter((sim: any) => isMediaAllowedForUser(user, sim));
+  return c.json({ similar: allowedSimilar });
 });
 
 export async function processSingleNfo(filePath: string) {

@@ -6,7 +6,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test:profiles": "tsx src/watcher/testProfiles.ts",
-    "test:lang": "tsx src/watcher/testLanguageDefaults.ts"
+    "test:lang": "tsx src/watcher/testLanguageDefaults.ts",
+    "test:security": "tsx src/test/testFolderAccessSecurity.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

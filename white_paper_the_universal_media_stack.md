@@ -14,7 +14,7 @@
 4. [Loi n°2 : Recherche Floue & Tolérante aux Fautes ($< 10\text{ ms}$)](#4-loi-n2--recherche-floue--tolérante-aux-fautes--10-ms)
 5. [Loi n°3 : Server-Driven UI & Ordonnancement Modulaire](#5-loi-n3--server-driven-ui--ordonnancement-modulaire)
 6. [Loi n°4 : Moteur IPTV Live (`.m3u` + Guide EPG `XMLTV`)](#6-loi-n4--moteur-iptv-live-m3u--guide-epg-xmltv)
-7. [Loi n°5 : Sécurité Frictionless, RBAC & Contrôle Parental ABAC](#7-loi-n5--sécurité-frictionless-rbac--contrôle-parental-abac)
+7. [Loi n°5 : Sécurité Frictionless, RBAC, ABAC & Partitionnement Physique PBAC](#7-loi-n5--sécurité-frictionless-rbac-abac--partitionnement-physique-pbac)
 8. [Checklist Exhaustive des Fonctionnalités (Parité Kyoo + Jellyfin)](#8-checklist-exhaustive-des-fonctionnalités-parité-kyoo--jellyfin)
 9. [Infrastructure Conteneurisée Complète (`compose.yaml` & `Caddyfile`)](#9-infrastructure-conteneurisée-complète-composeyaml--caddyfile)
 10. [Schéma de Base de Données Référence (`Drizzle ORM`)](#10-schéma-de-base-de-données-référence-drizzle-orm)
@@ -134,28 +134,44 @@ Regarder un flux IPTV `.m3u8` ou `.ts` directement dans un navigateur Web échou
 
 ---
 
-## 7. Loi n°5 : Sécurité Frictionless, RBAC & Contrôle Parental ABAC
+## 7. Loi n°5 : Sécurité Frictionless, RBAC, ABAC & Partitionnement Physique PBAC
 
-L'authentification et la gestion des droits sont conçues pour être invisibles au quotidien (façon Netflix/Kyoo) tout en offrant la rigueur d'administration d'un Jellyfin d'entreprise.
+L'authentification et la gestion des droits sont conçues pour être invisibles au quotidien (façon Netflix/Kyoo) tout en offrant la rigueur d'administration, de cloisonnement et de partitionnement d'un Jellyfin d'entreprise.
 
 ### 7.1. Authentification Multi-Écrans Sans Mot de Passe
-* **Magic Links & Codes PIN à 4/6 chiffres :** Connexion rapide par e-mail ou changement de profil instantané dans le salon via un code PIN.
+* **Magic Links & Codes PIN à 4/6 chiffres :** Connexion rapide par e-mail ou changement de profil instantané dans le salon via un code PIN Argon2.
 * **Appairage TV par QR Code (`Quick Connect`) :** Sur un téléviseur ou un navigateur neuf, l'écran affiche un code à 6 caractères et un QR Code. L'utilisateur le scanne avec son téléphone déjà connecté pour autoriser la session instantanément.
 
-### 7.2. Matrice des Permissions (RBAC + ABAC par Tags)
-Depuis `/admin/users`, l'administrateur configure chaque utilisateur ou profil familial selon deux axes :
+### 7.2. Matrice des Capacités Système (RBAC)
+Depuis `/admin/users`, l'administrateur configure chaque utilisateur ou profil familial selon ses permissions fonctionnelles :
+* `isAdmin` : Accès complet au back-office (UI Layout Builder, IPTV, TMM, Utilisateurs, Maintenance).
+* `canDownload` : Autorise ou masque le bouton de téléchargement hors-ligne direct (`X-Accel-Redirect`).
+* `canTranscode` : Autorise l'utilisation du GPU pour le transcodage matériel à la volée (ou restreint au Direct Play pur).
+* `canWatchIptv` : Active ou désactive l'accès aux chaînes IPTV en direct (`LIVE_CHANNEL`).
+* `maxConcurrentStreams` : Plafonne le nombre de lectures vidéo simultanées (ex: `2` ou `3` flux).
 
-1. **Capacités Système (RBAC) :**
-   * `is_admin` : Accès complet au back-office (UI Builder, IPTV, TMM, Utilisateurs).
-   * `can_download` : Autorise ou masque le bouton de téléchargement hors-ligne (`X-Accel-Redirect`).
-   * `can_transcode` : Autorise l'utilisation du GPU pour le transcodage à la volée (ou force uniquement le Direct Play).
-   * `can_watch_iptv` : Active ou désactive l'accès à la télévision en direct.
-   * `max_concurrent_streams` : Limite le nombre de lectures simultanées (ex: `2`).
-   * `max_bitrate_mbps` : Plafonne la bande passante (ex: `15 Mbps` en 4G externe).
+### 7.3. Contrôle Parental Sémantique & Quotas (ABAC par Tags & Plafond CSA)
+* **Plafond d'Âge CSA (`maxCsaAgeLimit`) :** Si un profil "Enfant" ou "Adolescent" est réglé sur un plafond d'âge (ex: `10` ou `12` ans), le moteur SQL et le filtre mémoire excluent automatiquement toutes les œuvres portant une classification supérieure (`CSA : -12`, `CSA : -16` ou `CSA : -18`).
+* **Whitelist & Blacklist de Tags EAV (`allowedTags` / `blockedTags`, `allowedValueIds` / `blockedValueIds`) :** Possibilité d'exclure un thème ou mot-clé sensible (ex: exclure `Horreur`, `Gore`, `Violence`) ou de restreindre un compte invité à une liste blanche exclusive (ex: uniquement `Collection : Dessins Animés`).
 
-2. **Restrictions basées sur les Attributs / Tags (ABAC — Contrôle Parental & Quotas) :**
-   * **Plafond CSA (`max_csa_level`) :** Si un profil "Enfant" est réglé sur `CSA : -10`, le middleware Drizzle ajoute automatiquement une clause d'exclusion SQL sur tous les nœuds possédant les tags `CSA : -12`, `CSA : -16` ou `CSA : -18`.
-   * **Whitelist / Blacklist de Tags (`allowed_tag_ids` / `blocked_tag_ids`) :** Vous pouvez bloquer un sujet précis (ex: bloquer le tag `Sujet : Horreur` ou `Sujet : Violence`) ou créer un utilisateur invité qui ne voit que les médias possédant le tag `Collection : Vacances Famille`.
+### 7.4. Partitionnement Inviolable des Dossiers Physiques (PBAC - Path-Based Access Control)
+Pour garantir une étanchéité absolue des bibliothèques physiques sur le disque (ex: séparer `Films`, `Séries`, `Adultes`, `Privé`, `Enfants`), le système intègre un moteur de contrôle d'accès par chemins physiques :
+1. **Règles Whitelist & Blacklist de Répertoires (`allowedFolders` / `blockedFolders`) :**
+   * **Whitelist (`allowedFolders`) :** Si configurée, l'utilisateur ne peut voir et lire QUE les médias résidant sous ces répertoires physiques.
+   * **Blacklist (`blockedFolders`) :** Interdiction stricte de tout média situé dans les dossiers spécifiés, même s'ils partagent des tags communs avec d'autres œuvres autorisées.
+2. **Normalisation Symétrique Multi-OS (`/var/home` $\leftrightarrow$ `/home`) :**
+   * Prise en charge native et transparente des alias de montage immuables (Fedora Silverblue, Bazzite, Atomic Desktop où `/home` est un lien symbolique vers `/var/home`).
+   * Normalisation Unicode NFC et détection stricte des frontières de segments (`/Films` matche `/home/tele/Vidéos/drive/Films` mais ne crée pas de faux positif sur `/FilmsDocumentaires`).
+3. **Héritage Arborescent Hermétique (`SHOW`, `COLLECTION`, `SEASON`) :**
+   * Les conteneurs logiques n'ayant pas de fichier vidéo direct héritent de l'`effectivePhysicalPath` et des chemins de leurs enfants (`childPaths`). Si le dossier physique d'une série ou l'ensemble de ses épisodes appartient à un dossier interdit, le conteneur `SHOW` ou `COLLECTION` parent est intégralement bloqué.
+4. **Architecture à Double Barrière (Loi Zero-Leak) :**
+   * **Barrière 1 (SQL Amont) :** `buildMediaAccessConditions(user, tableAlias)` injecte des clauses `WHERE` dynamiques dans PostgreSQL pour garantir une pagination et des compteurs exacts sans surcoût.
+   * **Barrière 2 (Mémoire Souveraine) :** `isMediaAllowedForUser(user, media)` effectue un contrôle JavaScript hermétique avant chaque rendu ou flux de streaming.
+
+### 7.5. Présentation UI & Server-Driven Taxonomie Zéro-Vide
+* **Masquage Dynamique des Catégories Orphelines :** Sur l'écran d'accueil, aucune catégorie de tags ne s'affiche si elle ne contient aucun média accessible pour l'utilisateur connecté ou selon le filtre actif.
+* **Synchronisation Réactive de l'En-tête (`SiteHeader`) :** Les pastilles de raccourcis (`chips`) ne présentent que les catégories réellement peuplées, avec repli automatique de l'onglet actif.
+* **Isolation Stricte du Cache Client PWA :** Les clés de stockage local sont partitionnées par utilisateur (`tax_v7_${userKey}_...`) avec purge automatique intégrale lors de la déconnexion ou du changement de profil.
 
 ---
 
@@ -597,8 +613,14 @@ export const users = pgTable('users', {
 
   // Contrôle d'Accès par Tags (ABAC / Contrôle Parental)
   maxCsaAgeLimit: integer('max_csa_age_limit'), // ex: 12 bloque automatiquement -16 et -18
-  allowedValueIds: jsonb('allowed_value_ids').$type<string[]>().default([]), // Si non vide : Whitelist stricte
-  blockedValueIds: jsonb('blocked_value_ids').$type<string[]>().default([]), // Blacklist de tags (ex: Horreur)
+  allowedValueIds: jsonb('allowed_value_ids').$type<string[]>().default([]), // Whitelist d'IDs EAV
+  blockedValueIds: jsonb('blocked_value_ids').$type<string[]>().default([]), // Blacklist d'IDs EAV
+  allowedTags: jsonb('allowed_tags').$type<string[]>().default([]), // Whitelist de libellés de tags
+  blockedTags: jsonb('blocked_tags').$type<string[]>().default([]), // Blacklist de libellés de tags
+
+  // Contrôle d'Accès par Dossiers Physiques (PBAC - Path-Based Access Control)
+  allowedFolders: jsonb('allowed_folders').$type<string[]>().default([]), // Répertoires physiques autorisés
+  blockedFolders: jsonb('blocked_folders').$type<string[]>().default([]), // Répertoires physiques interdits
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

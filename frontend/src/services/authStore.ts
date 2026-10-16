@@ -29,6 +29,25 @@ let memoryUser: UserProfile | null = null;
 let memoryToken: string | null = null;
 const listeners = new Set<(u: UserProfile | null) => void>();
 
+export function purgeAllMediaCaches(): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (
+          k &&
+          (k.startsWith('ums_cache_') ||
+            k.startsWith('tax_') ||
+            k.startsWith('home_layout') ||
+            k.startsWith('media_detail_'))
+        ) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {}
+  }
+}
+
 if (typeof window !== 'undefined') {
   try {
     if (window.localStorage) {
@@ -71,6 +90,7 @@ export function getAuthToken(): string | null { return memoryToken; }
 export function setAuthSession(user: UserProfile, token: string): void {
   memoryUser = user;
   memoryToken = token;
+  purgeAllMediaCaches();
   notify();
 }
 
@@ -91,6 +111,7 @@ export function getAuthHeaders(): Record<string, string> {
 export function logout(): void {
   memoryUser = null;
   memoryToken = null;
+  purgeAllMediaCaches();
   notify();
 }
 
@@ -136,8 +157,6 @@ export async function fetchAuthStatus(): Promise<AuthStatus> {
       invitationOnly: Boolean(data.invitationOnly),
     };
   } catch {
-    // Si le serveur est temporairement inaccessible, ne JAMAIS présumer qu'il n'y a aucun compte/admin.
-    // Cela évite d'enfermer l'utilisateur dans l'écran "Création du premier Administrateur".
     return {
       hasUsers: true,
       hasAdmin: true,
@@ -164,6 +183,7 @@ export async function loginWithPassword(
     }
     memoryUser = data.user;
     memoryToken = data.token;
+    purgeAllMediaCaches();
     notify();
     return { success: true, user: data.user };
   } catch (err: any) {
@@ -188,6 +208,7 @@ export async function registerAccount(
     }
     memoryUser = data.user;
     memoryToken = data.token;
+    purgeAllMediaCaches();
     notify();
     return { success: true, user: data.user };
   } catch (err: any) {
@@ -198,9 +219,12 @@ export async function registerAccount(
 export function useCurrentUser(): UserProfile | null {
   const [user, setUser] = useState<UserProfile | null>(memoryUser);
   useEffect(() => {
-    const fn = (u: UserProfile | null) => setUser(u);
-    listeners.add(fn);
-    return () => { listeners.delete(fn); };
+    setUser(memoryUser);
+    const listener = (u: UserProfile | null) => setUser(u);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
   }, []);
   return user;
 }

@@ -66,9 +66,9 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
 
   if (!isAuthorized) {
     return c.json({
-      error: 'Connexion requise pour visionner cette vidéo ou lien expiré',
-      code: 'UNAUTHORIZED',
-    }, 401);
+      error: user ? "Accès refusé : ce média ou son dossier physique n'est pas autorisé pour votre profil" : 'Connexion requise pour visionner cette vidéo ou lien expiré',
+      code: user ? 'FORBIDDEN' : 'UNAUTHORIZED',
+    }, user ? 403 : 401);
   }
 
   if (media.streamUrl) {
@@ -99,33 +99,33 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
   const range = c.req.header('range');
   const isHead = c.req.method === 'HEAD';
 
-  if (range) {
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-    if (start >= fileSize || end >= fileSize) {
-      c.header('Content-Range', `bytes */${fileSize}`);
-      return c.text('Range Not Satisfiable', 416);
-    }
-
-    const chunksize = end - start + 1;
-    c.status(206);
-    c.header('Content-Range', `bytes ${start}-${end}/${fileSize}`);
-    c.header('Accept-Ranges', 'bytes');
-    c.header('Content-Length', String(chunksize));
+  if (!range) {
     c.header('Content-Type', mimeType);
+    c.header('Content-Length', String(fileSize));
+    c.header('Accept-Ranges', 'bytes');
+    if (isHead) return c.body(null, 200);
 
-    if (isHead) return c.body(null);
-    const fileStream = fs.createReadStream(activeFilePath, { start, end });
-    return c.body(Readable.toWeb(fileStream) as any);
+    const stream = fs.createReadStream(activeFilePath);
+    return c.body(Readable.toWeb(stream) as any, 200);
   }
 
-  c.header('Content-Length', String(fileSize));
-  c.header('Content-Type', mimeType);
-  c.header('Accept-Ranges', 'bytes');
+  const parts = range.replace(/bytes=/, '').split('-');
+  const start = parseInt(parts[0], 10);
+  const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
-  if (isHead) return c.body(null);
-  const fileStream = fs.createReadStream(activeFilePath);
-  return c.body(Readable.toWeb(fileStream) as any);
+  if (start >= fileSize || end >= fileSize) {
+    c.header('Content-Range', `bytes */${fileSize}`);
+    return c.body(null, 416);
+  }
+
+  const chunksize = end - start + 1;
+  c.header('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+  c.header('Accept-Ranges', 'bytes');
+  c.header('Content-Length', String(chunksize));
+  c.header('Content-Type', mimeType);
+
+  if (isHead) return c.body(null, 206);
+
+  const stream = fs.createReadStream(activeFilePath, { start, end });
+  return c.body(Readable.toWeb(stream) as any, 206);
 });

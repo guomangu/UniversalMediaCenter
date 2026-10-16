@@ -1,11 +1,35 @@
 import { getApiBaseUrl } from './apiConfig';
-import { getAuthHeaders } from './authStore';
+import { getAuthHeaders, getCurrentUser } from './authStore';
 import { fetchWithCache, getCachedData } from './pwaDataCache';
 import { prefetchImages } from './pwaImageCache';
 import { resolveImageUrl } from './api';
 
-export const TAXONOMY_CACHE_VERSION = 'v5';
-export const CACHE_KEY_CATEGORIES = `taxonomy_categories_${TAXONOMY_CACHE_VERSION}`;
+export const TAXONOMY_CACHE_VERSION = 'v7';
+
+export function getCategoriesCacheKey(): string {
+  const user = getCurrentUser();
+  const userKey = user ? `${user.id}_${user.isAdmin ? 'admin' : (user as any).profileRole || 'user'}` : 'anon';
+  return `taxonomy_categories_${TAXONOMY_CACHE_VERSION}_${userKey}`;
+}
+
+export function clearTaxonomyCache(): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (
+          k &&
+          (k.startsWith('ums_cache_tax') ||
+            k.startsWith('ums_cache_taxonomy') ||
+            k.startsWith('tax_') ||
+            k.includes('taxonomy'))
+        ) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {}
+  }
+}
 
 // Purge immédiate et transparente des anciens caches de taxonomie obsolètes au démarrage
 if (typeof window !== 'undefined' && window.localStorage) {
@@ -149,12 +173,12 @@ export async function fetchTaxonomy(
   forceRefresh = false,
   onFresh?: (categories: TaxonomyCategory[]) => void
 ): Promise<TaxonomyCategory[]> {
-  const cached = getCachedData<TaxonomyCategory[]>(CACHE_KEY_CATEGORIES);
-  const qualCat = cached?.find((c) => c.id === 'qualities');
-  const needsRefresh = forceRefresh || !cached || !qualCat || qualCat.tags.length < 4;
+  const cacheKey = getCategoriesCacheKey();
+  const cached = getCachedData<TaxonomyCategory[]>(cacheKey);
+  const needsRefresh = forceRefresh || !cached || cached.length === 0;
 
   return fetchWithCache<TaxonomyCategory[]>(
-    CACHE_KEY_CATEGORIES,
+    cacheKey,
     async () => {
       try {
         const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy`, {
@@ -162,9 +186,12 @@ export async function fetchTaxonomy(
         });
         if (!res.ok) return cached || DEFAULT_TAXONOMY_CATEGORIES;
         const data = await res.json();
-        return data.categories && data.categories.length > 0
-          ? data.categories
-          : cached || DEFAULT_TAXONOMY_CATEGORIES;
+        const validCats = (data.categories || []).filter(
+          (c: TaxonomyCategory) => c.tags && c.tags.length > 0 && c.tags.some((t) => Number(t.count) > 0)
+        );
+        return validCats.length > 0
+          ? validCats
+          : (cached || DEFAULT_TAXONOMY_CATEGORIES);
       } catch {
         return cached || DEFAULT_TAXONOMY_CATEGORIES;
       }
@@ -181,8 +208,10 @@ export function buildTaxonomyCacheKey(params: {
   limit?: number;
   excludeIds?: string[];
 }): string {
+  const user = getCurrentUser();
+  const userKey = user ? `${user.id}_${user.isAdmin ? 'admin' : (user as any).profileRole || 'user'}` : 'anon';
   const excludeKey = (params.excludeIds || []).slice().sort().join(',');
-  return `tax_${TAXONOMY_CACHE_VERSION}_${params.category}_${params.tag}_${params.filter || ''}_${params.q || ''}_${params.limit || 15}_${excludeKey}`;
+  return `tax_${TAXONOMY_CACHE_VERSION}_${userKey}_${params.category}_${params.tag}_${params.filter || ''}_${params.q || ''}_${params.limit || 15}_${excludeKey}`;
 }
 
 export function getCachedTaxonomyMedias(params: {
@@ -193,12 +222,10 @@ export function getCachedTaxonomyMedias(params: {
   limit?: number;
   excludeIds?: string[];
 }): TaxonomyMediasResult | undefined {
-  // 1. Recherche exacte avec les exclusions actuelles
   const exactKey = buildTaxonomyCacheKey(params);
   const exactRes = getCachedData<TaxonomyMediasResult>(exactKey);
   if (exactRes) return exactRes;
 
-  // 2. Fallback immédiat (0ms) : filtrer localement depuis le cache de base du tag
   if (params.excludeIds && params.excludeIds.length > 0) {
     const baseKey = buildTaxonomyCacheKey({ ...params, excludeIds: [] });
     const baseRes = getCachedData<TaxonomyMediasResult>(baseKey);
@@ -255,13 +282,11 @@ export async function fetchTaxonomyMedias(
           totalReturned: data.totalReturned || 0,
         };
 
-        // Si c'est une requête sans exclusion, la persister aussi comme clé de base
         if (!params.excludeIds || params.excludeIds.length === 0) {
           const baseKey = buildTaxonomyCacheKey({ ...params, excludeIds: [] });
           require('./pwaDataCache').setCachedData(baseKey, result);
         }
 
-        // Pré-chargement PWA natif en arrière-plan des images sans bloquer
         if (result.items.length > 0) {
           const posterUrls = result.items
             .filter((it) => it.posterPath)

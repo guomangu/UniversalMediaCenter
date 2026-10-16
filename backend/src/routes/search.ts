@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
+import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
 
 export const searchRouter = new Hono();
 
@@ -17,14 +18,27 @@ searchRouter.get('/', async (c) => {
   const cleanQuery = query.toLowerCase();
 
   // 1. Recherche floue sur media_nodes via pg_trgm et similarity
+  const accessConds = buildMediaAccessConditions(user, 'media_nodes');
+  let whereSql = sql`
+    (search_vector_text % ${cleanQuery}
+     OR word_similarity(unaccent(${cleanQuery}), unaccent(search_vector_text)) > 0.25
+     OR title ILIKE ${'%' + cleanQuery + '%'})
+  `;
+  for (const cond of accessConds) {
+    whereSql = sql`${whereSql} AND ${cond}`;
+  }
+
   const nodes = await db.execute(sql`
     SELECT id, node_type, title, original_title, slug, release_year, poster_path, order_index,
            search_vector_text, video_file_path, nfo_file_path,
+           COALESCE(
+             video_file_path,
+             nfo_file_path,
+             (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = media_nodes.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = media_nodes.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+           ) AS effective_physical_path,
            similarity(unaccent(search_vector_text), unaccent(${cleanQuery})) AS score
     FROM media_nodes
-    WHERE search_vector_text % ${cleanQuery}
-       OR word_similarity(unaccent(${cleanQuery}), unaccent(search_vector_text)) > 0.25
-       OR title ILIKE ${'%' + cleanQuery + '%'}
+    WHERE ${whereSql}
     ORDER BY score DESC, release_year DESC NULLS LAST
     LIMIT 30;
   `);
@@ -35,6 +49,7 @@ searchRouter.get('/', async (c) => {
       searchVectorText: n.search_vector_text,
       videoFilePath: n.video_file_path,
       nfoFilePath: n.nfo_file_path,
+      effectivePhysicalPath: n.effective_physical_path,
     })
   );
 
@@ -70,13 +85,13 @@ searchRouter.get('/', async (c) => {
     LIMIT 10;
   `);
 
-  // 3. Recherche sur les autres tags (Genres, Studios, Pays)
+  // 3. Recherche sur les thèmes / genres / tags culturels (EAV)
   const tags = await db.execute(sql`
-    SELECT DISTINCT v.value_text AS label, v.value_slug AS slug, a.code AS type,
+    SELECT DISTINCT v.value_text AS label, v.value_slug AS slug, a.display_name AS category,
            similarity(unaccent(v.value_text), unaccent(${cleanQuery})) AS score
     FROM eav_values v
     JOIN eav_attributes a ON v.attribute_id = a.id
-    WHERE a.code IN ('genre', 'studio', 'country')
+    WHERE a.code IN ('genre', 'studio', 'collection', 'subject', 'tag', 'mood')
       AND (
         v.value_text % ${cleanQuery}
         OR word_similarity(unaccent(${cleanQuery}), unaccent(v.value_text)) > 0.3

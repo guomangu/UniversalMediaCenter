@@ -1,91 +1,50 @@
-    - Rétablissement de l'export `resolveImageUrl` dans `api.ts`, éliminant le crash TypeError `resolveImageUrl is not a function` sur l'écran de détail média `<MediaDetailScreen>`.
-
-- [x] **49. Réparation Majeure du Pipeline d'Indexation & Assainissement des Métadonnées :**
-  - **Éradication des 688 Faux SHOWs Parasites :** Remplacement de la clé étrangère auto-référencée par `ON DELETE SET NULL` pour éliminer les suppressions en cascade de films intacts, purge complète des pseudo-shows vides sans fichiers physiques.
-  - **Correction Métadonnées Totoro & Antigang :** Élimination de la pollution canadienne (Fear Thy Neighbor / Cream Productions) causée par la troncation aveugle TMDb, rétablissement des pays et studios réels (Totoro: Japon / Studio Ghibli, Antigang: France & UK).
-  - **Unification Canonique de Ghost in the Shell :** Restauration de la collection faîtière *Ghost in the Shell - Saga*, rattachement direct des 4 films et unification des séries *Stand Alone Complex* (58 épisodes et OAVs) et *Arise*.
-  - **Restauration de Soul Eater & Désambiguïsation de Soul (Pixar) :** Exclusion stricte des résolutions vidéo (`1920x804`, `1920x1080`) de la détection d'épisodes, requalification de 142 films Pixar/Disney en `MOVIE` et rétablissement du titre canonique *Soul Eater*.
-  - **Sécurisation de la Détection d'Affiches (`mediaFileDetector.ts`) :** Priorité absolue aux artworks dédiés (`<titre>-poster.jpg`), interdiction formelle d'attribuer `folder.jpg` aux films situés dans des dossiers partagés multi-fichiers.
-  - **Rétablissement de la Taxonomie Réalisateurs & Studios :** Inclusion des films en sagas dans les requêtes de taxonomie (`taxonomyRoutes.ts`), passant de 3 à plus de 40 réalisateurs et studios explorables.
-
-- [x] **50. Suite d'Évaluation Isolée des Profils de Fichiers & Sanctuarisation de la Super-Fiabilité :**
-  - **Matrice de Test Automatisée (19 Profils Réels) (`testProfiles.ts`) :** Couverture à 100 % des animes avec arcs et numéros absolus (Bleach, Darling in the FranXX), trackers torrents, fansubs, dossiers de saisons français (South Park), formats SxEE, dossiers films avec underscores (_LOW_QUALITY), sagas Ghibli/Pixar, bonus NCED avec hash CRC32, et sagas multi-formats (Ghost in the Shell).
-  - **Prise en Charge des Formats Isolés d'Épisodes (`seasonEpisodeHelper.ts`) :** Détection native des épisodes entre tirets (`- 214 -`, `- 02 -`) et numéros de piste (`7 - conjonctivite`), bornage arithmétique strict de la notation "x" ($s < 50, e < 150$) interdisant les faux-positifs de résolutions vidéo.
-  - **Normalisation Avancée des Séparateurs d'Abréviations (`titleCleaner.ts`) :** Prise en charge des variantes avec espaces multiples pour les acronymes (`Ghost in the Shell: Stand Alone Complex`).
-  - **Zéro Erreur de Compilation TypeScript (`tsc --noEmit`) :** Résolution intégrale des discordances de typage sur `ParsedNfo`, `ContainerMetadata` et `SubtitleNlpResult`.
-  - **Intégration Script npm (`package.json`) :** Ajout de la commande `npm run test:profiles` pour l'exécution immédiate et reproductible de la suite de régression.
-
-- [x] **51. Système d'Autorisation Exclusive & Interdiction de Dossiers Physiques + Studio Server-Driven UI (`AdminPhysicalFolderSelector.tsx`, `folderExplorer.ts`, `AdminLayoutTab.tsx`) :**
-  - **Visualisation & Sélection des Dossiers Physiques en Direct (`AdminPhysicalFolderSelector.tsx`, `folderExplorer.ts`, `adminFolderRoutes.ts`) :**
-    - Découverte dynamique de l'ensemble des répertoires physiques sur disque (`/home/tele/Vidéos/drive`, `/run/media/tele/My Passport`, `/run/media/tele/gudbug`) et croisement en temps réel avec les 3 642 nœuds médias indexés en base.
-    - Vue arborescente interactive avec badges du nombre de médias par dossier, profondeur d'indentation, repli/dépli et recherche textuelle instantanée.
-    - Actions 1-clic : `+ Autoriser` exclusivement (Whitelist), `- Interdire` (Blacklist) ou réinitialiser.
-  - **Autorisation Exclusive (Whitelist) de Dossiers (`paramSchema.ts`, `access.ts`, `mediaAccess.ts`, `users.ts`) :**
-    - Ajout de `allowedFolders` dans `ProfileTypeDefinition`, `UserSession` et table PostgreSQL `users`.
-    - Contrôle d'accès ABAC strict : si un profil dispose d'un ou plusieurs dossiers autorisés exclusivement, seuls les médias appartenant à ces répertoires physiques sont visibles/accessibles.
-    - Sanctuarisation inviolable du compte Administrateur (tout autorisé obligatoirement).
-  - **Studio Server-Driven UI & Ordonnancement Modulaire (`AdminLayoutTab.tsx`, `admin.tsx`) :**
-    - Intégration de l'onglet « 🎨 Rails & Layout » dans l'espace administrateur permettant de réordonner les rails d'accueil (Monter/Descendre), d'activer/désactiver les rails, de cycler les formats de cartes (`POSTER`, `BACKDROP`, `BANNER`, `CIRCLE`, `LIST`) et de configurer les zones de tags (`HERO_PRIMARY`, `BELOW_PLAYER`, `DETAILS_MODAL`, `SEARCH_FILTER`).
-  - **Attribution Immédiate du Profil / Pack à la Création (`AdminCreateUserModal.tsx`, `AdminUsersTab.tsx`) :**
-    - Possibilité d'assigner immédiatement un type de profil / pack (Membre, Administrateur, Enfant, Safezone...) dès la modale de création d'utilisateur.
-  - **Audit Exhaustif des Carences & Risques de l'Espace Administrateur :**
-    - Recensement et analyse critique des points faibles restants et recommandations d'évolutions futures (protection CSRF/RBAC poussée, pagination de réconciliation, gestion avancée des quotas).
-
-- [x] **52. Système Flexible de Langues & Repli Automatique des Sous-titres (VOSTFR Intelligent) :**
-  - **Configuration Globale dans `param.yaml` (`paramSchema.ts`, `param.yaml`) :**
-    - Définition de `media.defaultAudioLanguage` (par défaut `'fra'`) et `media.defaultSubtitleLanguage` (par défaut `'fra'`).
-    - Introduction de `media.subtitleMode` avec 3 politiques flexibles :
-      - `fallback_if_audio_missing` (Recommandé / Par défaut) : active automatiquement les sous-titres par défaut si la piste audio par défaut n'est pas présente dans le média (VOSTFR intelligent).
-      - `always` : active systématiquement les sous-titres dans la langue par défaut pour tous les médias.
-      - `never` : conserve les sous-titres désactivés par défaut (activation manuelle par l'utilisateur).
-  - **Administration Ergonomique dans l'Onglet param.yaml (`AdminConfigTab.tsx`) :**
-    - Section visuelle dédiée « 🎬 Langues & Sous-Titres par Défaut des Médias » respectant les critères d'UX moderne (glassmorphism, cartes de sélection radio interactives avec badges, pills de langues avec drapeaux 🇫🇷, 🇬🇧, 🇯🇵, 🇪🇸, 🇩🇪, 🇮🇹 et saisie libre de codes ISO multiples).
-  - **Moteur d'Inspection & Correspondance Sémantique (`mediaTracks.ts`) :**
-    - Dictionnaire de normalisation synonymique ISO 639-1 / ISO 639-2 (`fra`, `fre`, `fr`, `french`, `vostfr`, `vf`, `vff` pour le français, `eng`, `en` pour l'anglais, `jpn`, `ja` pour le japonais, etc.).
-    - Prise en charge des listes prioritaires séparées par des virgules (ex: `fra, fre, fr`).
-    - Détection intelligente des pistes intégrées et des fichiers externes (`.srt`, `.vtt`, `.VOSTFR.srt`).
-    - Calcul en amont de `defaultAudioTrack`, `defaultSubtitle`, `isDefaultAudioAvailable` et `subtitleFallbackTriggered`.
-  - **Activation Automatique & Toast Utilisateur dans le Lecteur (`player/[id].tsx`, `mediaTracksApi.ts`) :**
-    - Application immédiate au lancement du média de la piste audio préférée ou remuxing dynamique si une piste spécifique est sélectionnée.
-    - Engagement transparent du sous-titre adéquat (`track:X` ou `file:Y`) en cas de déclenchement du repli VOST.
-    - Notification toast informative instantanée : *« VOST : Sous-titres activés automatiquement »*.
-  - **Suite de Tests Dédiée (`testLanguageDefaults.ts`, `package.json`) :**
-    - 5 scénarios automatisés couvrant la normalisation linguistique, la détection audio, le repli VOSTFR sur sous-titre interne et fichier `.srt` externe, ainsi que les modes `always` et `never` (`npm run test:lang`).
-
-- [x] **53. Prise en Charge Universelle des Séries Animées Condensées (Éditions Kai, One Pace & Fan-Edits) :**
-  - **Moteur Algorithmique & Résolveur Canonique (`kaiPaceResolver.ts`, `titleCleaner.ts`) :**
-    - Cartographie chronologique `ONE_PACE_ARCS_MAP` couvrant 30 arcs narratifs (Saison 1 *Romance Dawn* jusqu'à Saison 30 *Wano*, et Saison 0 *Specials*).
-    - Déduction arithmétique des épisodes d'arc à partir des numéros de chapitres manga (ex: Dressrosa ch. 700-701 $\rightarrow$ Ep 1 via $\lfloor(ch-700)/2\rfloor + 1$).
-    - Ordonnancement strict et déterministe `orderIndex = season * 1000 + episode` éliminant tout risque de collision.
-  - **Éradication des Faux-Positifs Théâtraux & Affiches Corrompues (`externalMetadata.ts`, `mediaIngester.ts`) :**
-    - Bannissement absolu du TMDb ID `1710755` (*« Guerra e pace (Teatro) - Prima parte »*).
-    - Détection $O(1)$ et rejet des 293 affiches corrompues de 217 213 octets (MD5 `a4d5e52df6fc6de1b20070552a1ba0da`) et des fichiers NFO pollués.
-    - Fallback intelligent lors de la recherche TMDb vers la franchise canonique officielle (*One Piece* TMDb `37854`, *Dragon Ball Z* TMDb `12971`).
-  - **Générateur Dynamique de Vignettes Vidéo par ffmpeg (`mediaArtworks.ts`) :**
-    - Capture automatique à la volée d'une image à `00:02:30` en cas d'absence d'affiche ou de rejet d'artwork pollué, avec cache disque dans `~/.cache/ums/thumbnails/`.
-  - **Structuration par Arcs Narratifs dans l'UI (`mediaHierarchy.ts`) :**
-    - Regroupement automatique des épisodes par saisons virtuelles d'arcs avec tri chronologique absolu.
-  - **Assainissement de la Base de Données en Production (`repairOnePieceKai.ts`) :**
-    - 343 épisodes ré-indexés et rattachés au nœud SHOW parent *One Piece Kai* (`9f1ed2da-1970-4ebe-91c8-e8aff3304a25`).
-    - 293 affiches corrompues purgées de la base PostgreSQL.
-  - **Extension de la Suite de Tests Isolés (25 Profils Multimédias à 100 %) (`testProfiles.ts`) :**
-    - Ajout de 6 nouveaux profils représentatifs (Profils 20 à 25) couvrant les formats arcs One Pace, plages de chapitres manga, mapping Dressrosa, hors-séries spéciaux, Dragon Ball Z Kai standard et arc tardif Wano.
-    - Résultat : **25 tests passés sur 25 (100 % de succès)**.
-
-- [x] **54. Dynamisation Complète des Formats/Qualités Vidéo & Navigation Précise par Ancrage DOM des Raccourcis de Tags :**
-  - **Dynamisation Intégrale de la Taxonomie Qualité (`taxonomyRoutes.ts`, `taxonomyApi.ts`) :**
-    - Éradication de la requête statique limitée à 720p/1080p.
-    - Extraction dynamique universelle $O(1)$ de l'ensemble des formats réels présents en base (`4K UHD`, `1080p FHD`, `720p HD`, `576p`, `480p SD`, `360p`) combinant les métadonnées EAV (`video_quality`, `quality`, `resolution`), les chemins physiques et les vecteurs de recherche plein texte.
-    - Ordonnancement qualitatif descendant déterministe (4K > 1080p > 720p > 576p > 480p > 360p).
-  - **Éradication du Cache Trap LocalStorage (`pwaDataCache.ts`, `taxonomyApi.ts`) :**
-    - Migration sur la clé versionnée `taxonomy_categories_v5` et purge automatique au démarrage des entrées `ums_cache_tax*` antérieures.
-    - Ajout du callback `onFreshData` permettant à l'état React de s'actualiser immédiatement dès réception de la réponse réseau fraîche.
-    - Désactivation de l'exclusion inter-tags sur la catégorie Qualité afin que chaque rail (4K, 1080p, 720p, 480p) affiche l'intégralité de son catalogue.
-  - **Résolution & Badges de Qualité Réelle sur chaque Média (`MediaTile.tsx`, `taxonomyRoutes.ts`) :**
-    - Résolution par lot instantanée (32 ms) de la résolution vidéo exacte de chaque média retourné dans `/api/ui/taxonomy/medias`.
-    - Affichage d'un badge vitré élégant en bas à gauche de chaque carte média (`4K`, `1080p`, `720p`, `480p`) sans collision avec le badge de séance active.
-    - Enrichissement de la barre de filtres (`TagSearchBar.tsx`) avec sélection rapide `4K`, `1080p`, `720p`, `480p`, `Films`, `Séries`.
   - **Navigation par Ancrage DOM & Verrouillage Anti-Jitter (`index.tsx`, `CategorySection.tsx`) :**
     - Déclenchement via le répondeur officiel React Native `scrollRef.current.scrollTo({ y, animated: true })` combiné à `node.scroll({ top, behavior: 'smooth' })`.
     - Verrou de saut `isJumpingRef` désactivant temporairement les écouteurs de scroll pendant l'animation pour éliminer tout saut ou rebond de sélection intempestif.
     - Synchronisation dynamique et fluide du chip actif lors du défilement utilisateur, y compris pour les dernières sections situées en bas de page.
+
+- [x] **55. Refonte Complète & Sanctuarisation Inviolable du Contrôle d'Accès aux Dossiers Physiques (RBAC/ABAC Zero-Leak) :**
+  - **Moteur Universel de Résolution de Chemins & Normalisation Multi-OS (`mediaAccess.ts`) :**
+    - Prise en charge symétrique et transparente des alias de racines Linux immuables (`/var/home` $\leftrightarrow$ `/home`) éliminant les fausses correspondances sur Fedora Atomic, Bazzite et Silverblue.
+    - Normalisation Unicode NFC et traitement des séparateurs (`/`) et trailing slashes empêchant tout contournement par variations d'encodage de caractères accentués (`Vidéos`, etc.).
+    - Algorithme `pathMatchesFolderRule` distinguant racines absolues et sous-dossiers/chemins relatifs (ex: `/Films/Adultes`, `Films/Adultes`, `Horreur`) avec vérification des frontières de segments.
+  - **Héritage Arborescent pour Conteneurs Sans Chemins Directs (`SHOW`, `SEASON`, `COLLECTION`) :**
+    - Résolution dynamique de l'`effectivePhysicalPath` et agrégation des chemins des enfants (`childPaths`) pour les séries, saisons et collections qui n'ont pas de `videoFilePath` direct en base.
+    - Blocage total d'un conteneur si son dossier parent ou l'ensemble de ses enfants appartient à un dossier interdit.
+  - **Filtrage SQL Natif & Zéro-Fuite dans l'API de Taxonomie & Rails (`taxonomyRoutes.ts`, `mediaAccessSql.ts`, `ui.ts`) :**
+    - Création du générateur SQL `buildMediaAccessConditions(user, tableAlias)` injectant directement les clauses de restriction de dossiers (Blacklist/Whitelist), de tags et d'IPTV dans `GET /api/ui/taxonomy/medias` et `GET /api/ui/taxonomy`.
+    - Double barrière de sécurité : filtrage SQL amont (pour une pagination et des limites exactes) combiné à un filtre mémoire JavaScript strict `isMediaAllowedForUser` garantissant une étanchéité absolue à 100 %.
+    - Résolution en batch des chemins physiques des conteneurs dans les rails d'accueil (`GET /api/ui/layout`).
+  - **Étanchéité des Routes de Consultation & Lecture (`media.ts`, `mediaNext.ts`, `mediaTracks.ts`, `mediaStream.ts`, `search.ts`) :**
+    - Écran de détail (`GET /api/media/:id`) : refus 403 immédiat si le dossier est restreint et filtrage strict de `childNodes` et `extras` pour interdire l'accès aux épisodes ou films d'un dossier bloqué.
+    - Pistes audio & sous-titres (`GET /api/media/:id/tracks`) : protection par `checkMediaAccess`.
+    - Épisode / film suivant (`GET /api/media/:id/next`) : filtrage des candidats autorisés, interdisant le passage automatique vers un média restreint.
+    - Recherche plein texte (`GET /api/search`) : exclusion SQL et JS des résultats appartenant à des dossiers interdits.
+    - Flux vidéo (`GET /api/media/:id/stream`) : renvoi du code d'erreur HTTP 403 `FORBIDDEN` explicite.
+  - **Isolation Multi-Utilisateurs du Cache Client PWA (`taxonomyApi.ts`, `authStore.ts`, `index.tsx`) :**
+    - Clé de cache versionnée et indexée par identifiant et rôle utilisateur (`tax_v7_${userKey}_...` et `taxonomy_categories_v7_${userKey}`).
+    - Purge automatique instantanée de tous les caches médias (`ums_cache_*`, `tax_*`) lors de la déconnexion (`logout`) ou du changement d'utilisateur (`setAuthSession`).
+    - Actualisation réactive de `HomeScreen` au changement de session.
+  - **Suite de Tests Dédiée (`testFolderAccessSecurity.ts`, `package.json`) :**
+    - Validation unitaire et d'intégration à 100 % (normalisation multi-OS, dossiers absolus/relatifs, protection admin, whitelist/blacklist, conteneurs SHOW et profils Enfants).
+
+- [x] **56. Masquage Dynamique des Catégories de Tags Sans Médias sur l'Accueil :**
+  - **Filtrage SQL & Exclusion Amont (`taxonomyRoutes.ts`) :**
+    - Clause `HAVING COUNT(...) > 0` sur toutes les agrégations de taxonomie (Sagas, Séries, Films, Studios, Réalisateurs, Qualités, Pays).
+    - Application stricte des conditions d'accès RBAC/ABAC (`buildMediaAccessConditions(user, 'n')`) aux requêtes de qualités et de pays pour ne jamais compter de médias interdits.
+    - Exclusion systématique des tags ayant un compte nul (`count <= 0`) et filtrage éliminant toute catégorie dont tous les tags sont vides ou absents (`rawCategories.filter(cat => cat.tags.length > 0)`).
+  - **Moteur d'Évaluation de Visibilité & Masquage de Section (`CategorySection.tsx`) :**
+    - Remplacement du masquage conditionné uniquement à `searchQuery` par une règle universelle : si la catégorie n'a aucun tag valide (`activeTags.length === 0`) ou si tous les tags visibles chargés retournent 0 média (`allVisibleLoaded && totalCount === 0`), le composant renvoie `null` immédiatement sans afficher de conteneur vide ni de badge résiduel.
+    - Réinitialisation et ajustement synchrone des compteurs lors de la modification des filtres ou termes de recherche pour permettre une réévaluation instantanée des résultats.
+    - Émission d'un événement `onVisibilityChange(categoryId, isVisible)` post-render permettant la synchronisation réactive avec le composant parent.
+  - **Synchronisation Temps Réel des Raccourcis d'En-tête (`index.tsx`, `SiteHeader.tsx`) :**
+    - Gestion d'un état réactif `hiddenCatIds` dans `HomeScreen` pour agréger les catégories vides.
+    - Calcul mémoïsé `visibleCategories` transmis à `<SiteHeader>` : les chips de raccourcis supérieurs ne présentent désormais que les catégories contenant effectivement des médias.
+    - Repli automatique du sélecteur actif (`activeCategoryId`) vers la première catégorie visible si la catégorie sélectionnée devient masquée suite à un filtre ou une recherche.
+    - Affichage d'un état d'accueil convivial « Aucun média trouvé » lorsque tous les filtres ou recherches n'aboutissent à aucun résultat visible.
+
+- [x] **57. Documentation Complète du Modèle de Sécurité & Référentiels d'Architecture :**
+  - **Rédaction de `systeme_droits_utilisateurs.md` :** Spécification exhaustive du modèle de sécurité hybride RBAC/ABAC/PBAC, de l'environnement Linux Bazzite / Fedora Atomic Desktop (`/var/home` $\leftrightarrow$ `/home`), de l'héritage arborescent des conteneurs SHOW/COLLECTION, de la double barrière SQL/JS (Loi Zero-Leak), et cartographie complète des points de contrôle d'accès API.
+  - **Actualisation du White Paper (`white_paper_the_universal_media_stack.md`) :** Refonte de la Section 7 (*Loi n°5 : Sécurité Frictionless, RBAC, ABAC & Partitionnement Physique PBAC*), intégration des règles de dossiers physiques et de taxonomie zéro-vide, mise à jour du schéma PostgreSQL `users` en Section 10.
+  - **Enrichissement des Bonnes & Mauvaises Pratiques (`mauvaise_pratique.md`) :** Ajout de la règle 85 documentant l'anti-pattern de pollution visuelle par des catégories vides et les principes de synchronisation temps réel des raccourcis d'en-tête.
+  - **Mise à Jour du Sommaire Général (`sommaire.md`) :** Référencement de l'ensemble des modules d'accès physique, de sécurité SQL, de tests d'intégration et du document de droits utilisateurs.

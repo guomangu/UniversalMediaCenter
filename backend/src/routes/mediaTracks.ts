@@ -5,6 +5,8 @@ import { promisify } from 'node:util';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { getSiteParams } from '../config/paramManager.js';
+import type { UserSession } from '../middleware/access.js';
+import { checkMediaAccess } from '../auth/mediaAccess.js';
 
 const execFileAsync = promisify(execFile);
 export const tracksRouter = new Hono();
@@ -88,6 +90,9 @@ const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 
 tracksRouter.get('/:id/tracks', async (c) => {
   const id = c.req.param('id');
+  const user = (c as any).get('user') as UserSession | undefined;
+  const shareToken = c.req.query('share') || c.req.query('share_token');
+
   const siteParams = getSiteParams();
   const mediaConfig = siteParams.media || {};
   const prefAudio = (mediaConfig.defaultAudioLanguage || 'fra').trim();
@@ -98,7 +103,21 @@ tracksRouter.get('/:id/tracks', async (c) => {
     where: (t, { or, eq }) => isUuid(id) ? or(eq(t.id, id), eq(t.slug, id)) : eq(t.slug, id),
   });
 
-  if (!media?.videoFilePath) {
+  if (!media) {
+    return c.json({ error: 'Média introuvable' }, 404);
+  }
+
+  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
+    videoFilePath: media.videoFilePath,
+    nfoFilePath: media.nfoFilePath,
+    searchVectorText: media.searchVectorText,
+  });
+
+  if (!isAuthorized) {
+    return c.json({ error: 'Accès non autorisé', code: 'FORBIDDEN' }, 403);
+  }
+
+  if (!media.videoFilePath) {
     return c.json({
       audioTracks: [],
       subtitleTracks: [],
@@ -129,95 +148,118 @@ tracksRouter.get('/:id/tracks', async (c) => {
       const lang = (s.tags?.language || 'und').toLowerCase();
       const langLabel = LANG_NAMES[lang] || lang.toUpperCase();
       const title = s.tags?.title ? ` - ${s.tags.title}` : '';
-      return { index: s.index, language: lang, codec: s.codec_name, label: `${langLabel}${title} (${s.codec_name.toUpperCase()})` };
+      return {
+        index: s.index,
+        language: lang,
+        codec: s.codec_name || 'aac',
+        label: `${langLabel}${title} (${s.codec_name || 'audio'})`,
+      };
     });
 
-    const subtitleTracks: SubtitleTrackInfo[] = streams
-      .filter((s: any) => s.codec_type === 'subtitle' && !['hdmv_pgs_subtitle', 'dvd_subtitle'].includes(s.codec_name))
-      .map((s: any) => {
-        const lang = (s.tags?.language || 'und').toLowerCase();
-        const langLabel = LANG_NAMES[lang] || lang.toUpperCase();
-        const title = s.tags?.title ? ` - ${s.tags.title}` : '';
-        return { index: s.index, language: lang, label: `${langLabel}${title} (Intégré)` };
-      });
+    const internalSubtitles: SubtitleTrackInfo[] = streams.filter((s: any) => s.codec_type === 'subtitle').map((s: any) => {
+      const lang = (s.tags?.language || 'und').toLowerCase();
+      const langLabel = LANG_NAMES[lang] || lang.toUpperCase();
+      const title = s.tags?.title ? ` - ${s.tags.title}` : '';
+      return {
+        index: s.index,
+        language: lang,
+        label: `${langLabel}${title} [Intégré]`,
+      };
+    });
 
-    const dir = path.dirname(media.videoFilePath);
-    const baseName = path.basename(media.videoFilePath, path.extname(media.videoFilePath)).toLowerCase();
-    const numMatch = baseName.match(/^\d+/)?.[0];
-    const subDirs = [dir, path.join(dir, 'Subtitles'), path.join(path.dirname(dir), 'Subtitles')];
+    // Recherche de fichiers de sous-titres externes (.srt, .vtt)
+    const externalSubtitles: SubtitleTrackInfo[] = [];
+    try {
+      const dir = path.dirname(media.videoFilePath);
+      const ext = path.extname(media.videoFilePath);
+      const baseName = path.basename(media.videoFilePath, ext);
+      const files = await fsp.readdir(dir);
 
-    for (const d of subDirs) {
-      const files = await fsp.readdir(d).catch(() => []);
-      for (const f of files) {
-        const lower = f.toLowerCase();
-        if ((lower.endsWith('.srt') || lower.endsWith('.vtt')) && (!numMatch || lower.includes(numMatch))) {
-          let lKey = 'und';
-          if (lower.includes('fre') || lower.includes('fra') || lower.includes('.fr.') || lower.endsWith('.fr.srt') || lower.endsWith('.fr.vtt') || lower.includes('french') || lower.includes('vostfr')) {
-            lKey = 'fra';
-          } else if (lower.includes('eng') || lower.includes('.en.') || lower.endsWith('.en.srt') || lower.endsWith('.en.vtt') || lower.includes('english')) {
-            lKey = 'eng';
-          } else if (lower.includes('jpn') || lower.includes('jap') || lower.includes('.ja.') || lower.includes('japanese')) {
-            lKey = 'jpn';
-          } else if (lower.includes('spa') || lower.includes('.es.') || lower.includes('spanish')) {
-            lKey = 'spa';
-          } else if (lower.includes('deu') || lower.includes('ger') || lower.includes('.de.') || lower.includes('german')) {
-            lKey = 'deu';
-          } else if (lower.includes('ita') || lower.includes('.it.') || lower.includes('italian')) {
-            lKey = 'ita';
+      for (const file of files) {
+        const fileExt = path.extname(file).toLowerCase();
+        if (fileExt === '.srt' || fileExt === '.vtt') {
+          if (file.startsWith(baseName) || file.toLowerCase().includes('vostfr') || file.toLowerCase().includes('french')) {
+            let subLang = 'fra';
+            const lowerFile = file.toLowerCase();
+            if (lowerFile.includes('eng') || lowerFile.includes('en.')) subLang = 'eng';
+            else if (lowerFile.includes('spa') || lowerFile.includes('es.')) subLang = 'spa';
+            else if (lowerFile.includes('fre') || lowerFile.includes('fra') || lowerFile.includes('fr.')) subLang = 'fra';
+
+            const langLabel = LANG_NAMES[subLang] || subLang.toUpperCase();
+            externalSubtitles.push({
+              index: 100 + externalSubtitles.length,
+              language: subLang,
+              label: `${langLabel} [Fichier externe: ${path.basename(file)}]`,
+              fileName: file,
+            });
           }
-          const labelPrefix = LANG_NAMES[lKey] || 'Sous-titre';
-          subtitleTracks.push({
-            index: -1,
-            language: lKey,
-            fileName: f,
-            label: `${labelPrefix} (${f.length > 32 ? f.slice(0, 29) + '...' : f})`,
-          });
         }
       }
+    } catch {}
+
+    const allSubtitles = [...internalSubtitles, ...externalSubtitles];
+
+    // Détermination de la piste audio préférée
+    let defaultAudioTrack = 'auto';
+    let isDefaultAudioAvailable = false;
+
+    if (audioTracks.length > 0) {
+      const matchedAudio = audioTracks.find((t) => matchesLanguagePreference(t.language, t.label, prefAudio));
+      if (matchedAudio) {
+        defaultAudioTrack = String(matchedAudio.index);
+        isDefaultAudioAvailable = true;
+      } else {
+        defaultAudioTrack = String(audioTracks[0].index);
+        isDefaultAudioAvailable = false;
+      }
+    } else {
+      isDefaultAudioAvailable = true;
     }
 
-    // Calcul de la correspondance audio par défaut
-    const matchedAudio = audioTracks.find((t: AudioTrackInfo) => matchesLanguagePreference(t.language, t.label, prefAudio));
-    const isDefaultAudioAvailable = Boolean(matchedAudio);
-    const defaultAudioTrack = matchedAudio ? String(matchedAudio.index) : 'auto';
-
-    // Calcul de la correspondance sous-titres par défaut
-    const matchedSubtitle = subtitleTracks.find((s: SubtitleTrackInfo) => matchesLanguagePreference(s.language, s.fileName || s.label, prefSub));
+    // Détermination automatique du sous-titre
     let defaultSubtitle = 'off';
     let subtitleFallbackTriggered = false;
 
     if (subMode === 'always') {
-      if (matchedSubtitle) {
-        defaultSubtitle = matchedSubtitle.fileName ? `file:${matchedSubtitle.fileName}` : `track:${matchedSubtitle.index}`;
+      const matchedSub = allSubtitles.find((s) => matchesLanguagePreference(s.language, s.label, prefSub));
+      if (matchedSub) {
+        defaultSubtitle = matchedSub.fileName ? `file:${matchedSub.fileName}` : `track:${matchedSub.index}`;
+      } else if (allSubtitles.length > 0) {
+        const first = allSubtitles[0];
+        defaultSubtitle = first.fileName ? `file:${first.fileName}` : `track:${first.index}`;
       }
     } else if (subMode === 'fallback_if_audio_missing') {
-      if (!isDefaultAudioAvailable && matchedSubtitle) {
-        defaultSubtitle = matchedSubtitle.fileName ? `file:${matchedSubtitle.fileName}` : `track:${matchedSubtitle.index}`;
-        subtitleFallbackTriggered = true;
+      if (!isDefaultAudioAvailable && audioTracks.length > 0) {
+        const matchedSub = allSubtitles.find((s) => matchesLanguagePreference(s.language, s.label, prefSub));
+        if (matchedSub) {
+          defaultSubtitle = matchedSub.fileName ? `file:${matchedSub.fileName}` : `track:${matchedSub.index}`;
+          subtitleFallbackTriggered = true;
+        } else if (allSubtitles.length > 0) {
+          const first = allSubtitles[0];
+          defaultSubtitle = first.fileName ? `file:${first.fileName}` : `track:${first.index}`;
+          subtitleFallbackTriggered = true;
+        }
       }
     }
 
-    const height = videoStream?.height || 1080;
-    const qualities = [
-      { label: `Auto (Original ${height}p)`, value: 'auto' },
-      ...(height >= 1080 ? [{ label: '1080p FHD', value: '1080p' }] : []),
-      ...(height >= 720 ? [{ label: '720p HD', value: '720p' }] : []),
-      { label: '480p SD', value: '480p' },
-    ];
-
-    let intro = { start: 0, end: 90 };
-    if (chapters.length > 0) {
-      const end = parseFloat(chapters[0].end_time || '90');
-      if (end >= 15 && end <= 180) intro = { start: parseFloat(chapters[0].start_time || '0'), end };
-    }
     const duration = parseFloat(info.format?.duration || '0');
+    const width = videoStream?.width;
+    const height = videoStream?.height;
+    const qualities: string[] = [];
+    if (height) {
+      if (height >= 2160) qualities.push('4K (2160p)');
+      if (height >= 1080) qualities.push('Full HD (1080p)');
+      if (height >= 720) qualities.push('HD (720p)');
+      if (height >= 480) qualities.push('SD (480p)');
+    }
 
     return c.json({
+      durationSeconds: Math.round(duration),
+      width,
+      height,
       audioTracks,
-      subtitleTracks,
+      subtitleTracks: allSubtitles,
       qualities,
-      intro,
-      duration,
       defaultAudioTrack,
       defaultSubtitle,
       isDefaultAudioAvailable,
@@ -226,20 +268,7 @@ tracksRouter.get('/:id/tracks', async (c) => {
       configuredSubtitleLanguage: prefSub,
       subtitleMode: subMode,
     });
-  } catch (err) {
-    return c.json({
-      audioTracks: [],
-      subtitleTracks: [],
-      qualities: [{ label: 'Auto', value: 'auto' }],
-      intro: { start: 0, end: 90 },
-      duration: 0,
-      defaultAudioTrack: 'auto',
-      defaultSubtitle: 'off',
-      isDefaultAudioAvailable: true,
-      subtitleFallbackTriggered: false,
-      configuredAudioLanguage: prefAudio,
-      configuredSubtitleLanguage: prefSub,
-      subtitleMode: subMode,
-    });
+  } catch (err: any) {
+    return c.json({ error: `Erreur d'analyse ffprobe: ${err.message}` }, 500);
   }
 });

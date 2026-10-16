@@ -1,26 +1,41 @@
 import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
+import type { UserSession } from '../middleware/access.js';
+import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
+import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
 
 export const taxonomyRouter = new Hono();
 
 taxonomyRouter.get('/', async (c) => {
+  const user = (c as any).get('user') as UserSession | undefined;
+  const accessConds = buildMediaAccessConditions(user, 'n');
+  const hasAccessLimits = accessConds.length > 0;
+
   // 1. Sagas & Collections
-  const sagasRes = await db.execute(sql`
+  let sagasQuery = sql`
     SELECT n.title AS label, COALESCE(n.slug, n.id::text) AS slug, COUNT(c.id)::int AS count
     FROM media_nodes n
     JOIN media_nodes c ON c.parent_id = n.id
     WHERE n.node_type = 'COLLECTION'
+  `;
+  if (hasAccessLimits) {
+    for (const cond of accessConds) {
+      sagasQuery = sql`${sagasQuery} AND ${cond}`;
+    }
+  }
+  sagasQuery = sql`${sagasQuery}
     GROUP BY n.id, n.title, n.slug
+    HAVING COUNT(c.id) > 0
     ORDER BY count DESC, n.title ASC
     LIMIT 50;
-  `);
+  `;
+  const sagasRes = await db.execute(sagasQuery);
 
   // 2. Séries par Genre
-  const seriesRes = await db.execute(sql`
+  let seriesQuery = sql`
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count
-    FROM (
-      SELECT l.value_id, n.id AS target_id
+    FROM (\n      SELECT l.value_id, n.id AS target_id
       FROM node_eav_links l
       JOIN media_nodes n ON l.node_id = n.id
       WHERE n.node_type = 'SHOW'
@@ -33,14 +48,24 @@ taxonomyRouter.get('/', async (c) => {
     ) links
     JOIN eav_values v ON links.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
+    JOIN media_nodes n ON links.target_id = n.id
     WHERE a.code = 'genre'
+  `;
+  if (hasAccessLimits) {
+    for (const cond of accessConds) {
+      seriesQuery = sql`${seriesQuery} AND ${cond}`;
+    }
+  }
+  seriesQuery = sql`${seriesQuery}
     GROUP BY v.value_text, v.value_slug
+    HAVING COUNT(DISTINCT target_id) > 0
     ORDER BY count DESC, v.value_text ASC
     LIMIT 40;
-  `);
+  `;
+  const seriesRes = await db.execute(seriesQuery);
 
-  // 3. Films par Genre (Placé juste au-dessus de Studios, ordonné par genre et n'affichant que des films)
-  const moviesRes = await db.execute(sql`
+  // 3. Films par Genre
+  let moviesQuery = sql`
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count
     FROM (
       SELECT l.value_id, n.id AS target_id
@@ -50,90 +75,137 @@ taxonomyRouter.get('/', async (c) => {
     ) links
     JOIN eav_values v ON links.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
+    JOIN media_nodes n ON links.target_id = n.id
     WHERE a.code = 'genre'
+  `;
+  if (hasAccessLimits) {
+    for (const cond of accessConds) {
+      moviesQuery = sql`${moviesQuery} AND ${cond}`;
+    }
+  }
+  moviesQuery = sql`${moviesQuery}
     GROUP BY v.value_text, v.value_slug
+    HAVING COUNT(DISTINCT target_id) > 0
     ORDER BY count DESC, v.value_text ASC
     LIMIT 40;
-  `);
+  `;
+  const moviesRes = await db.execute(moviesQuery);
 
   // 4. Studios de Production
-  const studiosRes = await db.execute(sql`
+  let studiosQuery = sql`
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count FROM (
       SELECT l.value_id, n.id AS target_id FROM node_eav_links l JOIN media_nodes n ON l.node_id = n.id WHERE n.node_type IN ('SHOW', 'COLLECTION', 'MOVIE')
       UNION
       SELECT cl.value_id, c.parent_id AS target_id FROM node_eav_links cl JOIN media_nodes c ON cl.node_id = c.id WHERE c.parent_id IS NOT NULL
-    ) links JOIN eav_values v ON links.value_id = v.id JOIN eav_attributes a ON v.attribute_id = a.id WHERE a.code = 'studio' AND v.value_text !~ '^[0-9]+$' GROUP BY v.value_text, v.value_slug ORDER BY count DESC LIMIT 40;
-  `);
+    ) links
+    JOIN eav_values v ON links.value_id = v.id
+    JOIN eav_attributes a ON v.attribute_id = a.id
+    JOIN media_nodes n ON links.target_id = n.id
+    WHERE a.code = 'studio' AND v.value_text !~ '^[0-9]+$'
+  `;
+  if (hasAccessLimits) {
+    for (const cond of accessConds) {
+      studiosQuery = sql`${studiosQuery} AND ${cond}`;
+    }
+  }
+  studiosQuery = sql`${studiosQuery} GROUP BY v.value_text, v.value_slug HAVING COUNT(DISTINCT target_id) > 0 ORDER BY count DESC LIMIT 40;`;
+  const studiosRes = await db.execute(studiosQuery);
 
   // 5. Réalisateurs
-  const directorsRes = await db.execute(sql`
+  let directorsQuery = sql`
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count FROM (
       SELECT l.value_id, n.id AS target_id FROM node_eav_links l JOIN media_nodes n ON l.node_id = n.id WHERE n.node_type IN ('SHOW', 'COLLECTION', 'MOVIE')
       UNION
       SELECT cl.value_id, c.parent_id AS target_id FROM node_eav_links cl JOIN media_nodes c ON cl.node_id = c.id WHERE c.parent_id IS NOT NULL
-    ) links JOIN eav_values v ON links.value_id = v.id JOIN eav_attributes a ON v.attribute_id = a.id WHERE a.code = 'director' AND v.value_text !~ '^[0-9]+$' GROUP BY v.value_text, v.value_slug ORDER BY count DESC LIMIT 40;
-  `);
+    ) links
+    JOIN eav_values v ON links.value_id = v.id
+    JOIN eav_attributes a ON v.attribute_id = a.id
+    JOIN media_nodes n ON links.target_id = n.id
+    WHERE a.code = 'director' AND v.value_text !~ '^[0-9]+$'
+  `;
+  if (hasAccessLimits) {
+    for (const cond of accessConds) {
+      directorsQuery = sql`${directorsQuery} AND ${cond}`;
+    }
+  }
+  directorsQuery = sql`${directorsQuery} GROUP BY v.value_text, v.value_slug HAVING COUNT(DISTINCT target_id) > 0 ORDER BY count DESC LIMIT 40;`;
+  const directorsRes = await db.execute(directorsQuery);
 
   // 6. Qualité & Résolution (Extraction Dynamique Universelle O(1))
+  let qualitiesSub1 = sql`
+    SELECT 
+      CASE 
+        WHEN v.value_text ~* '(?i)\\y(4k|2160p)\\y' OR v.value_slug IN ('4k', '4k-uhd', '2160p') THEN '4K UHD'
+        WHEN v.value_text ~* '(?i)\\y(1080p|1080)\\y' OR v.value_slug ILIKE '%1080%' THEN '1080p FHD'
+        WHEN v.value_text ~* '(?i)\\y(720p|720)\\y' OR v.value_slug ILIKE '%720%' THEN '720p HD'
+        WHEN v.value_text ~* '(?i)\\y(576p|576)\\y' OR v.value_slug ILIKE '%576%' THEN '576p'
+        WHEN v.value_text ~* '(?i)\\y(480p|480|sd)\\y' OR v.value_slug IN ('480p', '480p-sd', 'sd') THEN '480p SD'
+        WHEN v.value_text ~* '(?i)\\y(360p|360)\\y' OR v.value_slug ILIKE '%360%' THEN '360p'
+        ELSE NULL
+      END AS label,
+      CASE 
+        WHEN v.value_text ~* '(?i)\\y(4k|2160p)\\y' OR v.value_slug IN ('4k', '4k-uhd', '2160p') THEN '4k'
+        WHEN v.value_text ~* '(?i)\\y(1080p|1080)\\y' OR v.value_slug ILIKE '%1080%' THEN '1080p'
+        WHEN v.value_text ~* '(?i)\\y(720p|720)\\y' OR v.value_slug ILIKE '%720%' THEN '720p'
+        WHEN v.value_text ~* '(?i)\\y(576p|576)\\y' OR v.value_slug ILIKE '%576%' THEN '576p'
+        WHEN v.value_text ~* '(?i)\\y(480p|480|sd)\\y' OR v.value_slug IN ('480p', '480p-sd', 'sd') THEN '480p'
+        WHEN v.value_text ~* '(?i)\\y(360p|360)\\y' OR v.value_slug ILIKE '%360%' THEN '360p'
+        ELSE NULL
+      END AS slug,
+      COALESCE(n.parent_id, n.id) AS target_id
+    FROM node_eav_links l
+    JOIN media_nodes n ON l.node_id = n.id
+    JOIN eav_values v ON l.value_id = v.id
+    JOIN eav_attributes a ON v.attribute_id = a.id
+    WHERE a.code IN ('video_quality', 'quality', 'resolution')
+  `;
+  if (hasAccessLimits) {
+    for (const cond of accessConds) {
+      qualitiesSub1 = sql`${qualitiesSub1} AND ${cond}`;
+    }
+  }
+
+  let qualitiesSub2 = sql`
+    SELECT
+      CASE 
+        WHEN n.video_file_path ~* '(?i)\\y(4k|2160p)\\y' THEN '4K UHD'
+        WHEN n.video_file_path ~* '(?i)\\y1080p\\y' THEN '1080p FHD'
+        WHEN n.video_file_path ~* '(?i)\\y720p\\y' THEN '720p HD'
+        WHEN n.video_file_path ~* '(?i)\\y576p\\y' THEN '576p'
+        WHEN n.video_file_path ~* '(?i)\\y480p\\y' THEN '480p SD'
+        WHEN n.video_file_path ~* '(?i)\\y360p\\y' THEN '360p'
+        ELSE NULL
+      END AS label,
+      CASE 
+        WHEN n.video_file_path ~* '(?i)\\y(4k|2160p)\\y' THEN '4k'
+        WHEN n.video_file_path ~* '(?i)\\y1080p\\y' THEN '1080p'
+        WHEN n.video_file_path ~* '(?i)\\y720p\\y' THEN '720p'
+        WHEN n.video_file_path ~* '(?i)\\y576p\\y' THEN '576p'
+        WHEN n.video_file_path ~* '(?i)\\y480p\\y' THEN '480p'
+        WHEN n.video_file_path ~* '(?i)\\y360p\\y' THEN '360p'
+        ELSE NULL
+      END AS slug,
+      COALESCE(n.parent_id, n.id) AS target_id
+    FROM media_nodes n
+    WHERE n.video_file_path IS NOT NULL
+  `;
+  if (hasAccessLimits) {
+    for (const cond of accessConds) {
+      qualitiesSub2 = sql`${qualitiesSub2} AND ${cond}`;
+    }
+  }
+
   const qualitiesRes = await db.execute(sql`
     WITH raw_qualities AS (
-      -- 1. Attributs EAV de qualité vidéo
-      SELECT 
-        CASE 
-          WHEN v.value_text ~* '(?i)\\y(4k|2160p)\\y' OR v.value_slug IN ('4k', '4k-uhd', '2160p') THEN '4K UHD'
-          WHEN v.value_text ~* '(?i)\\y(1080p|1080)\\y' OR v.value_slug ILIKE '%1080%' THEN '1080p FHD'
-          WHEN v.value_text ~* '(?i)\\y(720p|720)\\y' OR v.value_slug ILIKE '%720%' THEN '720p HD'
-          WHEN v.value_text ~* '(?i)\\y(576p|576)\\y' OR v.value_slug ILIKE '%576%' THEN '576p'
-          WHEN v.value_text ~* '(?i)\\y(480p|480|sd)\\y' OR v.value_slug IN ('480p', '480p-sd', 'sd') THEN '480p SD'
-          WHEN v.value_text ~* '(?i)\\y(360p|360)\\y' OR v.value_slug ILIKE '%360%' THEN '360p'
-          ELSE NULL
-        END AS label,
-        CASE 
-          WHEN v.value_text ~* '(?i)\\y(4k|2160p)\\y' OR v.value_slug IN ('4k', '4k-uhd', '2160p') THEN '4k'
-          WHEN v.value_text ~* '(?i)\\y(1080p|1080)\\y' OR v.value_slug ILIKE '%1080%' THEN '1080p'
-          WHEN v.value_text ~* '(?i)\\y(720p|720)\\y' OR v.value_slug ILIKE '%720%' THEN '720p'
-          WHEN v.value_text ~* '(?i)\\y(576p|576)\\y' OR v.value_slug ILIKE '%576%' THEN '576p'
-          WHEN v.value_text ~* '(?i)\\y(480p|480|sd)\\y' OR v.value_slug IN ('480p', '480p-sd', 'sd') THEN '480p'
-          WHEN v.value_text ~* '(?i)\\y(360p|360)\\y' OR v.value_slug ILIKE '%360%' THEN '360p'
-          ELSE NULL
-        END AS slug,
-        COALESCE(n.parent_id, n.id) AS target_id
-      FROM node_eav_links l
-      JOIN media_nodes n ON l.node_id = n.id
-      JOIN eav_values v ON l.value_id = v.id
-      JOIN eav_attributes a ON v.attribute_id = a.id
-      WHERE a.code IN ('video_quality', 'quality', 'resolution')
-
+      ${qualitiesSub1}
       UNION ALL
-
-      -- 2. Détection Regex dans le chemin de fichier vidéo
-      SELECT
-        CASE 
-          WHEN n.video_file_path ~* '(?i)\\y(4k|2160p)\\y' THEN '4K UHD'
-          WHEN n.video_file_path ~* '(?i)\\y1080p\\y' THEN '1080p FHD'
-          WHEN n.video_file_path ~* '(?i)\\y720p\\y' THEN '720p HD'
-          WHEN n.video_file_path ~* '(?i)\\y576p\\y' THEN '576p'
-          WHEN n.video_file_path ~* '(?i)\\y480p\\y' THEN '480p SD'
-          WHEN n.video_file_path ~* '(?i)\\y360p\\y' THEN '360p'
-          ELSE NULL
-        END AS label,
-        CASE 
-          WHEN n.video_file_path ~* '(?i)\\y(4k|2160p)\\y' THEN '4k'
-          WHEN n.video_file_path ~* '(?i)\\y1080p\\y' THEN '1080p'
-          WHEN n.video_file_path ~* '(?i)\\y720p\\y' THEN '720p'
-          WHEN n.video_file_path ~* '(?i)\\y576p\\y' THEN '576p'
-          WHEN n.video_file_path ~* '(?i)\\y480p\\y' THEN '480p'
-          WHEN n.video_file_path ~* '(?i)\\y360p\\y' THEN '360p'
-          ELSE NULL
-        END AS slug,
-        COALESCE(n.parent_id, n.id) AS target_id
-      FROM media_nodes n
-      WHERE n.video_file_path IS NOT NULL
+      ${qualitiesSub2}
     )
     SELECT label, slug, COUNT(DISTINCT target_id)::int AS count
     FROM raw_qualities
     WHERE label IS NOT NULL
     GROUP BY label, slug
+    HAVING COUNT(DISTINCT target_id) > 0
     ORDER BY 
       CASE slug
         WHEN '4k' THEN 1
@@ -146,8 +218,8 @@ taxonomyRouter.get('/', async (c) => {
       END ASC;
   `);
 
-  // 7. Pays d'Origine (Remplacement de Thème par Pays)
-  const countriesRes = await db.execute(sql`
+  // 7. Pays d'Origine
+  let countriesQuery = sql`
     SELECT 
       CASE 
         WHEN v.value_text IN ('United States of America', 'US', 'USA') THEN 'États-Unis'
@@ -189,26 +261,39 @@ taxonomyRouter.get('/', async (c) => {
     ) links
     JOIN eav_values v ON links.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
+    JOIN media_nodes n ON links.target_id = n.id
     WHERE a.code = 'country'
+  `;
+  if (hasAccessLimits) {
+    for (const cond of accessConds) {
+      countriesQuery = sql`${countriesQuery} AND ${cond}`;
+    }
+  }
+  countriesQuery = sql`${countriesQuery}
     GROUP BY 1, 2
+    HAVING COUNT(DISTINCT target_id) > 0
     ORDER BY count DESC
     LIMIT 40;
-  `);
+  `;
+  const countriesRes = await db.execute(countriesQuery);
+
+  const rawCategories = [
+    { id: 'sagas', title: 'Sagas', tags: Array.from(sagasRes).filter((t: any) => Number(t.count) > 0) },
+    { id: 'series', title: 'Séries', tags: Array.from(seriesRes).filter((t: any) => Number(t.count) > 0) },
+    { id: 'movies', title: 'Films', tags: Array.from(moviesRes).filter((t: any) => Number(t.count) > 0) },
+    { id: 'studios', title: 'Studios', tags: Array.from(studiosRes).filter((t: any) => Number(t.count) > 0) },
+    { id: 'directors', title: 'Réalisateur', tags: Array.from(directorsRes).filter((t: any) => Number(t.count) > 0) },
+    { id: 'qualities', title: 'Qualité', tags: Array.from(qualitiesRes).filter((t: any) => Number(t.count) > 0) },
+    { id: 'countries', title: 'Pays', tags: Array.from(countriesRes).filter((t: any) => Number(t.count) > 0) },
+  ];
 
   return c.json({
-    categories: [
-      { id: 'sagas', title: 'Sagas', tags: Array.from(sagasRes) },
-      { id: 'series', title: 'Séries', tags: Array.from(seriesRes) },
-      { id: 'movies', title: 'Films', tags: Array.from(moviesRes) },
-      { id: 'studios', title: 'Studios', tags: Array.from(studiosRes) },
-      { id: 'directors', title: 'Réalisateur', tags: Array.from(directorsRes) },
-      { id: 'qualities', title: 'Qualité', tags: Array.from(qualitiesRes) },
-      { id: 'countries', title: 'Pays', tags: Array.from(countriesRes) },
-    ],
+    categories: rawCategories.filter((cat) => cat.tags.length > 0),
   });
 });
 
 taxonomyRouter.get('/medias', async (c) => {
+  const user = (c as any).get('user') as UserSession | undefined;
   const category = c.req.query('category') || 'sagas';
   const tag = c.req.query('tag') || '';
   const filter = c.req.query('filter') || '';
@@ -217,7 +302,13 @@ taxonomyRouter.get('/medias', async (c) => {
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '15', 10), 1), 100);
 
   let querySql = sql`
-    SELECT DISTINCT n.id, n.title, n.node_type, n.release_year, n.poster_path, n.community_rating, n.order_index
+    SELECT DISTINCT n.id, n.title, n.node_type, n.release_year, n.poster_path, n.community_rating, n.order_index,
+           n.video_file_path, n.nfo_file_path, n.search_vector_text,
+           COALESCE(
+             n.video_file_path,
+             n.nfo_file_path,
+             (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = n.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = n.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+           ) AS effective_physical_path
     FROM media_nodes n 
     LEFT JOIN node_eav_links l ON l.node_id = n.id 
     LEFT JOIN eav_values v ON l.value_id = v.id
@@ -225,9 +316,16 @@ taxonomyRouter.get('/medias', async (c) => {
     WHERE n.is_extra = false
   `;
 
+  // Application stricte des conditions d'accès (dossiers autorisés, dossiers bloqués, tags, IPTV)
+  const accessConds = buildMediaAccessConditions(user, 'n');
+  for (const cond of accessConds) {
+    querySql = sql`${querySql} AND ${cond}`;
+  }
+
   if (category === 'sagas') {
     if (tag) {
-      querySql = sql`${querySql} AND (\n        (n.node_type = 'COLLECTION' AND (n.slug = ${tag} OR n.title ILIKE ${tag} OR n.id::text = ${tag}))
+      querySql = sql`${querySql} AND (
+        (n.node_type = 'COLLECTION' AND (n.slug = ${tag} OR n.title ILIKE ${tag} OR n.id::text = ${tag}))
         OR n.parent_id IN (SELECT id FROM media_nodes WHERE node_type = 'COLLECTION' AND (slug = ${tag} OR title ILIKE ${tag} OR id::text = ${tag}))
       )`;
     } else {
@@ -440,13 +538,26 @@ taxonomyRouter.get('/medias', async (c) => {
     querySql = sql`${querySql} AND (n.title ILIKE ${'%' + q + '%'} OR n.search_vector_text ILIKE ${'%' + q + '%'} OR v.value_text ILIKE ${'%' + q + '%'})`;
   }
 
-  const fetchLimit = limit + 1;
+  // Double marge pour garantir que le filtre JS ne réduise pas la page sous la limite
+  const fetchLimit = limit * 2 + 5;
   querySql = sql`${querySql} ORDER BY n.community_rating DESC NULLS LAST, n.release_year DESC NULLS LAST LIMIT ${fetchLimit};`;
 
   const rows = await db.execute(querySql);
   const rawItems = Array.from(rows);
-  const hasMore = rawItems.length > limit;
-  const sliced = hasMore ? rawItems.slice(0, limit) : rawItems;
+
+  // Double contrôle de sécurité inviolable (Loi de filtrage en mémoire)
+  const allowedItems = rawItems.filter((item: any) =>
+    isMediaAllowedForUser(user, {
+      videoFilePath: item.video_file_path,
+      nfoFilePath: item.nfo_file_path,
+      searchVectorText: item.search_vector_text,
+      nodeType: item.node_type,
+      effectivePhysicalPath: item.effective_physical_path,
+    })
+  );
+
+  const hasMore = allowedItems.length > limit;
+  const sliced = hasMore ? allowedItems.slice(0, limit) : allowedItems;
 
   const itemIds = sliced.map((item: any) => item.id);
   const qualityMap: Record<string, string> = {};

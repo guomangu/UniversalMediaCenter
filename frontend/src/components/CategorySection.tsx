@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, LayoutChangeEvent, Platform } from 'react-native';
 import { TaxonomyCategory, getCachedTaxonomyMedias } from '@/services/taxonomyApi';
 import { TagCard } from './TagCard';
@@ -11,13 +11,53 @@ interface Props {
   activeFilter?: string;
   searchQuery?: string;
   onLayoutPos?: (id: string, y: number) => void;
+  onVisibilityChange?: (id: string, isVisible: boolean) => void;
 }
 
-export function CategorySection({ category, activeFilter, searchQuery, onLayoutPos }: Props) {
+export function CategorySection({
+  category,
+  activeFilter,
+  searchQuery,
+  onLayoutPos,
+  onVisibilityChange,
+}: Props) {
   const [tagLimit, setTagLimit] = useState(5);
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const visibleTags = category.tags.slice(0, tagLimit);
-  const hasMore = category.tags.length > tagLimit;
+
+  const getInitialCounts = useCallback((f?: string, q?: string) => {
+    const init: Record<string, number> = {};
+    for (const t of category.tags.slice(0, 5)) {
+      const c = getCachedTaxonomyMedias({
+        category: category.id,
+        tag: t.slug,
+        filter: f,
+        q,
+        limit: 10,
+      });
+      if (c?.items !== undefined) {
+        init[t.slug] = c.items.length;
+      }
+    }
+    return init;
+  }, [category.id, category.tags]);
+
+  const [counts, setCounts] = useState<Record<string, number>>(() => getInitialCounts(activeFilter, searchQuery));
+
+  // Ajustement synchrone immédiat lors d'un changement de filtre ou de recherche
+  const [prevFilter, setPrevFilter] = useState(activeFilter);
+  const [prevSearch, setPrevSearch] = useState(searchQuery);
+
+  if (prevFilter !== activeFilter || prevSearch !== searchQuery) {
+    setPrevFilter(activeFilter);
+    setPrevSearch(searchQuery);
+    setCounts(getInitialCounts(activeFilter, searchQuery));
+  }
+
+  // Filtrage des tags : en affichage standard (sans recherche ni filtre), seuls les tags avec médias sont inclus
+  const activeTags = category.tags.filter(
+    (t) => (searchQuery && searchQuery.length > 0) || (activeFilter && activeFilter !== 'Tous') || Number(t.count) > 0
+  );
+  const visibleTags = activeTags.slice(0, tagLimit);
+  const hasMore = activeTags.length > tagLimit;
   const headerPaddingTop = useHeaderHeight(true);
 
   // Hydratation synchrone immédiate (0 ms) des IDs en cache pour éliminer tout effet de cascade
@@ -54,9 +94,25 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
     });
   }, []);
 
-  const hasLoadedAny = Object.keys(counts).length > 0;
-  const allEmpty = hasLoadedAny && Object.values(counts).every((c) => c === 0);
-  if (searchQuery && allEmpty) return null;
+  const hasAnyCount = category.tags.some((t) => Number(t.count) > 0);
+  const allVisibleLoaded = visibleTags.length > 0 && visibleTags.every((t) => counts[t.slug] !== undefined);
+  const totalCount = Object.values(counts).reduce((s, c) => s + c, 0);
+
+  // Une catégorie n'est visible que si elle contient des tags et qu'au moins un média est présent
+  const isVisible =
+    category.tags.length > 0 &&
+    activeTags.length > 0 &&
+    !(allVisibleLoaded && totalCount === 0) &&
+    (Boolean(searchQuery) || (Boolean(activeFilter) && activeFilter !== 'Tous') || hasAnyCount);
+
+  // Notification réactive au parent (HomeScreen) pour mise à jour synchronisée des raccourcis SiteHeader
+  useEffect(() => {
+    onVisibilityChange?.(category.id, isVisible);
+  }, [category.id, isVisible, onVisibilityChange]);
+
+  if (!isVisible) {
+    return null;
+  }
 
   const matchedCount = Object.values(counts).filter((c) => c > 0).length;
 
@@ -108,7 +164,7 @@ export function CategorySection({ category, activeFilter, searchQuery, onLayoutP
       {hasMore && !searchQuery ? (
         <Pressable focusable={true} onPress={() => setTagLimit((prev) => prev + 10)} style={styles.moreBtn}>
           <Text style={styles.moreText}>
-            Afficher plus (+10 tags) • {visibleTags.length}/{category.tags.length}
+            Afficher plus (+10 tags) • {visibleTags.length}/{activeTags.length}
           </Text>
         </Pressable>
       ) : null}

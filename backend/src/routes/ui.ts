@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { uiRails, mediaNodes, eavAttributes, watchProgress } from '../db/schema/index.js';
-import { desc, asc, eq, and, inArray } from 'drizzle-orm';
+import { desc, asc, eq, and, inArray, sql } from 'drizzle-orm';
 import { taxonomyRouter } from './taxonomyRoutes.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
 import { localizeMediaNode, extractRequestLanguage } from '../watcher/pipeline/localizationHelper.js';
@@ -95,7 +95,36 @@ uiRouter.get('/layout', async (c) => {
         });
       }
 
-      let filteredItems = items.filter((item) => isMediaAllowedForUser(user, item));
+      // Résolution en batch des chemins physiques pour les conteneurs (SHOW, COLLECTION, SEASON)
+      const containerIds = items
+        .filter((it) => (it.nodeType === 'SHOW' || it.nodeType === 'COLLECTION' || it.nodeType === 'SEASON') && !it.videoFilePath)
+        .map((it) => it.id);
+
+      const containerChildPathsMap = new Map<string, string[]>();
+      if (containerIds.length > 0) {
+        const childPaths = await db.execute(sql`
+          SELECT c.parent_id, c.video_file_path, c.nfo_file_path
+          FROM media_nodes c
+          WHERE c.parent_id IN (${sql.join(containerIds.map((id: string) => sql`${id}::uuid`), sql`, `)})
+             OR c.parent_id IN (
+               SELECT s.id FROM media_nodes s 
+               WHERE s.parent_id IN (${sql.join(containerIds.map((id: string) => sql`${id}::uuid`), sql`, `)})
+             )
+        `);
+        for (const row of Array.from(childPaths) as any[]) {
+          const pid = row.parent_id;
+          if (!containerChildPathsMap.has(pid)) containerChildPathsMap.set(pid, []);
+          if (row.video_file_path) containerChildPathsMap.get(pid)!.push(row.video_file_path);
+          if (row.nfo_file_path) containerChildPathsMap.get(pid)!.push(row.nfo_file_path);
+        }
+      }
+
+      let filteredItems = items.filter((item) =>
+        isMediaAllowedForUser(user, {
+          ...item,
+          childPaths: containerChildPathsMap.get(item.id) || [],
+        })
+      );
 
       // Hydratation de la progression de lecture de l'utilisateur pour tous les rails
       if (user?.id && filteredItems.length > 0) {
@@ -136,6 +165,7 @@ uiRouter.get('/layout', async (c) => {
                 positionSeconds: cp.pos,
                 durationSeconds: cp.dur,
                 isCompleted: cp.isCompleted,
+                updatedAt: new Date(),
               } as any);
             }
           }
@@ -143,17 +173,16 @@ uiRouter.get('/layout', async (c) => {
 
         filteredItems = filteredItems.map((item) => {
           const prog = pMap.get(item.id);
-          if (!prog) return item;
-          return {
-            ...item,
-            positionSeconds: prog.positionSeconds,
-            durationSeconds: prog.durationSeconds,
-            progressPercent:
-              prog.durationSeconds > 0
-                ? Math.round((prog.positionSeconds / prog.durationSeconds) * 100)
-                : 0,
-            isCompleted: prog.isCompleted,
-          };
+          if (prog && prog.durationSeconds > 0) {
+            return {
+              ...item,
+              positionSeconds: prog.positionSeconds,
+              durationSeconds: prog.durationSeconds,
+              progressPercent: Math.round((prog.positionSeconds / prog.durationSeconds) * 100),
+              isCompleted: prog.isCompleted,
+            };
+          }
+          return item;
         });
       }
 
@@ -163,7 +192,7 @@ uiRouter.get('/layout', async (c) => {
         railType: rail.railType,
         cardStyle: rail.cardStyle,
         sortOrder: rail.sortOrder,
-        items: filteredItems.map((item) => formatMediaItem(item, userLang)),
+        items: filteredItems.map((it) => formatMediaItem(it, userLang)),
       };
     })
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -20,7 +20,7 @@ import {
   fetchTaxonomy,
   TaxonomyCategory,
   DEFAULT_TAXONOMY_CATEGORIES,
-  CACHE_KEY_CATEGORIES,
+  getCategoriesCacheKey,
 } from '@/services/taxonomyApi';
 import { useCurrentUser } from '@/services/authStore';
 import { useTabState } from '@/hooks/useTabState';
@@ -28,8 +28,6 @@ import { getCachedData } from '@/services/pwaDataCache';
 import { Spacing, MaxContentWidth, Radius } from '@/constants/theme';
 
 let savedHomeScrollY = 0;
-let cachedCategories: TaxonomyCategory[] =
-  getCachedData<TaxonomyCategory[]>(CACHE_KEY_CATEGORIES) || DEFAULT_TAXONOMY_CATEGORIES;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -37,8 +35,10 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const isMobile = width < 860;
   const [categories, setCategories] = useState<TaxonomyCategory[]>(() => {
-    if (cachedCategories && cachedCategories.length > 0) return cachedCategories;
-    return getCachedData<TaxonomyCategory[]>(CACHE_KEY_CATEGORIES) || DEFAULT_TAXONOMY_CATEGORIES;
+    const key = getCategoriesCacheKey();
+    const cached = getCachedData<TaxonomyCategory[]>(key);
+    if (cached && cached.length > 0) return cached;
+    return DEFAULT_TAXONOMY_CATEGORIES;
   });
   const [activeCategoryId, setActiveCategoryId] = useState<string>(() => categories[0]?.id || 'sagas');
   const activeCatRef = useRef<string>(categories[0]?.id || 'sagas');
@@ -51,8 +51,45 @@ export default function HomeScreen() {
   const isRestoringScroll = useRef(savedHomeScrollY > 0);
   const scrollRestoredRef = useRef(false);
   const isJumpingRef = useRef(false);
+  const [hiddenCatIds, setHiddenCatIds] = useState<Record<string, boolean>>({});
 
   const headerPaddingTop = useHeaderHeight(true);
+
+  // Synchronisation des catégories masquées (celles n'affichant aucun média)
+  const handleVisibilityChange = useCallback((id: string, isVisible: boolean) => {
+    setHiddenCatIds((prev) => {
+      const currentlyHidden = prev[id] === true;
+      const shouldBeHidden = !isVisible;
+      if (currentlyHidden === shouldBeHidden) return prev;
+      return { ...prev, [id]: shouldBeHidden };
+    });
+  }, []);
+
+  // Réinitialisation des statuts masqués lors d'un changement de filtre ou de recherche
+  useEffect(() => {
+    setHiddenCatIds({});
+  }, [searchQuery, activeFilter]);
+
+  // Liste réactive des catégories strictement visibles (ayant au moins un média affiché)
+  const visibleCategories = useMemo(() => {
+    return categories.filter((cat) => {
+      if (!cat.tags || cat.tags.length === 0) return false;
+      if (hiddenCatIds[cat.id]) return false;
+      if (!searchQuery && (!activeFilter || activeFilter === 'Tous')) {
+        if (!cat.tags.some((t) => Number(t.count) > 0)) return false;
+      }
+      return true;
+    });
+  }, [categories, hiddenCatIds, searchQuery, activeFilter]);
+
+  // Ajustement de la catégorie active si l'actuelle devient masquée
+  useEffect(() => {
+    if (visibleCategories.length > 0 && !visibleCategories.some((c) => c.id === activeCategoryId)) {
+      const fallbackId = visibleCategories[0].id;
+      activeCatRef.current = fallbackId;
+      setActiveCategoryId(fallbackId);
+    }
+  }, [visibleCategories, activeCategoryId]);
 
   const applyScroll = useCallback((y: number) => {
     if (y <= 0) return;
@@ -66,12 +103,12 @@ export default function HomeScreen() {
   }, []);
 
   const updateActiveCategory = useCallback((scrollY: number) => {
-    if (!categories.length) return;
+    if (!visibleCategories.length) return;
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
       if (scrollNode && scrollNode.scrollTop + scrollNode.clientHeight >= scrollNode.scrollHeight - 40) {
-        const lastCat = categories[categories.length - 1];
+        const lastCat = visibleCategories[visibleCategories.length - 1];
         if (lastCat && lastCat.id !== activeCatRef.current) {
           activeCatRef.current = lastCat.id;
           setActiveCategoryId(lastCat.id);
@@ -79,8 +116,8 @@ export default function HomeScreen() {
         return;
       }
 
-      let currentId = categories[0]?.id || '';
-      for (const cat of categories) {
+      let currentId = visibleCategories[0]?.id || '';
+      for (const cat of visibleCategories) {
         const el = document.getElementById(`cat-section-${cat.id}`);
         if (el) {
           const rect = el.getBoundingClientRect();
@@ -97,8 +134,8 @@ export default function HomeScreen() {
     }
 
     const threshold = scrollY + headerPaddingTop + 40;
-    let currentId = categories[0]?.id || '';
-    for (const cat of categories) {
+    let currentId = visibleCategories[0]?.id || '';
+    for (const cat of visibleCategories) {
       const pos = catPositions.current[cat.id];
       if (typeof pos === 'number' && pos <= threshold) {
         currentId = cat.id;
@@ -108,15 +145,13 @@ export default function HomeScreen() {
       activeCatRef.current = currentId;
       setActiveCategoryId(currentId);
     }
-  }, [categories, headerPaddingTop]);
+  }, [visibleCategories, headerPaddingTop]);
 
   const loadData = async (force = false) => {
     const list = await fetchTaxonomy(force, (fresh) => {
-      cachedCategories = fresh;
       setCategories(fresh);
     });
     if (list && list.length > 0) {
-      cachedCategories = list;
       setCategories(list);
       if (!activeCatRef.current && list[0]) {
         activeCatRef.current = list[0].id;
@@ -137,9 +172,9 @@ export default function HomeScreen() {
     if (savedHomeScrollY > 0) {
       isRestoringScroll.current = true;
     }
-    // Chargement frais dès le premier affichage pour garantir des catégories complètes
+    // Rechargement frais immédiat dès le premier rendu ou changement d'utilisateur
     loadData(true);
-  }, []);
+  }, [currentUser?.id, currentUser?.isAdmin]);
 
   // Détection des interactions utilisateur réelles pour relâcher le mode restauration
   useEffect(() => {
@@ -156,15 +191,11 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // Restauration fidèle de la zone de défilement dès que les données sont affichées
-  useEffect(() => {
-    if (categories.length > 0 && savedHomeScrollY > 0 && !scrollRestoredRef.current) {
-      const timer = setTimeout(() => {
-        applyScroll(savedHomeScrollY);
-      }, 50);
-      return () => clearTimeout(timer);
+  const handleContentSizeChange = useCallback(() => {
+    if (isRestoringScroll.current && !scrollRestoredRef.current && savedHomeScrollY > 0) {
+      applyScroll(savedHomeScrollY);
     }
-  }, [categories, applyScroll]);
+  }, [applyScroll]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -173,70 +204,61 @@ export default function HomeScreen() {
   };
 
   const handleJumpToCategory = (catId: string) => {
-    isRestoringScroll.current = false;
-    isJumpingRef.current = true;
     activeCatRef.current = catId;
     setActiveCategoryId(catId);
 
-    // Relâche le verrouillage de saut après l'achèvement de l'animation
+    isJumpingRef.current = true;
     setTimeout(() => {
       isJumpingRef.current = false;
-    }, 750);
-
-    let targetY: number | undefined = catPositions.current[catId];
+    }, 600);
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const el = document.getElementById(`cat-section-${catId}`);
       if (el) {
-        const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
-        if (scrollNode) {
-          const scrollRect = scrollNode.getBoundingClientRect?.() || { top: 0 };
-          const elRect = el.getBoundingClientRect();
-          const currentScrollTop = scrollNode.scrollTop ?? 0;
-          targetY = Math.max(0, currentScrollTop + (elRect.top - scrollRect.top) - headerPaddingTop - 12);
+        const rect = el.getBoundingClientRect();
+        const currentScroll =
+          (scrollRef.current as any)?.getScrollableNode?.()?.scrollTop ||
+          (scrollRef.current as any)?.scrollTop ||
+          window.scrollY ||
+          0;
+        const targetY = Math.max(0, currentScroll + rect.top - headerPaddingTop - 12);
+        applyScroll(targetY);
+        savedHomeScrollY = targetY;
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          sessionStorage.setItem('ums_home_scroll_y', String(targetY));
         }
+        return;
       }
     }
 
-    if (typeof targetY === 'number' && !isNaN(targetY)) {
-      scrollRef.current?.scrollTo({ y: targetY, animated: true });
-      if (Platform.OS === 'web' && scrollRef.current) {
-        const node = (scrollRef.current as any).getScrollableNode?.() || (scrollRef.current as any);
-        if (node && node.scrollTop !== undefined) {
-          if (typeof node.scroll === 'function') {
-            node.scroll({ top: targetY, behavior: 'smooth' });
-          } else {
-            node.scrollTop = targetY;
-          }
-        }
+    const pos = catPositions.current[catId];
+    if (typeof pos === 'number') {
+      const targetY = Math.max(0, pos - headerPaddingTop - 12);
+      applyScroll(targetY);
+      savedHomeScrollY = targetY;
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+        sessionStorage.setItem('ums_home_scroll_y', String(targetY));
       }
     }
   };
 
   const handleScrollToTop = () => {
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
     savedHomeScrollY = 0;
-    if (categories.length > 0) {
-      activeCatRef.current = categories[0].id;
-      setActiveCategoryId(categories[0].id);
-    }
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
       sessionStorage.setItem('ums_home_scroll_y', '0');
     }
-  };
-
-  const handleContentSizeChange = () => {
-    if (savedHomeScrollY > 0 && !scrollRestoredRef.current) {
-      applyScroll(savedHomeScrollY);
-    }
+    applyScroll(0);
+    const firstId = visibleCategories[0]?.id || 'sagas';
+    activeCatRef.current = firstId;
+    setActiveCategoryId(firstId);
   };
 
   return (
-    <ThemedView type="background" style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+    <ThemedView style={styles.container}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <SiteHeader
-          categories={categories}
           activeCategoryId={activeCategoryId}
+          categories={visibleCategories}
           onSelectCategory={handleJumpToCategory}
           onScrollToTop={handleScrollToTop}
         />
@@ -282,6 +304,7 @@ export default function HomeScreen() {
                 category={cat}
                 activeFilter={activeFilter}
                 searchQuery={searchQuery}
+                onVisibilityChange={handleVisibilityChange}
                 onLayoutPos={(id, y) => {
                   catPositions.current[id] = y;
                   if (savedHomeScrollY > 0) {
@@ -290,7 +313,16 @@ export default function HomeScreen() {
                 }}
               />
             ))
-          ) : (
+          ) : null}
+
+          {!loading && categories.length > 0 && visibleCategories.length === 0 ? (
+            <View style={styles.emptyWelcomeBox}>
+              <Text style={styles.welcomeTitle}>Aucun média trouvé</Text>
+              <Text style={styles.welcomeDesc}>
+                Aucune catégorie ne contient de média correspondant à vos critères actuels.
+              </Text>
+            </View>
+          ) : !loading && categories.length === 0 ? (
             <View style={styles.emptyWelcomeBox}>
               <Text style={styles.welcomeTitle}>Universal Media Stack</Text>
               <Text style={styles.welcomeDesc}>
@@ -308,7 +340,7 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
             </View>
-          )}
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -319,29 +351,26 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1d2127' },
   safeArea: { flex: 1 },
   scroll: { flex: 1 },
-  contentContainer: {
-    maxWidth: MaxContentWidth,
-    width: '100%',
-    alignSelf: 'center',
-    paddingHorizontal: Spacing.two,
-    paddingBottom: Spacing.four,
-  },
+  contentContainer: { paddingBottom: Spacing.five },
   emptyWelcomeBox: {
-    backgroundColor: '#262c36',
-    borderRadius: Radius.lg,
-    padding: 24,
+    marginHorizontal: 16,
     marginVertical: 40,
+    padding: 24,
+    borderRadius: Radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
   },
   welcomeTitle: {
-    color: '#edeef2',
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#f0f3f8',
     marginBottom: 8,
   },
   welcomeDesc: {
-    color: '#8e9ab0',
     fontSize: 14,
+    color: '#8e9ab0',
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 20,
@@ -351,14 +380,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   quickBtn: {
-    backgroundColor: '#1b74e4',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.md,
+    backgroundColor: '#6366f1',
   },
   quickBtnTxt: {
     color: '#ffffff',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
   },
 });

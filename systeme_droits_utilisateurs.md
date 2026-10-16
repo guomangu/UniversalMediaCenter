@@ -1,0 +1,208 @@
+# Spécification Technique & Guide de Référence : Système de Droits et Contrôle d'Accès Utilisateurs
+
+**The Universal Media Stack (UMS v3.0)**  
+*Architecture de Sécurité Hybride : RBAC, ABAC & Partitionnement Physique PBAC (Path-Based Access Control)*  
+*Environnement Hôte Optimisé : Bazzite / Fedora Atomic Desktop & Linux Standard*
+
+---
+
+## 1. Philosophie & Principes Fondamentaux de Sécurité
+
+Dans une médiathèque moderne partagée, les profils d'utilisateurs (parents, enfants, adolescents, invités, colocataires) cohabitent sur les mêmes écrans (Smart TV du salon, tablettes, smartphones, ordinateurs portables). Le système de droits de **The Universal Media Stack** a été conçu pour satisfaire une règle absolue :
+
+> ### 🛡️ La Loi d'Étanchéité Zéro-Fuite (*Zero-Leak Law*)
+> Aucun média restreint (film, série, épisode, bonus ou chaîne IPTV) ne doit jamais fuiter dans les résultats de recherche, les rails d'accueil, les flux de streaming, les fiches de détail, les suggestions de médias suivants, les pistes de sous-titres, les caches locaux de navigateur ou la taxonomie de tags.
+
+Pour atteindre ce niveau de rigueur sans sacrifier la fluidité ni imposer des temps de chargement perceptibles, l'architecture repose sur la convergence de trois paradigmes complémentaires :
+
+```mermaid
+graph TD
+    User["👤 Session Utilisateur (JWT / Cookies HttpOnly)"] --> RBAC["🔑 1. RBAC (Capacités Système)<br/>Admin, Download, Transcode, IPTV, Quotas"]
+    User --> ABAC["🏷️ 2. ABAC (Contrôle Sémantique & Parental)<br/>Plafond CSA, Whitelist & Blacklist de Tags"]
+    User --> PBAC["📁 3. PBAC (Partitionnement Physique)<br/>Dossiers autorisés / interdits, Normalisation Multi-OS"]
+    
+    RBAC & ABAC & PBAC --> FilterSQL["⚡ Barrière 1 : Filtrage SQL Amont (PostgreSQL 16)<br/>buildMediaAccessConditions(user, tableAlias)"]
+    FilterSQL --> FilterJS["🛡️ Barrière 2 : Filtrage Mémoire Souverain (JavaScript)<br/>isMediaAllowedForUser(user, media)"]
+    FilterJS --> ClientUI["🖥️ UI & Cache Sécurisé (Expo & PWA)<br/>Masquage dynamique des catégories vides & isolation du cache"]
+```
+
+---
+
+## 2. Spécificités de l'Environnement Hôte Bazzite & Linux Immuable
+
+**Bazzite** (basé sur Fedora Atomic Desktop / rpm-ostree) utilise une disposition de système de fichiers immuable où la racine `/` est en lecture seule et où les répertoires utilisateurs sont déportés :
+- `/var/home` est le stockage réel physique des répertoires personnels.
+- `/home` est un **lien symbolique symétrique** (`symlink`) pointant vers `/var/home`.
+- Les disques durs externes ou volumes amovibles (ex: bibliothèques de films sur disques NTFS, Btrfs ou ext4) sont montés automatiquement sous `/run/media/tele/...` ou `/media/...`.
+
+### Gestion des Divergences de Chemins (`normalizePathVariants`)
+Si un administrateur configure une règle de restriction sur `/home/tele/Vidéos/drive/Films` mais que le watcher a indexé le fichier sous `/var/home/tele/Vidéos/drive/Films` (ou inversement), une comparaison naïve de chaînes échoue.
+
+Le moteur [`backend/src/auth/mediaAccess.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/auth/mediaAccess.ts) génère de façon déterministe l'ensemble des alias symétriques pour chaque chemin :
+```typescript
+export function normalizePathVariants(inputPath: string): string[] {
+  // 1. Normalisation Unicode NFC (gestion des caractères accentués 'Vidéos', etc.)
+  // 2. Déduplication des slashes et suppression du trailing slash
+  // 3. Dérivation bidirectionnelle /home <-> /var/home
+  // 4. Gestion des montages disques /run/media <-> /media
+}
+```
+Ce mécanisme garantit une étanchéité parfaite sous Bazzite, Fedora Silverblue, SteamOS, Debian ou Ubuntu sans configuration manuelle de l'utilisateur.
+
+---
+
+## 3. Matrice des Rôles & Capacités Système (RBAC)
+
+Chaque utilisateur dispose d'attributs fonctionnels enregistrés dans la table PostgreSQL `users` :
+
+| Propriété Drizzle | Type SQL | Rôle & Comportement Système |
+| :--- | :--- | :--- |
+| `isAdmin` | `boolean` | **Super-Administrateur** : Accès sans restriction au Back-Office (`/admin`), aux réglages de layout, au gestionnaire d'invitations, aux scans de disques, et exemption totale de tout filtre parental ou de dossier. |
+| `profileRole` | `text` | Profil type (`ADMIN`, `STANDARD`, `KIDS`, `GUEST`). Permet d'adapter l'ergonomie par défaut du client. |
+| `canDownload` | `boolean` | **Téléchargement Hors-ligne** : Autorise la génération d'en-têtes HTTP `X-Accel-Redirect` vers Caddy pour récupérer les fichiers originaux. Si faux, le bouton de téléchargement est totalement masqué et l'API bloque l'appel. |
+| `canTranscode` | `boolean` | **Transcodage Matériel** : Autorise l'allocation de workers GPU sur le conteneur `transcoder`. Si désactivé, le lecteur force le Direct Play pur. |
+| `canWatchIptv` | `boolean` | **Télévision en Direct** : Active ou désactive l'accès aux chaînes IPTV (`LIVE_CHANNEL`) et au guide des programmes EPG. Si faux, l'onglet TV et les flux `.m3u8` sont interdits (code 403). |
+| `isIncognito` | `boolean` | **Navigation Confidentielle** : Désactive l'enregistrement de la progression de lecture dans `watch_progress` et l'affichage de présence dans les salons communautaires. |
+| `maxConcurrentStreams` | `integer` | **Plafond de Sessions Simultanées** : Limite le nombre de flux vidéo actifs simultanément pour ce compte (ex: 2 écrans en simultané). |
+
+---
+
+## 4. Partitionnement Physique des Dossiers (PBAC - Path-Based Access Control)
+
+Le partitionnement par dossiers permet d'isoler physiquement les répertoires du disque sans devoir créer plusieurs instances de bases de données ou plusieurs serveurs multimédias.
+
+### 4.1. Règles Whitelist & Blacklist
+Dans la configuration du profil (`/admin/users`) :
+- **Whitelist (`allowedFolders: string[]`) :** Si la liste n'est pas vide, l'utilisateur est en **mode confinement strict**. Il ne peut voir, rechercher ou lire **QUE** les médias dont le chemin physique réside à l'intérieur de l'un des répertoires listés.
+- **Blacklist (`blockedFolders: string[]`) :** Liste noire prioritaire. Tout média résidant sous un chemin correspondant est immédiatement banni, même si l'utilisateur dispose d'autres permissions par ailleurs.
+
+### 4.2. Algorithme de Correspondance (`pathMatchesFolderRule`)
+L'algorithme analyse si un chemin de fichier cible correspond à une règle de dossier :
+1. **Racines absolues (`/home/tele/...`, `/var/home/...`, `/run/media/...`) :** Vérification stricte par préfixe après normalisation d'alias.
+2. **Chemins partiels ou sous-dossiers (`Films/Adultes`, `Horreur`, `Privé`) :** Vérification avec respect des délimiteurs de segments (`/` ou début/fin de chaîne). Cela empêche par exemple la règle `Horreur` de bloquer accidentellement un dossier légitime nommé `HorreursDeLaGuerreDocumentaire`.
+
+---
+
+## 5. Héritage Arborescent des Conteneurs (`SHOW`, `COLLECTION`, `SEASON`)
+
+### Le Défi des Conteneurs Sans Fichier Direct
+Dans un schéma de base de données multimédia :
+- Un film (`MOVIE`) ou un épisode (`EPISODE`) possède un `videoFilePath` explicite (ex: `/home/tele/Vidéos/Films/Matrix.mkv`).
+- En revanche, une saga (`COLLECTION`), une série (`SHOW`) ou une saison (`SEASON`) est une **entité logique abstraite** : son champ `videoFilePath` est `NULL` en base de données.
+
+Une vérification naïve de sécurité autoriserait une série entière simplement parce que son champ direct est vide, créant une faille de sécurité majeure.
+
+### La Solution d'Héritage Arborescent
+Le moteur résout récursivement :
+1. **`effectivePhysicalPath` :** Emprunt du chemin physique du premier fichier enfant disponible ou du fichier `.nfo` associé.
+2. **`childPaths` :** Agrégation de l'ensemble des chemins physiques de tous les épisodes ou films enfants.
+
+```mermaid
+flowchart TD
+    Subfolder["Dossier Interdit : /Vidéos/drive/Films/Adultes"] -.-> Rule["Règle : blockedFolders = ['Adultes']"]
+    
+    Show["Série (SHOW)<br/>videoFilePath = NULL"]
+    Ep1["Épisode 1<br/>path: .../Adultes/S01E01.mkv"]
+    Ep2["Épisode 2<br/>path: .../Adultes/S01E02.mkv"]
+    
+    Show --> Ep1
+    Show --> Ep2
+    
+    Rule ==>|Bloque| Ep1
+    Rule ==>|Bloque| Ep2
+    Ep1 & Ep2 ==>|Propagation automatique| BlockShow["🚫 Série (SHOW) Entièrement Bloquée et Masquée"]
+```
+
+Si le dossier parent de la série est bloqué, ou si **l'ensemble de ses épisodes** appartient à un dossier interdit, le conteneur `SHOW` parent est **totalement inaccessible**. Il ne peut être ni affiché sur l'accueil, ni trouvé par la recherche, ni ouvert par son identifiant d'API.
+
+---
+
+## 6. Contrôle Parental & Attributs Sémantiques (ABAC)
+
+En complément du partitionnement physique, le contrôle d'accès basé sur les attributs (ABAC) filtre les œuvres en fonction de leur contenu sémantique :
+
+### 6.1. Plafond d'Âge CSA (`maxCsaAgeLimit`)
+Les métadonnées NFO et les scrapers TMM/TMDb fournissent des classifications d'âge. UMS convertit les tags en valeurs d'âge numérique :
+- `Tous Publics` / `G` $\rightarrow$ 0 an
+- `CSA : -10` / `PG` $\rightarrow$ 10 ans
+- `CSA : -12` / `PG-13` $\rightarrow$ 12 ans
+- `CSA : -16` / `TV-MA` / `R` $\rightarrow$ 16 ans
+- `CSA : -18` / `NC-17` $\rightarrow$ 18 ans
+
+Si un compte profil Enfant a `maxCsaAgeLimit = 10`, le moteur injecte automatiquement une règle interdisant tout média étiqueté 12, 16 ou 18 ans.
+
+### 6.2. Whitelist & Blacklist de Tags EAV
+- `blockedTags` / `blockedValueIds` : Exclusion par mots-clés thématiques (ex: `Horreur`, `Gore`, `Armes`).
+- `allowedTags` / `allowedValueIds` : Mode liste blanche stricte pour profils surveillés (ex: n'afficher que les médias ayant le tag `Animation` ou `Disney`).
+
+---
+
+## 7. Architecture de Sécurité à Double Barrière (Loi Zero-Leak)
+
+Pour conjuguer **performances instantanées ($< 10\text{ ms}$)** et **herméticité absolue**, chaque requête traverse deux lignes de défense indépendantes :
+
+### 7.1. Barrière 1 : Filtrage SQL Amont (`buildMediaAccessConditions`)
+Situé dans [`backend/src/auth/mediaAccessSql.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/auth/mediaAccessSql.ts), ce générateur traduit le profil utilisateur directement en clauses SQL PostgreSQL natives :
+- Clauses `NOT (physicalPath ILIKE ...)` pour les dossiers bloqués.
+- Clauses `(physicalPath ILIKE ... OR physicalPath ILIKE ...)` pour les dossiers autorisés.
+- Exclusion des nœuds `LIVE_CHANNEL` si `canWatchIptv = false`.
+- Clauses de tags sur `search_vector_text` et tables de jointures EAV.
+
+*Avantages :* Élimine les médias interdits dès la source dans PostgreSQL, garantissant que les clauses `LIMIT`, `OFFSET` et les paginations des rails ne sont pas faussées par des éléments rejetés a posteriori.
+
+### 7.2. Barrière 2 : Filtrage Mémoire Souverain (`isMediaAllowedForUser`)
+Situé dans [`backend/src/auth/mediaAccess.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/auth/mediaAccess.ts), ce validateur JavaScript ré-analyse en mémoire chaque nœud avant qu'il ne quitte le serveur Hono :
+- Vérifie les chemins physiques réels et les alias Bazzite/Fedora.
+- Inspecte les chemins des enfants agrégés (`childPaths`).
+- Applique les filtres de tags et les seuils CSA.
+
+*Avantages :* Protection inviolable de niveau applicatif contre d'éventuelles failles d'injection SQL, erreurs d'ORM ou ambiguïtés de jointures de conteneurs complexes.
+
+---
+
+## 8. Cartographie Complète des Points de Contrôle API
+
+Toutes les routes exposées par le backend appliquent ce modèle de contrôle d'accès :
+
+| Endpoint API | Fichier Source | Règle de Sécurité Appliquée |
+| :--- | :--- | :--- |
+| `GET /api/media/:id/stream` | [`mediaStream.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaStream.ts) | Vérification `checkMediaAccess` : Renvoi immédiat de l'erreur HTTP 403 `FORBIDDEN` si le dossier ou les tags sont restreints. |
+| `GET /api/media/:id` | [`media.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts) | Contrôle d'accès sur l'œuvre principale + **épuration stricte** des tableaux `childNodes` (épisodes) et `extras` (bonus). |
+| `GET /api/media/:id/next` | [`mediaNext.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaNext.ts) | L'enchaînement automatique (Netflix-style) filtre les candidats pour ne jamais basculer vers un épisode ou un film interdit. |
+| `GET /api/media/:id/tracks` | [`mediaTracks.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaTracks.ts) | Pistes audio et sous-titres protégées par `checkMediaAccess`. |
+| `GET /api/search` | [`search.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/search.ts) | Exclusion SQL amont et filtre JS mémoire : zéro résultat interdit dans la barre de recherche globale. |
+| `GET /api/ui/layout` | [`ui.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/ui.ts) | Résolution batch des chemins physiques et filtrage complet des rails d'accueil. |
+| `GET /api/ui/taxonomy` | [`taxonomyRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/taxonomyRoutes.ts) | Agrégations SQL protégées par `accessConds` : les compteurs de tags ne révèlent pas l'existence de médias restreints. |
+| `GET /api/ui/taxonomy/medias` | [`taxonomyRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/taxonomyRoutes.ts) | Double barrière SQL/JS appliquée à chaque rail de tag et grille de catégorie. |
+
+---
+
+## 9. Masquage Dynamique UI & Isolation PWA Côté Client
+
+Pour offrir une expérience visuelle impeccable et sans frustration :
+
+1. **Masquage des Catégories Sans Médias (`CategorySection.tsx`) :**
+   Si un utilisateur restreint n'a accès à aucun film ou à aucune série (ou si un filtre actif aboutit à 0 média), la catégorie correspondante est **intégralement masquée** de l'accueil au lieu d'afficher un cadre vide avec un titre et un badge résiduel.
+2. **Synchronisation Réactive de l'En-tête (`SiteHeader.tsx` & `index.tsx`) :**
+   Le composant parent agrège les statuts de visibilité via `onVisibilityChange` et transmet `visibleCategories` aux raccourcis supérieurs. Les pastilles (`chips`) des sections vides disparaissent automatiquement de la barre supérieure.
+3. **Isolation et Purge Automatique du Cache PWA (`taxonomyApi.ts` & `authStore.ts`) :**
+   - Les clés de cache local intègrent l'identifiant et le rôle de l'utilisateur : `taxonomy_categories_v7_${userId}_${role}` et `tax_v7_${userId}_...`.
+   - Lors de la déconnexion (`logout()`) ou de la bascule vers un autre profil, l'ensemble des caches locaux de médias (`ums_cache_*`, `tax_*`) sont **immédiatement purgés**, interdisant à un enfant d'accéder aux données d'un parent restées en mémoire sur le même navigateur.
+
+---
+
+## 10. Suite de Tests & Validation Automatisée
+
+La robustesse du moteur d'autorisation est continuellement validée par une suite de tests d'intégration dédiée exécutable via :
+
+```bash
+cd backend && npm run test:security
+```
+
+Cette suite ([`backend/src/test/testFolderAccessSecurity.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/test/testFolderAccessSecurity.ts)) certifie :
+- ✅ La normalisation bidirectionnelle symétrique des alias Bazzite `/var/home` $\leftrightarrow$ `/home`.
+- ✅ La correspondance exacte des dossiers absolus et relatifs avec protection des frontières de segments.
+- ✅ L'accès illimité du compte Administrateur.
+- ✅ L'application intransigeante des Whitelists et Blacklists de fichiers.
+- ✅ L'héritage arborescent des conteneurs `SHOW` et le blocage automatique en cascade.
+- ✅ La protection combinée des profils enfants (dossiers, tags thématiques, CSA et IPTV).

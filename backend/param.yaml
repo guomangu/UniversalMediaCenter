@@ -15,8 +15,35 @@ security:
   defaultPasswordRequired: false
   defaultPinRequired: false
   defaultMaxCsaAge: null
+ui:
+  theme: dark
+  defaultView: HOME
+  enableHeroSpotlight: true
+  enableCastModal: true
+  enableSkipIntro: true
+  skipIntroDurationSeconds: 85
+  cardsPerRail: 15
+  bannerHeight: 460
+media:
+  autoEnrichMetadata: true
+  enrichmentBatchSize: 30
+  autoReindexOnStart: true
+  enableLiveTvProxy: true
+  supportedVideoCodecs:
+    - h264
+    - hevc
+    - vp9
+    - av1
+  globalExcludedFolders:
+    - "@eaDir"
+    - "#recycle"
+    - .git
+    - lost+found
+  defaultAudioLanguage: fra
+  defaultSubtitleLanguage: fra
+  subtitleMode: fallback_if_audio_missing
 profiles:
-  defaultRole: MEMBREMEMBRE
+  defaultRole: MEMBRE
   defaultCanDownload: true
   defaultCanTranscode: true
   defaultCanWatchIptv: true
@@ -24,6 +51,7 @@ profiles:
   defaultBlockedTags: []
   defaultAllowedTags: []
   defaultBlockedFolders: []
+  defaultAllowedFolders: []
 profileTypes:
   - id: ADMINISTRATEUR
     label: Administrateur
@@ -46,7 +74,12 @@ profileTypes:
     maxCsaAgeLimit: null
     allowedTags: []
     blockedTags: []
-    blockedFolders: []
+    blockedFolders:
+      - /home/tele/Vidéos/drive/Animes
+      - /home/tele/Vidéos/drive/Films
+      - /home/tele/Vidéos/drive/Series
+    allowedFolders:
+      - /home/tele/Vidéos/drive/libre
   - id: ENFANT
     label: Enfant (Jeunesse)
     description: Dessins animés & famille, CSA -10, blocage violence et horreur
@@ -70,62 +103,14 @@ profileTypes:
       - /Films/Horreur
       - /Films/Adultes
       - Horreur
-  - id: SAFEZONE
-    label: Safezone
-    description: Tous publics et adolescents (CSA -12), blocage contenus violents et adultes
+  - id: NORMALOS
+    label: normalos
     isAdmin: false
     canDownload: true
     canTranscode: true
     canWatchIptv: true
-    maxCsaAgeLimit: 12
-    allowedTags: []
-    blockedTags:
-      - Horreur
-      - "+18"
-      - Gore
-      - Épouvante
-    blockedFolders:
-      - /Films/Adultes
-      - Horreur
-  - id: SEULEMENT_DES_MARVEL
-    label: Seulement des Marvel
-    description: Pack spécialisé restreint exclusivement aux contenus Marvel & Super-héros
-    isAdmin: false
-    canDownload: true
-    canTranscode: true
-    canWatchIptv: false
     maxCsaAgeLimit: null
-    allowedTags:
-      - Marvel
-      - Super-héros
-      - MCU
-      - Avengers
+    allowedTags: []
     blockedTags: []
+    allowedFolders: []
     blockedFolders: []
-ui:
-  theme: dark
-  defaultView: HOME
-  enableHeroSpotlight: true
-  enableCastModal: true
-  enableSkipIntro: true
-  skipIntroDurationSeconds: 85
-  cardsPerRail: 15
-  bannerHeight: 460
-media:
-  autoEnrichMetadata: true
-  enrichmentBatchSize: 30
-  autoReindexOnStart: true
-  enableLiveTvProxy: true
-  supportedVideoCodecs:
-    - h264
-    - hevc
-    - vp9
-    - av1
-  globalExcludedFolders:
-    - "@eaDir"
-    - "#recycle"
-    - ".git"
-    - "lost+found"
-  defaultAudioLanguage: fra
-  defaultSubtitleLanguage: fra
-  subtitleMode: fallback_if_audio_missing
