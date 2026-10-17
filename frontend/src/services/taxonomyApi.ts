@@ -59,95 +59,7 @@ export interface TaxonomyCategory {
   tags: TaxonomyTag[];
 }
 
-export const DEFAULT_TAXONOMY_CATEGORIES: TaxonomyCategory[] = [
-  {
-    id: 'sagas',
-    title: 'Sagas',
-    tags: [
-      {
-        label: 'The Pixar-Disney Animations - Saga',
-        slug: 'the-pixar-disney-animations-saga-collection-8354',
-        count: 28,
-      },
-      {
-        label: 'Pixar Short Films Collection',
-        slug: 'pixar-short-films-collection',
-        count: 13,
-      },
-      {
-        label: 'Pirates des Caraïbes - Saga',
-        slug: 'pirates-des-caraibes-saga-collection-4042',
-        count: 5,
-      },
-      {
-        label: 'Rocky - Saga',
-        slug: 'rocky-saga-collection-8016',
-        count: 5,
-      },
-    ],
-  },
-  {
-    id: 'series',
-    title: 'Séries',
-    tags: [
-      { label: 'Animation', slug: 'animation', count: 25 },
-      { label: 'Comédie', slug: 'comedie', count: 20 },
-      { label: 'Science-Fiction & Fantastique', slug: 'science-fiction-fantastique', count: 18 },
-      { label: 'Action & Adventure', slug: 'action-adventure', count: 17 },
-    ],
-  },
-  {
-    id: 'movies',
-    title: 'Films',
-    tags: [
-      { label: 'Drame', slug: 'drame', count: 105 },
-      { label: 'Action', slug: 'action', count: 103 },
-      { label: 'Comédie', slug: 'comedie', count: 92 },
-      { label: 'Aventure', slug: 'aventure', count: 87 },
-    ],
-  },
-  {
-    id: 'studios',
-    title: 'Studios',
-    tags: [
-      { label: 'Warner Bros. Pictures', slug: 'warner-bros-pictures', count: 16 },
-      { label: 'Columbia Pictures', slug: 'columbia-pictures', count: 15 },
-      { label: 'Universal Pictures', slug: 'universal-pictures', count: 13 },
-      { label: '20th Century Fox', slug: '20th-century-fox', count: 12 },
-    ],
-  },
-  {
-    id: 'directors',
-    title: 'Réalisateur',
-    tags: [
-      { label: 'Hayao Miyazaki', slug: 'hayao-miyazaki', count: 12 },
-      { label: 'Peter Jackson', slug: 'peter-jackson', count: 7 },
-      { label: 'Quentin Tarantino', slug: 'quentin-tarantino', count: 5 },
-      { label: 'Isao Takahata', slug: 'isao-takahata', count: 6 },
-    ],
-  },
-  {
-    id: 'qualities',
-    title: 'Qualité',
-    tags: [
-      { label: '4K UHD', slug: '4k', count: 13 },
-      { label: '1080p FHD', slug: '1080p', count: 180 },
-      { label: '720p HD', slug: '720p', count: 376 },
-      { label: '576p', slug: '576p', count: 4 },
-      { label: '480p SD', slug: '480p', count: 158 },
-    ],
-  },
-  {
-    id: 'countries',
-    title: 'Pays',
-    tags: [
-      { label: 'États-Unis', slug: 'etats-unis', count: 285 },
-      { label: 'France', slug: 'france', count: 80 },
-      { label: 'Japon', slug: 'japon', count: 61 },
-      { label: 'Royaume-Uni', slug: 'royaume-uni', count: 55 },
-    ],
-  },
-];
+export const DEFAULT_TAXONOMY_CATEGORIES: TaxonomyCategory[] = [];
 
 export interface MediaTileItem {
   id: string;
@@ -184,16 +96,16 @@ export async function fetchTaxonomy(
         const res = await fetch(`${getApiBaseUrl()}/api/ui/taxonomy`, {
           headers: getAuthHeaders(),
         });
-        if (!res.ok) return cached || DEFAULT_TAXONOMY_CATEGORIES;
+        if (!res.ok) return cached || [];
         const data = await res.json();
         const validCats = (data.categories || []).filter(
           (c: TaxonomyCategory) => c.tags && c.tags.length > 0 && c.tags.some((t) => Number(t.count) > 0)
         );
         return validCats.length > 0
           ? validCats
-          : (cached || DEFAULT_TAXONOMY_CATEGORIES);
+          : (cached || []);
       } catch {
-        return cached || DEFAULT_TAXONOMY_CATEGORIES;
+        return cached || [];
       }
     },
     { forceRefresh: needsRefresh, staleTime: 1000 * 60 * 5, onFreshData: onFresh }

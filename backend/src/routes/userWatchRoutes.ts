@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { watchProgress, mediaNodes } from '../db/schema/index.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
+import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
+import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
 
 export const userWatchRouter = new Hono();
 
@@ -21,6 +23,14 @@ function formatNode(node: any) {
 
 userWatchRouter.get('/continue-watching', async (c) => {
   const sessionUser = (c as any).get('user');
+  if (!sessionUser) return c.json([]);
+
+  const accessConds = buildMediaAccessConditions(sessionUser, 'media_nodes');
+  let accessCondsSql = sql``;
+  for (const cond of accessConds) {
+    accessCondsSql = sql`${accessCondsSql} AND ${cond}`;
+  }
+
   const items = await db
     .select({
       node: mediaNodes,
@@ -32,10 +42,14 @@ userWatchRouter.get('/continue-watching', async (c) => {
     .innerJoin(mediaNodes, eq(watchProgress.nodeId, mediaNodes.id))
     .where(and(eq(watchProgress.userId, sessionUser.id), eq(watchProgress.isCompleted, false)))
     .orderBy(desc(watchProgress.updatedAt))
-    .limit(20);
+    .limit(40);
+
+  const allowedItems = items.filter((i) =>
+    isMediaAllowedForUser(sessionUser, i.node)
+  ).slice(0, 20);
 
   return c.json(
-    items.map((i) => ({
+    allowedItems.map((i) => ({
       ...formatNode(i.node),
       positionSeconds: i.pos,
       durationSeconds: i.dur,
@@ -47,6 +61,14 @@ userWatchRouter.get('/continue-watching', async (c) => {
 
 userWatchRouter.get('/history', async (c) => {
   const sessionUser = (c as any).get('user');
+  if (!sessionUser) return c.json([]);
+
+  const accessConds = buildMediaAccessConditions(sessionUser, 'media_nodes');
+  let accessCondsSql = sql``;
+  for (const cond of accessConds) {
+    accessCondsSql = sql`${accessCondsSql} AND ${cond}`;
+  }
+
   const items = await db
     .select({
       node: mediaNodes,
@@ -59,10 +81,14 @@ userWatchRouter.get('/history', async (c) => {
     .innerJoin(mediaNodes, eq(watchProgress.nodeId, mediaNodes.id))
     .where(eq(watchProgress.userId, sessionUser.id))
     .orderBy(desc(watchProgress.updatedAt))
-    .limit(50);
+    .limit(80);
+
+  const allowedItems = items.filter((i) =>
+    isMediaAllowedForUser(sessionUser, i.node)
+  ).slice(0, 50);
 
   return c.json(
-    items.map((i) => ({
+    allowedItems.map((i) => ({
       ...formatNode(i.node),
       positionSeconds: i.pos,
       durationSeconds: i.dur,

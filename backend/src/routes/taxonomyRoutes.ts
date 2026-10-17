@@ -23,6 +23,10 @@ taxonomyRouter.get('/', async (c) => {
     for (const cond of accessConds) {
       sagasQuery = sql`${sagasQuery} AND ${cond}`;
     }
+    const childConds = buildMediaAccessConditions(user, 'c');
+    for (const cond of childConds) {
+      sagasQuery = sql`${sagasQuery} AND ${cond}`;
+    }
   }
   sagasQuery = sql`${sagasQuery}
     GROUP BY n.id, n.title, n.slug

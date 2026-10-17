@@ -150,6 +150,7 @@ export default function HomeScreen() {
   const loadData = async (force = false) => {
     const list = await fetchTaxonomy(force, (fresh) => {
       setCategories(fresh);
+      setLoading(false);
     });
     if (list && list.length > 0) {
       setCategories(list);
@@ -295,7 +296,7 @@ export default function HomeScreen() {
             activeFilter={activeFilter}
             onFilterChange={setActiveFilter}
           />
-          {loading ? (
+          {loading && categories.length === 0 ? (
             <ActivityIndicator color="#8e9ab0" style={{ marginVertical: 40 }} />
           ) : categories.length > 0 ? (
             categories.map((cat) => (

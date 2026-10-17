@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { userFavorites, mediaNodes } from '../db/schema/index.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
+import { isMediaAllowedForUser, checkMediaAccess } from '../auth/mediaAccess.js';
+import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
 
 export const userFavoritesRouter = new Hono();
 
@@ -22,6 +24,13 @@ function formatNode(node: any) {
 userFavoritesRouter.get('/favorites', async (c) => {
   const sessionUser = (c as any).get('user');
   if (!sessionUser) return c.json([]);
+
+  const accessConds = buildMediaAccessConditions(sessionUser, 'media_nodes');
+  let accessCondsSql = sql``;
+  for (const cond of accessConds) {
+    accessCondsSql = sql`${accessCondsSql} AND ${cond}`;
+  }
+
   const items = await db
     .select({
       node: mediaNodes,
@@ -33,8 +42,12 @@ userFavoritesRouter.get('/favorites', async (c) => {
     .orderBy(desc(userFavorites.createdAt))
     .limit(50);
 
+  const allowedItems = items.filter((i) =>
+    isMediaAllowedForUser(sessionUser, i.node)
+  );
+
   return c.json(
-    items.map((i) => ({
+    allowedItems.map((i) => ({
       ...formatNode(i.node),
       favoritedAt: i.addedAt,
     }))
@@ -45,6 +58,13 @@ userFavoritesRouter.get('/favorites/check/:id', async (c) => {
   const sessionUser = (c as any).get('user');
   const nodeId = c.req.param('id');
   if (!sessionUser) return c.json({ isFavorite: false });
+
+  const media = await db.query.mediaNodes.findFirst({
+    where: (t, { eq: e }) => e(t.id, nodeId),
+  });
+  if (!media || !isMediaAllowedForUser(sessionUser, media)) {
+    return c.json({ isFavorite: false });
+  }
 
   const existing = await db.query.userFavorites.findFirst({
     where: (t, { and: a, eq: e }) => a(e(t.userId, sessionUser.id), e(t.nodeId, nodeId)),
@@ -58,6 +78,13 @@ userFavoritesRouter.get('/favorites/:id', async (c) => {
   const nodeId = c.req.param('id');
   if (!sessionUser) return c.json({ isFavorite: false });
 
+  const media = await db.query.mediaNodes.findFirst({
+    where: (t, { eq: e }) => e(t.id, nodeId),
+  });
+  if (!media || !isMediaAllowedForUser(sessionUser, media)) {
+    return c.json({ isFavorite: false });
+  }
+
   const existing = await db.query.userFavorites.findFirst({
     where: (t, { and: a, eq: e }) => a(e(t.userId, sessionUser.id), e(t.nodeId, nodeId)),
   });
@@ -69,6 +96,15 @@ userFavoritesRouter.post('/favorites/:id', async (c) => {
   const sessionUser = (c as any).get('user');
   const nodeId = c.req.param('id');
   if (!sessionUser) return c.json({ error: 'Non authentifié' }, 401);
+
+  const media = await db.query.mediaNodes.findFirst({
+    where: (t, { eq: e }) => e(t.id, nodeId),
+  });
+  if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  if (!isMediaAllowedForUser(sessionUser, media)) {
+    return c.json({ error: 'Accès non autorisé à ce média', code: 'FORBIDDEN' }, 403);
+  }
 
   const existing = await db.query.userFavorites.findFirst({
     where: (t, { and: a, eq: e }) => a(e(t.userId, sessionUser.id), e(t.nodeId, nodeId)),

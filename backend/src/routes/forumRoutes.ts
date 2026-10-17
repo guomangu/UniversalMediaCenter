@@ -36,12 +36,13 @@ async function canAccessPrivateForum(userId: string, ownerId: string): Promise<b
 }
 
 // -------------------------------------------------------------
-// 1. ESPACES D'EXPLORATION & CONTEXTE DU FORUM (ACCÈS PUBLIC)
+// 1. ESPACES D'EXPLORATION & CONTEXTE DU FORUM (ACCÈS PUBLIC AVEC FILTRAGE DES DROITS)
 // -------------------------------------------------------------
 
 // Exploration globale de l'ensemble des salons et des 4 modules d'association
 forumRouter.get('/explore', async (c) => {
-  const data = await fetchForumExploreData();
+  const user = (c as any).get('user') as any;
+  const data = await fetchForumExploreData(user);
   return c.json(data);
 });
 
@@ -50,7 +51,8 @@ forumRouter.get('/topics/:slug/context', async (c) => {
   const slug = c.req.param('slug') || '';
   const title = c.req.query('title');
   const category = c.req.query('category');
-  const data = await fetchTopicContextData(slug, title, category);
+  const user = (c as any).get('user') as any;
+  const data = await fetchTopicContextData(slug, title, category, user);
   return c.json(data);
 });
 
@@ -102,31 +104,19 @@ forumRouter.get('/topics/:slug/messages', async (c) => {
     })
   );
 
-  const enriched = messages.map((m) => ({
-    ...m,
-    hasVoted: votedSet.has(m.id),
-    authorLocation: m.authorId ? locationsMap.get(m.authorId) || null : null,
-  }));
-
-  return c.json({ success: true, messages: enriched });
+  return c.json({
+    messages: messages.map((m) => ({
+      ...m,
+      hasVoted: votedSet.has(m.id),
+      authorLocation: m.authorId ? locationsMap.get(m.authorId) || null : null,
+    })),
+  });
 });
 
-// Publie un message (texte, image, vidéo, vocal, document, gif, citation d'un média)
-forumRouter.post('/topics/:slug/messages', requireAuth, async (c) => {
+// Envoyer un nouveau message dans le forum
+forumRouter.post('/topics/:slug/messages', async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
   const user = (c as any).get('user') as any;
-
-  if (slug.startsWith('private-user-')) {
-    const ownerId = slug.replace('private-user-', '');
-    const allowed = await canAccessPrivateForum(user.id, ownerId);
-    if (!allowed) {
-      return c.json(
-        { error: 'Ce forum privé est strictement réservé aux amis de cet utilisateur' },
-        403
-      );
-    }
-  }
-
   const body = await c.req.json().catch(() => ({}));
   const {
     topicTitle,
@@ -142,8 +132,18 @@ forumRouter.post('/topics/:slug/messages', requireAuth, async (c) => {
     quotedMediaPoster,
   } = body;
 
-  if (!content && !mediaUrl && !quotedMediaId) {
-    return c.json({ error: 'Le message, un élément média ou une citation est requis' }, 400);
+  if (slug.startsWith('private-user-')) {
+    if (!user?.id) {
+      return c.json({ error: 'Connexion requise pour poster dans un salon privé' }, 401);
+    }
+    const ownerId = slug.replace('private-user-', '');
+    const allowed = await canAccessPrivateForum(user.id, ownerId);
+    if (!allowed) {
+      return c.json(
+        { error: 'Ce forum privé est strictement réservé aux amis de cet utilisateur' },
+        403
+      );
+    }
   }
 
   let finalTitle = topicTitle || slug;

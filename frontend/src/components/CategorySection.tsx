@@ -99,11 +99,11 @@ export function CategorySection({
   const totalCount = Object.values(counts).reduce((s, c) => s + c, 0);
 
   // Une catégorie n'est visible que si elle contient des tags et qu'au moins un média est présent
+  const hasConfirmedMedia = totalCount > 0 || Object.values(mediasByTag).some((arr) => arr.length > 0);
   const isVisible =
     category.tags.length > 0 &&
     activeTags.length > 0 &&
-    !(allVisibleLoaded && totalCount === 0) &&
-    (Boolean(searchQuery) || (Boolean(activeFilter) && activeFilter !== 'Tous') || hasAnyCount);
+    hasConfirmedMedia;
 
   // Notification réactive au parent (HomeScreen) pour mise à jour synchronisée des raccourcis SiteHeader
   useEffect(() => {

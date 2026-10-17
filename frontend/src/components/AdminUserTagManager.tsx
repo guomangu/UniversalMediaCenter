@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Platform } from 'react-native';
 import { Radius } from '@/constants/theme';
 import { AdminPhysicalFolderSelector } from './AdminPhysicalFolderSelector';
 
@@ -40,7 +40,7 @@ export function AdminUserTagManager({
 
   return (
     <View style={s.container}>
-      <View style={s.tabHeader}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabHeader} style={s.tabScroll}>
         <Pressable
           focusable={true}
           style={[s.tabPill, activeSection === 'FOLDERS' && s.tabPillActive]}
@@ -59,7 +59,7 @@ export function AdminUserTagManager({
             🏷️ Tags & Genres ({allowedTags.length + blockedTags.length} règles)
           </Text>
         </Pressable>
-      </View>
+      </ScrollView>
 
       {activeSection === 'FOLDERS' ? (
         <AdminPhysicalFolderSelector
@@ -149,7 +149,16 @@ export function AdminUserTagManager({
 
 const s = StyleSheet.create({
   container: { marginTop: 10, paddingTop: 6, gap: 10 },
-  tabHeader: { flexDirection: 'row', gap: 8 },
+  tabScroll: {
+    marginBottom: 4,
+    ...(Platform.OS === 'web' ? ({
+      overflowX: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      scrollbarWidth: 'none',
+      msOverflowStyle: 'none',
+    } as any) : {}),
+  },
+  tabHeader: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingVertical: 2 },
   tabPill: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -157,6 +166,8 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
+    flexShrink: 0,
+    ...(Platform.OS === 'web' ? ({ whiteSpace: 'nowrap', userSelect: 'none' } as any) : {}),
   },
   tabPillActive: {
     backgroundColor: 'rgba(99, 102, 241, 0.25)',

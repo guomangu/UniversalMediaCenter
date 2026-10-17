@@ -49,6 +49,10 @@ export function setCachedData<T>(key: string, data: T, ttl: number = DEFAULT_TTL
   }
 }
 
+export function clearMemoryCache(): void {
+  memoryStore.clear();
+}
+
 export function invalidateCache(key: string): void {
   const fullKey = CACHE_PREFIX + key;
   memoryStore.delete(fullKey);

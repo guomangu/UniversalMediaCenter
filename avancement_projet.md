@@ -48,3 +48,57 @@
   - **Actualisation du White Paper (`white_paper_the_universal_media_stack.md`) :** Refonte de la Section 7 (*Loi n°5 : Sécurité Frictionless, RBAC, ABAC & Partitionnement Physique PBAC*), intégration des règles de dossiers physiques et de taxonomie zéro-vide, mise à jour du schéma PostgreSQL `users` en Section 10.
   - **Enrichissement des Bonnes & Mauvaises Pratiques (`mauvaise_pratique.md`) :** Ajout de la règle 85 documentant l'anti-pattern de pollution visuelle par des catégories vides et les principes de synchronisation temps réel des raccourcis d'en-tête.
   - **Mise à Jour du Sommaire Général (`sommaire.md`) :** Référencement de l'ensemble des modules d'accès physique, de sécurité SQL, de tests d'intégration et du document de droits utilisateurs.
+
+- [x] **58. Sanctuarisation Universelle du Contrôle d\x27Accès Zéro-Fuite sur Toutes les Pages et Recommandations (`/media`, `/explore`, `/live`, `/user`, `/forum`, Séances Partagées) :**
+  - **Étanchéité Totale de la Page Détail Médias (`media.ts`, `mediaRelated.ts`) :**
+    - Transmission systématique du profil utilisateur `user` au moteur de recommandations sémantiques `getRelatedTagsForMedia` ("Genres & Thématiques") et à l\x27algorithme TF-IDF `getTfIdfSimilarMedias` ("Titres Similaires").
+    - Double barrière SQL (`buildMediaAccessConditions(user, \x27n\x27)` et `effective_physical_path`) et JS (`isMediaAllowedForUser`) sur les requêtes de tags et similarités.
+    - Filtrage hermétique des œuvres produites par le même studio (`studioFilmsRows`) et élimination des studios orphelins.
+    - Vérification de sécurité sur la saga parente (`parentSaga`) et exclusion des sagas dont tous les membres sont restreints pour l\x27utilisateur.
+    - Blocage immédiat avec HTTP 403 `FORBIDDEN` sur `GET /api/media/:id` et masquage complet si l\x27utilisateur n\x27a pas accès au média cible.
+  - **Étanchéité Globale du Catalogue & des Pages Dédiées :**
+    - **Exploration & Statistiques (`mediaStats.ts`, `/explore`) :** Application des conditions d\x27accès SQL et validation mémoire JS sur les compteurs, le top des genres et les derniers ajouts.
+    - **Télévision en Direct & Chaînes IPTV (`iptv.ts`, `/live`) :** Filtrage des listes de chaînes et catégories selon `canWatchIptv` et les tags/dossiers autorisés ; rejet HTTP 403 sur le flux de streaming direct `.m3u8` pour tout profil non autorisé.
+    - **Profil Utilisateur, Historique & Favoris (`userFavoritesRoutes.ts`, `userWatchRoutes.ts`) :** Filtrage de reprise de lecture (`continue-watching`), de l\x27historique et des listes de favoris pour éliminer tout média résiduel restreint.
+    - **Réseau Social, Avis & Feed Reposts (`repostFeedRoutes.ts`, `repostMediaRoutes.ts`) :** Filtrage des activités et flux d\x27avis pour masquer les publications portant sur des œuvres interdites.
+    - **Watch Party & Séances Synchronisées (`sessionRoutes.ts`) :** Filtrage des séances publiques actives et blocage 403 à la tentative de rejoindre (`POST /:id/join`) une séance dont le média est restreint.
+    - **Associations Forum & Topics Culturels (`forumAssociations.ts`, `forumRoutes.ts`) :** Application des filtres d\x27accès aux cycles d\x27œuvres, personnalités, studios et genres affichés dans les pages de discussion.
+  - **Isolation Multi-Utilisateurs du Cache PWA et UX Sécurisée :**
+    - Clés de cache HTTP (`api.ts`) et clés de stockage LocalStorage (`[id].tsx`) indexées par `userKey` (`media_detail_${userKey}_${id}`, `home_layout_${userKey}`, `media_stats_${userKey}`, etc.).
+    - Purge conjointe de la mémoire vive (`clearMemoryCache`) et du stockage persistant lors de la déconnexion ou du changement d\x27utilisateur.
+    - Composant UX dédié "Contenu Restreint" sur `MediaDetailScreen` en cas de tentative d\x27accès direct par URL, invitant cordialement à revenir à l\x27accueil sans exposer aucune métadonnée protégée.
+  - **Tests de Validation & Non-Régression :**
+    - Extension de la suite `testFolderAccessSecurity.ts` avec tests unitaires des suggestions d\x27associations "Genres & Thématiques" et validation 100% sans faille.
+
+- [x] **59. Éradication Définitive du Flash Visuel (FOUC) et Zéro-Exposition Prématurée des Titres/Tags :**
+  - **Suppression Totale des Faux Mocks Par Défaut (`taxonomyApi.ts`, `index.tsx`) :**
+    - Vidage intégral de `DEFAULT_TAXONOMY_CATEGORIES = []` éliminant toute fuite de sagas ou de noms de tags hardcodés en dur lors d\x27un rechargement forcé (`Ctrl+Maj+R`).
+    - Initialisation de `loading = !cached || cached.length === 0` et de `categories = []` sur `HomeScreen` : affichage d\x27un loader central sobre tant que les catégories autorisées ne sont pas confirmées par l\x27API.
+  - **Sanctuarisation de l\x27Affichage des Tags (`TagCard.tsx`) :**
+    - Règle stricte `if (medias.length === 0) return null;` : aucun titre de tag, pilule de comptage ou bouton forum n\x27est rendu tant qu\x27au moins 1 média autorisé n\x27est pas formellement présent en mémoire.
+  - **Affichage Strictement Conditionné des Catégories (`CategorySection.tsx`) :**
+    - Conditionnement de la visibilité à `hasConfirmedMedia` (`totalCount > 0 || hasMediasInTag`) empêchant l\x27affichage prématuré du titre de catégorie (Sagas, Studios...) tant qu\x27aucun média n\x27a été validé.
+  - **Filtrage SQL Amont sur les Enfants de Sagas (`taxonomyRoutes.ts`, `mediaAccessSql.ts`) :**
+    - Injection de `childConds = buildMediaAccessConditions(user, \x27c\x27)` sur `media_nodes c` dans `sagasQuery` : les sagas dont tous les films enfants sont restreints sont écartées dès la source dans PostgreSQL avec `count = 0` et éliminées par `HAVING COUNT(c.id) > 0`.
+    - Prise en charge des plafonds d\x27âge CSA (10, 12, 16, 18 ans) et priorité au chemin d\x27enfants dans `buildMediaAccessConditions`.
+
+- [x] **60. Ergonomie Mobile & Défilement Horizontal Universel des Barres d\x27Onglets :**
+  - **Panneau d\x27Administration Centralisé (`admin.tsx`, `AdminScreen.styles.ts`) :**
+    - Remplacement de la `<View>` fixe des onglets par un `<ScrollView horizontal showsHorizontalScrollIndicator={false}>` avec `overflowX: \x27auto\x27`, `WebkitOverflowScrolling: \x27touch\x27` et `scrollbarWidth: \x27none\x27`.
+    - Boutons d\x27onglets incompressibles (`flexShrink: 0`, `whiteSpace: \x27nowrap\x27`) garantissant l\x27accès tactile immédiat à l\x27ensemble des 6 modules (« Scan & Médiathèque », « Types de Profils », « Comptes », « Rails & Layout », « param.yaml », « Sources IPTV ») sur n\x27importe quel smartphone.
+  - **Espace Personnel Utilisateur (`user.tsx`) :**
+    - Migration de la barre d\x27onglets (« Reprendre », « Favoris », « Amis », « Mes Salons », « Fil d\x27avis ») vers un `<ScrollView horizontal>` fluide éliminant les sauts de lignes disgracieux.
+  - **Sous-Onglets & Sélecteurs de Configuration (`AdminLayoutTab.tsx`, `AdminUserTagManager.tsx`) :**
+    - Encapsulation défilable horizontale des sélecteurs de sous-onglets (« Rails d\x27Accueil » / « Hiérarchie des Tags » et « Dossiers Physiques » / « Tags & Genres »).
+  - **Audit Exhaustif de l\x27Ensemble des Pages (`tv.tsx`, `explore.tsx`, `SiteHeader.tsx`, `media/[id].tsx`, `ForumAssociationsModule.tsx`) :**
+    - Vérification et certification que toutes les barres de filtres et carrousels horizontaux disposent déjà de conteneurs défilables natifs adaptés aux mobiles.
+
+- [x] **61. Sanctuarisation de l\x27Accès aux Flux IPTV Virtuels Face au Partitionnement des Dossiers Disques :**
+  - **Diagnostic du Cas `gcreate` (Membre Standard `MEMBRE`) :**
+    - `gcreate` avait `canWatchIptv = true` mais le profil `MEMBRE` contenait une règle d\x27autorisation de dossier exclusif (`allowedFolders = ["/home/tele/Vidéos/drive/libre"]`).
+    - Les chaînes IPTV (`LIVE_CHANNEL`) étant des flux réseau sans chemin disque (`videoFilePath = null`, `pathsToCheck = []`), le validateur de dossiers rejetait toutes les chaînes et renvoyait systématiquement `false` (ou 403 Forbidden sur le flux `.m3u8`).
+  - **Découplage Dossiers Physiques vs Flux Virtuels (`mediaAccess.ts`, `mediaAccessSql.ts`) :**
+    - Dans `isMediaAllowedForUser` : exemption formelle des entités `LIVE_CHANNEL` du partitionnement de répertoires disques (`allowedFolders` / `blockedFolders`). Seules les restrictions de capacité (`canWatchIptv`) et de tags sémantiques s\x27appliquent aux chaînes TV.
+    - Dans `buildMediaAccessConditions` : exemption SQL directe `node_type = \x27LIVE_CHANNEL\x27` dans les clauses de dossiers autorisés et bloqués.
+  - **Souveraineté des Permissions Utilisateur sur les Profils (`access.ts`) :**
+    - Priorité absolue aux attributs individuels en base (`user.canWatchIptv`, `canDownload`, `canTranscode`) lorsqu\x27ils sont définis par un administrateur, évitant tout écrasement passif par le profil type `matchedProfile`.

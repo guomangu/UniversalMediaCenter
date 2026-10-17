@@ -74,10 +74,7 @@ profileTypes:
     maxCsaAgeLimit: null
     allowedTags: []
     blockedTags: []
-    blockedFolders:
-      - /home/tele/Vidéos/drive/Animes
-      - /home/tele/Vidéos/drive/Films
-      - /home/tele/Vidéos/drive/Series
+    blockedFolders: []
     allowedFolders:
       - /home/tele/Vidéos/drive/libre
   - id: ENFANT

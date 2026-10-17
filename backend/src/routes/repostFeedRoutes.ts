@@ -3,6 +3,7 @@ import { db } from '../db/connection.js';
 import { mediaReposts, mediaNodes, users, userFriends } from '../db/schema/index.js';
 import { eq, desc, and, or, inArray } from 'drizzle-orm';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
+import { isMediaAllowedForUser, checkMediaAccess } from '../auth/mediaAccess.js';
 
 export const repostFeedRouter = new Hono();
 
@@ -33,10 +34,12 @@ repostFeedRouter.get('/user', async (c) => {
     .innerJoin(mediaNodes, eq(mediaReposts.nodeId, mediaNodes.id))
     .where(eq(mediaReposts.userId, sessionUser.id))
     .orderBy(desc(mediaReposts.createdAt))
-    .limit(30);
+    .limit(60);
+
+  const allowed = items.filter((it) => isMediaAllowedForUser(sessionUser, it.node)).slice(0, 30);
 
   return c.json(
-    items.map((it) => ({
+    allowed.map((it) => ({
       ...it,
       node: formatNode(it.node),
     }))
@@ -74,10 +77,12 @@ repostFeedRouter.get('/friends', async (c) => {
     .innerJoin(users, eq(mediaReposts.userId, users.id))
     .where(inArray(mediaReposts.userId, friendIds))
     .orderBy(desc(mediaReposts.createdAt))
-    .limit(30);
+    .limit(60);
+
+  const allowed = items.filter((it) => isMediaAllowedForUser(sessionUser, it.node)).slice(0, 30);
 
   return c.json(
-    items.map((it) => ({
+    allowed.map((it) => ({
       ...it,
       node: formatNode(it.node),
     }))
@@ -91,6 +96,15 @@ repostFeedRouter.post('/', async (c) => {
 
   if (!nodeId) {
     return c.json({ error: 'nodeId manquant' }, 400);
+  }
+
+  const media = await db.query.mediaNodes.findFirst({
+    where: (t, { eq: e }) => e(t.id, nodeId),
+  });
+  if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  if (!isMediaAllowedForUser(sessionUser, media)) {
+    return c.json({ error: 'Accès refusé à ce média', code: 'FORBIDDEN' }, 403);
   }
 
   const [inserted] = await db

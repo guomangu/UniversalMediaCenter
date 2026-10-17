@@ -82,7 +82,37 @@ export function isMediaAllowedForUser(
   media: MediaAccessCheckInput
 ): boolean {
   if (!user || user.isAdmin) return true;
-  if (media.nodeType === 'LIVE_CHANNEL' && user.canWatchIptv === false) return false;
+
+  // 0. Traitement spécifique des flux IPTV en direct (LIVE_CHANNEL)
+  if (media.nodeType === 'LIVE_CHANNEL') {
+    if (user.canWatchIptv === false) return false;
+
+    // Pour les chaînes IPTV en direct, les restrictions de dossiers physiques (fichiers disques)
+    // ne s'appliquent pas. Seules les restrictions de tags et de contrôle parental s'appliquent.
+    if (user.blockedTags && user.blockedTags.length > 0) {
+      const searchVec = (media.searchVectorText || media.title || '').toLowerCase().normalize('NFC');
+      for (const tag of user.blockedTags) {
+        if (tag && tag.trim()) {
+          const cleanTag = tag.trim().toLowerCase().normalize('NFC');
+          if (searchVec.includes(cleanTag)) {
+            return false;
+          }
+        }
+      }
+    }
+
+    if (user.allowedTags && user.allowedTags.length > 0) {
+      const searchVec = (media.searchVectorText || media.title || '').toLowerCase().normalize('NFC');
+      const hasAllowed = user.allowedTags.some((tag) => {
+        if (!tag || !tag.trim()) return false;
+        const cleanTag = tag.trim().toLowerCase().normalize('NFC');
+        return searchVec.includes(cleanTag);
+      });
+      if (!hasAllowed) return false;
+    }
+
+    return true;
+  }
 
   // Rassemblement exhaustif de tous les chemins physiques connus pour ce média
   const pathsToCheck: string[] = [];

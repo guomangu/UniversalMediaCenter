@@ -61,7 +61,7 @@ export default function AdminScreen() {
       <SiteHeader />
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]}>
         <Text style={styles.heading}>Panneau d’Administration Centralisé</Text>
-        <View style={styles.tabRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow} style={styles.tabScroll}>
           {(['LIBRARY', 'PROFILE_TYPES', 'USERS', 'LAYOUT', 'CONFIG', 'IPTV'] as const).map((t) => (
             <Pressable
               key={t}
@@ -84,7 +84,7 @@ export default function AdminScreen() {
               </Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         {tab === 'LIBRARY' && <AdminScanTab />}
         {tab === 'PROFILE_TYPES' && <AdminProfileTypesTab />}

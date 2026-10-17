@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
-import { getAuthHeaders, getAuthToken } from './authStore';
+import { getAuthHeaders, getAuthToken, getCurrentUser } from './authStore';
 import { fetchWithCache } from './pwaDataCache';
 import { prefetchImageToCache } from './pwaImageCache';
 
@@ -20,8 +20,14 @@ export function getVideoStreamUrl(id: string, shareToken?: string | null): strin
   return qs ? `${base}?${qs}` : base;
 }
 
+export function getUserCacheKey(): string {
+  const user = getCurrentUser();
+  return user ? `${user.id}_${user.isAdmin ? 'admin' : (user as any).profileRole || 'user'}` : 'anon';
+}
+
 export async function fetchHomeLayout(): Promise<any> {
-  return fetchWithCache('home_layout', async () => {
+  const cacheKey = `home_layout_${getUserCacheKey()}`;
+  return fetchWithCache(cacheKey, async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/ui/layout?page=HOME`, {
         headers: getAuthHeaders(),
@@ -36,14 +42,19 @@ export async function fetchHomeLayout(): Promise<any> {
 }
 
 export async function fetchMediaDetail(id: string, shareToken?: string | null): Promise<any> {
-  const cacheKey = `media_detail_${id}${shareToken ? `_${shareToken}` : ''}`;
+  const cacheKey = `media_detail_${getUserCacheKey()}_${id}${shareToken ? `_${shareToken}` : ''}`;
   return fetchWithCache(cacheKey, async () => {
     try {
       const query = shareToken ? `?share=${encodeURIComponent(shareToken)}` : '';
       const res = await fetch(`${getApiBaseUrl()}/api/media/${id}${query}`, {
         headers: getAuthHeaders(),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 403) {
+          return { forbidden: true, error: 'Accès non autorisé pour votre profil' };
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
 
       // Pré-mise en cache immédiate des images principales
@@ -73,7 +84,8 @@ export async function fetchNextMedia(id: string): Promise<any> {
 }
 
 export async function fetchMediaStats(): Promise<any> {
-  return fetchWithCache('media_stats', async () => {
+  const cacheKey = `media_stats_${getUserCacheKey()}`;
+  return fetchWithCache(cacheKey, async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/media/stats`, {
         headers: getAuthHeaders(),
@@ -116,7 +128,7 @@ export async function fetchLiveChannels(
   params?: { q?: string; category?: string; limit?: number },
   options?: { forceRefresh?: boolean; onFreshData?: (fresh: any[]) => void }
 ): Promise<any[]> {
-  const cacheKey = `iptv_channels_${params?.q || ''}_${params?.category || ''}_${params?.limit || 0}`;
+  const cacheKey = `iptv_channels_${getUserCacheKey()}_${params?.q || ''}_${params?.category || ''}_${params?.limit || 0}`;
   return fetchWithCache(
     cacheKey,
     async () => {
@@ -144,8 +156,9 @@ export async function fetchLiveChannels(
 export async function fetchIptvCategories(
   options?: { forceRefresh?: boolean; onFreshData?: (fresh: string[]) => void }
 ): Promise<string[]> {
+  const cacheKey = `iptv_categories_${getUserCacheKey()}`;
   return fetchWithCache(
-    'iptv_categories',
+    cacheKey,
     async () => {
       try {
         const res = await fetch(`${getApiBaseUrl()}/api/iptv/categories`, {

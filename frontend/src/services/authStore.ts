@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getApiBaseUrl } from './apiConfig';
+import { clearMemoryCache } from './pwaDataCache';
 
 export interface UserProfile {
   id: string;
@@ -30,6 +31,10 @@ let memoryToken: string | null = null;
 const listeners = new Set<(u: UserProfile | null) => void>();
 
 export function purgeAllMediaCaches(): void {
+  // Purge de la mémoire vive instantanée
+  clearMemoryCache();
+
+  // Purge du LocalStorage persistant
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       for (let i = localStorage.length - 1; i >= 0; i--) {
@@ -39,7 +44,8 @@ export function purgeAllMediaCaches(): void {
           (k.startsWith('ums_cache_') ||
             k.startsWith('tax_') ||
             k.startsWith('home_layout') ||
-            k.startsWith('media_detail_'))
+            k.startsWith('media_detail_') ||
+            k.startsWith('media_stats_'))
         ) {
           localStorage.removeItem(k);
         }

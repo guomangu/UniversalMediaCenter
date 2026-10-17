@@ -103,7 +103,7 @@ export default function UserScreen() {
             ) : null}
 
             {/* Onglets */}
-            <View style={styles.tabRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow} style={styles.tabScroll}>
               <Pressable
                 focusable={true}
                 onPress={() => setActiveTab('CONTINUE')}
@@ -148,7 +148,7 @@ export default function UserScreen() {
                   🔄 Fil d'avis
                 </Text>
               </Pressable>
-            </View>
+            </ScrollView>
 
             {/* Contenu de l'onglet actif */}
             {activeTab === 'CONTINUE' && (
@@ -249,11 +249,22 @@ const styles = StyleSheet.create({
   },
   navBtnTxt: { color: '#f1f5f9', fontWeight: '700', fontSize: 12 },
   inner: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', padding: Spacing.four },
+  tabScroll: {
+    marginBottom: 20,
+    ...(Platform.OS === 'web'
+      ? ({
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+        } as any)
+      : {}),
+  },
   tabRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 20,
+    alignItems: 'center',
+    paddingVertical: 2,
   },
   tabBtn: {
     backgroundColor: 'rgba(30, 41, 59, 0.7)',
@@ -262,6 +273,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     borderWidth: 1,
     borderColor: 'rgba(71, 85, 105, 0.4)',
+    flexShrink: 0,
+    ...(Platform.OS === 'web' ? ({ whiteSpace: 'nowrap', userSelect: 'none' } as any) : {}),
   },
   tabBtnActive: {
     backgroundColor: '#6366f1',

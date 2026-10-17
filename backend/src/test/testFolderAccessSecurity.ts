@@ -3,6 +3,7 @@ import {
   normalizePathVariants,
   pathMatchesFolderRule,
   isMediaAllowedForUser,
+  checkMediaAccess,
 } from '../auth/mediaAccess.js';
 import type { UserSession } from '../middleware/access.js';
 
@@ -245,5 +246,56 @@ assert.strictEqual(
   true
 );
 console.log('  ✅ Child user tags, IPTV and folders passed');
+
+// 8. Test d'étanchéité des suggestions de médias par tags ("Genres & Thématiques") et Studios
+const suggestionsFromGenre = [
+  {
+    id: 'film-allowed-1',
+    title: 'Documentaire Open Source',
+    nodeType: 'MOVIE',
+    videoFilePath: '/home/tele/Vidéos/drive/libre/Doc.mp4',
+    searchVectorText: 'Documentaire Science',
+  },
+  {
+    id: 'film-blocked-folder',
+    title: 'Film Blocked by Folder',
+    nodeType: 'MOVIE',
+    videoFilePath: '/home/tele/Vidéos/drive/Films/Matrix.mkv',
+    searchVectorText: 'Science-Fiction Action',
+  },
+  {
+    id: 'film-blocked-tag',
+    title: 'Film Blocked by Tag',
+    nodeType: 'MOVIE',
+    videoFilePath: '/home/tele/Vidéos/drive/libre/Halloween.mp4',
+    searchVectorText: 'Horreur Gore',
+  },
+];
+
+// Pour l'utilisateur restreint (whitelist /drive/libre uniquement) :
+const filteredForRestricted = suggestionsFromGenre.filter((m) => isMediaAllowedForUser(restrictedUser, m));
+assert.strictEqual(filteredForRestricted.length, 2);
+assert.ok(filteredForRestricted.some((m) => m.id === 'film-allowed-1'));
+assert.ok(!filteredForRestricted.some((m) => m.id === 'film-blocked-folder'));
+
+// Pour l'enfant (tags interdits Horreur/Gore + tags requis Animation/Famille) :
+const filteredForChild = suggestionsFromGenre.filter((m) => isMediaAllowedForUser(childUser, m));
+assert.strictEqual(filteredForChild.length, 0); // Aucun n'est Animation/Famille et Halloween a Horreur/Gore
+
+console.log('  ✅ Genres & Thématiques suggestions zero-leak filtering passed');
+
+// 9. Test de checkMediaAccess
+assert.strictEqual(checkMediaAccess(adminUser, 'any-id'), true);
+assert.strictEqual(
+  checkMediaAccess(restrictedUser, 'any-id', null, null, 'MOVIE', {
+    videoFilePath: '/home/tele/Vidéos/drive/Films/Blocked.mkv',
+  }),
+  false
+);
+assert.strictEqual(
+  checkMediaAccess(childUser, 'any-id', null, null, 'LIVE_CHANNEL'),
+  false
+);
+console.log('  ✅ checkMediaAccess unified controller passed');
 
 console.log('🎉 All folder restriction & security tests passed with 100% success!');

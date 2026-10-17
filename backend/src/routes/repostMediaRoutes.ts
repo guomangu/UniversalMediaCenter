@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { mediaReposts, mediaNodes, users } from '../db/schema/index.js';
 import { eq, desc } from 'drizzle-orm';
+import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 
 export const repostMediaRouter = new Hono();
 
@@ -13,9 +14,13 @@ repostMediaRouter.post('/media/:id', async (c) => {
   const { rating, comment } = body;
 
   const media = await db.query.mediaNodes.findFirst({
-    where: (t, { eq }) => eq(t.id, nodeId),
+    where: (t, { eq: e }) => e(t.id, nodeId),
   });
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  if (!isMediaAllowedForUser(sessionUser, media)) {
+    return c.json({ error: 'Accès refusé à ce média', code: 'FORBIDDEN' }, 403);
+  }
 
   const cleanRating = rating ? Math.max(1, Math.min(5, Number(rating))) : null;
   const cleanComment = comment && typeof comment === 'string' ? comment.trim() : null;
@@ -35,7 +40,18 @@ repostMediaRouter.post('/media/:id', async (c) => {
 
 // Récupérer les reposts pour un média donné
 repostMediaRouter.get('/media/:id', async (c) => {
+  const sessionUser = (c as any).get('user');
   const nodeId = c.req.param('id');
+
+  const media = await db.query.mediaNodes.findFirst({
+    where: (t, { eq: e }) => e(t.id, nodeId),
+  });
+  if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  if (!isMediaAllowedForUser(sessionUser, media)) {
+    return c.json({ error: 'Accès refusé', code: 'FORBIDDEN' }, 403);
+  }
+
   const rows = await db
     .select({
       repost: mediaReposts,

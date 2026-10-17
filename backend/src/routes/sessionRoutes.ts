@@ -3,6 +3,8 @@ import { db } from '../db/connection.js';
 import { mediaSessions, mediaSessionParticipants, users, mediaNodes } from '../db/schema/index.js';
 import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
+import type { UserSession } from '../middleware/access.js';
+import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 import { getActiveMediaCounts } from '../watcher/presenceStore.js';
 
 export const sessionRouter = new Hono();
@@ -80,12 +82,21 @@ export async function removeUserFromMediaSessions(mediaId: string, userId: strin
 
 // Proposer une nouvelle séance
 sessionRouter.post('/', requireAuth, async (c) => {
-  const user = (c as any).get('user');
+  const user = (c as any).get('user') as UserSession;
   const body = await c.req.json().catch(() => ({}));
   const { nodeId, topicSlug, title, scheduledAt } = body;
 
   if (!nodeId || !title) {
     return c.json({ error: 'nodeId et title sont requis' }, 400);
+  }
+
+  const media = await db.query.mediaNodes.findFirst({
+    where: (t, { eq: e }) => e(t.id, nodeId),
+  });
+  if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  if (!isMediaAllowedForUser(user, media)) {
+    return c.json({ error: 'Accès refusé à ce média', code: 'FORBIDDEN' }, 403);
   }
 
   // Clôturer les anciennes séances orphelines éventuelles pour ce média et cet utilisateur
@@ -126,17 +137,31 @@ sessionRouter.post('/', requireAuth, async (c) => {
   return c.json({ success: true, session });
 });
 
-// Liste des séances actives et compteurs de visionnage par média (accessible publiquement)
+// Liste des séances actives et compteurs de visionnage par média
 sessionRouter.get('/active', async (c) => {
+  const user = (c as any).get('user') as UserSession | undefined;
   await cleanupExpiredSessions();
 
   const sessions = await db.query.mediaSessions.findMany({
-    where: (t, { eq }) => eq(t.status, 'ACTIVE'),
+    where: (t, { eq: e }) => e(t.status, 'ACTIVE'),
     orderBy: [desc(mediaSessions.createdAt)],
-    limit: 30,
+    limit: 50,
   });
 
-  const sessionIds = sessions.map((s) => s.id);
+  // Filtrer les séances dont le média est autorisé pour l'utilisateur
+  let allowedSessions = sessions;
+  if (user && !user.isAdmin && sessions.length > 0) {
+    const nodeIds = Array.from(new Set(sessions.map((s) => s.nodeId)));
+    const nodes = await db.query.mediaNodes.findMany({
+      where: (t, { inArray: inArr }) => inArr(t.id, nodeIds),
+    });
+    const allowedNodeIds = new Set(
+      nodes.filter((n) => isMediaAllowedForUser(user, n)).map((n) => n.id)
+    );
+    allowedSessions = sessions.filter((s) => allowedNodeIds.has(s.nodeId));
+  }
+
+  const sessionIds = allowedSessions.map((s) => s.id);
   const participants = sessionIds.length > 0
     ? await db
         .select({
@@ -152,7 +177,7 @@ sessionRouter.get('/active', async (c) => {
         .where(inArray(mediaSessionParticipants.sessionId, sessionIds))
     : [];
 
-  const grouped = sessions
+  const grouped = allowedSessions
     .map((s) => {
       // Filtrer les spectateurs discrets pour la visibilité publique
       const parts = participants.filter((p) => p.sessionId === s.id && !p.isIncognito);
@@ -176,8 +201,22 @@ sessionRouter.get('/active', async (c) => {
 // Séances actives pour un média particulier (ou ses enfants)
 sessionRouter.get('/media/:nodeId', async (c) => {
   const nodeId = c.req.param('nodeId');
+  const user = (c as any).get('user') as UserSession | undefined;
+
+  const targetMedia = await db.query.mediaNodes.findFirst({
+    where: (t, { eq: e }) => e(t.id, nodeId),
+  });
+  if (!targetMedia || !isMediaAllowedForUser(user, targetMedia)) {
+    return c.json({
+      success: true,
+      sessions: [],
+      totalViewers: 0,
+      hasActiveSession: false,
+    });
+  }
+
   await cleanupExpiredSessions();
-  
+
   // Chercher les séances actives sur ce média ou ayant ce média en parent
   const sessions = await db
     .select({ session: mediaSessions })
@@ -222,7 +261,21 @@ sessionRouter.get('/media/:nodeId', async (c) => {
 // Rejoindre une séance
 sessionRouter.post('/:id/join', requireAuth, async (c) => {
   const sessionId = c.req.param('id');
-  const user = (c as any).get('user');
+  const user = (c as any).get('user') as UserSession;
+
+  const session = await db.query.mediaSessions.findFirst({
+    where: (t: any, { eq: e }: any) => e(t.id, sessionId),
+  });
+  if (!session || session.status !== 'ACTIVE') {
+    return c.json({ error: 'Séance introuvable ou terminée' }, 404);
+  }
+
+  const media = await db.query.mediaNodes.findFirst({
+    where: (t: any, { eq: e }: any) => e(t.id, session.nodeId),
+  });
+  if (!media || !isMediaAllowedForUser(user, media)) {
+    return c.json({ error: 'Accès non autorisé au média de cette séance', code: 'FORBIDDEN' }, 403);
+  }
 
   await (db as any)
     .insert(mediaSessionParticipants)

@@ -1,5 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
+import type { UserSession } from '../middleware/access.js';
+import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
+import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 
 export interface AssociationGroup {
   name: string;
@@ -19,10 +22,12 @@ export interface TopicTagItem {
 /**
  * Récupère les films et séries associés pour une liste de tags donnée (slugs)
  * Retourne une liste de groupes d'association avec un maximum de 10 films par groupe.
+ * Applique la double barrière de sécurité SQL & JS (Zero-Leak).
  */
 export async function fetchMediaGroupsByTags(
   tags: { name: string; slug: string; code?: string }[],
-  limitPerGroup = 10
+  limitPerGroup = 10,
+  user?: UserSession | null
 ): Promise<AssociationGroup[]> {
   if (!tags || tags.length === 0) return [];
 
@@ -33,6 +38,12 @@ export async function fetchMediaGroupsByTags(
     slugs.map((s) => sql`${s}`),
     sql`, `
   );
+
+  const accessConds = buildMediaAccessConditions(user, 'n');
+  let accessCondsSql = sql``;
+  for (const cond of accessConds) {
+    accessCondsSql = sql`${accessCondsSql} AND ${cond}`;
+  }
 
   // Requête optimisée utilisant l'index sur value_slug et groupant les médias
   const results = await db.execute(sql`
@@ -45,7 +56,15 @@ export async function fetchMediaGroupsByTags(
       n.node_type,
       n.release_year,
       n.poster_path,
-      n.community_rating
+      n.community_rating,
+      n.video_file_path,
+      n.nfo_file_path,
+      n.search_vector_text,
+      COALESCE(
+        n.video_file_path,
+        n.nfo_file_path,
+        (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = n.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = n.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+      ) AS effective_physical_path
     FROM eav_values v
     JOIN eav_attributes a ON v.attribute_id = a.id
     JOIN node_eav_links l ON l.value_id = v.id
@@ -59,11 +78,25 @@ export async function fetchMediaGroupsByTags(
     WHERE v.value_slug IN (${inSlugs})
       AND n.is_extra = false
       AND (n.node_type IN ('SHOW', 'COLLECTION') OR (n.node_type = 'MOVIE' AND n.parent_id IS NULL))
+      ${accessCondsSql}
     ORDER BY n.community_rating DESC NULLS LAST, n.release_year DESC NULLS LAST;
   `);
 
   const mediaByTag = new Map<string, any[]>();
   for (const row of Array.from(results) as any[]) {
+    if (
+      !isMediaAllowedForUser(user, {
+        title: row.title,
+        nodeType: row.node_type,
+        videoFilePath: row.video_file_path,
+        nfoFilePath: row.nfo_file_path,
+        effectivePhysicalPath: row.effective_physical_path,
+        searchVectorText: row.search_vector_text,
+      })
+    ) {
+      continue;
+    }
+
     if (!mediaByTag.has(row.tag_slug)) mediaByTag.set(row.tag_slug, []);
     const list = mediaByTag.get(row.tag_slug)!;
     if (list.length < limitPerGroup) {
@@ -105,8 +138,14 @@ export async function fetchMediaGroupsByTags(
  * 3. Structures & studios de production
  * 4. Genres & origines géographiques
  */
-export async function fetchForumExploreData() {
+export async function fetchForumExploreData(user?: UserSession | null) {
   try {
+    const accessConds = buildMediaAccessConditions(user, 'n');
+    let accessCondsSql = sql``;
+    for (const cond of accessConds) {
+      accessCondsSql = sql`${accessCondsSql} AND ${cond}`;
+    }
+
     // A. Salons récemment actifs
     const activeRes = await db.execute(sql`
       SELECT 
@@ -126,8 +165,12 @@ export async function fetchForumExploreData() {
       FROM eav_values v
       JOIN eav_attributes a ON v.attribute_id = a.id
       JOIN node_eav_links l ON l.value_id = v.id
+      JOIN media_nodes n ON l.node_id = n.id
       WHERE a.code = 'actor'
+        AND n.is_extra = false
+        ${accessCondsSql}
       GROUP BY v.value_text, v.value_slug
+      HAVING COUNT(DISTINCT l.node_id) > 0
       ORDER BY count DESC
       LIMIT 15;
     `);
@@ -138,8 +181,12 @@ export async function fetchForumExploreData() {
       FROM eav_values v
       JOIN eav_attributes a ON v.attribute_id = a.id
       JOIN node_eav_links l ON l.value_id = v.id
+      JOIN media_nodes n ON l.node_id = n.id
       WHERE a.code IN ('director', 'writer')
+        AND n.is_extra = false
+        ${accessCondsSql}
       GROUP BY v.value_text, v.value_slug, a.code
+      HAVING COUNT(DISTINCT l.node_id) > 0
       ORDER BY count DESC
       LIMIT 15;
     `);
@@ -150,8 +197,12 @@ export async function fetchForumExploreData() {
       FROM eav_values v
       JOIN eav_attributes a ON v.attribute_id = a.id
       JOIN node_eav_links l ON l.value_id = v.id
+      JOIN media_nodes n ON l.node_id = n.id
       WHERE a.code = 'studio'
+        AND n.is_extra = false
+        ${accessCondsSql}
       GROUP BY v.value_text, v.value_slug
+      HAVING COUNT(DISTINCT l.node_id) > 0
       ORDER BY count DESC
       LIMIT 15;
     `);
@@ -162,8 +213,12 @@ export async function fetchForumExploreData() {
       FROM eav_values v
       JOIN eav_attributes a ON v.attribute_id = a.id
       JOIN node_eav_links l ON l.value_id = v.id
+      JOIN media_nodes n ON l.node_id = n.id
       WHERE a.code IN ('genre', 'country')
+        AND n.is_extra = false
+        ${accessCondsSql}
       GROUP BY v.value_text, v.value_slug, a.code
+      HAVING COUNT(DISTINCT l.node_id) > 0
       ORDER BY count DESC
       LIMIT 15;
     `);
@@ -195,26 +250,49 @@ export async function fetchForumExploreData() {
     }));
 
     // F. 1. Œuvres associées (Sagas / Collections majeures avec leurs films respectifs)
+    const sagaAccessConds = buildMediaAccessConditions(user, 'm');
+    let sagaAccessSql = sql``;
+    for (const cond of sagaAccessConds) {
+      sagaAccessSql = sql`${sagaAccessSql} AND ${cond}`;
+    }
+
     const sagasRes = await db.execute(sql`
       SELECT 
         c.id AS saga_id,
         c.title AS saga_title,
         c.slug AS saga_slug,
+        c.video_file_path AS saga_video_file_path,
+        c.nfo_file_path AS saga_nfo_file_path,
+        c.search_vector_text AS saga_search_vector_text,
         m.id,
         m.title,
         m.node_type,
         m.release_year,
         m.poster_path,
-        m.community_rating
+        m.community_rating,
+        m.video_file_path,
+        m.nfo_file_path,
+        m.search_vector_text
       FROM media_nodes c
       JOIN media_nodes m ON m.parent_id = c.id
       WHERE c.node_type = 'COLLECTION' AND m.is_extra = false
+        ${sagaAccessSql}
       ORDER BY c.community_rating DESC NULLS LAST, m.release_year ASC
-      LIMIT 40;
+      LIMIT 60;
     `);
 
     const sagasMap = new Map<string, { name: string; slug: string; medias: any[] }>();
     for (const row of Array.from(sagasRes) as any[]) {
+      if (!isMediaAllowedForUser(user, {
+        title: row.title,
+        nodeType: row.node_type,
+        videoFilePath: row.video_file_path,
+        nfoFilePath: row.nfo_file_path,
+        searchVectorText: row.search_vector_text,
+      })) {
+        continue;
+      }
+
       if (!sagasMap.has(row.saga_id)) {
         sagasMap.set(row.saga_id, {
           name: `Saga ${row.saga_title}`,
@@ -240,12 +318,16 @@ export async function fetchForumExploreData() {
 
     // G. 2. Acteurs & personnalités associées (Top 4 acteurs)
     const actorGroups = await fetchMediaGroupsByTags(
-      topActors.slice(0, 4).map((a) => ({ name: `Films avec ${a.title}`, slug: a.slug, code: 'actor' }))
+      topActors.slice(0, 4).map((a) => ({ name: `Films avec ${a.title}`, slug: a.slug, code: 'actor' })),
+      10,
+      user
     );
 
     // H. 3. Structures & studios de production (Top 4 studios)
     const studioGroups = await fetchMediaGroupsByTags(
-      topStudios.slice(0, 4).map((s) => ({ name: `Productions ${s.title}`, slug: s.slug, code: 'studio' }))
+      topStudios.slice(0, 4).map((s) => ({ name: `Productions ${s.title}`, slug: s.slug, code: 'studio' })),
+      10,
+      user
     );
 
     // I. 4. Genres & origines géographiques (Top 4 genres/pays)
@@ -254,7 +336,9 @@ export async function fetchForumExploreData() {
         name: g.code === 'country' ? `Origine : ${g.title}` : `Univers : ${g.title}`,
         slug: g.slug,
         code: g.code,
-      }))
+      })),
+      10,
+      user
     );
 
     return {
@@ -281,9 +365,14 @@ export async function fetchForumExploreData() {
 /**
  * Récupère le contexte complet d'un sujet (topic) précis :
  * Bannière spotlight, liste des médias directs, tags associés,
- * et les 4 modules d'association complets.
+ * et les 4 modules d'association complets avec application des droits utilisateurs.
  */
-export async function fetchTopicContextData(topicSlug: string, title?: string, category?: string) {
+export async function fetchTopicContextData(
+  topicSlug: string,
+  title?: string,
+  category?: string,
+  user?: UserSession | null
+) {
   try {
     const cleanSlug = topicSlug.toLowerCase().trim();
     const cleanTitle = (title || cleanSlug).trim();
@@ -301,12 +390,31 @@ export async function fetchTopicContextData(topicSlug: string, title?: string, c
     let mediaEntity: any = null;
     if (!tagEntity) {
       const mediaEntityRes = await db.execute(sql`
-        SELECT id, title, slug, node_type, poster_path, fanart_path, community_rating, release_year
+        SELECT id, title, slug, node_type, poster_path, fanart_path, community_rating, release_year,
+               video_file_path, nfo_file_path, search_vector_text,
+               COALESCE(
+                 video_file_path,
+                 nfo_file_path,
+                 (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = media_nodes.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = media_nodes.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+               ) AS effective_physical_path
         FROM media_nodes
         WHERE slug = ${cleanSlug} OR id::text = ${cleanSlug} OR title ILIKE ${cleanTitle}
         LIMIT 1;
       `);
-      mediaEntity = (Array.from(mediaEntityRes) as any[])[0] || null;
+      const foundMedia = (Array.from(mediaEntityRes) as any[])[0] || null;
+      if (
+        foundMedia &&
+        isMediaAllowedForUser(user, {
+          title: foundMedia.title,
+          nodeType: foundMedia.node_type,
+          videoFilePath: foundMedia.video_file_path,
+          nfoFilePath: foundMedia.nfo_file_path,
+          effectivePhysicalPath: foundMedia.effective_physical_path,
+          searchVectorText: foundMedia.search_vector_text,
+        })
+      ) {
+        mediaEntity = foundMedia;
+      }
     }
 
     // 2. Déterminer le typeLabel et les métadonnées
@@ -338,10 +446,22 @@ export async function fetchTopicContextData(topicSlug: string, title?: string, c
 
     // 3. Récupérer les médias directement liés à ce sujet
     let mediaResults: any[] = [];
+    const accessConds = buildMediaAccessConditions(user, 'n');
+    let accessCondsSql = sql``;
+    for (const cond of accessConds) {
+      accessCondsSql = sql`${accessCondsSql} AND ${cond}`;
+    }
+
     if (tagEntity) {
       const rawMedias = await db.execute(sql`
         SELECT DISTINCT
-          n.id, n.title, n.node_type, n.release_year, n.poster_path, n.fanart_path, n.community_rating
+          n.id, n.title, n.node_type, n.release_year, n.poster_path, n.fanart_path, n.community_rating,
+          n.video_file_path, n.nfo_file_path, n.search_vector_text,
+          COALESCE(
+            n.video_file_path,
+            n.nfo_file_path,
+            (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = n.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = n.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+          ) AS effective_physical_path
         FROM node_eav_links l
         JOIN media_nodes child ON l.node_id = child.id
         JOIN media_nodes n ON (
@@ -353,19 +473,39 @@ export async function fetchTopicContextData(topicSlug: string, title?: string, c
         WHERE l.value_id = ${tagEntity.id}
           AND n.is_extra = false
           AND (n.node_type IN ('SHOW', 'COLLECTION') OR (n.node_type = 'MOVIE' AND n.parent_id IS NULL))
+          ${accessCondsSql}
         ORDER BY n.community_rating DESC NULLS LAST, n.release_year DESC NULLS LAST
         LIMIT 30;
       `);
-      mediaResults = Array.from(rawMedias);
+      mediaResults = (Array.from(rawMedias) as any[]).filter((row) =>
+        isMediaAllowedForUser(user, {
+          title: row.title,
+          nodeType: row.node_type,
+          videoFilePath: row.video_file_path,
+          nfoFilePath: row.nfo_file_path,
+          effectivePhysicalPath: row.effective_physical_path,
+          searchVectorText: row.search_vector_text,
+        })
+      );
     } else if (mediaEntity) {
       if (mediaEntity.node_type === 'COLLECTION') {
         const childMedias = await db.execute(sql`
-          SELECT id, title, node_type, release_year, poster_path, fanart_path, community_rating
-          FROM media_nodes
-          WHERE parent_id = ${mediaEntity.id} AND is_extra = false
-          ORDER BY order_index ASC, release_year ASC;
+          SELECT n.id, n.title, n.node_type, n.release_year, n.poster_path, n.fanart_path, n.community_rating,
+                 n.video_file_path, n.nfo_file_path, n.search_vector_text
+          FROM media_nodes n
+          WHERE n.parent_id = ${mediaEntity.id} AND n.is_extra = false
+            ${accessCondsSql}
+          ORDER BY n.order_index ASC, n.release_year ASC;
         `);
-        mediaResults = Array.from(childMedias);
+        mediaResults = (Array.from(childMedias) as any[]).filter((row) =>
+          isMediaAllowedForUser(user, {
+            title: row.title,
+            nodeType: row.node_type,
+            videoFilePath: row.video_file_path,
+            nfoFilePath: row.nfo_file_path,
+            searchVectorText: row.search_vector_text,
+          })
+        );
       } else {
         mediaResults = [mediaEntity];
       }
@@ -442,7 +582,6 @@ export async function fetchTopicContextData(topicSlug: string, title?: string, c
     }
 
     // 5. Construire les 4 modules d'association personnalisés pour ce topic :
-    // 1. Œuvres associées
     let oeuvreGroups: AssociationGroup[] = [];
     if (directMedias.length > 1) {
       oeuvreGroups = [
@@ -461,7 +600,9 @@ export async function fetchTopicContextData(topicSlug: string, title?: string, c
         name: `Films avec ${a.value_text}`,
         slug: a.value_slug,
         code: 'actor',
-      }))
+      })),
+      10,
+      user
     );
 
     // 3. Structures & studios de production
@@ -470,7 +611,9 @@ export async function fetchTopicContextData(topicSlug: string, title?: string, c
         name: `Productions ${s.value_text}`,
         slug: s.value_slug,
         code: 'studio',
-      }))
+      })),
+      10,
+      user
     );
 
     // 4. Genres & origines géographiques
@@ -486,7 +629,7 @@ export async function fetchTopicContextData(topicSlug: string, title?: string, c
         code: 'country',
       })),
     ];
-    const genreGroups = await fetchMediaGroupsByTags(genreTagsToQuery);
+    const genreGroups = await fetchMediaGroupsByTags(genreTagsToQuery, 10, user);
 
     return {
       success: true,

@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   StyleSheet,
   ScrollView,
+  Platform,
 } from 'react-native';
 import {
   fetchAdminRails,
@@ -101,7 +102,7 @@ export function AdminLayoutTab() {
         </Pressable>
       </View>
 
-      <View style={s.tabSwitch}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabSwitch} style={s.tabScroll}>
         <Pressable
           focusable={true}
           style={[s.tabPill, activeSubTab === 'RAILS' && s.tabPillActive]}
@@ -120,7 +121,7 @@ export function AdminLayoutTab() {
             🏷️ Hiérarchie des Tags & Zones ({tags.length})
           </Text>
         </Pressable>
-      </View>
+      </ScrollView>
 
       {loading ? (
         <ActivityIndicator color="#6366f1" style={{ marginVertical: 30 }} />
@@ -213,8 +214,26 @@ const s = StyleSheet.create({
   sub: { fontSize: 13, color: '#94a3b8', lineHeight: 18 },
   refreshBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.sm || 6, backgroundColor: 'rgba(99, 102, 241, 0.2)' },
   refreshTxt: { color: '#818cf8', fontSize: 11, fontWeight: '700' },
-  tabSwitch: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  tabPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.pill || 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
+  tabScroll: {
+    marginBottom: 16,
+    ...(Platform.OS === 'web' ? ({
+      overflowX: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      scrollbarWidth: 'none',
+      msOverflowStyle: 'none',
+    } as any) : {}),
+  },
+  tabSwitch: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingVertical: 2 },
+  tabPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.pill || 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    flexShrink: 0,
+    ...(Platform.OS === 'web' ? ({ whiteSpace: 'nowrap', userSelect: 'none' } as any) : {}),
+  },
   tabPillActive: { backgroundColor: 'rgba(99, 102, 241, 0.25)', borderColor: '#6366f1' },
   tabPillTxt: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
   tabPillTxtActive: { color: '#c7d2fe', fontWeight: '800' },

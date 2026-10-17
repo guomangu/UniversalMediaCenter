@@ -96,8 +96,7 @@ export function TagCard({
   }, [hasMore, loading, handleLoadMore]);
 
   if (medias.length === 0) {
-    if (!loading) return null;
-    if (searchQuery) return null;
+    return null;
   }
 
   const nextIncrement = limit <= 10 ? 10 : 12;
