@@ -4,7 +4,7 @@ import { useColorScheme, Platform } from 'react-native';
 import { useEffect } from 'react';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { useTvNavigation } from '@/hooks/useTvNavigation';
-import { CastControlBar } from '@/components/CastControlBar';
+import { FloatingBottomPlayer } from '@/components/FloatingBottomPlayer';
 import { useActiveCastTarget, setActiveCastTarget } from '@/services/castState';
 import {
   initGoogleCastFramework,
@@ -89,9 +89,7 @@ export default function RootLayout() {
         </Stack>
       </AuthGuard>
       <OfflineIndicator />
-      {activeCastTarget && (
-        <CastControlBar target={activeCastTarget} onDisconnect={() => setActiveCastTarget(null)} />
-      )}
+      <FloatingBottomPlayer />
     </ThemeProvider>
   );
 }

@@ -24,6 +24,8 @@ export function PlayerAudioModal({ visible, activeAudio, tracks = [], onSelect, 
     }
   }, [visible]);
 
+  if (!visible) return null;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -42,6 +44,7 @@ export function PlayerAudioModal({ visible, activeAudio, tracks = [], onSelect, 
             <Pressable
               focusable={true}
               onPress={onClose}
+              style={styles.closeBtn}
               {...({ dataSet: { modalClose: 'true' } } as any)}
             >
               <Text style={styles.close}>✕</Text>
@@ -94,11 +97,42 @@ export function PlayerAudioModal({ visible, activeAudio, tracks = [], onSelect, 
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: Spacing.three },
-  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 380, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)', zIndex: 1 },
+  overlay: {
+    position: (Platform.OS === 'web' ? 'fixed' : 'absolute') as any,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.three,
+    zIndex: 99999,
+    ...(Platform.OS === 'web' ? { overflowY: 'auto' } : {}),
+  },
+  content: {
+    backgroundColor: '#1e293b',
+    borderRadius: Radius.lg,
+    width: '100%',
+    maxWidth: 380,
+    padding: Spacing.four,
+    borderWidth: 1.5,
+    borderColor: 'rgba(99, 102, 241, 0.35)',
+    zIndex: 2,
+    alignSelf: 'center',
+    ...(Platform.OS === 'web' ? { margin: 'auto' } : {}),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    elevation: 25,
+  },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.three },
   title: { fontSize: 16, fontWeight: '800', color: '#f8fafc' },
-  close: { color: '#94a3b8', fontSize: 16, fontWeight: '700', padding: 4 },
+  closeBtn: { padding: 4, cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
+  close: { color: '#94a3b8', fontSize: 16, fontWeight: '700' },
   list: { gap: 8 },
   item: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: Radius.md, backgroundColor: 'rgba(51, 65, 85, 0.4)', cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
   activeItem: { backgroundColor: 'rgba(99, 102, 241, 0.25)', borderWidth: 1, borderColor: '#6366f1' },

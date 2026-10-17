@@ -346,6 +346,16 @@ export default function MediaDetailScreen() {
               />
             ) : null}
 
+                        {media.state === "ERROR" && (
+              <View style={{ backgroundColor: "rgba(239, 68, 68, 0.15)", borderColor: "#ef4444", borderWidth: 1, padding: 12, borderRadius: 10, marginVertical: 8, maxWidth: 640 }}>
+                <Text style={{ color: "#fca5a5", fontSize: 13, fontWeight: "700" }}>
+                  ⚠️ Fichier vidéo incomplet ou corrompu sur le disque source
+                </Text>
+                <Text style={{ color: "#cbd5e1", fontSize: 12, marginTop: 4, lineHeight: 18 }}>
+                  Le téléchargement de ce fichier multimédia n'a pas été achevé sur le disque de stockage. La lecture directe sera disponible dès que le fichier aura été complété ou remplacé.
+                </Text>
+              </View>
+            )}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 }}>
               <Pressable focusable={true} onPress={handlePlay} style={styles.playBtn}>
                 <Text style={styles.btnText}>{playLabel}</Text>

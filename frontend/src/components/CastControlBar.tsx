@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, Platform } from 'react-native';
 import { sendCastCommand, fetchDeviceStatus, CastDevice } from '@/services/castService';
-import { setActiveCastTarget } from '@/services/castState';
+import { setActiveCastTarget, disconnectCastTotally } from '@/services/castState';
 import { styles } from './CastControlBar.styles';
 
 const fmt = (s: number) => {
@@ -66,8 +66,7 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
   };
 
   const handleStop = async () => {
-    await sendCastCommand(device.id, 'STOP');
-    setActiveCastTarget(null);
+    await disconnectCastTotally(true);
     onDisconnect?.();
   };
 

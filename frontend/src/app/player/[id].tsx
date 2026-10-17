@@ -11,7 +11,8 @@ import { MediaRepostModal } from '@/components/MediaRepostModal';
 import { PlayerMenuModal } from '@/components/PlayerMenuModal';
 import { useCastReceiver } from '@/hooks/useCastReceiver';
 import { usePlayerControls } from '@/hooks/usePlayerControls';
-import { useActiveCastTarget } from '@/services/castState';
+import { useActiveCastTarget, disconnectCastTotally } from '@/services/castState';
+import { playerStore } from '@/services/playerStore';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
 import { getVideoStreamUrl, fetchNextMedia, fetchMediaDetail } from '@/services/api';
 import {
@@ -56,6 +57,8 @@ export default function PlayerScreen() {
   const [resolvedTitle, setResolvedTitle] = useState('');
   const [resolvedSlug, setResolvedSlug] = useState('');
   const [isForbidden, setIsForbidden] = useState(false);
+  const [isCorrupted, setIsCorrupted] = useState(false);
+  const [corruptedReason, setCorruptedReason] = useState<string>('');
   const [forbiddenReason, setForbiddenReason] = useState<string>('');
 
   const [showAudio, setShowAudio] = useState(false);
@@ -128,6 +131,12 @@ export default function PlayerScreen() {
           return;
         }
         if (res?.media) {
+          if (res.media.state === 'ERROR') {
+            setIsCorrupted(true);
+            setCorruptedReason('Ce fichier vidéo est incomplet ou corrompu sur le disque de stockage (téléchargement inachevé ou en-tête manquant).');
+            return;
+          }
+          setIsCorrupted(false);
           setIsForbidden(false);
           const badge = res.media.displayBadge || res.media.seasonEpisodeTag;
           setResolvedTitle(badge ? `${res.media.title} (${badge})` : res.media.title);
@@ -199,14 +208,34 @@ export default function PlayerScreen() {
   const mediaTitle = resolvedTitle || title || `Média #${id}`;
 
   const streamUrl = useMemo(() => {
-    if (!id || isForbidden) return '';
+    if (!id || isForbidden) return "";
     const base = getVideoStreamUrl(id, share);
     const p = new URLSearchParams();
-    if (activeAudio && activeAudio !== 'auto') p.set('audio', activeAudio);
-    if (share) p.set('share', share);
+    if (activeAudio && activeAudio !== "auto") p.set("audio", activeAudio);
+    if (share) p.set("share", share);
     const qs = p.toString();
-    return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
+    return qs ? `${base}${base.includes("?") ? "&" : "?"}${qs}` : base;
   }, [id, activeAudio, share, isForbidden]);
+
+  useEffect(() => {
+    if (resolvedTitle && streamUrl && !isForbidden && !isCorrupted) {
+      playerStore.openMedia({
+        id: String(id),
+        title: mediaTitle,
+        slug: resolvedSlug,
+        posterUrl: `/api/media/${id}/poster`,
+        streamUrl,
+        isLive,
+        activeAudio,
+        activeSubtitle,
+        initialTime: initialTime || 0,
+      });
+    }
+  }, [id, resolvedTitle, streamUrl, isForbidden, isCorrupted]);
+
+
+
+
 
   useEffect(() => {
     if (id && !isForbidden) {
@@ -313,12 +342,19 @@ export default function PlayerScreen() {
     }
   }, [isLive, nextNode, handlePlayNext, isForbidden]);
 
-  const handlePlay = useCallback(() => setIsPlaying(true), []);
-  const handlePause = useCallback(() => setIsPlaying(false), []);
-  const handleTimeUpdate = useCallback((t: number) => {
+  const handlePlay = useCallback(() => {
+    setIsPlaying(true);
+    playerStore.setPlaying(true);
+  }, []);
+  const handlePause = useCallback(() => {
+    setIsPlaying(false);
+    playerStore.setPlaying(false);
+  }, []);
+  const handleTimeUpdate = useCallback((t: number, d?: number) => {
     if (!isLive) {
       savedPosRef.current = t;
     }
+    playerStore.updateProgress(t, d || 0);
   }, [isLive]);
 
   const handleSkipIntro = useCallback(() => {
@@ -349,6 +385,52 @@ export default function PlayerScreen() {
 
   const isModalOpen = showAudio || showSubtitles || showShare || showCast || showRepost || showMenuModal;
   usePlayerControls({ videoRef, isPlaying: isForbidden ? false : isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast, isFullscreen });
+
+  
+  if (isCorrupted) {
+    return (
+      <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#090d16' }]}>
+        <View
+          style={{
+            maxWidth: 500,
+            width: '100%',
+            backgroundColor: '#0f172a',
+            borderRadius: 16,
+            padding: 24,
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: '#f59e0b',
+          }}
+        >
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>⚠️</Text>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: '#ffffff', textAlign: 'center', marginBottom: 12 }}>
+            Fichier Incomplet ou Corrompu
+          </Text>
+          <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
+            {corruptedReason || 'Ce fichier vidéo est incomplet sur le disque de stockage (téléchargement inachevé ou en-tête manquant). Veuillez terminer le téléchargement ou remplacer le fichier source.'}
+          </Text>
+          <Pressable
+            focusable={true}
+            onPress={() => goBackOrFallback(router, '/')}
+            style={({ focused }: any) => [
+              {
+                backgroundColor: '#3b82f6',
+                paddingVertical: 12,
+                paddingHorizontal: 24,
+                borderRadius: 8,
+                alignItems: 'center',
+              },
+              focused && { borderWidth: 2, borderColor: '#ffffff' },
+            ]}
+          >
+            <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
+              ← Retour au catalogue
+            </Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (isForbidden) {
     return (
@@ -429,6 +511,19 @@ export default function PlayerScreen() {
         >
           <Text style={styles.topBtnText}>{isSmallMobile ? '←' : '← Retour'}</Text>
         </Pressable>
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          accessibilityLabel="Réduire en bas d'écran"
+          onPress={() => {
+            playerStore.setMinimized(true);
+            goBackOrFallback(router, '/');
+          }}
+          style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+        >
+          <Text style={styles.topBtnText}>{isSmallMobile ? '▼' : '▼ Réduire'}</Text>
+        </Pressable>
+
 
         {/* Contrôles du mode micro et discussion vocale en direct */}
         {!isForbidden && (

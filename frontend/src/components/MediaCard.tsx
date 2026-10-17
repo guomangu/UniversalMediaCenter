@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, Image, useWindowDimensions, Platform } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { MediaNode } from '@/services/types';
@@ -39,6 +39,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
   const targetHref = item.nodeType === 'LIVE_CHANNEL' ? `/player/${item.id}?isLive=1` : `/media/${item.id}`;
 
   const seasonTag = item.displayBadge || item.seasonEpisodeTag;
+  const [imgError, setImgError] = useState(false);
   const progressPercent = item.progressPercent ?? 0;
   const isUnavailableChannel = item.nodeType === 'LIVE_CHANNEL' && (item.state === 'ERROR' || item.state === 'MISSING_FILE');
 
@@ -59,15 +60,19 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
             isUnavailableChannel && (Platform.OS === 'web' ? { filter: 'grayscale(100%)' } : { opacity: 0.7 }) as any,
           ]}
         >
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+          {imageUri && !imgError ? (
+            <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" onError={() => setImgError(true)} />
           ) : (
             <View style={styles.placeholder}>
               <Text style={styles.placeholderText}>{item.title.slice(0, 2).toUpperCase()}</Text>
             </View>
           )}
 
-          {isUnavailableChannel ? (
+          {item.state === 'ERROR' ? (
+            <View style={[styles.ratingBadge, { backgroundColor: 'rgba(239, 68, 68, 0.92)', right: 8 }]}>
+              <Text style={[styles.ratingText, { color: '#ffffff', fontWeight: '800' }]}>INCOMPLET</Text>
+            </View>
+          ) : isUnavailableChannel ? (
             <View style={[styles.ratingBadge, { backgroundColor: 'rgba(217, 119, 6, 0.92)', right: 8 }]}>
               <Text style={[styles.ratingText, { color: '#ffffff', fontWeight: '800' }]}>HORS LIGNE</Text>
             </View>

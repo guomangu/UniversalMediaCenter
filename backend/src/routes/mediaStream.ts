@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
+import { sql } from 'drizzle-orm';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -81,14 +82,35 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
   let activeFilePath = media.videoFilePath;
   const ext = path.extname(activeFilePath).toLowerCase();
 
+  // Vérification de l'intégrité minimale du conteneur (détection des fichiers incomplets ou corrompus avec zéros d'en-tête)
+  try {
+    const fh = await fsp.open(activeFilePath, 'r');
+    const headerBuf = Buffer.alloc(16);
+    await fh.read(headerBuf, 0, 16, 0);
+    await fh.close();
+
+    const isAllZero = headerBuf.subarray(0, 4).every((b) => b === 0);
+    const isCorruptMkv = ext === '.mkv' && headerBuf.subarray(0, 4).toString('hex') !== '1a45dfa3';
+    if (isAllZero || isCorruptMkv) {
+      await db.execute(sql`UPDATE media_nodes SET state = 'ERROR' WHERE id = ${media.id}`);
+      return c.json(
+        {
+          error: "Ce fichier vidéo est incomplet ou corrompu sur le disque de stockage (téléchargement inachevé ou en-tête manquant).",
+          code: 'CORRUPTED_FILE',
+        },
+        422
+      );
+    }
+  } catch {
+    return c.json({ error: 'Fichier vidéo inaccessible ou introuvable sur le disque', code: 'FILE_INACCESSIBLE' }, 404);
+  }
+
   if (audio && audio !== 'auto') {
     const cacheDir = '/tmp/ums_cache';
     const cacheFile = path.join(cacheDir, `${media.id}_a${audio}${ext}`);
     if (!fs.existsSync(cacheFile)) {
       await fsp.mkdir(cacheDir, { recursive: true });
-      await execFileAsync('ffmpeg', [
-        '-v', 'error', '-i', activeFilePath, '-map', '0:v:0', '-map', `0:${audio}`, '-c', 'copy', cacheFile,
-      ], { timeout: 15000 }).catch(() => null);
+      await execFileAsync('ffmpeg', ['-v', 'error', '-i', activeFilePath, '-map', '0:v:0', '-map', `0:${audio}`, '-c', 'copy', cacheFile], { timeout: 15000 }).catch(() => null);
     }
     if (fs.existsSync(cacheFile)) activeFilePath = cacheFile;
   }

@@ -39,6 +39,8 @@ export function PlayerMenuModal({
     }
   }, [visible]);
 
+  if (!visible) return null;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -67,7 +69,11 @@ export function PlayerMenuModal({
             </Pressable>
           </View>
 
-          <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.list}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={true}
+          >
             {onToggleMute && (
               <Pressable
                 ref={firstBtnRef}
@@ -190,21 +196,39 @@ export function PlayerMenuModal({
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    position: (Platform.OS === 'web' ? 'fixed' : 'absolute') as any,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.three,
+    zIndex: 99999,
+    ...(Platform.OS === 'web' ? { overflowY: 'auto' } : {}),
   },
   content: {
     width: '100%',
     maxWidth: 440,
     backgroundColor: '#0f172a',
     borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: '#334155',
+    borderWidth: 1.5,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
     padding: Spacing.three,
-    maxHeight: '85%',
+    maxHeight: (Platform.OS === 'web' ? 'min(86vh, 540px)' : '85%') as any,
+    alignSelf: 'center',
+    zIndex: 2,
+    display: 'flex',
+    flexDirection: 'column',
+    ...(Platform.OS === 'web' ? { margin: 'auto' } : {}),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    elevation: 25,
   },
   header: {
     flexDirection: 'row',
@@ -229,6 +253,7 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: Radius.pill,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   close: {
     color: '#94a3b8',
@@ -237,17 +262,22 @@ const styles = StyleSheet.create({
   },
   list: {
     flexGrow: 0,
+    flexShrink: 1,
+  },
+  listContent: {
+    paddingBottom: 4,
   },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: Radius.md,
     backgroundColor: '#1e293b',
     marginBottom: 8,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: 'transparent',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   itemActive: {
     borderColor: '#38bdf8',

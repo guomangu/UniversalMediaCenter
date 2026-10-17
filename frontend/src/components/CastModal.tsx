@@ -12,7 +12,7 @@ import {
   CastDevice,
   CastMediaPayload,
 } from '@/services/castService';
-import { useActiveCastTarget, setActiveCastTarget } from '@/services/castState';
+import { useActiveCastTarget, setActiveCastTarget, disconnectCastTotally } from '@/services/castState';
 import { styles } from './CastModal.styles';
 
 interface CastModalProps {
@@ -91,14 +91,13 @@ export const CastModal: React.FC<CastModalProps> = ({
   };
 
   const handleStopActiveCast = async () => {
-    if (activeCastTarget) {
-      await sendCastCommand(activeCastTarget.id, 'STOP');
-      setActiveCastTarget(null);
-    }
+    await disconnectCastTotally(true);
+    onClose();
   };
 
-  const handleDisconnectTarget = () => {
-    setActiveCastTarget(null);
+  const handleDisconnectTarget = async () => {
+    await disconnectCastTotally(false);
+    onClose();
   };
 
   return (

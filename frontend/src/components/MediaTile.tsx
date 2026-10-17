@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Image, Pressable, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { resolveImageUrl } from '@/services/api';
@@ -11,6 +11,7 @@ export function MediaTile({ item }: { item: MediaTileItem }) {
   const sessionsMap = useActiveSessionsMap();
   const activeSession = sessionsMap[item.id];
   const poster = resolveImageUrl(item.posterPath);
+  const [imgErr, setImgErr] = useState(false);
   const isGroup = item.nodeType === 'SHOW' || item.nodeType === 'COLLECTION';
   const badgeText = item.displayBadge || item.seasonEpisodeTag || (item.nodeType === 'SHOW' ? 'Série' : item.nodeType === 'COLLECTION' ? 'Saga' : 'Film');
 
@@ -24,8 +25,8 @@ export function MediaTile({ item }: { item: MediaTileItem }) {
       style={({ pressed }) => [styles.box, pressed && styles.pressed]}
       onPress={handleOpenMedia}>
       <View style={styles.imgWrap}>
-        {poster ? (
-          <Image source={{ uri: poster }} style={styles.img} resizeMode="cover" />
+        {poster && !imgErr ? (
+          <Image source={{ uri: poster }} style={styles.img} resizeMode="cover" onError={() => setImgErr(true)} />
         ) : (
           <View style={styles.empty}>
             <Text style={styles.emptyTxt}>{isGroup ? 'SÉRIE' : 'FILM'}</Text>

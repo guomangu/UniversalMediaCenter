@@ -303,3 +303,16 @@ export async function pollDeviceCommands(deviceId: string, onCommand: (cmd: any)
     }
   } catch {}
 }
+
+export function endGoogleCastSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const cast = (window as any).cast;
+    if (cast?.framework) {
+      const instance = cast.framework.CastContext.getInstance();
+      instance.endCurrentSession(true);
+    }
+  } catch (e) {
+    console.warn("Google Cast disconnect error:", e);
+  }
+}
