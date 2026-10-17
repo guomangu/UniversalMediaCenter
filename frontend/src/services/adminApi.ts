@@ -398,6 +398,7 @@ export interface AdminInvitation {
   token: string;
   inviteUrl: string;
   messageText: string;
+  fullInvitationMessage?: string;
   displayName: string;
   email: string;
   password?: string;

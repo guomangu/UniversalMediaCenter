@@ -3,6 +3,7 @@ import { db } from '../db/connection.js';
 import { userFriends, users } from '../db/schema/index.js';
 import { eq, or, sql } from 'drizzle-orm';
 import { getUserLastLocation } from '../watcher/presenceStore.js';
+import { canUserAccessMediaNodeId } from '../auth/mediaAccess.js';
 
 export const friendActionRouter = new Hono();
 
@@ -36,7 +37,7 @@ friendActionRouter.get('/', async (c) => {
 
     const loc = await getUserLastLocation(otherUser.id);
     const isOnline = Boolean(loc && now - loc.updatedAt < 60000);
-    const currentActivity =
+    let currentActivity =
       loc && isOnline && loc.isLive
         ? {
             isWatching: true,
@@ -45,6 +46,18 @@ friendActionRouter.get('/', async (c) => {
             path: loc.path,
           }
         : null;
+
+    // Zéro-Fuite : si l'ami regarde un média auquel l'utilisateur courant n'a pas accès (PBAC / ABAC),
+    // on masque totalement l'activité (ne pas afficher de lien de position ou de bouton "Rejoindre ▶")
+    const actMediaId =
+      currentActivity?.mediaId ||
+      (currentActivity?.path ? currentActivity.path.match(/\/(?:player|media)\/([0-9a-fA-F-]{36})/)?.[1] : null);
+    if (currentActivity && actMediaId && (!sessionUser || !sessionUser.isAdmin)) {
+      const allowed = await canUserAccessMediaNodeId(sessionUser, actMediaId);
+      if (!allowed) {
+        currentActivity = null;
+      }
+    }
 
     const dmTopicSlug = `dm-${[sessionUser.id, otherUser.id].sort().join('-')}`;
 

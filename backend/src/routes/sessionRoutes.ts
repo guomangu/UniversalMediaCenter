@@ -4,7 +4,7 @@ import { mediaSessions, mediaSessionParticipants, users, mediaNodes } from '../d
 import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
 import type { UserSession } from '../middleware/access.js';
-import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
+import { isMediaAllowedForUser, canUserAccessMediaNodeId } from '../auth/mediaAccess.js';
 import { getActiveMediaCounts } from '../watcher/presenceStore.js';
 
 export const sessionRouter = new Hono();
@@ -160,7 +160,7 @@ sessionRouter.get('/active', async (c) => {
 
   // Filtrer les séances dont le média est autorisé pour l'utilisateur
   let allowedSessions = sessions;
-  if (user && !user.isAdmin) {
+  if (!user || !user.isAdmin) {
     const allowedNodeIds = new Set(
       nodes.filter((n) => isMediaAllowedForUser(user, n)).map((n) => n.id)
     );
@@ -207,11 +207,20 @@ sessionRouter.get('/active', async (c) => {
     .filter((s) => s.participantCount > 0); // Exclure strictement les séances vides
 
   const liveMediaCounts = getActiveMediaCounts();
+  let filteredCounts = liveMediaCounts;
+  if (!user || !user.isAdmin) {
+    filteredCounts = {};
+    for (const [mId, data] of Object.entries(liveMediaCounts)) {
+      if (await canUserAccessMediaNodeId(user, mId)) {
+        filteredCounts[mId] = data;
+      }
+    }
+  }
 
   return c.json({
     success: true,
     sessions: grouped,
-    activeMediaCounts: liveMediaCounts,
+    activeMediaCounts: filteredCounts,
   });
 });
 
@@ -380,27 +389,12 @@ sessionRouter.post('/:id/ping', requireAuth, async (c) => {
   if (session.hostUserId === user.id && typeof currentPosition === 'number') {
     await db
       .update(mediaSessions)
-      .set({ currentPosition, updatedAt: new Date() })
+      .set({
+        currentPosition: Math.floor(currentPosition),
+        updatedAt: new Date(),
+      })
       .where(eq(mediaSessions.id as any, sessionId as any));
   }
 
-  const participants = await db
-    .select({
-      userId: mediaSessionParticipants.userId,
-      displayName: mediaSessionParticipants.displayName,
-      isHost: mediaSessionParticipants.isHost,
-      isMuted: mediaSessionParticipants.isMuted,
-      isIncognito: users.isIncognito,
-    })
-    .from(mediaSessionParticipants)
-    .leftJoin(users, eq(mediaSessionParticipants.userId, users.id))
-    .where(eq(mediaSessionParticipants.sessionId as any, sessionId as any));
-
-  return c.json({
-    success: true,
-    session: {
-      ...session,
-      participants: participants.filter((p) => !p.isIncognito),
-    },
-  });
+  return c.json({ success: true });
 });

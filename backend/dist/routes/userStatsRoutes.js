@@ -2,25 +2,34 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { watchProgress, userFavorites, mediaNodes, forumMessages, userFriends, mediaReposts, } from '../db/schema/index.js';
 import { eq, and, sql, count, or } from 'drizzle-orm';
+import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
 export const userStatsRouter = new Hono();
 userStatsRouter.get('/stats', async (c) => {
     const sessionUser = c.get('user');
-    // Stats Médias du catalogue
-    const nodeCounts = await db
-        .select({ nodeType: mediaNodes.nodeType, total: count() })
-        .from(mediaNodes)
-        .groupBy(mediaNodes.nodeType);
+    // Stats Médias du catalogue strictement filtrées selon les autorisations de l'utilisateur (PBAC / ABAC / IPTV)
+    const accessConds = buildMediaAccessConditions(sessionUser, 'n');
+    let accessCondsSql = sql ``;
+    for (const cond of accessConds) {
+        accessCondsSql = sql `${accessCondsSql} AND ${cond}`;
+    }
+    const nodeCounts = await db.execute(sql `
+    SELECT n.node_type, COUNT(*)::int as total
+    FROM media_nodes n
+    WHERE n.is_extra = false
+      ${accessCondsSql}
+    GROUP BY n.node_type;
+  `);
     const mediaSummary = { movies: 0, shows: 0, episodes: 0, channels: 0, collections: 0 };
-    for (const nc of nodeCounts) {
-        if (nc.nodeType === 'MOVIE')
+    for (const nc of Array.from(nodeCounts)) {
+        if (nc.node_type === 'MOVIE')
             mediaSummary.movies = Number(nc.total);
-        if (nc.nodeType === 'SHOW')
+        if (nc.node_type === 'SHOW')
             mediaSummary.shows = Number(nc.total);
-        if (nc.nodeType === 'EPISODE')
+        if (nc.node_type === 'EPISODE')
             mediaSummary.episodes = Number(nc.total);
-        if (nc.nodeType === 'LIVE_CHANNEL')
+        if (nc.node_type === 'LIVE_CHANNEL')
             mediaSummary.channels = Number(nc.total);
-        if (nc.nodeType === 'COLLECTION')
+        if (nc.node_type === 'COLLECTION')
             mediaSummary.collections = Number(nc.total);
     }
     // Stats Personnelles Utilisateur

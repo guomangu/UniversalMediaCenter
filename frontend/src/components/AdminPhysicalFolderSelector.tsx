@@ -18,6 +18,12 @@ interface Props {
   onChangeBlockedFolders: (folders: string[]) => void;
 }
 
+interface DisplayTreeItem {
+  item: PhysicalFolderItem;
+  level: number;
+  hasChildren: boolean;
+}
+
 export function AdminPhysicalFolderSelector({
   allowedFolders = [],
   blockedFolders = [],
@@ -31,18 +37,50 @@ export function AdminPhysicalFolderSelector({
   const [manualInput, setManualInput] = useState('');
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
+  // Indexation par chemin et groupement parent -> enfants
+  const { byPath, childrenMap, topLevelNodes } = useMemo(() => {
+    const byPath = new Map<string, PhysicalFolderItem>();
+    const childrenMap = new Map<string, PhysicalFolderItem[]>();
+
+    folders.forEach((f) => byPath.set(f.path, f));
+
+    folders.forEach((f) => {
+      const p = f.parentPath;
+      if (p && byPath.has(p)) {
+        if (!childrenMap.has(p)) childrenMap.set(p, []);
+        childrenMap.get(p)!.push(f);
+      }
+    });
+
+    for (const list of childrenMap.values()) {
+      list.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      );
+    }
+
+    const topNodes = folders.filter((f) => !f.parentPath || !byPath.has(f.parentPath));
+    topNodes.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    return { byPath, childrenMap, topLevelNodes: topNodes };
+  }, [folders]);
+
   const loadFolders = async () => {
     setLoading(true);
     const res = await fetchPhysicalFolders();
     if (res.success) {
-      setFolders(res.folders || []);
+      const loaded = res.folders || [];
+      setFolders(loaded);
       setRoots(res.roots || []);
-      // Déplier par défaut les racines et le premier niveau
-      const initialExpanded = new Set<string>();
-      (res.folders || []).forEach((f) => {
-        if (f.depth <= 2) initialExpanded.add(f.path);
-      });
-      setExpandedPaths(initialExpanded);
+
+      // Déplier par défaut les dossiers de premier niveau
+      const pathMap = new Map<string, PhysicalFolderItem>();
+      loaded.forEach((f) => pathMap.set(f.path, f));
+      const top = loaded.filter((f) => !f.parentPath || !pathMap.has(f.parentPath));
+      const initial = new Set<string>();
+      top.forEach((f) => initial.add(f.path));
+      setExpandedPaths(initial);
     }
     setLoading(false);
   };
@@ -52,28 +90,41 @@ export function AdminPhysicalFolderSelector({
   }, []);
 
   const toggleExpand = (path: string) => {
-    const next = new Set(expandedPaths);
-    if (next.has(path)) next.delete(path);
-    else next.add(path);
-    setExpandedPaths(next);
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
   };
 
   const expandAll = () => {
-    setExpandedPaths(new Set(folders.map((f) => f.path)));
+    const allWithChildren = new Set<string>();
+    folders.forEach((f) => {
+      if ((childrenMap.get(f.path)?.length || 0) > 0 || f.subfolderCount > 0) {
+        allWithChildren.add(f.path);
+      }
+    });
+    setExpandedPaths(allWithChildren);
   };
 
   const collapseAll = () => {
     setExpandedPaths(new Set());
   };
 
-  // Normalisation pour comparaison
+  // Normalisation pour comparaison multi-plateforme
   const norm = (p: string) => (p || '').trim().toLowerCase().replace(/\\/g, '/');
 
   const isAllowed = (folderPath: string) => {
     const target = norm(folderPath);
     return allowedFolders.some((f) => {
       const c = norm(f);
-      return target === c || target.endsWith(`/${c}`) || target.includes(`/${c}/`);
+      return (
+        target === c ||
+        target.startsWith(`${c}/`) ||
+        target.endsWith(`/${c}`) ||
+        target.includes(`/${c}/`)
+      );
     });
   };
 
@@ -81,17 +132,31 @@ export function AdminPhysicalFolderSelector({
     const target = norm(folderPath);
     return blockedFolders.some((f) => {
       const c = norm(f);
-      return target === c || target.endsWith(`/${c}`) || target.includes(`/${c}/`);
+      return (
+        target === c ||
+        target.startsWith(`${c}/`) ||
+        target.endsWith(`/${c}`) ||
+        target.includes(`/${c}/`)
+      );
     });
+  };
+
+  const isDirectlyAllowed = (folderPath: string) => {
+    const target = norm(folderPath);
+    return allowedFolders.some((f) => norm(f) === target);
+  };
+
+  const isDirectlyBlocked = (folderPath: string) => {
+    const target = norm(folderPath);
+    return blockedFolders.some((f) => norm(f) === target);
   };
 
   const toggleAllowFolder = (folderPath: string) => {
     const clean = folderPath.trim();
     if (!clean) return;
-    if (isAllowed(clean)) {
+    if (isDirectlyAllowed(clean)) {
       onChangeAllowedFolders(allowedFolders.filter((f) => norm(f) !== norm(clean)));
     } else {
-      // Si on autorise exclusivement, on retire du blocage si présent
       onChangeBlockedFolders(blockedFolders.filter((f) => norm(f) !== norm(clean)));
       onChangeAllowedFolders([...allowedFolders, clean]);
     }
@@ -100,10 +165,9 @@ export function AdminPhysicalFolderSelector({
   const toggleBlockFolder = (folderPath: string) => {
     const clean = folderPath.trim();
     if (!clean) return;
-    if (isBlocked(clean)) {
+    if (isDirectlyBlocked(clean)) {
       onChangeBlockedFolders(blockedFolders.filter((f) => norm(f) !== norm(clean)));
     } else {
-      // Si on bloque, on retire de l'autorisation si présent
       onChangeAllowedFolders(allowedFolders.filter((f) => norm(f) !== norm(clean)));
       onChangeBlockedFolders([...blockedFolders, clean]);
     }
@@ -126,12 +190,43 @@ export function AdminPhysicalFolderSelector({
     setManualInput('');
   };
 
-  // Filtrage par recherche
-  const filteredFolders = useMemo(() => {
-    if (!search.trim()) return folders;
-    const q = search.trim().toLowerCase();
-    return folders.filter((f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q));
-  }, [folders, search]);
+  // Liste arborescente aplatie et filtrée selon l'état replié/déplié
+  const displayedItems = useMemo<DisplayTreeItem[]>(() => {
+    // Mode recherche : affichage direct de tous les éléments correspondants
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      const matched = folders.filter(
+        (f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q)
+      );
+      return matched.map((item) => ({
+        item,
+        level: 0,
+        hasChildren: (childrenMap.get(item.path)?.length || 0) > 0,
+      }));
+    }
+
+    // Mode arborescence : parcours récursif en profondeur (Pre-Order Depth-First)
+    const result: DisplayTreeItem[] = [];
+
+    const traverse = (node: PhysicalFolderItem, level: number) => {
+      const children = childrenMap.get(node.path) || [];
+      const hasChildren = children.length > 0 || node.subfolderCount > 0;
+      result.push({ item: node, level, hasChildren });
+
+      // Parcours des enfants UNIQUEMENT si le dossier courant est déplié
+      if (hasChildren && expandedPaths.has(node.path)) {
+        for (const child of children) {
+          traverse(child, level + 1);
+        }
+      }
+    };
+
+    for (const rootNode of topLevelNodes) {
+      traverse(rootNode, 0);
+    }
+
+    return result;
+  }, [folders, search, childrenMap, topLevelNodes, expandedPaths]);
 
   return (
     <View style={s.card}>
@@ -152,14 +247,26 @@ export function AdminPhysicalFolderSelector({
         <View style={s.ruleSection}>
           <Text style={s.whitelistLabel}>
             🟢 Autorisés Exclusivement (Whitelist : {allowedFolders.length})
-            <Text style={s.hint}> {allowedFolders.length === 0 ? '(Aucun = Tout autorisé)' : '(Seuls ces dossiers sont accessibles)'}</Text>
+            <Text style={s.hint}>
+              {' '}
+              {allowedFolders.length === 0
+                ? '(Aucun = Tout autorisé)'
+                : '(Seuls ces dossiers sont accessibles)'}
+            </Text>
           </Text>
           <View style={s.chipsRow}>
             {allowedFolders.length === 0 ? (
-              <Text style={s.emptyHint}>Aucune restriction exclusive — l’ensemble de la médiathèque est visible.</Text>
+              <Text style={s.emptyHint}>
+                Aucune restriction exclusive — l’ensemble de la médiathèque est visible.
+              </Text>
             ) : (
               allowedFolders.map((f) => (
-                <Pressable key={f} focusable={true} style={s.chipAllowed} onPress={() => resetFolderStatus(f)}>
+                <Pressable
+                  key={f}
+                  focusable={true}
+                  style={s.chipAllowed}
+                  onPress={() => resetFolderStatus(f)}
+                >
                   <Text style={s.chipAllowedTxt}>✅ {f} ✕</Text>
                 </Pressable>
               ))
@@ -176,7 +283,12 @@ export function AdminPhysicalFolderSelector({
               <Text style={s.emptyHint}>Aucun dossier interdit.</Text>
             ) : (
               blockedFolders.map((f) => (
-                <Pressable key={f} focusable={true} style={s.chipBlocked} onPress={() => resetFolderStatus(f)}>
+                <Pressable
+                  key={f}
+                  focusable={true}
+                  style={s.chipBlocked}
+                  onPress={() => resetFolderStatus(f)}
+                >
                   <Text style={s.chipBlockedTxt}>🚫 {f} ✕</Text>
                 </Pressable>
               ))
@@ -196,28 +308,40 @@ export function AdminPhysicalFolderSelector({
         />
         <View style={s.btnGroup}>
           <Pressable focusable={true} style={s.toolBtn} onPress={expandAll}>
-            <Text style={s.toolBtnTxt}>▼ Déplier</Text>
+            <Text style={s.toolBtnTxt}>▼ Tout Déplier</Text>
           </Pressable>
           <Pressable focusable={true} style={s.toolBtn} onPress={collapseAll}>
-            <Text style={s.toolBtnTxt}>▲ Replier</Text>
+            <Text style={s.toolBtnTxt}>▲ Tout Replier</Text>
           </Pressable>
         </View>
       </View>
+
+      {search.trim() ? (
+        <View style={s.searchHintBar}>
+          <Text style={s.searchHintTxt}>
+            🔍 Filtre actif : {displayedItems.length} dossier{displayedItems.length > 1 ? 's' : ''} trouvé{displayedItems.length > 1 ? 's' : ''}
+          </Text>
+          <Pressable focusable={true} onPress={() => setSearch('')}>
+            <Text style={s.clearSearchTxt}>Effacer le filtre ✕</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* Arborescence interactive des dossiers */}
       {loading ? (
         <ActivityIndicator color="#6366f1" style={{ marginVertical: 20 }} />
       ) : (
         <ScrollView style={s.treeScroll} nestedScrollEnabled={true}>
-          {filteredFolders.length === 0 ? (
+          {displayedItems.length === 0 ? (
             <Text style={s.emptyHint}>Aucun dossier ne correspond à votre filtre.</Text>
           ) : (
-            filteredFolders.map((item) => {
+            displayedItems.map(({ item, level, hasChildren }) => {
               const allowed = isAllowed(item.path);
               const blocked = isBlocked(item.path);
+              const directlyAllowed = isDirectlyAllowed(item.path);
+              const directlyBlocked = isDirectlyBlocked(item.path);
               const isExpanded = expandedPaths.has(item.path);
-              const hasChildren = item.subfolderCount > 0;
-              const indent = Math.min((item.depth - 1) * 16, 64);
+              const indent = Math.min(level * 20, 100);
 
               return (
                 <View
@@ -230,60 +354,99 @@ export function AdminPhysicalFolderSelector({
                   ]}
                 >
                   <View style={s.folderInfo}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <View style={s.folderMainLine}>
                       {hasChildren ? (
-                        <Pressable focusable={true} onPress={() => toggleExpand(item.path)} style={s.expandIcon}>
+                        <Pressable
+                          focusable={true}
+                          onPress={() => toggleExpand(item.path)}
+                          style={s.expandIconBtn}
+                          accessibilityLabel={isExpanded ? 'Replier le dossier' : 'Déplier le dossier'}
+                        >
                           <Text style={s.expandIconTxt}>{isExpanded ? '▼' : '▶'}</Text>
                         </Pressable>
                       ) : (
-                        <Text style={s.expandIconTxt}>•</Text>
+                        <View style={s.expandIconBtn}>
+                          <Text style={s.dotIconTxt}>•</Text>
+                        </View>
                       )}
 
-                      <Text style={s.folderIcon}>📁</Text>
-                      <Text style={s.folderName}>{item.name}</Text>
+                      <Pressable
+                        focusable={true}
+                        style={s.folderLabelPressable}
+                        onPress={() => hasChildren && toggleExpand(item.path)}
+                      >
+                        <Text style={s.folderIcon}>📁</Text>
+                        <Text style={s.folderName}>{item.name}</Text>
+                      </Pressable>
 
                       {item.mediaCount > 0 && (
                         <View style={s.mediaBadge}>
-                          <Text style={s.mediaBadgeTxt}>{item.mediaCount} média{item.mediaCount > 1 ? 's' : ''}</Text>
+                          <Text style={s.mediaBadgeTxt}>
+                            {item.mediaCount} média{item.mediaCount > 1 ? 's' : ''}
+                          </Text>
                         </View>
                       )}
 
-                      {allowed && (
+                      {directlyAllowed ? (
                         <View style={s.statusAllowedPill}>
                           <Text style={s.statusAllowedPillTxt}>✅ AUTORISÉ</Text>
                         </View>
-                      )}
+                      ) : allowed ? (
+                        <View style={[s.statusAllowedPill, { opacity: 0.8 }]}>
+                          <Text style={s.statusAllowedPillTxt}>✓ HÉRITÉ</Text>
+                        </View>
+                      ) : null}
 
-                      {blocked && (
+                      {directlyBlocked ? (
                         <View style={s.statusBlockedPill}>
                           <Text style={s.statusBlockedPillTxt}>🚫 INTERDIT</Text>
                         </View>
-                      )}
+                      ) : blocked ? (
+                        <View style={[s.statusBlockedPill, { opacity: 0.8 }]}>
+                          <Text style={s.statusBlockedPillTxt}>✕ HÉRITÉ</Text>
+                        </View>
+                      ) : null}
                     </View>
 
-                    <Text style={s.folderPath} numberOfLines={1}>{item.relativePath || item.path}</Text>
+                    <Text style={s.folderPath} numberOfLines={1}>
+                      {item.relativePath || item.path}
+                    </Text>
                   </View>
 
                   {/* Boutons d'action pour le dossier */}
                   <View style={s.rowActions}>
                     <Pressable
                       focusable={true}
-                      style={[s.actionBtn, allowed ? s.btnActiveAllowed : s.btnAllow]}
+                      style={[
+                        s.actionBtn,
+                        directlyAllowed ? s.btnActiveAllowed : s.btnAllow,
+                      ]}
                       onPress={() => toggleAllowFolder(item.path)}
                     >
-                      <Text style={s.actionBtnTxt}>{allowed ? '✓ Autorisé' : '+ Autoriser'}</Text>
+                      <Text style={s.actionBtnTxt}>
+                        {directlyAllowed ? '✓ Autorisé' : '+ Autoriser'}
+                      </Text>
                     </Pressable>
 
                     <Pressable
                       focusable={true}
-                      style={[s.actionBtn, blocked ? s.btnActiveBlocked : s.btnBlock]}
+                      style={[
+                        s.actionBtn,
+                        directlyBlocked ? s.btnActiveBlocked : s.btnBlock,
+                      ]}
                       onPress={() => toggleBlockFolder(item.path)}
                     >
-                      <Text style={s.actionBtnTxt}>{blocked ? '✕ Interdit' : '- Interdire'}</Text>
+                      <Text style={s.actionBtnTxt}>
+                        {directlyBlocked ? '✕ Interdit' : '- Interdire'}
+                      </Text>
                     </Pressable>
 
-                    {(allowed || blocked) && (
-                      <Pressable focusable={true} style={s.btnReset} onPress={() => resetFolderStatus(item.path)}>
+                    {(directlyAllowed || directlyBlocked) && (
+                      <Pressable
+                        focusable={true}
+                        style={s.btnReset}
+                        onPress={() => resetFolderStatus(item.path)}
+                      >
                         <Text style={s.btnResetTxt}>✕</Text>
                       </Pressable>
                     )}
@@ -301,15 +464,23 @@ export function AdminPhysicalFolderSelector({
         <View style={s.manualRow}>
           <TextInput
             style={s.manualInput}
-            placeholder="Ex: /Films/Adultes, Bleach, Animes..."
+            placeholder="Ex: /Films/Adultes, Bleach, Animes, libre..."
             placeholderTextColor="#64748b"
             value={manualInput}
             onChangeText={setManualInput}
           />
-          <Pressable focusable={true} style={[s.manualBtn, { backgroundColor: '#10b981' }]} onPress={() => addManual(true)}>
+          <Pressable
+            focusable={true}
+            style={[s.manualBtn, { backgroundColor: '#10b981' }]}
+            onPress={() => addManual(true)}
+          >
             <Text style={s.manualBtnTxt}>+ Autoriser</Text>
           </Pressable>
-          <Pressable focusable={true} style={[s.manualBtn, { backgroundColor: '#ef4444' }]} onPress={() => addManual(false)}>
+          <Pressable
+            focusable={true}
+            style={[s.manualBtn, { backgroundColor: '#ef4444' }]}
+            onPress={() => addManual(false)}
+          >
             <Text style={s.manualBtnTxt}>- Bloquer</Text>
           </Pressable>
         </View>
@@ -327,56 +498,186 @@ const s = StyleSheet.create({
     borderColor: 'rgba(71, 85, 105, 0.4)',
     gap: 12,
   },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
   title: { fontSize: 15, fontWeight: '800', color: '#f8fafc', marginBottom: 2 },
   sub: { fontSize: 12, color: '#94a3b8', lineHeight: 17 },
-  refreshBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.sm || 6, backgroundColor: 'rgba(99, 102, 241, 0.2)' },
+  refreshBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.sm || 6,
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+  },
   refreshTxt: { color: '#818cf8', fontSize: 11, fontWeight: '700' },
-  summaryBox: { backgroundColor: 'rgba(30, 41, 59, 0.5)', borderRadius: Radius.md || 10, padding: 12, gap: 10, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+  summaryBox: {
+    backgroundColor: 'rgba(30, 41, 59, 0.5)',
+    borderRadius: Radius.md || 10,
+    padding: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
   ruleSection: { gap: 4 },
   whitelistLabel: { fontSize: 12, fontWeight: '700', color: '#34d399' },
   blacklistLabel: { fontSize: 12, fontWeight: '700', color: '#f87171' },
   hint: { fontSize: 11, fontWeight: '400', color: '#94a3b8' },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, minHeight: 22 },
   emptyHint: { color: '#64748b', fontSize: 11, fontStyle: 'italic', paddingVertical: 2 },
-  chipAllowed: { backgroundColor: 'rgba(16, 185, 129, 0.2)', borderWidth: 1, borderColor: '#10b981', paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.pill || 12 },
+  chipAllowed: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderWidth: 1,
+    borderColor: '#10b981',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill || 12,
+  },
   chipAllowedTxt: { color: '#6ee7b7', fontSize: 11, fontWeight: '700' },
-  chipBlocked: { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderWidth: 1, borderColor: '#ef4444', paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.pill || 12 },
+  chipBlocked: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill || 12,
+  },
   chipBlockedTxt: { color: '#fca5a5', fontSize: 11, fontWeight: '700' },
   toolbar: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-  searchInput: { flex: 1, minWidth: 200, backgroundColor: '#0f172a', borderRadius: Radius.sm || 6, paddingHorizontal: 12, paddingVertical: 8, color: '#f8fafc', fontSize: 12, borderWidth: 1, borderColor: '#334155' },
+  searchInput: {
+    flex: 1,
+    minWidth: 200,
+    backgroundColor: '#0f172a',
+    borderRadius: Radius.sm || 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    color: '#f8fafc',
+    fontSize: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
   btnGroup: { flexDirection: 'row', gap: 6 },
-  toolBtn: { backgroundColor: 'rgba(255, 255, 255, 0.08)', paddingHorizontal: 10, paddingVertical: 8, borderRadius: Radius.sm || 6 },
+  toolBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: Radius.sm || 6,
+  },
   toolBtnTxt: { color: '#cbd5e1', fontSize: 11, fontWeight: '600' },
-  treeScroll: { maxHeight: 360, backgroundColor: 'rgba(15, 23, 42, 0.9)', borderRadius: Radius.md || 10, borderWidth: 1, borderColor: '#334155', paddingVertical: 4 },
-  folderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, paddingRight: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.04)', gap: 8 },
+  searchHintBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  searchHintTxt: { color: '#94a3b8', fontSize: 11, fontStyle: 'italic' },
+  clearSearchTxt: { color: '#818cf8', fontSize: 11, fontWeight: '600' },
+  treeScroll: {
+    maxHeight: 380,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderRadius: Radius.md || 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingVertical: 4,
+  },
+  folderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingRight: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+    gap: 8,
+  },
   rowAllowed: { backgroundColor: 'rgba(16, 185, 129, 0.12)' },
   rowBlocked: { backgroundColor: 'rgba(239, 68, 68, 0.12)' },
   folderInfo: { flex: 1, minWidth: 160 },
-  expandIcon: { width: 16, alignItems: 'center' },
-  expandIconTxt: { color: '#94a3b8', fontSize: 10, fontWeight: '700' },
+  folderMainLine: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  expandIconBtn: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  expandIconTxt: { color: '#94a3b8', fontSize: 10, fontWeight: '800' },
+  dotIconTxt: { color: '#475569', fontSize: 12, fontWeight: '700' },
+  folderLabelPressable: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   folderIcon: { fontSize: 13 },
   folderName: { color: '#f8fafc', fontSize: 13, fontWeight: '700' },
-  mediaBadge: { backgroundColor: 'rgba(99, 102, 241, 0.25)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.pill || 10 },
+  mediaBadge: {
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.pill || 10,
+  },
   mediaBadgeTxt: { color: '#c7d2fe', fontSize: 10, fontWeight: '700' },
-  statusAllowedPill: { backgroundColor: '#059669', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },
+  statusAllowedPill: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
   statusAllowedPillTxt: { color: '#ffffff', fontSize: 9, fontWeight: '800' },
-  statusBlockedPill: { backgroundColor: '#dc2626', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },
+  statusBlockedPill: {
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
   statusBlockedPillTxt: { color: '#ffffff', fontSize: 9, fontWeight: '800' },
-  folderPath: { color: '#64748b', fontSize: 10, marginTop: 2 },
+  folderPath: { color: '#64748b', fontSize: 10, marginTop: 2, marginLeft: 30 },
   rowActions: { flexDirection: 'row', gap: 4, alignItems: 'center' },
   actionBtn: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  btnAllow: { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.4)' },
+  btnAllow: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+  },
   btnActiveAllowed: { backgroundColor: '#10b981' },
-  btnBlock: { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.4)' },
+  btnBlock: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
   btnActiveBlocked: { backgroundColor: '#ef4444' },
   actionBtnTxt: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
-  btnReset: { backgroundColor: 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 6, paddingVertical: 4, borderRadius: 6 },
+  btnReset: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
   btnResetTxt: { color: '#94a3b8', fontSize: 10, fontWeight: '700' },
-  manualBox: { marginTop: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.06)', gap: 6 },
+  manualBox: {
+    marginTop: 4,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    gap: 6,
+  },
   manualTitle: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
   manualRow: { flexDirection: 'row', gap: 6 },
-  manualInput: { flex: 1, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155', borderRadius: Radius.sm || 6, paddingHorizontal: 10, paddingVertical: 6, color: '#f8fafc', fontSize: 12 },
-  manualBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.sm || 6, justifyContent: 'center' },
+  manualInput: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: Radius.sm || 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    color: '#f8fafc',
+    fontSize: 12,
+  },
+  manualBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Radius.sm || 6,
+    justifyContent: 'center',
+  },
   manualBtnTxt: { color: '#ffffff', fontSize: 11, fontWeight: '700' },
 });

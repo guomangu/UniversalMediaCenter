@@ -27,7 +27,7 @@ export function TagCard({
 }: Props) {
   const router = useRouter();
   // Limite initiale stricte de 10 éléments pour optimiser les performances et la mémoire
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(tag.slug === 'all-movies' || tag.slug === 'all-series' ? 30 : 10);
   const excludeKey = useMemo(() => excludeIds.slice().sort().join(','), [excludeIds]);
 
   const cached = useMemo(() => getCachedTaxonomyMedias({

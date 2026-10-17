@@ -66,16 +66,15 @@ export function PlayerShareModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        focusable={false}
-        style={styles.backdrop}
-        onPress={onClose}
-        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
-      >
+      <View style={styles.overlay}>
         <Pressable
           focusable={false}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+        />
+        <View
           style={styles.content}
-          onPress={(e) => e.stopPropagation()}
           {...({ dataSet: { modalContainer: 'true' } } as any)}
         >
           <View style={styles.header}>
@@ -118,15 +117,15 @@ export function PlayerShareModal({
               </View>
             </Pressable>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: Spacing.three },
-  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 420, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: Spacing.three },
+  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 420, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)', zIndex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.three },
   title: { fontSize: 16, fontWeight: '800', color: '#f8fafc' },
   close: { color: '#94a3b8', fontSize: 16, fontWeight: '700', padding: 4 },

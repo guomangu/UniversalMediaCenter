@@ -84,8 +84,8 @@ L'algorithme analyse si un chemin de fichier cible correspond à une règle de d
 ### 4.3. Exemption des Flux IPTV Virtuels (`LIVE_CHANNEL`)
 Les chaînes de télévision en direct (`LIVE_CHANNEL`) sont des flux réseau virtuels issus de playlists M3U externes. Elles ne possèdent aucun fichier physique ni arborescence sur le système de fichiers local (`videoFilePath = NULL`).
 Par conséquent :
-- Le partitionnement par dossiers physiques (`allowedFolders` / `blockedFolders`) **ne s\x27applique pas** aux chaînes IPTV.
-- Un utilisateur restreint par une liste blanche de dossiers disques (ex: accès exclusif à `/Vidéos/drive/libre`) peut accéder sans restriction à l\x27IPTV dès lors que sa capacité `canWatchIptv` est active.
+- Le partitionnement par dossiers physiques (`allowedFolders` / `blockedFolders`) **ne s'applique pas** aux chaînes IPTV.
+- Un utilisateur restreint par une liste blanche de dossiers disques (ex: accès exclusif à `/Vidéos/drive/libre`) peut accéder sans restriction à l'IPTV dès lors que sa capacité `canWatchIptv` est active.
 - La protection des chaînes IPTV relève exclusivement du contrôle de capacité RBAC (`canWatchIptv`) et du contrôle sémantique ABAC (filtrage de tags `blockedTags` tels que `Adultes`, `+18`, `Horreur`).
 
 ---
@@ -181,14 +181,18 @@ Toutes les routes exposées par le backend appliquent ce modèle de contrôle d'
 | `GET /api/ui/layout` | [`ui.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/ui.ts) | Résolution batch des chemins physiques et filtrage complet des rails d'accueil. |
 | `GET /api/ui/taxonomy` | [`taxonomyRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/taxonomyRoutes.ts) | Agrégations SQL protégées par `accessConds` : les compteurs de tags ne révèlent pas l'existence de médias restreints. |
 | `GET /api/ui/taxonomy/medias` | [`taxonomyRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/taxonomyRoutes.ts) | Double barrière SQL/JS appliquée à chaque rail de tag et grille de catégorie. |
-| `GET /api/media/:id` | [`media.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts) & [`mediaRelated.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaRelated.ts) | Sécurisation intégrale de l\x27écran détail : suggestions "Genres & Thématiques" (`getRelatedTagsForMedia`), similarités TF-IDF (`getTfIdfSimilarMedias`), films du même studio (`studioFilmsRows`) et saga parente filtrés par `user`. |
-| `GET /api/media/stats` | [`mediaStats.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaStats.ts) | Page d\x27exploration (`/explore`) : filtres SQL/JS appliqués aux compteurs, aux genres populaires et aux derniers ajouts. |
+| `GET /api/media/:id` | [`media.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/media.ts) & [`mediaRelated.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaRelated.ts) | Sécurisation intégrale de l'écran détail : suggestions "Genres & Thématiques" (`getRelatedTagsForMedia`), similarités TF-IDF (`getTfIdfSimilarMedias`), films du même studio (`studioFilmsRows`) et saga parente filtrés par `user`. |
+| `GET /api/media/stats` | [`mediaStats.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/mediaStats.ts) | Page d'exploration (`/explore`) : filtres SQL/JS appliqués aux compteurs, aux genres populaires et aux derniers ajouts. |
 | `GET /api/iptv/channels` | [`iptv.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/iptv.ts) | Télévision en Direct (`/live`) : masquage des flux si `canWatchIptv = false` ou si les chaînes sont soumises à des tags restreints. |
-| `GET /api/iptv/stream/:id/live.m3u8` | [`iptv.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/iptv.ts) | Streaming Live : refus HTTP 403 immédiat si l\x27accès IPTV ou la chaîne cible est interdite. |
+| `GET /api/iptv/stream/:id/live.m3u8` | [`iptv.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/iptv.ts) | Streaming Live : refus HTTP 403 immédiat si l'accès IPTV ou la chaîne cible est interdite. |
 | `GET /api/user/favorites` & `watch/*` | [`userFavoritesRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/userFavoritesRoutes.ts) / [`userWatchRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/userWatchRoutes.ts) | Espace personnel (`/user`) : reprise de lecture (`continue-watching`), historique et favoris épurés de tout média restreint. |
 | `GET /api/feed/*` & `reposts/*` | [`repostFeedRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/repostFeedRoutes.ts) / [`repostMediaRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/repostMediaRoutes.ts) | Réseau social & avis : masquage systématique des activités portant sur des œuvres non autorisées. |
 | `GET /api/sessions/active` & `:id/join` | [`sessionRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/sessionRoutes.ts) | Watch Party : masquage des séances publiques restreintes et interdiction HTTP 403 de rejoindre une séance sur une œuvre bloquée. |
-| `GET /api/forum/topics/:slug/context` | [`forumAssociations.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/forumAssociations.ts) | Forum culturel : filtrage SQL/JS des cycles d\x27œuvres, acteurs, studios et genres affichés en contexte de discussion. |
+| `GET /api/forum/topics/:slug/context` | [`forumAssociations.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/forumAssociations.ts) | Forum culturel : filtrage SQL/JS des cycles d'œuvres, acteurs, studios et genres affichés en contexte de discussion. |
+| `GET /api/friends` & `/friends/search` | [`friendActionRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/friendActionRoutes.ts) / [`friendSearchRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/friendSearchRoutes.ts) | Relations & Présence : détection `isOnline`, visionnage en direct et slug `dm-` sécurisé avec masquage de l'activité si le média est restreint pour l'observateur. |
+| `GET /api/forum/topics/:slug/messages` | [`forumRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/forumRoutes.ts) | Salons privés & messagerie 1-on-1 : contrôle d'accès souverain `canAccessPrivateTopic` interdisant l'accès aux canaux `private-user-` et `dm-` sans amitié mutuelle acceptée. |
+| `POST /api/reposts/media/:id` | [`repostMediaRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/repostMediaRoutes.ts) | Avis & Critiques : vérification préalable `checkMediaAccess` interdisant à un utilisateur restreint de noter ou reposter une œuvre non autorisée. |
+| `GET /invite/:token` | [`inviteRoutes.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/routes/inviteRoutes.ts) | Liens d'invitation magiques : validation du jeton d'invitation non expiré et auto-authentification immédiate avec assignation du profil prédéfini. |
 
 ---
 
@@ -208,16 +212,20 @@ Pour offrir une expérience visuelle impeccable et sans frustration :
 
 ## 10. Suite de Tests & Validation Automatisée
 
-La robustesse du moteur d'autorisation est continuellement validée par une suite de tests d'intégration dédiée exécutable via :
+La robustesse du moteur d'autorisation est continuellement validée par deux suites de tests d'intégration dédiées exécutables via :
 
 ```bash
 cd backend && npm run test:security
+cd backend && npm run test:social
 ```
 
-Cette suite ([`backend/src/test/testFolderAccessSecurity.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/test/testFolderAccessSecurity.ts)) certifie :
+Ces suites ([`backend/src/test/testFolderAccessSecurity.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/test/testFolderAccessSecurity.ts) et [`backend/src/test/testSocialFeatures.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/test/testSocialFeatures.ts)) certifient :
 - ✅ La normalisation bidirectionnelle symétrique des alias Bazzite `/var/home` $\leftrightarrow$ `/home`.
 - ✅ La correspondance exacte des dossiers absolus et relatifs avec protection des frontières de segments.
 - ✅ L'accès illimité du compte Administrateur.
 - ✅ L'application intransigeante des Whitelists et Blacklists de fichiers.
 - ✅ L'héritage arborescent des conteneurs `SHOW` et le blocage automatique en cascade.
 - ✅ La protection combinée des profils enfants (dossiers, tags thématiques, CSA et IPTV).
+- ✅ L'étanchéité des favoris et la persistance sans fuite mémoire.
+- ✅ La bidirectionnalité déterministe des amitiés et slugs de messagerie directe (`dm-`).
+- ✅ Le cycle de vie des séances Watch Party et l'intégrité des critiques avec notation 1 à 5 étoiles.

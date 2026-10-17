@@ -1,9 +1,11 @@
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders, updateCurrentUser } from './authStore';
 import { fetchWithCache, setCachedData, getCachedData } from './pwaDataCache';
+import { getUserCacheKey } from './api';
 
 export async function fetchUserStats(): Promise<any> {
-  return fetchWithCache('user_stats', async () => {
+  const cacheKey = `user_stats_${getUserCacheKey()}`;
+  return fetchWithCache(cacheKey, async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/user/stats`, {
         headers: getAuthHeaders(),
@@ -17,7 +19,8 @@ export async function fetchUserStats(): Promise<any> {
 }
 
 export async function fetchContinueWatching(): Promise<any[]> {
-  return fetchWithCache('user_continue_watching', async () => {
+  const cacheKey = `user_continue_watching_${getUserCacheKey()}`;
+  return fetchWithCache(cacheKey, async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/user/continue-watching`, {
         headers: getAuthHeaders(),
@@ -32,7 +35,8 @@ export async function fetchContinueWatching(): Promise<any[]> {
 }
 
 export async function fetchWatchHistory(): Promise<any[]> {
-  return fetchWithCache('user_history', async () => {
+  const cacheKey = `user_history_${getUserCacheKey()}`;
+  return fetchWithCache(cacheKey, async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/user/history`, {
         headers: getAuthHeaders(),
@@ -47,6 +51,7 @@ export async function fetchWatchHistory(): Promise<any[]> {
 }
 
 export async function fetchFavorites(forceFresh = false): Promise<any[]> {
+  const cacheKey = `user_favorites_${getUserCacheKey()}`;
   const fetcher = async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/user/favorites`, {
@@ -62,11 +67,11 @@ export async function fetchFavorites(forceFresh = false): Promise<any[]> {
 
   if (forceFresh) {
     const fresh = await fetcher();
-    setCachedData('user_favorites', fresh);
+    setCachedData(cacheKey, fresh);
     return fresh;
   }
 
-  return fetchWithCache('user_favorites', fetcher);
+  return fetchWithCache(cacheKey, fetcher);
 }
 
 export async function toggleFavorite(nodeId: string, shouldAdd: boolean): Promise<boolean> {
@@ -79,12 +84,13 @@ export async function toggleFavorite(nodeId: string, shouldAdd: boolean): Promis
     const data = await res.json();
 
     // Mise à jour optimiste du cache PWA
-    const currentFavs = getCachedData<any[]>('user_favorites');
+    const cacheKey = `user_favorites_${getUserCacheKey()}`;
+    const currentFavs = getCachedData<any[]>(cacheKey);
     if (Array.isArray(currentFavs)) {
       if (shouldAdd) {
-        setCachedData('user_favorites', [{ id: nodeId }, ...currentFavs]);
+        setCachedData(cacheKey, [{ id: nodeId }, ...currentFavs]);
       } else {
-        setCachedData('user_favorites', currentFavs.filter((f) => f.id !== nodeId));
+        setCachedData(cacheKey, currentFavs.filter((f) => f.id !== nodeId));
       }
     }
 
@@ -111,7 +117,8 @@ export async function checkFavorite(nodeId: string): Promise<boolean> {
 }
 
 export async function fetchUserForums(): Promise<any[]> {
-  return fetchWithCache('user_forums', async () => {
+  const cacheKey = `user_forums_${getUserCacheKey()}`;
+  return fetchWithCache(cacheKey, async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/user/forums`, {
         headers: getAuthHeaders(),
@@ -125,8 +132,26 @@ export async function fetchUserForums(): Promise<any[]> {
   });
 }
 
+export async function updateProfile(data: { displayName?: string; avatarUrl?: string; pin?: string }): Promise<any> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/user/profile`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    const body = await res.json();
+    if (body.user) {
+      updateCurrentUser(body.user);
+    }
+    return body;
+  } catch {
+    return { error: 'Erreur réseau' };
+  }
+}
+
 export async function fetchUserProfile(): Promise<any> {
-  return fetchWithCache('user_profile', async () => {
+  const cacheKey = `user_profile_${getUserCacheKey()}`;
+  return fetchWithCache(cacheKey, async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/user/profile`, {
         headers: getAuthHeaders(),
@@ -139,7 +164,7 @@ export async function fetchUserProfile(): Promise<any> {
   });
 }
 
-export async function updateUserProfile(data: { displayName?: string; bio?: string; avatarUrl?: string; isIncognito?: boolean }): Promise<any> {
+export async function updateUserProfile(data: { displayName?: string; bio?: string; avatarUrl?: string; isIncognito?: boolean; pin?: string }): Promise<any> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/user/profile`, {
       method: 'PUT',
@@ -147,9 +172,9 @@ export async function updateUserProfile(data: { displayName?: string; bio?: stri
       body: JSON.stringify(data),
     });
     const body = await res.json();
-    if (body.success && body.user) {
+    if (body.user) {
       updateCurrentUser(body.user);
-      setCachedData('user_profile', body.user);
+      setCachedData(`user_profile_${getUserCacheKey()}`, body.user);
     }
     return body;
   } catch {

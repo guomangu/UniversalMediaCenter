@@ -3,6 +3,7 @@ import { db } from '../db/connection.js';
 import { iptvSources, mediaNodes, eavValues, nodeEavLinks, eavAttributes } from '../db/schema/index.js';
 import { parseM3uContent } from '../iptv/m3uParser.js';
 import { ingestIptvChannels } from '../iptv/channelIngester.js';
+import { testSourceChannelsAvailability } from '../iptv/streamTester.js';
 import { eq, desc, and } from 'drizzle-orm';
 import { requireAdmin } from '../middleware/access.js';
 
@@ -37,12 +38,24 @@ iptvSourcesRouter.post('/', async (c) => {
     const content = await res.text();
     const channels = parseM3uContent(content);
     const importedCount = await ingestIptvChannels(channels, source.id);
+
+    // Test de disponibilité des flux en direct
+    const testResults = await testSourceChannelsAvailability(source.id);
+
     await db
       .update(iptvSources)
       .set({ lastSyncedAt: new Date() })
       .where(eq(iptvSources.id, source.id));
 
-    return c.json({ success: true, source, importedCount });
+    return c.json({
+      success: true,
+      source,
+      importedCount,
+      testedCount: testResults.testedCount,
+      availableCount: testResults.availableCount,
+      unavailableCount: testResults.unavailableCount,
+      message: `${importedCount} canaux synchronisés : ${testResults.availableCount} opérationnels, ${testResults.unavailableCount} indisponibles (grisés)`,
+    });
   } catch (err: any) {
     return c.json({ success: true, source, warning: `Source enregistrée mais synchronisation échouée: ${err.message}` });
   }
@@ -80,7 +93,7 @@ iptvSourcesRouter.post('/cleanup-orphans', async (c) => {
   return c.json({ success: true, deletedChannelsCount });
 });
 
-// Resynchroniser une source spécifique
+// Resynchroniser une source spécifique et tester la disponibilité de chaque chaîne
 iptvSourcesRouter.post('/:id/sync', async (c) => {
   const id = c.req.param('id');
   const source = await db.query.iptvSources.findFirst({
@@ -97,12 +110,22 @@ iptvSourcesRouter.post('/:id/sync', async (c) => {
     const channels = parseM3uContent(content);
     const importedCount = await ingestIptvChannels(channels, id);
 
+    // Test de disponibilité en direct de chaque flux de la source
+    const testResults = await testSourceChannelsAvailability(id);
+
     await db
       .update(iptvSources)
       .set({ lastSyncedAt: new Date() })
       .where(eq(iptvSources.id, id));
 
-    return c.json({ success: true, importedCount, message: `${importedCount} canaux synchronisés` });
+    return c.json({
+      success: true,
+      importedCount,
+      testedCount: testResults.testedCount,
+      availableCount: testResults.availableCount,
+      unavailableCount: testResults.unavailableCount,
+      message: `${importedCount} canaux synchronisés : ${testResults.availableCount} opérationnels, ${testResults.unavailableCount} indisponibles (grisés)`,
+    });
   } catch (err: any) {
     return c.json({ error: `Erreur lors de la synchronisation: ${err.message}` }, 500);
   }

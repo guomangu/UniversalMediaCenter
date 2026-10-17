@@ -41,6 +41,12 @@ export function ConfirmModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.overlay}>
+        <Pressable
+          focusable={false}
+          style={StyleSheet.absoluteFill}
+          onPress={onCancel}
+          {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+        />
         <View style={styles.card} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.message}>{message}</Text>
@@ -63,7 +69,7 @@ export function ConfirmModal({
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color="#ffffff" size="small" />
               ) : (
                 <Text style={styles.confirmText}>{confirmText}</Text>
               )}
@@ -82,16 +88,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    zIndex: 9999,
   },
   card: {
-    width: '100%',
-    maxWidth: 440,
     backgroundColor: '#1e293b',
-    borderRadius: Radius.lg || 16,
+    borderRadius: Radius.lg,
     padding: 24,
+    maxWidth: 420,
+    width: '100%',
     borderWidth: 1,
     borderColor: '#334155',
+    zIndex: 1,
   },
   title: {
     fontSize: 18,
@@ -112,16 +118,17 @@ const styles = StyleSheet.create({
   },
   btn: {
     paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: 90,
   },
   cancelBtn: {
     backgroundColor: '#334155',
   },
   cancelText: {
-    color: '#e2e8f0',
+    color: '#cbd5e1',
     fontWeight: '600',
     fontSize: 14,
   },

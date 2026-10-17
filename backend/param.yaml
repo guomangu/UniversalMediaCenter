@@ -110,4 +110,6 @@ profileTypes:
     allowedTags: []
     blockedTags: []
     allowedFolders: []
-    blockedFolders: []
+    blockedFolders:
+      - /run/media/tele/My Passport/musique
+      - /run/media/tele/My Passport/e-books

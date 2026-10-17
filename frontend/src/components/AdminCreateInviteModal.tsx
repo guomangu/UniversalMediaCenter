@@ -115,6 +115,12 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={modalStyles.overlay}>
+        <Pressable
+          focusable={false}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+        />
         <View style={modalStyles.card}>
           <View style={modalStyles.headerRow}>
             <View style={{ flex: 1 }}>
@@ -144,62 +150,46 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
               {/* Encadré du message prêt à envoyer */}
               <View style={modalStyles.msgContainer}>
                 <View style={modalStyles.msgHeader}>
-                  <Text style={modalStyles.msgHeaderTitle}>Message pour WhatsApp / Instagram / SMS :</Text>
+                  <Text style={modalStyles.msgHeaderTitle}>Message d'accueil pré-rédigé :</Text>
                   <Pressable
                     focusable={true}
-                    onPress={() => copyToClipboard(result.messageText, 'MSG')}
-                    style={[modalStyles.copyPill, copiedType === 'MSG' && modalStyles.copyPillActive]}
+                    onPress={() => copyToClipboard(result.fullInvitationMessage || result.messageText || '', 'MSG')}
+                    style={modalStyles.copyIconBtn}
                   >
-                    <Text style={modalStyles.copyPillTxt}>
-                      {copiedType === 'MSG' ? '✅ Copié !' : '📋 Copier tout'}
+                    <Text style={modalStyles.copyIconBtnTxt}>
+                      {copiedType === 'MSG' ? '✅ Copié !' : '📋 Copier le message'}
                     </Text>
                   </Pressable>
                 </View>
-
-                <View style={modalStyles.msgBox}>
-                  <Text style={modalStyles.msgBoxTxt}>{result.messageText}</Text>
-                </View>
-
-                {/* Boutons d'actions directes */}
-                <View style={modalStyles.actionsRow}>
-                  <Pressable
-                    focusable={true}
-                    onPress={() => shareToWhatsApp(result.messageText)}
-                    style={modalStyles.whatsAppBtn}
-                  >
-                    <Text style={modalStyles.whatsAppBtnTxt}>💬 Ouvrir WhatsApp</Text>
-                  </Pressable>
-
-                  <Pressable
-                    focusable={true}
-                    onPress={() => copyToClipboard(result.messageText, 'MSG')}
-                    style={[modalStyles.urlCopyBtn, copiedType === 'MSG' && { backgroundColor: 'rgba(16, 185, 129, 0.25)', borderColor: '#10b981' }]}
-                  >
-                    <Text style={modalStyles.urlCopyBtnTxt}>
-                      {copiedType === 'MSG' ? '✅ Invitation copiée !' : '📋 Copier texte + lien'}
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    focusable={true}
-                    onPress={() => copyToClipboard(result.inviteUrl, 'URL')}
-                    style={[modalStyles.urlCopyBtn, { flex: 0.8, backgroundColor: 'rgba(255, 255, 255, 0.06)', borderColor: 'rgba(255, 255, 255, 0.12)' }]}
-                  >
-                    <Text style={[modalStyles.urlCopyBtnTxt, { color: '#94a3b8' }]}>
-                      {copiedType === 'URL' ? '✅ Lien copié !' : '🔗 Lien seul'}
-                    </Text>
-                  </Pressable>
-                </View>
+                <Text style={modalStyles.msgText}>{result.fullInvitationMessage || result.messageText}</Text>
               </View>
 
-              {/* Aperçu de la vignette de partage (Rich Preview WhatsApp / Instagram) */}
-              <View style={modalStyles.previewContainer}>
-                <Text style={modalStyles.previewHeader}>Aperçu de la vignette dans WhatsApp / Instagram :</Text>
-                <View style={modalStyles.socialCard}>
-                  <Text style={modalStyles.socialCardTitle}>{result.previewTitle}</Text>
-                  <Text style={modalStyles.socialCardDesc}>{result.previewDescription}</Text>
-                  <Text style={modalStyles.socialCardUrl}>cool.sweaw.com</Text>
-                </View>
+              {/* Boutons de partage 1-clic */}
+              <View style={modalStyles.shareActionRow}>
+                <Pressable
+                  focusable={true}
+                  onPress={() => shareToWhatsApp(result.fullInvitationMessage || result.messageText || '')}
+                  style={[modalStyles.shareBtn, modalStyles.whatsappBtn]}
+                >
+                  <Text style={modalStyles.shareBtnTxt}>💬 Partager sur WhatsApp</Text>
+                </Pressable>
+                <Pressable
+                  focusable={true}
+                  onPress={() => copyToClipboard(result.inviteUrl, 'URL')}
+                  style={[modalStyles.shareBtn, modalStyles.copyUrlBtn]}
+                >
+                  <Text style={modalStyles.shareBtnTxt}>
+                    {copiedType === 'URL' ? '✅ Lien copié !' : '🔗 Copier le lien seul'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Détails du lien généré */}
+              <View style={modalStyles.urlBox}>
+                <Text style={modalStyles.urlLabel}>Lien magique direct :</Text>
+                <Text style={modalStyles.urlValue} numberOfLines={2}>
+                  {result.inviteUrl}
+                </Text>
               </View>
 
               <View style={modalStyles.bottomRow}>
@@ -212,43 +202,33 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
               </View>
             </ScrollView>
           ) : (
-            /* ================= FORMULAIRE DE PERSONNALISATION ================= */
+            /* ================= FORMULAIRE DE CRÉATION ================= */
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 520 }}>
-              {/* Nom / Prénom de la personne */}
               <View style={modalStyles.fieldGroup}>
                 <Text style={modalStyles.fieldLabel}>Nom ou Prénom du futur utilisateur *</Text>
                 <TextInput
                   style={modalStyles.input}
-                  placeholder="Ex : Lucas, Marie, Papa..."
+                  placeholder="Ex : Lucas, Sarah, Tonton Jean..."
                   placeholderTextColor="#64748b"
                   value={name}
                   onChangeText={setName}
-                  autoFocus
                 />
               </View>
 
-              {/* Identifiant / Email personnalisé */}
               <View style={modalStyles.fieldGroup}>
                 <Text style={modalStyles.fieldLabel}>Identifiant de connexion (Email ou pseudo) *</Text>
                 <TextInput
                   style={modalStyles.input}
-                  placeholder={name ? `${name.toLowerCase().replace(/\s+/g, '')}@sweaw.com` : 'Ex : lucas@famille.fr'}
+                  placeholder="lucas@famille.fr ou lucas"
                   placeholderTextColor="#64748b"
                   autoCapitalize="none"
-                  keyboardType="email-address"
                   value={email}
                   onChangeText={setEmail}
                 />
-                <Text style={modalStyles.fieldHint}>
-                  {email
-                    ? `Identifiant choisi : ${email}`
-                    : `Par défaut : ${name ? name.toLowerCase().replace(/\s+/g, '') + '@sweaw.com' : 'automatique'}`}
-                </Text>
               </View>
 
-              {/* Mot de passe personnalisé ou auto-généré */}
               <View style={modalStyles.fieldGroup}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={modalStyles.fieldLabelRow}>
                   <Text style={modalStyles.fieldLabel}>Mot de passe attribué *</Text>
                   <Pressable
                     focusable={true}
@@ -260,25 +240,18 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
                 </View>
                 <TextInput
                   style={modalStyles.input}
-                  placeholder="Mot de passe simple..."
-                  placeholderTextColor="#64748b"
                   value={customPassword}
                   onChangeText={setCustomPassword}
-                  autoCapitalize="none"
+                  placeholder="Mot de passe simple"
+                  placeholderTextColor="#64748b"
                 />
-                <Text style={modalStyles.fieldHint}>
-                  La personne n'aura même pas besoin de le saisir si elle clique sur le lien !
-                </Text>
               </View>
 
-              {/* Profil & Permissions */}
               <View style={modalStyles.fieldGroup}>
                 <Text style={modalStyles.fieldLabel}>Pack & Profil d'accès</Text>
                 <View style={modalStyles.roleRow}>
-                  {['MEMBRE', 'ENFANT', 'SAFEZONE', 'SEULEMENT_DES_MARVEL', 'ADMINISTRATEUR'].map((r) => {
+                  {['MEMBRE', 'ENFANT', 'ADOLESCENT', 'INVITE'].map((r) => {
                     const active = role === r;
-                    const matched = profileTypes.find((p) => p.id === r);
-                    const label = matched?.label || r;
                     return (
                       <Pressable
                         key={r}
@@ -287,7 +260,7 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
                         style={[modalStyles.rolePill, active && modalStyles.rolePillActive]}
                       >
                         <Text style={[modalStyles.rolePillTxt, active && modalStyles.rolePillTxtActive]}>
-                          {active ? '✓ ' : ''}{label}
+                          {r}
                         </Text>
                       </Pressable>
                     );
@@ -295,14 +268,14 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
                 </View>
               </View>
 
-              {/* Option avancée : Slug personnalisé */}
+              {/* Options avancées (Slug personnalisé) */}
               <Pressable
                 focusable={true}
                 onPress={() => setShowAdvanced(!showAdvanced)}
                 style={modalStyles.toggleAdvanced}
               >
                 <Text style={modalStyles.toggleAdvancedTxt}>
-                  {showAdvanced ? '▼ Masquer l’URL personnalisée' : '▶ Personnaliser l’URL du lien (optionnel)'}
+                  {showAdvanced ? '▾ Masquer les options avancées' : '▸ Personnaliser l’adresse du lien (optionnel)'}
                 </Text>
               </Pressable>
 
@@ -311,7 +284,7 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
                   <Text style={modalStyles.fieldLabel}>Terminaison du lien (/invite/...)</Text>
                   <TextInput
                     style={modalStyles.input}
-                    placeholder="Ex : lucas (pour /invite/lucas)"
+                    placeholder="ex: pour-lucas"
                     placeholderTextColor="#64748b"
                     autoCapitalize="none"
                     value={customSlug}
@@ -320,11 +293,10 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
                 </View>
               )}
 
-              {/* Bouton de soumission */}
               <Pressable
                 focusable={true}
-                disabled={loading}
                 onPress={handleGenerate}
+                disabled={loading}
                 style={[modalStyles.submitBtn, loading && { opacity: 0.6 }]}
               >
                 {loading ? (
@@ -357,6 +329,7 @@ const modalStyles = StyleSheet.create({
     padding: Spacing.four,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.35)',
+    zIndex: 1,
   },
   headerRow: {
     flexDirection: 'row',
@@ -374,33 +347,39 @@ const modalStyles = StyleSheet.create({
   sub: {
     fontSize: 12,
     color: '#94a3b8',
-    lineHeight: 17,
+    lineHeight: 18,
   },
   closeBtn: {
     padding: 6,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: Radius.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
   closeBtnTxt: {
     color: '#94a3b8',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
   },
   alertError: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
     borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
     borderRadius: Radius.md,
     padding: 10,
-    marginBottom: 12,
+    marginBottom: Spacing.three,
   },
   alertErrorTxt: {
-    color: '#fca5a5',
+    color: '#f87171',
     fontSize: 12,
     fontWeight: '600',
   },
   fieldGroup: {
-    marginBottom: 14,
+    marginBottom: Spacing.three,
+  },
+  fieldLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   fieldLabel: {
     fontSize: 12,
@@ -408,30 +387,22 @@ const modalStyles = StyleSheet.create({
     color: '#cbd5e1',
     marginBottom: 6,
   },
-  fieldHint: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 4,
-  },
   input: {
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
     borderRadius: Radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
+    padding: 12,
     color: '#f8fafc',
-    fontSize: 13,
+    fontSize: 14,
   },
   regenBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    borderRadius: Radius.pill,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
   },
   regenBtnTxt: {
-    color: '#818cf8',
     fontSize: 11,
+    color: '#818cf8',
     fontWeight: '700',
   },
   roleRow: {
@@ -440,67 +411,67 @@ const modalStyles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   rolePill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(51, 65, 85, 0.4)',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.3)',
   },
   rolePillActive: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    borderColor: '#6366f1',
+    backgroundColor: '#6366f1',
+    borderColor: '#818cf8',
   },
   rolePillTxt: {
     color: '#94a3b8',
     fontSize: 12,
-    fontWeight: '600',
-  },
-  rolePillTxtActive: {
-    color: '#c7d2fe',
     fontWeight: '700',
   },
+  rolePillTxtActive: {
+    color: '#ffffff',
+  },
   toggleAdvanced: {
-    marginVertical: 4,
+    paddingVertical: 6,
+    marginBottom: 8,
   },
   toggleAdvancedTxt: {
+    fontSize: 12,
     color: '#818cf8',
-    fontSize: 11,
     fontWeight: '600',
   },
   submitBtn: {
     backgroundColor: '#6366f1',
-    paddingVertical: 13,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.pill,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: Spacing.two,
   },
   submitBtnTxt: {
     color: '#ffffff',
+    fontWeight: '800',
     fontSize: 14,
-    fontWeight: '700',
   },
   successBadge: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderColor: 'rgba(16, 185, 129, 0.4)',
     borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    padding: 12,
     borderRadius: Radius.md,
-    padding: 10,
-    marginBottom: 14,
-    alignItems: 'center',
+    marginBottom: Spacing.three,
   },
   successBadgeTxt: {
-    color: '#6ee7b7',
-    fontSize: 13,
-    fontWeight: '700',
+    color: '#34d399',
+    fontWeight: '800',
+    fontSize: 14,
+    textAlign: 'center',
   },
   msgContainer: {
     backgroundColor: 'rgba(15, 23, 42, 0.8)',
     borderRadius: Radius.lg,
+    padding: Spacing.three,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 12,
-    marginBottom: 14,
+    borderColor: 'rgba(71, 85, 105, 0.35)',
+    marginBottom: Spacing.three,
   },
   msgHeader: {
     flexDirection: 'row',
@@ -509,125 +480,91 @@ const modalStyles = StyleSheet.create({
     marginBottom: 8,
   },
   msgHeaderTitle: {
-    color: '#cbd5e1',
     fontSize: 12,
     fontWeight: '700',
+    color: '#94a3b8',
   },
-  copyPill: {
+  copyIconBtn: {
     backgroundColor: 'rgba(99, 102, 241, 0.2)',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
   },
-  copyPillActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  copyPillTxt: {
-    color: '#818cf8',
+  copyIconBtnTxt: {
+    color: '#a5b4fc',
     fontSize: 11,
     fontWeight: '700',
   },
-  msgBox: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderRadius: Radius.md,
-    padding: 10,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+  msgText: {
+    fontSize: 13,
+    color: '#e2e8f0',
+    lineHeight: 19,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  msgBoxTxt: {
-    color: '#edeef2',
-    fontSize: 12,
-    lineHeight: 18,
-    fontFamily: Platform.OS === 'web' ? 'monospace' : undefined,
-  },
-  actionsRow: {
+  shareActionRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
+    marginBottom: Spacing.three,
   },
-  whatsAppBtn: {
+  shareBtn: {
     flex: 1,
-    backgroundColor: '#10b981',
-    paddingVertical: 10,
-    borderRadius: Radius.md,
+    paddingVertical: 12,
+    borderRadius: Radius.pill,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  whatsAppBtnTxt: {
+  whatsappBtn: {
+    backgroundColor: '#16a34a',
+  },
+  copyUrlBtn: {
+    backgroundColor: '#4338ca',
+  },
+  shareBtnTxt: {
     color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
+    fontSize: 13,
   },
-  urlCopyBtn: {
-    flex: 1,
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
-    paddingVertical: 10,
-    borderRadius: Radius.md,
-    alignItems: 'center',
-  },
-  urlCopyBtnTxt: {
-    color: '#c7d2fe',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  previewContainer: {
-    marginBottom: 16,
-  },
-  previewHeader: {
-    color: '#94a3b8',
-    fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  socialCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: Radius.md,
+  urlBox: {
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
     padding: 10,
-    gap: 4,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(51, 65, 85, 0.3)',
+    marginBottom: Spacing.four,
   },
-  socialCardTitle: {
-    color: '#38bdf8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  socialCardDesc: {
-    color: '#94a3b8',
+  urlLabel: {
     fontSize: 11,
-    lineHeight: 15,
-  },
-  socialCardUrl: {
+    fontWeight: '700',
     color: '#64748b',
-    fontSize: 10,
+    marginBottom: 2,
+  },
+  urlValue: {
+    fontSize: 12,
+    color: '#38bdf8',
   },
   bottomRow: {
     flexDirection: 'row',
-    gap: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
   },
   newInviteBtn: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingVertical: 10,
-    borderRadius: Radius.md,
-    alignItems: 'center',
+    paddingVertical: 8,
   },
   newInviteBtnTxt: {
-    color: '#cbd5e1',
-    fontSize: 12,
-    fontWeight: '600',
+    color: '#818cf8',
+    fontSize: 13,
+    fontWeight: '700',
   },
   doneBtn: {
-    flex: 1,
-    backgroundColor: '#6366f1',
+    backgroundColor: '#334155',
+    paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: Radius.md,
-    alignItems: 'center',
+    borderRadius: Radius.pill,
   },
   doneBtnTxt: {
-    color: '#ffffff',
-    fontSize: 12,
+    color: '#f8fafc',
+    fontSize: 13,
     fontWeight: '700',
   },
 });

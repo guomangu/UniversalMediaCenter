@@ -3,6 +3,7 @@ import { db } from '../db/connection.js';
 import { forumMessages, forumMessageVotes, userFriends, users } from '../db/schema/index.js';
 import { eq, asc, desc, count, sql, and } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
+import { canUserAccessMediaNodeId } from '../auth/mediaAccess.js';
 import { forumUploadRouter } from './forumUpload.js';
 import { fetchForumExploreData, fetchTopicContextData } from './forumAssociations.js';
 import {
@@ -23,26 +24,26 @@ forumRouter.route('/', forumUploadRouter);
 async function canAccessPrivateForum(userId: string, ownerId: string): Promise<boolean> {
   if (userId === ownerId) return true;
   const friendship = await db.query.userFriends.findFirst({
-    where: (t, { or, and, eq }) =>
-      and(
-        eq(t.status, 'ACCEPTED'),
-        or(
-          and(eq(t.userId, userId), eq(t.friendId, ownerId)),
-          and(eq(t.userId, ownerId), eq(t.friendId, userId))
-        )
+    where: (t, { and: a, eq: e, or: o }) =>
+      a(
+        o(
+          a(e(t.userId, userId), e(t.friendId, ownerId)),
+          a(e(t.userId, ownerId), e(t.friendId, userId))
+        ),
+        e(t.status, 'ACCEPTED')
       ),
   });
   return Boolean(friendship);
 }
 
-// Vérification universelle pour salons privés de membres (private-user-) et salons directs (dm-)
+// Contrôle d'accès souverain pour les salons privés et discussions directes
 async function canAccessPrivateTopic(user: any, slug: string): Promise<{ allowed: boolean; error?: string; topicTitle?: string }> {
-  if (!slug.startsWith('private-user-') && !slug.startsWith('dm-')) {
-    return { allowed: true };
-  }
+  if (!slug) return { allowed: false, error: 'Slug requis' };
 
-  if (!user?.id) {
-    return { allowed: false, error: 'Connexion requise pour accéder à ce salon privé' };
+  if (slug.startsWith('private-user-') || slug.startsWith('dm-')) {
+    if (!user) {
+      return { allowed: false, error: 'Connexion requise pour accéder à ce salon privé' };
+    }
   }
 
   if (slug.startsWith('private-user-')) {
@@ -109,10 +110,10 @@ forumRouter.get('/topics/:slug/context', async (c) => {
 });
 
 // -------------------------------------------------------------
-// 2. MESSAGES DU FORUM (LECTURE PUBLIQUE / ÉCRITURE SÉCURISÉE)
+// 2. MESSAGES ET DISCUSSIONS DU FORUM
 // -------------------------------------------------------------
 
-// Récupère la liste des messages pour un sujet / slug précis
+// Récupérer les messages d'un sujet spécifique
 forumRouter.get('/topics/:slug/messages', async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
   const user = (c as any).get('user') as any;
@@ -143,16 +144,50 @@ forumRouter.get('/topics/:slug/messages', async (c) => {
   await Promise.all(
     authorIds.map(async (aId) => {
       const loc = await getUserLastLocation(aId);
-      if (loc) locationsMap.set(aId, loc);
+      if (loc) {
+        // Zéro-Fuite : si la position pointe vers un média que l'utilisateur courant n'a pas les droits de voir,
+        // on ne renvoie pas la position afin de ne pas afficher de lien invalide ou d'erreur
+        const targetMediaId =
+          loc.mediaId ||
+          (loc.path ? loc.path.match(/\/(?:player|media)\/([0-9a-fA-F-]{36})/)?.[1] : null);
+        if (targetMediaId && (!user || !user.isAdmin)) {
+          const allowed = await canUserAccessMediaNodeId(user, targetMediaId);
+          if (!allowed) return;
+        }
+        locationsMap.set(aId, loc);
+      }
+    })
+  );
+
+  // Filtrer également les œuvres citées (quotedMediaId) dont l'accès est restreint pour le lecteur
+  const sanitizedMessages = await Promise.all(
+    messages.map(async (m) => {
+      let quotedMediaId = m.quotedMediaId;
+      let quotedMediaTitle = m.quotedMediaTitle;
+      let quotedMediaPoster = m.quotedMediaPoster;
+
+      if (quotedMediaId && (!user || !user.isAdmin)) {
+        const allowed = await canUserAccessMediaNodeId(user, quotedMediaId);
+        if (!allowed) {
+          quotedMediaId = null;
+          quotedMediaTitle = null;
+          quotedMediaPoster = null;
+        }
+      }
+
+      return {
+        ...m,
+        quotedMediaId,
+        quotedMediaTitle,
+        quotedMediaPoster,
+        hasVoted: votedSet.has(m.id),
+        authorLocation: m.authorId ? locationsMap.get(m.authorId) || null : null,
+      };
     })
   );
 
   return c.json({
-    messages: messages.map((m) => ({
-      ...m,
-      hasVoted: votedSet.has(m.id),
-      authorLocation: m.authorId ? locationsMap.get(m.authorId) || null : null,
-    })),
+    messages: sanitizedMessages,
   });
 });
 
@@ -202,7 +237,14 @@ forumRouter.post('/topics/:slug/messages', async (c) => {
     })
     .returning();
 
-  const authorLoc = newMessage.authorId ? await getUserLastLocation(newMessage.authorId) : null;
+  let authorLoc = newMessage.authorId ? await getUserLastLocation(newMessage.authorId) : null;
+  const authorTargetMediaId =
+    authorLoc?.mediaId ||
+    (authorLoc?.path ? authorLoc.path.match(/\/(?:player|media)\/([0-9a-fA-F-]{36})/)?.[1] : null);
+  if (authorTargetMediaId && (!user || !user.isAdmin)) {
+    const allowed = await canUserAccessMediaNodeId(user, authorTargetMediaId);
+    if (!allowed) authorLoc = null;
+  }
 
   return c.json({
     success: true,

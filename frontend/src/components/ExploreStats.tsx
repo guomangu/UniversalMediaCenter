@@ -40,7 +40,7 @@ export const ExploreStats: React.FC<ExploreStatsProps> = ({ stats, onSelectGenre
         <View style={styles.genreSection}>
           <Text style={styles.sectionTitle}>Top Genres & Thématiques</Text>
           <View style={styles.genreWrap}>
-            {stats.topGenres.map((g) => (
+            {stats.topGenres.map((g: any) => (
               <TagPill
                 key={g.name}
                 label={`${g.name} (${g.count})`}

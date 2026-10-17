@@ -55,7 +55,13 @@ export function AccountModal({ visible, onClose }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable focusable={false} style={styles.overlay} onPress={onClose} {...({ dataSet: { modalBackdrop: 'true' } } as any)}>
+      <View style={styles.overlay}>
+        <Pressable
+          focusable={false}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+        />
         <View style={styles.modalCard} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <View style={styles.headerRow}>
             <Text style={styles.title}>👤 Mon Compte</Text>
@@ -98,59 +104,42 @@ export function AccountModal({ visible, onClose }: Props) {
                     <Text style={styles.incognitoTitle}>🕶️ Mode Discret (Incognito)</Text>
                     <Text style={styles.incognitoDesc}>
                       {isIncognito
-                        ? 'Actif : vous regardez dans le lecteur sans apparaître sur /media ni dans les séances'
-                        : 'Inactif : vos amis voient votre présence sur les médias'}
+                        ? 'Actif : Vos lectures et présences ne sont pas partagées.'
+                        : 'Désactivé : Vos amis peuvent voir votre activité.'}
                     </Text>
                   </View>
                   <Pressable
                     focusable={true}
+                    style={[styles.incognitoBtn, isIncognito && styles.incognitoBtnActive]}
                     onPress={handleToggleIncognito}
-                    style={[styles.incognitoToggle, isIncognito ? styles.incognitoOn : styles.incognitoOff]}
                   >
-                    <Text style={styles.incognitoToggleTxt}>{isIncognito ? 'ACTIVÉ' : 'DÉSACTIVÉ'}</Text>
+                    <Text style={[styles.incognitoBtnTxt, isIncognito && styles.incognitoBtnTxtActive]}>
+                      {isIncognito ? 'Désactiver' : 'Activer'}
+                    </Text>
                   </Pressable>
-                </View>
-
-                <View style={styles.permsRow}>
-                  <Text style={[styles.permPill, { color: currentUser.canDownload ? '#34d399' : '#f87171' }]}>
-                    📥 {currentUser.canDownload ? 'Téléchargement actif' : 'Téléchargement interdit'}
-                  </Text>
-                  <Text style={[styles.permPill, { color: currentUser.canWatchIptv ? '#38bdf8' : '#f87171' }]}>
-                    📺 {currentUser.canWatchIptv ? 'IPTV autorisée' : 'IPTV interdite'}
-                  </Text>
                 </View>
               </View>
 
-              <Pressable
-                focusable={true}
-                style={styles.userSpaceBtn}
-                onPress={handleGoToUserSpace}
-              >
-                <Text style={styles.userSpaceBtnText}>🚀 Ouvrir Mon Espace Utilisateur (Stats, Amis, Favoris...)</Text>
-              </Pressable>
+              <View style={styles.actions}>
+                <Pressable focusable={true} style={styles.userSpaceBtn} onPress={handleGoToUserSpace}>
+                  <Text style={styles.userSpaceBtnTxt}>📊 Mon Espace & Profil</Text>
+                </Pressable>
 
-              <Pressable
-                focusable={true}
-                style={styles.logoutBtn}
-                onPress={handleLogout}
-              >
-                <Text style={styles.logoutBtnText}>Se déconnecter</Text>
-              </Pressable>
+                <Pressable focusable={true} style={styles.logoutBtn} onPress={handleLogout}>
+                  <Text style={styles.logoutBtnTxt}>🚪 Se déconnecter</Text>
+                </Pressable>
+              </View>
             </View>
           ) : (
-            <View style={styles.notLoggedView}>
-              <Text style={styles.notLoggedTxt}>Vous n'êtes pas connecté.</Text>
-              <Pressable
-                focusable={true}
-                style={styles.loginBtn}
-                onPress={handleGoToLogin}
-              >
-                <Text style={styles.loginBtnText}>Se connecter / Créer un compte</Text>
+            <View style={styles.loggedOutBox}>
+              <Text style={styles.loggedOutTxt}>Vous n'êtes actuellement pas connecté.</Text>
+              <Pressable focusable={true} style={styles.loginBtn} onPress={handleGoToLogin}>
+                <Text style={styles.loginBtnTxt}>Se connecter / Changer de compte</Text>
               </Pressable>
             </View>
           )}
         </View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
@@ -171,6 +160,7 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.35)',
+    zIndex: 1,
   },
   headerRow: {
     flexDirection: 'row',
@@ -202,18 +192,19 @@ const styles = StyleSheet.create({
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
+    gap: 12,
+    marginBottom: Spacing.three,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   avatarTxt: {
     color: '#ffffff',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
   },
   nameBadges: {
@@ -228,107 +219,109 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
   },
   adminBadge: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#fef08a',
-    backgroundColor: 'rgba(234, 179, 8, 0.25)',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fbbf24',
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: Radius.pill,
   },
   memberBadge: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#93c5fd',
-    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+    color: '#94a3b8',
+    backgroundColor: 'rgba(148, 163, 184, 0.15)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: Radius.pill,
   },
   userEmail: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#64748b',
     marginTop: 2,
   },
   incognitoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
-    borderRadius: Radius.md,
-    padding: 10,
-    marginTop: 10,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
+    gap: 12,
+    paddingTop: Spacing.two,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(71, 85, 105, 0.3)',
   },
-  incognitoTitle: { color: '#f8fafc', fontSize: 12, fontWeight: '800' },
-  incognitoDesc: { color: '#94a3b8', fontSize: 10, marginTop: 2, lineHeight: 14 },
-  incognitoToggle: {
-    paddingHorizontal: 10,
+  incognitoTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#cbd5e1',
+  },
+  incognitoDesc: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  incognitoBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: Radius.pill,
   },
-  incognitoOn: { backgroundColor: '#10b981' },
-  incognitoOff: { backgroundColor: '#475569' },
-  incognitoToggleTxt: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
-  permsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(71, 85, 105, 0.25)',
+  incognitoBtnActive: {
+    backgroundColor: '#6366f1',
   },
-  permPill: {
-    fontSize: 11,
+  incognitoBtnTxt: {
+    color: '#cbd5e1',
+    fontSize: 12,
     fontWeight: '700',
+  },
+  incognitoBtnTxtActive: {
+    color: '#ffffff',
+  },
+  actions: {
+    gap: 8,
   },
   userSpaceBtn: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    borderWidth: 1,
-    borderColor: '#6366f1',
-    borderRadius: Radius.pill,
-    paddingVertical: 10,
+    backgroundColor: '#4338ca',
+    paddingVertical: 12,
+    borderRadius: Radius.lg,
     alignItems: 'center',
-    marginBottom: 8,
   },
-  userSpaceBtnText: {
-    color: '#c7d2fe',
-    fontSize: 12,
+  userSpaceBtnTxt: {
+    color: '#ffffff',
     fontWeight: '800',
+    fontSize: 14,
   },
   logoutBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderRadius: Radius.pill,
-    paddingVertical: 10,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    paddingVertical: 12,
+    borderRadius: Radius.lg,
     alignItems: 'center',
   },
-  logoutBtnText: {
-    color: '#fca5a5',
-    fontSize: 12,
-    fontWeight: '700',
+  logoutBtnTxt: {
+    color: '#f87171',
+    fontWeight: '800',
+    fontSize: 14,
   },
-  notLoggedView: {
+  loggedOutBox: {
     alignItems: 'center',
-    paddingVertical: Spacing.three,
+    paddingVertical: Spacing.four,
   },
-  notLoggedTxt: {
+  loggedOutTxt: {
     color: '#94a3b8',
-    marginBottom: 12,
-    fontSize: 13,
+    fontSize: 14,
+    marginBottom: Spacing.three,
   },
   loginBtn: {
     backgroundColor: '#6366f1',
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.lg,
   },
-  loginBtnText: {
+  loginBtnTxt: {
     color: '#ffffff',
     fontWeight: '800',
-    fontSize: 13,
+    fontSize: 14,
   },
 });

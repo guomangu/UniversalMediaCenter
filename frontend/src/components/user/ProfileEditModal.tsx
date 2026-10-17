@@ -1,46 +1,44 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Modal, Pressable, TextInput, StyleSheet, ScrollView } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
-import { updateUserProfile } from '@/services/userApi';
+import { updateProfile } from '@/services/userApi';
 
-const AVATAR_PRESETS = [
-  '🍿', '🎬', '🚀', '👾', '🦊', '🐱', '🐼', '🦁', '⭐', '🔥', '🎧', '🎸'
-];
+const AVATAR_PRESETS = ['🎬', '🍿', '🦊', '🐱', '🚀', '⚡', '🎮', '🐉', '🤖', '🎧', '👾', '🌟'];
 
 interface Props {
   visible: boolean;
-  currentUser: {
-    displayName: string;
-    bio?: string;
-    avatarUrl?: string;
-  };
+  currentUser: any;
   onClose: () => void;
   onSuccess: (updated: any) => void;
 }
 
 export function ProfileEditModal({ visible, currentUser, onClose, onSuccess }: Props) {
-  const [displayName, setDisplayName] = useState(currentUser.displayName || '');
-  const [bio, setBio] = useState(currentUser.bio || '');
-  const [avatar, setAvatar] = useState(currentUser.avatarUrl || '🍿');
+  const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
+  const [avatar, setAvatar] = useState(currentUser?.avatarUrl || '🎬');
+  const [bio, setBio] = useState(currentUser?.bio || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const firstInputRef = useRef<any>(null);
 
   useEffect(() => {
-    if (visible) {
-      const timer = setTimeout(() => {
-        firstInputRef.current?.focus?.();
-      }, 80);
-      return () => clearTimeout(timer);
+    if (visible && currentUser) {
+      setDisplayName(currentUser.displayName || '');
+      setAvatar(currentUser.avatarUrl || '🎬');
+      setBio(currentUser.bio || '');
+      setError('');
+      setTimeout(() => firstInputRef.current?.focus?.(), 80);
     }
-  }, [visible]);
+  }, [visible, currentUser]);
 
   const handleSave = async () => {
+    if (!displayName.trim()) {
+      setError('Le pseudo ne peut pas être vide.');
+      return;
+    }
     setLoading(true);
     setError('');
-    const res = await updateUserProfile({
-      displayName,
-      bio,
+    const res = await updateProfile({
+      displayName: displayName.trim(),
       avatarUrl: avatar,
     });
     setLoading(false);
@@ -54,12 +52,13 @@ export function ProfileEditModal({ visible, currentUser, onClose, onSuccess }: P
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        focusable={false}
-        style={styles.backdrop}
-        onPress={onClose}
-        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
-      >
+      <View style={styles.overlay}>
+        <Pressable
+          focusable={false}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+        />
         <View style={styles.card} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <View style={styles.header}>
             <Text style={styles.title}>✏️ Personnaliser mon profil</Text>
@@ -126,13 +125,13 @@ export function ProfileEditModal({ visible, currentUser, onClose, onSuccess }: P
             </Pressable>
           </View>
         </View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
@@ -147,6 +146,7 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.4)',
+    zIndex: 1,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   title: { fontSize: 18, fontWeight: '800', color: '#f8fafc' },
@@ -178,8 +178,8 @@ const styles = StyleSheet.create({
   },
   errorTxt: { color: '#f87171', fontSize: 12, fontWeight: '700', marginBottom: 10 },
   actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end', marginTop: 4 },
-  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: Radius.pill, backgroundColor: '#334155' },
-  cancelTxt: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
-  saveBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: Radius.pill, backgroundColor: '#6366f1' },
-  saveTxt: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  cancelBtn: { backgroundColor: '#334155', paddingVertical: 10, paddingHorizontal: 16, borderRadius: Radius.pill },
+  cancelTxt: { color: '#e2e8f0', fontWeight: '700', fontSize: 13 },
+  saveBtn: { backgroundColor: '#6366f1', paddingVertical: 10, paddingHorizontal: 20, borderRadius: Radius.pill },
+  saveTxt: { color: '#ffffff', fontWeight: '800', fontSize: 13 },
 });

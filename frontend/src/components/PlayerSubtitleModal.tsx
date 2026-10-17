@@ -1,19 +1,19 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, Modal, Pressable, StyleSheet, Platform, ScrollView } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, Modal, Pressable, ScrollView, Platform, StyleSheet } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
-export interface SubtitleTrackItem {
+interface SubtitleItem {
   index: number;
-  language: string;
   label: string;
+  language?: string;
   fileName?: string;
 }
 
 interface Props {
   visible: boolean;
   activeSubtitle: string;
-  tracks: SubtitleTrackItem[];
-  onSelect: (value: string) => void;
+  tracks: SubtitleItem[];
+  onSelect: (subId: string) => void;
   onClose: () => void;
 }
 
@@ -28,16 +28,15 @@ export function PlayerSubtitleModal({ visible, activeSubtitle, tracks = [], onSe
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        focusable={false}
-        style={styles.backdrop}
-        onPress={onClose}
-        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
-      >
+      <View style={styles.overlay}>
         <Pressable
           focusable={false}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+        />
+        <View
           style={styles.content}
-          onPress={(e) => e.stopPropagation()}
           {...({ dataSet: { modalContainer: 'true' } } as any)}
         >
           <View style={styles.header}>
@@ -88,15 +87,15 @@ export function PlayerSubtitleModal({ visible, activeSubtitle, tracks = [], onSe
               </ScrollView>
             )}
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: Spacing.three },
-  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 380, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: Spacing.three },
+  content: { backgroundColor: '#1e293b', borderRadius: Radius.lg, width: '100%', maxWidth: 380, padding: Spacing.four, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)', zIndex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.three },
   title: { fontSize: 16, fontWeight: '800', color: '#f8fafc' },
   close: { color: '#94a3b8', fontSize: 16, fontWeight: '700', padding: 4 },

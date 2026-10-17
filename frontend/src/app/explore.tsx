@@ -59,7 +59,7 @@ export default function ExploreScreen() {
         )}
         <Text style={styles.sectionTitle}>{listTitle}</Text>
         <View style={styles.grid}>
-          {displayList.map((node) => (
+          {displayList.map((node: any) => (
             <View key={node.id} style={styles.gridItem}>
               <MediaCard item={node} styleVariant="POSTER" />
             </View>

@@ -50,7 +50,7 @@ export function UserStatsCard({ userStats, mediaStats }: Props) {
         </View>
       </View>
 
-      <Text style={[styles.sectionTitle, { marginTop: 16 }]}>🌐 Médias du Serveur</Text>
+      <Text style={[styles.sectionTitle, { marginTop: 16 }]}>🌐 Médias Accessibles</Text>
       <View style={styles.mediaSummaryRow}>
         <Text style={styles.mediaBadge}>🎬 {mediaStats.movies} Films</Text>
         <Text style={styles.mediaBadge}>📺 {mediaStats.shows} Séries</Text>
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   },
   statLbl: {
     fontSize: 11,
-    color: '#cbd5e1',
+    color: '#94a3b8',
     fontWeight: '600',
   },
   mediaSummaryRow: {
@@ -110,12 +110,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   mediaBadge: {
-    backgroundColor: 'rgba(51, 65, 85, 0.6)',
-    color: '#f1f5f9',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    color: '#cbd5e1',
     fontSize: 12,
     fontWeight: '700',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
   },
 });

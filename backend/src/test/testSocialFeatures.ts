@@ -2,9 +2,10 @@ import assert from 'node:assert';
 import { db } from '../db/connection.js';
 import { users, mediaNodes, userFriends, userFavorites, mediaReposts, mediaSessions, mediaSessionParticipants, forumMessages } from '../db/schema/index.js';
 import { eq, or, and } from 'drizzle-orm';
+import { canUserAccessMediaNodeId } from '../auth/mediaAccess.js';
 
 async function runTests() {
-  console.log('🧪 Testing Social & User Features (Favoris, Amis, Salons, Fil d\'avis)...');
+  console.log('🧪 Testing Social & User Features (Favoris, Amis, Salons, Fil d\'avis, Zero-Leak)...');
 
   // 1. Favoris : Vérification du format de retour et de l'étanchéité
   console.log('  Testing Favoris logic...');
@@ -83,6 +84,21 @@ async function runTests() {
   assert.strictEqual(fetchedRepost.rating, 5, 'La note doit être de 5 étoiles');
   assert.strictEqual(fetchedRepost.comment, cleanComment, 'Le commentaire doit être préservé');
   console.log('  ✅ Fil d\'avis rating and review persistence verified');
+
+  // 5. Zero-Leak Position & Activité (PBAC / ABAC)
+  console.log('  Testing Zero-Leak Position & Friend Activity filtering...');
+  const adminUser = {
+    id: 'user-admin-test',
+    email: 'admin@test.local',
+    isAdmin: true,
+  };
+
+  const allowedForAdmin = await canUserAccessMediaNodeId(adminUser as any, media.id);
+  assert.strictEqual(allowedForAdmin, true, "L'administrateur a accès à n'importe quel média");
+
+  const unauthenticatedAllowed = await canUserAccessMediaNodeId(null, media.id);
+  assert.strictEqual(unauthenticatedAllowed, false, 'Un utilisateur non connecté ne doit avoir aucun accès');
+  console.log('  ✅ Zero-Leak canUserAccessMediaNodeId verified');
 
   console.log('🎉 All Social & User Feature tests completed successfully!');
   process.exit(0);

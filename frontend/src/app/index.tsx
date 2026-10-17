@@ -74,10 +74,10 @@ export default function HomeScreen() {
   const visibleCategories = useMemo(() => {
     return categories.filter((cat) => {
       if (!cat.tags || cat.tags.length === 0) return false;
-      if (hiddenCatIds[cat.id]) return false;
       if (!searchQuery && (!activeFilter || activeFilter === 'Tous')) {
-        if (!cat.tags.some((t) => Number(t.count) > 0)) return false;
+        return cat.tags.some((t) => Number(t.count) > 0);
       }
+      if (hiddenCatIds[cat.id]) return false;
       return true;
     });
   }, [categories, hiddenCatIds, searchQuery, activeFilter]);
@@ -179,74 +179,65 @@ export default function HomeScreen() {
 
   // Détection des interactions utilisateur réelles pour relâcher le mode restauration
   useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const handleUserInteraction = () => {
-        isRestoringScroll.current = false;
-      };
-      window.addEventListener('wheel', handleUserInteraction, { passive: true });
-      window.addEventListener('touchstart', handleUserInteraction, { passive: true });
-      return () => {
-        window.removeEventListener('wheel', handleUserInteraction);
-        window.removeEventListener('touchstart', handleUserInteraction);
-      };
-    }
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const releaseRestore = () => {
+      isRestoringScroll.current = false;
+      scrollRestoredRef.current = true;
+    };
+
+    window.addEventListener('wheel', releaseRestore, { passive: true });
+    window.addEventListener('touchstart', releaseRestore, { passive: true });
+    window.addEventListener('keydown', releaseRestore, { passive: true });
+
+    return () => {
+      window.removeEventListener('wheel', releaseRestore);
+      window.removeEventListener('touchstart', releaseRestore);
+      window.removeEventListener('keydown', releaseRestore);
+    };
   }, []);
 
   const handleContentSizeChange = useCallback(() => {
-    if (isRestoringScroll.current && !scrollRestoredRef.current && savedHomeScrollY > 0) {
+    if (isRestoringScroll.current && savedHomeScrollY > 0 && !scrollRestoredRef.current) {
       applyScroll(savedHomeScrollY);
+      updateActiveCategory(savedHomeScrollY);
     }
-  }, [applyScroll]);
+  }, [applyScroll, updateActiveCategory]);
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData(true);
     setRefreshing(false);
-  };
+  }, []);
 
-  const handleJumpToCategory = (catId: string) => {
-    activeCatRef.current = catId;
-    setActiveCategoryId(catId);
-
+  const handleJumpToCategory = (id: string) => {
     isJumpingRef.current = true;
-    setTimeout(() => {
-      isJumpingRef.current = false;
-    }, 600);
+    activeCatRef.current = id;
+    setActiveCategoryId(id);
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const el = document.getElementById(`cat-section-${catId}`);
+      const el = document.getElementById(`cat-section-${id}`);
       if (el) {
-        const rect = el.getBoundingClientRect();
-        const currentScroll =
-          (scrollRef.current as any)?.getScrollableNode?.()?.scrollTop ||
-          (scrollRef.current as any)?.scrollTop ||
-          window.scrollY ||
-          0;
-        const targetY = Math.max(0, currentScroll + rect.top - headerPaddingTop - 12);
-        applyScroll(targetY);
-        savedHomeScrollY = targetY;
-        if (typeof window !== 'undefined' && window.sessionStorage) {
-          sessionStorage.setItem('ums_home_scroll_y', String(targetY));
-        }
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setTimeout(() => {
+          isJumpingRef.current = false;
+        }, 800);
         return;
       }
     }
 
-    const pos = catPositions.current[catId];
+    const pos = catPositions.current[id];
     if (typeof pos === 'number') {
-      const targetY = Math.max(0, pos - headerPaddingTop - 12);
-      applyScroll(targetY);
-      savedHomeScrollY = targetY;
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
-        sessionStorage.setItem('ums_home_scroll_y', String(targetY));
-      }
+      applyScroll(Math.max(0, pos - headerPaddingTop - 12));
     }
+    setTimeout(() => {
+      isJumpingRef.current = false;
+    }, 800);
   };
 
   const handleScrollToTop = () => {
-    savedHomeScrollY = 0;
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
-      sessionStorage.setItem('ums_home_scroll_y', '0');
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     applyScroll(0);
     const firstId = visibleCategories[0]?.id || 'sagas';

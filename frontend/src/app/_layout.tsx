@@ -1,4 +1,4 @@
-import { Stack, DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { Stack, DarkTheme, DefaultTheme, ThemeProvider, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, Platform } from 'react-native';
 import { useEffect } from 'react';
@@ -6,6 +6,14 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { useTvNavigation } from '@/hooks/useTvNavigation';
 import { CastControlBar } from '@/components/CastControlBar';
 import { useActiveCastTarget, setActiveCastTarget } from '@/services/castState';
+import {
+  initGoogleCastFramework,
+  registerAsReceiver,
+  sendCastHeartbeat,
+  pollDeviceCommands,
+  getLocalDeviceId,
+  getLocalDeviceName,
+} from '@/services/castService';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { syncSessionWithServer } from '@/services/authStore';
 import { registerPwa } from '@/services/pwaRegistration';
@@ -14,6 +22,7 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
 } else if (typeof document !== 'undefined') {
+  initGoogleCastFramework();
   if (!document.getElementById('google-cast-sender-script')) {
     const script = document.createElement('script');
     script.id = 'google-cast-sender-script';
@@ -21,11 +30,11 @@ if (Platform.OS !== 'web') {
     script.async = true;
     document.head.appendChild(script);
   }
-
 }
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
   const activeCastTarget = useActiveCastTarget();
   useTvNavigation();
 
@@ -33,6 +42,29 @@ export default function RootLayout() {
     registerPwa();
     syncSessionWithServer().catch(() => {});
   }, []);
+
+  // Enregistrement actif de l'écran local comme récepteur Cast & écouteur de télécommande
+  useEffect(() => {
+    registerAsReceiver(getLocalDeviceName(), { isPlaying: false }).catch(() => {});
+
+    const interval = setInterval(() => {
+      sendCastHeartbeat({}).catch(() => {});
+
+      // Si nous ne sommes pas sur la page lecteur (qui gère ses propres commandes en direct)
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/player')) {
+        pollDeviceCommands(getLocalDeviceId(), (cmd) => {
+          if (cmd.action === 'LOAD' && cmd.payload?.mediaId) {
+            router.push({
+              pathname: `/player/${cmd.payload.mediaId}`,
+              params: cmd.payload.title ? { title: cmd.payload.title } : undefined,
+            } as any);
+          }
+        }).catch(() => {});
+      }
+    }, 4500);
+
+    return () => clearInterval(interval);
+  }, [router]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

@@ -26,12 +26,13 @@ export function CategorySection({
   const getInitialCounts = useCallback((f?: string, q?: string) => {
     const init: Record<string, number> = {};
     for (const t of category.tags.slice(0, 5)) {
+      const lim = t.slug === 'all-movies' || t.slug === 'all-series' ? 30 : 10;
       const c = getCachedTaxonomyMedias({
         category: category.id,
         tag: t.slug,
         filter: f,
         q,
-        limit: 10,
+        limit: lim,
       });
       if (c?.items !== undefined) {
         init[t.slug] = c.items.length;
@@ -64,12 +65,13 @@ export function CategorySection({
   const [mediasByTag, setMediasByTag] = useState<Record<string, string[]>>(() => {
     const init: Record<string, string[]> = {};
     for (const t of category.tags.slice(0, 5)) {
+      const lim = t.slug === 'all-movies' || t.slug === 'all-series' ? 30 : 10;
       const c = getCachedTaxonomyMedias({
         category: category.id,
         tag: t.slug,
         filter: activeFilter,
         q: searchQuery,
-        limit: 10,
+        limit: lim,
       });
       if (c?.items?.length) {
         init[t.slug] = c.items.map((m) => m.id);
@@ -98,19 +100,27 @@ export function CategorySection({
   const allVisibleLoaded = visibleTags.length > 0 && visibleTags.every((t) => counts[t.slug] !== undefined);
   const totalCount = Object.values(counts).reduce((s, c) => s + c, 0);
 
-  // Une catégorie n'est visible que si elle contient des tags et qu'au moins un média est présent
-  const hasConfirmedMedia = totalCount > 0 || Object.values(mediasByTag).some((arr) => arr.length > 0);
+  // Une catégorie n'est confirmée vide que lorsque TOUS ses tags visibles ont terminé
+  // leur chargement et que le total de médias retournés est égal à 0.
+  const isConfirmedEmpty = allVisibleLoaded && totalCount === 0;
+
+  // La catégorie est visible tant qu'elle n'est pas confirmée vide (pendant le chargement
+  // ou si des médias ont été confirmés par le serveur ou par les rails).
   const isVisible =
     category.tags.length > 0 &&
     activeTags.length > 0 &&
-    hasConfirmedMedia;
+    !isConfirmedEmpty;
 
   // Notification réactive au parent (HomeScreen) pour mise à jour synchronisée des raccourcis SiteHeader
   useEffect(() => {
-    onVisibilityChange?.(category.id, isVisible);
-  }, [category.id, isVisible, onVisibilityChange]);
+    if (allVisibleLoaded) {
+      onVisibilityChange?.(category.id, isVisible);
+    } else if (totalCount > 0 || hasAnyCount) {
+      onVisibilityChange?.(category.id, true);
+    }
+  }, [category.id, isVisible, allVisibleLoaded, totalCount, hasAnyCount, onVisibilityChange]);
 
-  if (!isVisible) {
+  if (isConfirmedEmpty) {
     return null;
   }
 
@@ -134,7 +144,7 @@ export function CategorySection({
         />
         <View style={styles.tagCountBadge}>
           <Text style={styles.tagCountText}>
-            {searchQuery ? `${matchedCount} actif${matchedCount > 1 ? 's' : ''}` : `${visibleTags.length}/${category.tags.length} tags`}
+            {activeTags.length} tag{activeTags.length > 1 ? 's' : ''}
           </Text>
         </View>
       </View>
@@ -142,7 +152,7 @@ export function CategorySection({
       <View style={styles.verticalTagList}>
         {visibleTags.map((tag, index) => {
           // Déduplication intra-catégorie pour sagas/studios, mais indépendance totale pour les rails de qualité
-          const excludeIds = category.id === 'qualities'
+          const excludeIds = (category.id === 'qualities' || category.id === 'movies' || category.id === 'series')
             ? []
             : visibleTags.slice(0, index).flatMap((t) => mediasByTag[t.slug] || []);
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, Image, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, Image, useWindowDimensions, Platform } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { MediaNode } from '@/services/types';
 import { resolveImageUrl } from '@/services/api';
@@ -40,6 +40,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
 
   const seasonTag = item.displayBadge || item.seasonEpisodeTag;
   const progressPercent = item.progressPercent ?? 0;
+  const isUnavailableChannel = item.nodeType === 'LIVE_CHANNEL' && (item.state === 'ERROR' || item.state === 'MISSING_FILE');
 
   return (
     <Link href={targetHref as any} asChild>
@@ -48,9 +49,16 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
         style={({ pressed }) => [
           styles.cardContainer,
           { width: cardWidth },
+          isUnavailableChannel && { opacity: 0.6 },
           pressed && styles.pressed,
         ]}>
-        <View style={[styles.imageWrapper, { width: cardWidth, height: cardHeight }]}>
+        <View
+          style={[
+            styles.imageWrapper,
+            { width: cardWidth, height: cardHeight },
+            isUnavailableChannel && (Platform.OS === 'web' ? { filter: 'grayscale(100%)' } : { opacity: 0.7 }) as any,
+          ]}
+        >
           {imageUri ? (
             <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
           ) : (
@@ -58,6 +66,16 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
               <Text style={styles.placeholderText}>{item.title.slice(0, 2).toUpperCase()}</Text>
             </View>
           )}
+
+          {isUnavailableChannel ? (
+            <View style={[styles.ratingBadge, { backgroundColor: 'rgba(217, 119, 6, 0.92)', right: 8 }]}>
+              <Text style={[styles.ratingText, { color: '#ffffff', fontWeight: '800' }]}>HORS LIGNE</Text>
+            </View>
+          ) : isLive ? (
+            <View style={[styles.ratingBadge, { backgroundColor: 'rgba(220, 38, 38, 0.88)', right: 8 }]}>
+              <Text style={[styles.ratingText, { color: '#ffffff', fontWeight: '800' }]}>DIRECT</Text>
+            </View>
+          ) : null}
 
           {seasonTag ? (
             <View style={styles.seasonBadge}>
@@ -71,7 +89,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
             </View>
           ) : null}
 
-          {item.communityRating ? (
+          {item.communityRating && !isLive ? (
             <View style={styles.ratingBadge}>
               <Text style={styles.ratingText}>{item.communityRating.toFixed(1)}</Text>
             </View>
@@ -100,7 +118,10 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
             </View>
           ) : null}
         </View>
-        <Text numberOfLines={2} style={styles.title}>
+        <Text
+          numberOfLines={2}
+          style={[styles.title, isUnavailableChannel && { color: '#94a3b8' }]}
+        >
           {item.title}
         </Text>
         {item.releaseYear ? <Text style={styles.subtext}>{item.releaseYear}</Text> : null}

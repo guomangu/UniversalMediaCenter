@@ -126,3 +126,45 @@
     - Filtres par flux dans l'espace personnel (« 🌟 Tous les avis », « 👥 Amis uniquement », « ✍️ Mes avis »), cartes stylisées avec citations, aperçu du média et suppression de ses propres avis.
   - **Suite de Tests Dédiée (`testSocialFeatures.ts`, `package.json`) :**
     - Validation unitaire et d'intégration à 100 % couvrant les favoris, la bidirectionnalité des amitiés et slugs DM, les séances Watch Party et le cycle de vie des avis/reposts.
+
+- [x] **63. Sécurisation des Modales (Sibling Backdrop), Sondes IPTV & Remise à Neuf du Cast (`AccountModal.tsx`, `ConfirmModal.tsx`, `CastModal.tsx`, `streamTester.ts`, `iptvSources.ts`, `TvChannelCard.tsx`) :**
+  - **Pattern Sibling Backdrop Anti-Bouillonnement sur l'Ensemble des Modales :**
+    - Éradication de l'anti-pattern de wrapping qui fermait intempestivement les modales lors de la saisie dans un champ texte.
+    - Déploiement du pattern « Sibling Backdrop » (backdrop d'arrière-plan en position absolue et conteneur modal indépendant) sur l'ensemble des modales.
+  - **Moteur de Test de Disponibilité IPTV & Grisage des Chaînes Indisponibles (`streamTester.ts`, `iptvSources.ts`, `TvChannelCard.tsx`, `MediaCard.tsx`) :**
+    - Développement du testeur de flux concurrentiel hybride (sonde HEAD avec repli GET Range: bytes=0-1024, timeout strict à 3500 ms).
+    - Synchronisation et marquage atomique de l'état en base de données (`media_nodes.state = 'READY'` ou `'ERROR'`).
+    - Chaînes hors-ligne grisées (opacité 0.55, grayscale, badge « ⚠️ HORS LIGNE » et bouton de lecture désactivé).
+
+- [x] **64. Menu Responsive du Lecteur Vidéo & Restauration Pleine Visibilité des 24 Films pour « Membre Standard [MEMBRE] » :**
+  - **Menu Responsive & Ergonomie Mobile sur la page `/player` (`player/[id].tsx`, `PlayerMenuModal.tsx`, `PlayerScreen.styles.ts`) :**
+    - Détection dynamique via `useWindowDimensions()` (`isMobile < 768`, `isSmallMobile < 520`).
+    - En-tête défilable horizontalement et composant `PlayerMenuModal.tsx` donnant un accès tactile immédiat aux 6 actions du lecteur.
+  - **Accélération Extrême de l'API de Taxonomie & Sécurité SQL (`mediaAccessSql.ts`, PostgreSQL) :**
+    - Réduction du temps de réponse de `GET /api/ui/taxonomy` de 24 000 ms à 50 ms.
+    - Ordre optimisé `physicalPathExpr` et index B-tree sur `parent_id`, `node_type`, `created_at` et `node_eav_links(value_id)`.
+  - **Exposition Exhaustive du Catalogue Films (`taxonomyRoutes.ts`, `CategorySection.tsx`, `TagCard.tsx`) :**
+    - Intégration en tête de la catégorie Films du tag universel « Tous les Films (24) » (`slug: 'all-movies'`).
+
+- [x] **65. Arborescence Interactive et Repliement/Dépliement Récursif des Dossiers Physiques (`AdminPhysicalFolderSelector.tsx`) :**
+  - **Groupement Récursif et Parcours en Profondeur Pré-Ordonné (Pre-Order Depth-First) :**
+    - Remplacement du mapping sur liste plate statique par une structuration arborescente dynamique (`childrenMap`, `topLevelNodes`).
+    - Parcours récursif ordonné n'insérant un sous-dossier que si son parent direct est déplié (`expandedPaths`).
+    - Boutons maîtres « ▼ Tout Déplier » et « ▲ Tout Replier ».
+    - Indentation visuelle dynamique relative (`level * 20px`), zone tactile agrandie (24x24px) et clic direct sur le libellé pour déplier/replier.
+
+- [x] **66. Filtrage Zéro-Fuite des Liens de « Position » et d'Activité Amis (`mediaAccess.ts`, `forumRoutes.ts`, `friendActionRoutes.ts`, `sessionRoutes.ts`, `player/[id].tsx`) :**
+  - Implémentation de `canUserAccessMediaNodeId(user, nodeId)` résolvant le nœud et ses chemins physiques directs ou hérités.
+  - Masquage intégral des positions forum et activités d'amis portant sur des œuvres restreintes (`authorLocation: null`, `currentActivity: null`).
+  - Écran de garde sécurisé « 🔒 Accès non autorisé » sur `/player/[id]` évitant le message d'erreur trompeur de flux IPTV hors-ligne.
+
+- [x] **67. Résolution du Deadlock de Rendu des 24 Films sur la Page d'Accueil (`CategorySection.tsx`, `index.tsx`, `taxonomyApi.ts`, `auth.ts`) :**
+  - **Éradication du Deadlock de Rendu Initial (`CategorySection.tsx`) :**
+    - Suppression de la condition `if (!isVisible) return null;` qui bloquait le montage des `<TagCard>` lorsque le cache local était vierge (`hasConfirmedMedia = false`).
+    - Conditionnement du masquage strict à `isConfirmedEmpty` (`allVisibleLoaded && totalCount === 0`), garantissant que tant que les tags sont en cours de chargement, ils restent montés et exécutent leur requête.
+    - Alignement de la limite de requête dans `getInitialCounts` (30 pour `all-movies` et `all-series`) pour garantir la détection immédiate en cache.
+  - **Autorité des Données Serveur & Raccourcis Header (`index.tsx`) :**
+    - Maintien dans `visibleCategories` de toute catégorie validée par le serveur (`cat.tags.some(t => Number(t.count) > 0)`) en l'absence de recherche ou filtre actif, éliminant les disparitions intempestives des catégories et des raccourcis de navigation (`SiteHeader`).
+  - **Synchronisation Globale des Profils & Cache PWA (`taxonomyApi.ts`, `auth.ts`) :**
+    - Incrémentation du cache vers `TAXONOMY_CACHE_VERSION = 'v9'`.
+    - Transmission de `allowedFolders` dans les réponses d'authentification (`/me`, `/login`, `/register`).

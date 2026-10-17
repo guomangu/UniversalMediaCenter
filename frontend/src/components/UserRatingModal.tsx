@@ -44,10 +44,15 @@ export function UserRatingModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} focusable={false} data-modal-backdrop="true">
+      <View style={styles.overlay}>
         <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          focusable={false}
+          data-modal-backdrop="true"
+        />
+        <View
           style={styles.modalContent}
-          onPress={(e) => e.stopPropagation()}
           data-modal-container="true"
         >
           <View style={styles.header}>
@@ -105,14 +110,14 @@ export function UserRatingModal({
               )}
             </Pressable>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
     justifyContent: 'center',
@@ -128,6 +133,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.4)',
     gap: 12,
+    zIndex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -158,34 +164,34 @@ const styles = StyleSheet.create({
   starTxt: { fontSize: 32, color: '#475569' },
   starActive: { color: '#fbbf24' },
   input: {
-    backgroundColor: '#0f172a',
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
     borderRadius: Radius.md,
-    padding: 10,
+    padding: 12,
     color: '#f8fafc',
     fontSize: 13,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.5)',
-    minHeight: 70,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
     textAlignVertical: 'top',
+    minHeight: 70,
   },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
-    marginTop: 8,
+    marginTop: 6,
   },
   cancelBtn: {
+    backgroundColor: '#334155',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: Radius.pill,
-    backgroundColor: 'rgba(51, 65, 85, 0.7)',
   },
-  cancelTxt: { color: '#cbd5e1', fontWeight: '700', fontSize: 13 },
+  cancelTxt: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
   submitBtn: {
+    backgroundColor: '#6366f1',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: Radius.pill,
-    backgroundColor: '#6366f1',
   },
-  submitTxt: { color: '#ffffff', fontWeight: '800', fontSize: 13 },
+  submitTxt: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
 });

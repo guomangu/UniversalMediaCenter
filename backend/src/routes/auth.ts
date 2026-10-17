@@ -80,6 +80,7 @@ authRouter.get('/me', async (c) => {
       maxCsaAgeLimit: user.maxCsaAgeLimit,
       allowedTags: user.allowedTags || [],
       blockedTags: user.blockedTags || [],
+      allowedFolders: user.allowedFolders || [],
       blockedFolders: user.blockedFolders || [],
     },
   });
@@ -138,6 +139,7 @@ authRouter.post('/login', async (c) => {
       maxCsaAgeLimit: user.maxCsaAgeLimit,
       allowedTags: user.allowedTags || [],
       blockedTags: user.blockedTags || [],
+      allowedFolders: user.allowedFolders || [],
       blockedFolders: user.blockedFolders || [],
     },
   });
@@ -154,37 +156,42 @@ authRouter.post('/register', async (c) => {
   if (!password || String(password).length < 6) {
     return c.json({ error: 'Le mot de passe doit comporter au moins 6 caractères' }, 400);
   }
-  if (!displayName || !String(displayName).trim()) {
-    return c.json({ error: 'Le nom d’affichage ou pseudo est requis' }, 400);
-  }
 
   const cleanEmail = String(email).trim().toLowerCase();
+
+  // Vérification de doublon
   const existing = await db.query.users.findFirst({
     where: (t, { eq }) => eq(sql`lower(${t.email})`, cleanEmail),
   });
   if (existing) {
-    return c.json({ error: 'Un compte avec cette adresse e-mail existe déjà' }, 409);
+    return c.json({ error: 'Cette adresse e-mail est déjà utilisée' }, 400);
   }
 
+  // Vérifier s'il s'agit du premier utilisateur (Devient automatiquement Super Administrateur)
   const userCountResult = await db.select({ val: count() }).from(users);
-  const totalUsers = userCountResult[0]?.val ?? 0;
-  const isFirstUser = totalUsers === 0;
-
-  const adminCountResult = await db.select({ val: count() }).from(users).where(eq(users.isAdmin, true));
-  const hasExistingAdmin = (adminCountResult[0]?.val ?? 0) > 0;
-  const makeAdmin = isFirstUser || !hasExistingAdmin;
+  const isFirstUser = (userCountResult[0]?.val ?? 0) === 0;
 
   const params = getSiteParams();
-  if (!isFirstUser && params.security.invitationOnly && !validateInvitationCode(invitationCode)) {
-    return c.json({ error: 'Code d’invitation invalide ou manquant' }, 403);
+
+  // Si ce n'est pas le premier utilisateur, vérifier les règles d'invitation
+  if (!isFirstUser && params.security.invitationOnly) {
+    if (!invitationCode) {
+      return c.json({ error: 'Un code d\'invitation valide est requis pour créer un compte' }, 403);
+    }
+    const valid = validateInvitationCode(invitationCode);
+    if (!valid) {
+      return c.json({ error: 'Code d\'invitation invalide ou expiré' }, 403);
+    }
   }
 
-  const passwordHash = hashPassword(String(password));
+  const passwordHash = await hashPassword(password);
+  const makeAdmin = isFirstUser;
+
   const [newUser] = await db
     .insert(users)
     .values({
       email: cleanEmail,
-      displayName: String(displayName).trim(),
+      displayName: displayName ? String(displayName).trim() : cleanEmail.split('@')[0],
       passwordHash,
       isAdmin: makeAdmin,
       isIncognito: false,
@@ -195,6 +202,7 @@ authRouter.post('/register', async (c) => {
       maxCsaAgeLimit: makeAdmin ? null : (params.profiles?.defaultMaxCsaAge ?? params.security.defaultMaxCsaAge ?? null),
       allowedTags: params.profiles?.defaultAllowedTags ?? [],
       blockedTags: params.profiles?.defaultBlockedTags ?? [],
+      allowedFolders: params.profiles?.defaultAllowedFolders ?? [],
       blockedFolders: params.profiles?.defaultBlockedFolders ?? [],
     })
     .returning();
@@ -217,6 +225,7 @@ authRouter.post('/register', async (c) => {
       maxCsaAgeLimit: newUser.maxCsaAgeLimit,
       allowedTags: newUser.allowedTags,
       blockedTags: newUser.blockedTags,
+      allowedFolders: newUser.allowedFolders || [],
       blockedFolders: newUser.blockedFolders,
     },
     message: makeAdmin

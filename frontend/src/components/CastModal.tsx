@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform, StyleSheet } from 'react-native';
 import {
   fetchCastDevices,
   sendCastCommand,
@@ -9,6 +9,7 @@ import {
   registerAsReceiver,
   triggerNativeCast,
   CastDevice,
+  CastMediaPayload,
 } from '@/services/castService';
 import { setActiveCastTarget } from '@/services/castState';
 import { styles } from './CastModal.styles';
@@ -16,7 +17,7 @@ import { styles } from './CastModal.styles';
 interface CastModalProps {
   visible: boolean;
   onClose: () => void;
-  currentMedia?: { id: string; title: string; streamUrl?: string; positionSeconds: number };
+  currentMedia?: CastMediaPayload;
   onTargetSelected?: (target: CastDevice) => void;
 }
 
@@ -40,7 +41,7 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
 
   const handleNativeCast = async () => {
     onClose();
-    await triggerNativeCast();
+    await triggerNativeCast(currentMedia);
   };
 
   const handleRename = () => {
@@ -55,8 +56,10 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
   const handleSelect = async (device: CastDevice, cast: boolean) => {
     if (cast && currentMedia) {
       await sendCastCommand(device.id, 'LOAD', {
-        mediaId: currentMedia.id, title: currentMedia.title,
-        streamUrl: currentMedia.streamUrl, positionSeconds: currentMedia.positionSeconds,
+        mediaId: currentMedia.id,
+        title: currentMedia.title,
+        streamUrl: currentMedia.streamUrl,
+        positionSeconds: currentMedia.positionSeconds,
       });
     }
     setActiveCastTarget(device);
@@ -66,6 +69,12 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
 
   return (
     <View style={styles.overlay}>
+      <Pressable
+        focusable={false}
+        style={StyleSheet.absoluteFill}
+        onPress={onClose}
+        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+      />
       <View style={styles.modal} {...({ dataSet: { modalContainer: 'true' } } as any)}>
         <View style={styles.header}>
           <Text style={styles.title}>📡 Diffuser & Télécommande</Text>

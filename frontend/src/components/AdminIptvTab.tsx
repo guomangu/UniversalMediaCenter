@@ -7,6 +7,7 @@ import {
   deleteIptvSource,
   updateIptvSource,
 } from '@/services/adminApi';
+import { purgeAllMediaCaches } from '@/services/authStore';
 import { ConfirmModal } from './ConfirmModal';
 import { Radius } from '@/constants/theme';
 
@@ -35,11 +36,13 @@ export function AdminIptvTab() {
       return;
     }
     setActionLoading(true);
+    setStatusMsg('⏳ Ajout et test de disponibilité des flux en cours...');
     const res = await createIptvSource({ name: name.trim(), m3uUrl: m3uUrl.trim(), epgXmltvUrl: epgUrl.trim() || undefined });
     setActionLoading(false);
     if (res.success) {
-      setStatusMsg(`✅ Source ajoutée (${res.importedCount ?? 0} chaînes synchronisées)`);
+      setStatusMsg(`✅ ${res.message || `Source ajoutée (${res.importedCount ?? 0} chaînes synchronisées)`}`);
       setName(''); setM3uUrl(''); setEpgUrl('');
+      purgeAllMediaCaches();
       loadSources();
     } else {
       setStatusMsg(`❌ Erreur: ${res.error}`);
@@ -48,9 +51,11 @@ export function AdminIptvTab() {
 
   const handleSync = async (id: string) => {
     setActionLoading(true);
+    setStatusMsg('⏳ Test et synchronisation des flux en cours...');
     const res = await syncIptvSource(id);
     setActionLoading(false);
     setStatusMsg(res.success ? `✅ ${res.message}` : `❌ ${res.error}`);
+    purgeAllMediaCaches();
     loadSources();
   };
 
@@ -65,6 +70,7 @@ export function AdminIptvTab() {
     await deleteIptvSource(deleteTarget.id);
     setActionLoading(false);
     setDeleteTarget(null);
+    purgeAllMediaCaches();
     loadSources();
   };
 
@@ -139,6 +145,6 @@ const s = StyleSheet.create({
   synced: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
   badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, color: '#fff', fontSize: 10, fontWeight: '700' },
   rowActions: { flexDirection: 'row', gap: 6 },
-  btnSmall: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6 },
+  btnSmall: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   btnSmallText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 });

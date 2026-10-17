@@ -4,7 +4,7 @@ import { fetchWithCache, getCachedData } from './pwaDataCache';
 import { prefetchImages } from './pwaImageCache';
 import { resolveImageUrl } from './api';
 
-export const TAXONOMY_CACHE_VERSION = 'v7';
+export const TAXONOMY_CACHE_VERSION = 'v9';
 
 export function getCategoriesCacheKey(): string {
   const user = getCurrentUser();

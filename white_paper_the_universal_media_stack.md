@@ -15,7 +15,16 @@
 5. [Loi n°3 : Server-Driven UI & Ordonnancement Modulaire](#5-loi-n3--server-driven-ui--ordonnancement-modulaire)
 6. [Loi n°4 : Moteur IPTV Live (`.m3u` + Guide EPG `XMLTV`)](#6-loi-n4--moteur-iptv-live-m3u--guide-epg-xmltv)
 7. [Loi n°5 : Sécurité Frictionless, RBAC, ABAC & Partitionnement Physique PBAC](#7-loi-n5--sécurité-frictionless-rbac-abac--partitionnement-physique-pbac)
-8. [Checklist Exhaustive des Fonctionnalités (Parité Kyoo + Jellyfin)](#8-checklist-exhaustive-des-fonctionnalités-parité-kyoo--jellyfin)
+  * 7.1. Authentification Multi-Écrans Sans Mot de Passe
+  * 7.2. Matrice des Capacités Système (RBAC)
+  * 7.3. Contrôle Parental Sémantique & Quotas (ABAC par Tags & Plafond CSA)
+  * 7.4. Partitionnement Inviolable des Dossiers Physiques (PBAC - Path-Based Access Control)
+  * 7.5. Présentation UI & Server-Driven Taxonomie Zéro-Vide
+  * 7.6. Écosystème Social, Amis & Présence en Temps Réel (YouTube-Grade)
+  * 7.7. Watch Party Synchronisée & Salons Culturels Multidimensionnels
+  * 7.8. Diffusion Sans Fil Cast (Google Cast / W3C) & Autonomie PWA Hors-Ligne
+  * 7.9. Embarquement 1-Clic par Invitations Magiques Dynamiques
+8. [Checklist Exhaustive des Fonctionnalités (Parité Kyoo + Jellyfin++)](#8-checklist-exhaustive-des-fonctionnalités-parité-kyoo--jellyfin)
 9. [Infrastructure Conteneurisée Complète (`compose.yaml` & `Caddyfile`)](#9-infrastructure-conteneurisée-complète-composeyaml--caddyfile)
 10. [Schéma de Base de Données Référence (`Drizzle ORM`)](#10-schéma-de-base-de-données-référence-drizzle-orm)
 11. [Master Prompt : Cahier des Charges pour l'Agent IA Autonome](#11-master-prompt--cahier-des-charges-pour-lagent-ia-autonome)
@@ -173,6 +182,26 @@ Pour garantir une étanchéité absolue des bibliothèques physiques sur le disq
 * **Synchronisation Réactive de l'En-tête (`SiteHeader`) :** Les pastilles de raccourcis (`chips`) ne présentent que les catégories réellement peuplées, avec repli automatique de l'onglet actif.
 * **Isolation Stricte du Cache Client PWA :** Les clés de stockage local sont partitionnées par utilisateur (`tax_v7_${userKey}_...`) avec purge automatique intégrale lors de la déconnexion ou du changement de profil.
 
+### 7.6. Écosystème Social, Amis & Présence en Temps Réel (YouTube-Grade)
+Pour transcender le modèle des serveurs statiques, la plateforme intègre une dimension sociale vivante et fluide :
+* **Favoris Intelligents & Filtres Spécifiques :** Organisation personnelle des œuvres avec filtrage instantané (« Tous », « Films », « Séries »), mise en cache optimiste et toggle en un clic sur la fiche média (`🤍 Ajouter` $\leftrightarrow$ `❤️ Dans mes favoris`).
+* **Présence & Activité en Direct (`isOnline` & `currentActivity`) :** Détection temps réel des amis connectés (pastille verte pulsante) et du média qu'ils sont en train de visionner avec bouton d'embarquement immédiat `🍿 Regarde : [Titre] ➔ Rejoindre ▶`.
+* **Messagerie Directe Canonique (Salons DM 1-on-1) :** Algorithme déterministe de slug ordonné lexicographiquement (`dm-${[u1, u2].sort().join('-')}`) assurant un fil de conversation mutuel, sécurisé par le contrôle d'accès `canAccessPrivateTopic` (amitié réciproque acceptée).
+* **Fil d'Avis & Micro-Critiques :** Système de notation de 1 à 5 étoiles (`★ 4.8 / 5`), calcul de la moyenne communautaire et flux d'avis multi-filtres (« Tous les avis », « Amis », « Mes avis ») avec persistance idempotente (Upsert).
+
+### 7.7. Watch Party Synchronisée & Salons Culturels Multidimensionnels
+* **Séances de Visionnage Partagé (Ciné-club en Direct) :** Gestion d'état de séances collectives (`sessions`, `session_participants`) avec synchronisation de timeline, assignation d'hôte, heartbeat glissant (25s) et clôture automatique des sessions abandonnées.
+* **Associations Culturelles Quadri-Dimensionnelles :** Contextualisation automatique des salons de forum reliant en temps réel : 1. *Œuvres associées*, 2. *Personnalités & acteurs*, 3. *Studios de production*, et 4. *Genres & origines géographiques*.
+* **Salon d'Appels Vocaux Continus (`LiveVoiceRoomBar`) :** Capture micro et streaming in-place en continu sans rupture, découpé en tranches Opus 2.5s et diffusé automatiquement entre spectateurs connectés.
+
+### 7.8. Diffusion Sans Fil Cast (Google Cast / W3C) & Autonomie PWA Hors-Ligne
+* **Google Cast & W3C Remote Playback :** Détection automatique des téléviseurs et récepteurs Chromecast sur le réseau local avec télécommande multimédia synchronisée en temps réel (`CastControlBar`).
+* **Architecture PWA Triple-Couche Zéro-Délai :** Démarrage instantané à 0 ms et autonomie hors-ligne grâce à une stratégie de cache avancée : Cache-First sur 100% des artworks (`/poster`, `/fanart`) et Stale-While-Revalidate sur toutes les requêtes d'API, complété par un indicateur feutré de mode déconnecté (`OfflineIndicator`).
+
+### 7.9. Embarquement 1-Clic par Invitations Magiques Dynamiques
+* **Liens d'Invitation Instantanés (`/invite/:token`) :** Partage 1-clic générant une page responsive optimisée WhatsApp/Instagram avec cartes Open Graph et auto-authentification immédiate dans le navigateur (`localStorage`).
+* **Création d'Invitations Personnalisées (`AdminCreateInviteModal`) :** Attribution préalable du pack de profil, identifiant et mot de passe personnalisable depuis le Back-Office.
+
 ---
 
 ## 8. Checklist Exhaustive des Fonctionnalités (Parité Kyoo + Jellyfin)
@@ -196,6 +225,16 @@ Voici la liste de contrôle complète que votre plateforme couvre nativement :
 | **Téléchargement** | Téléchargement hors-ligne haute vitesse (`X-Accel-Redirect`) avec gestionnaire local sur Mobile/Web | Jellyfin / Kyoo | **Natif (`expo-file-system`)** |
 | **Live TV & IPTV** | Import de listes `.m3u` (GitHub / FAI) + Guide des programmes `XMLTV` (EPG en grille temporelle) | Jellyfin | **Natif (Proxy Hono + EAV)** |
 | **Administration** | Gestion fine des utilisateurs, des permissions (RBAC) et contrôle parental par Tags/CSA (ABAC) | Jellyfin++ | **Natif** |
+| **Réseau Social & Profil** | Favoris personnels avec filtrage immédiat (Films / Séries) et suppression optimiste | YouTube / Letterboxd | **Natif (`userFavoritesRoutes`)** |
+| **Réseau Social & Profil** | Cercle d'amis, présence temps réel `isOnline`, statut de visionnage et bouton « Rejoindre ▶ » | Discord / Steam | **Natif (`presenceStore`)** |
+| **Réseau Social & Profil** | Messagerie privée 1-on-1 déterministe (`dmTopicSlug`) sécurisée par amitié mutuelle | Discord | **Natif (`forumRoutes`)** |
+| **Réseau Social & Profil** | Fil d'avis et micro-critiques avec étoiles (1-5), note moyenne et publication par upsert | Letterboxd / SensCritique | **Natif (`repostRoutes`)** |
+| **Social & Watch Party** | Séances de visionnage partagé en direct (Watch Party) avec timeline synchronisée et heartbeat | Teleparty / Kyoo | **Natif (`sessionRoutes`)** |
+| **Social & Watch Party** | Forum thématique et moteur d'associations quadri-dimensionnelles (Œuvres, Acteurs, Studios, Thèmes) | Reddit / Kyoo++ | **Natif (`forumAssociations`)** |
+| **Social & Watch Party** | Salon d'appel vocal continu in-place (`LiveVoiceRoomBar`) découpé en tranches Opus 2.5s | Discord | **Natif (WebM/Opus)** |
+| **Diffusion Sans Fil** | Détection et diffusion Google Cast & W3C Remote Playback avec barre de contrôle interactive | Jellyfin | **Natif (`castService`)** |
+| **Mode Hors-Ligne & PWA** | PWA complète & Service Worker multi-couches (Cache-First images, SWR API) pour 0 ms et hors-ligne | Kyoo++ | **Natif (`sw.js`)** |
+| **Embarquement & Partage** | Liens magiques d'invitation 1-clic (`/invite/:token`) pour messageries et auto-connexion | Sur-mesure | **Natif (`inviteRoutes`)** |
 
 ---
 
@@ -674,6 +713,112 @@ export const epgPrograms = pgTable(
     channelTimeIdx: index('idx_epg_channel_time').on(table.channelNodeId, table.startTime, table.endTime),
   })
 );
+
+// ============================================================================
+// 6. RÉSEAU SOCIAL, AMIS, FAVORIS & AVIS (social.ts)
+// ============================================================================
+export const userFavorites = pgTable(
+  'user_favorites',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    nodeId: uuid('node_id').references(() => mediaNodes.id, { onDelete: 'cascade' }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    userNodeFavUnique: uniqueIndex('idx_favorites_user_node').on(table.userId, table.nodeId),
+  })
+);
+
+export const userFriends = pgTable(
+  'user_friends',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    friendId: uuid('friend_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    status: text('status').default('PENDING').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    userFriendUnique: uniqueIndex('idx_friends_user_friend').on(table.userId, table.friendId),
+  })
+);
+
+export const mediaReposts = pgTable(
+  'media_reposts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    nodeId: uuid('node_id').references(() => mediaNodes.id, { onDelete: 'cascade' }).notNull(),
+    rating: integer('rating'), // Note 1 à 5 étoiles
+    comment: text('comment'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    userNodeRepostUnique: uniqueIndex('idx_reposts_user_node').on(table.userId, table.nodeId),
+  })
+);
+
+// ============================================================================
+// 7. SÉANCES WATCH PARTY & SALONS SYNCHRONISÉS (sessions.ts)
+// ============================================================================
+export const sessions = pgTable('sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  mediaId: uuid('media_id').references(() => mediaNodes.id, { onDelete: 'cascade' }).notNull(),
+  hostUserId: uuid('host_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  title: text('title').notNull(),
+  status: text('status').default('ACTIVE').notNull(),
+  currentPosition: doublePrecision('current_position').default(0).notNull(),
+  isPublic: boolean('is_public').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const sessionParticipants = pgTable('session_participants', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  sessionId: uuid('session_id').references(() => sessions.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  joinedAt: timestamp('joined_at').defaultNow().notNull(),
+  lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+});
+
+// ============================================================================
+// 8. FORUMS CULTURELS & SALONS PRIVÉS (forum.ts)
+// ============================================================================
+export const forumTopics = pgTable('forum_topics', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  slug: text('slug').notNull().unique(),
+  title: text('title').notNull(),
+  isPrivate: boolean('is_private').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const forumMessages = pgTable('forum_messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  topicId: uuid('topic_id').references(() => forumTopics.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  content: text('content').notNull(),
+  mediaUrl: text('media_url'),
+  mediaType: text('media_type'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ============================================================================
+// 9. INVITATIONS MAGIQUES 1-CLIC (invitations.ts)
+// ============================================================================
+export const userInvitations = pgTable('user_invitations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  token: text('token').notNull().unique(),
+  displayName: text('display_name').notNull(),
+  profileRole: text('profile_role').default('STANDARD').notNull(),
+  defaultUsername: text('default_username'),
+  initialPassword: text('initial_password'),
+  isUsed: boolean('is_used').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at'),
+});
 ```
 
 ---
@@ -761,6 +906,18 @@ When the application boots for the very first time (`AUTO_SEED_KYOO_PRESET=true`
    - **Tag Manager (`/admin/tags`):** Reorder tag groups, change badge zones (`HERO_BADGE` vs `PRIMARY_PILL`), customize colors, and inspect all auto-discovered `.nfo` tags.
    - **IPTV Manager (`/admin/iptv`):** Add/refresh GitHub or custom `.m3u` & `XMLTV` URLs.
    - **User & RBAC Manager (`/admin/users`):** Manage permissions (`canDownload`, `canTranscode`, `canWatchIptv`) and parental control tag restrictions.
+
+### Module F: Social, Watch Party & Discussion Hub (`apps/api/src/routes/sessionRoutes.ts`, `apps/api/src/routes/repostFeedRoutes.ts`, `apps/api/src/routes/friendActionRoutes.ts`)
+1. Implement personal favorites with category filtering (`userFavoritesRoutes`).
+2. Build bidirectional friends system with real-time `isOnline` presence, watching status detection (`currentActivity`), and deterministic 1-on-1 DM slugs (`dm-${[u1, u2].sort().join('-')}`).
+3. Implement live Watch Party sessions with heartbeat, synchronized position, host controls, and automatic abandonment cleanup.
+4. Implement reviews and reposts with 1-5 star ratings, community average calculation, and idempotent upserts.
+5. Build contextual forum topics with 4D graph associations (Related Works, People, Studios, Genres/Countries) and in-place voice calls (`LiveVoiceRoomBar`).
+
+### Module G: Google Cast, Offline PWA & Magic Invitations (`frontend/src/services/castService.ts`, `frontend/public/sw.js`, `apps/api/src/routes/inviteRoutes.ts`)
+1. Integrate W3C Remote Playback and Google Cast SDK with synchronized playback control bar.
+2. Build multi-layer Service Worker (`sw.js`) with Cache-First strategy for images/artworks, Stale-While-Revalidate for API responses, and graceful offline fallback.
+3. Build 1-click magic invite links (`/invite/:token`) with social preview meta tags (Open Graph) and 0ms auto-login via localStorage.
 
 ---
 

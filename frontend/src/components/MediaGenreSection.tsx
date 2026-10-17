@@ -23,7 +23,7 @@ export function MediaGenreSection({ currentMediaId, relatedTags = [], fallbackTa
     if (currentMediaId) seenMediaIds.add(currentMediaId);
 
     return relatedTags.map((group) => {
-      const uniqueMedias = (group.medias || []).filter((m) => {
+      const uniqueMedias = (group.medias || []).filter((m: any) => {
         if (!m || !m.id) return false;
         if (seenMediaIds.has(m.id)) return false;
         seenMediaIds.add(m.id);
@@ -63,7 +63,7 @@ export function MediaGenreSection({ currentMediaId, relatedTags = [], fallbackTa
             </Pressable>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
-            {t.medias.map((m) => <MediaTile key={m.id} item={m} />)}
+            {t.medias.map((m: any) => <MediaTile key={m.id} item={m} />)}
           </ScrollView>
         </View>
       ))}

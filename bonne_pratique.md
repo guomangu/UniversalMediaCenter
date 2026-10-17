@@ -141,3 +141,22 @@ La gestion de bibliothèques multimédias volumineuses sur des systèmes moderne
 *   **Scanner récursif au démarrage (Boot Scan) vs Inotify :** Dans les conteneurs (particulièrement en Rootless Podman), la surveillance inotify pure (`chokidar.watch`) ne garantit pas la découverte synchrone des milliers de fichiers déjà existants sur disque au boot. Un crawler récursif d'initialisation (`bootScanner.ts`) doit obligatoirement s'exécuter de façon asynchrone au lancement pour ingérer instantanément la bibliothèque existante sans bloquer le démarrage de l'API.
 *   **Proxy d'Artworks & Sécurité Navigateur :** Les navigateurs web refusent formellement d'afficher des chemins de fichiers locaux (`file:///` ou `/var/home/...`). Le backend doit systématiquement exposer un endpoint dédié (`/api/media/:id/poster`, `/api/media/:id/fanart`) servant les fichiers images avec les en-têtes HTTP appropriés (`Content-Type: image/jpeg`, `Cache-Control: public, max-age=86400, immutable`).
 *   **Tolérance Server-Driven UI aux topologies de bibliothèques hétérogènes :** Les requêtes des rails d'accueil (`uiRails`) ne doivent jamais présumer qu'une bibliothèque ne contient que des films (`MOVIE`) ou des séries (`SHOW`). Elles doivent inclure ou basculer élégamment vers les épisodes (`EPISODE`) ou collections existantes pour garantir qu'aucun écran d'accueil ne reste vide lors d'une première ingestion.
+
+---
+
+## 12. Architecture Sociale Symétrique, Présence Temps Réel & Séances Synchronisées (YouTube-Grade)
+Le développement de fonctionnalités interactives multi-utilisateurs (Favoris, Amis, Séances synchronisées Watch Party, Fil d'avis et Salons) exige une cohérence stricte entre les modèles de données relationnels et la réactivité du frontend :
+
+*   **Bidirectionnalité et Déterminisme Relationnel :** Les relations sociales (amitiés, discussions privées 1-on-1) ne doivent jamais présumer que l'utilisateur courant est l'expéditeur initial.
+    *   Toute requête d'amitié ou de feed d'amis doit obligatoirement interroger de façon symétrique `or(eq(userId, sessionUser.id), eq(friendId, sessionUser.id))` et identifier dynamiquement le correspondant.
+    *   Les salons de discussion directe doivent générer un identifiant canonique trié lexicographiquement : `dm-${[u1, u2].sort().join('-')}` garantissant que les deux participants rejoignent rigoureusement le même fil.
+*   **Dépouillement Défensif des Réponses JSON & Mise à Jour Optimiste :**
+    *   Le client frontend ne doit jamais présumer d'une enveloppe rigide (`data.favorites` vs tableau direct `data`). Utiliser systématiquement `Array.isArray(data) ? data : (data.items || [])`.
+    *   Les actions utilisateur (ajout/retrait de favori, upvote, publication d'avis) doivent immédiatement mettre à jour l'interface locale (UI optimiste) et synchroniser le cache mémoire avant même la fin de la requête réseau.
+*   **Contrôle d'Accès Souverain sur les Salons Privés (`canAccessPrivateTopic`) :**
+    *   Aucun utilisateur ne peut écouter un flux vocal, poster ou lire des messages dans un canal privé (`private-user-*` ou `dm-*`) sans validation d'une amitié mutuellement acceptée.
+*   **Heartbeats Légers & Clôture Déterministe des Séances Partagées :**
+    *   Les sessions collectives (Watch Party) maintiennent leur fraîcheur via des heartbeats réguliers (fenêtre de 25 secondes) sans surcharger la base de données.
+    *   Toute séance abandonnée par son hôte ou inactive est automatiquement purgée afin d'éviter tout encombrement des listes publiques.
+*   **Upsert Idempotent pour les Avis et Critiques :**
+    *   La notation et la rédaction d'avis sur un média doivent toujours utiliser une logique d'upsert (`INSERT ... ON CONFLICT DO UPDATE`), permettant à un spectateur d'ajuster son appréciation sans générer de doublons polluants.

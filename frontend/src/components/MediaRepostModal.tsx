@@ -47,12 +47,15 @@ export function MediaRepostModal({ visible, mediaId, mediaTitle, onClose, onSucc
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        focusable={false}
-        style={styles.backdrop}
-        onPress={onClose}
-        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
-      >
+      <View style={styles.overlay}>
+        {/* Backdrop transparent/sombre en arrière-plan (clic extérieur pour fermer sans interférence avec l'input) */}
+        <Pressable
+          focusable={false}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+        />
+        {/* Boîte de dialogue isolée au premier plan */}
         <View style={styles.modalCard} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <View style={styles.header}>
             <Text style={styles.title}>🔄 Reposter & Noter</Text>
@@ -120,13 +123,13 @@ export function MediaRepostModal({ visible, mediaId, mediaTitle, onClose, onSucc
             </Pressable>
           </View>
         </View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
@@ -145,6 +148,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.5,
     shadowRadius: 20,
+    zIndex: 1,
   },
   header: {
     flexDirection: 'row',

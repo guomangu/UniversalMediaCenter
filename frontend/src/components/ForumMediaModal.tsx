@@ -34,10 +34,15 @@ export function ForumMediaModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} focusable={false} data-modal-backdrop="true">
+      <View style={styles.overlay}>
         <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          focusable={false}
+          data-modal-backdrop="true"
+        />
+        <View
           style={styles.container}
-          onPress={(e) => e.stopPropagation()}
           data-modal-container="true"
         >
           {/* Header avec Titre et Bouton Fermer */}
@@ -117,20 +122,19 @@ export function ForumMediaModal({
               <Text style={styles.doneTxt}>Fermer</Text>
             </Pressable>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  overlay: {
     flex: 1,
     backgroundColor: 'rgba(5, 10, 24, 0.88)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.four,
-    zIndex: 9999,
   },
   container: {
     width: '100%',
@@ -147,6 +151,7 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 20,
     flexDirection: 'column',
+    zIndex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -161,114 +166,82 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     flex: 1,
     marginRight: 12,
   },
-  headerIcon: {
-    fontSize: 20,
-  },
+  headerIcon: { fontSize: 20 },
   title: {
-    color: '#f8fafc',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
+    color: '#f8fafc',
     flex: 1,
   },
   closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(51, 65, 85, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 6,
+    borderRadius: Radius.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
-  closeTxt: {
-    color: '#e2e8f0',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  closeTxt: { color: '#94a3b8', fontSize: 16, fontWeight: '700' },
   mediaBody: {
     padding: Spacing.four,
-    justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 240,
-    maxHeight: '74%',
-    backgroundColor: '#0a0f1d',
+    justifyContent: 'center',
+    minHeight: 200,
   },
   expandedImg: {
     width: '100%',
-    height: 520,
-    maxHeight: '100%',
+    height: 480,
     borderRadius: Radius.md,
   },
   docBox: {
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: Spacing.six,
+    padding: Spacing.five,
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.4)',
     width: '100%',
   },
-  docIcon: {
-    fontSize: 54,
-    marginBottom: 12,
-  },
+  docIcon: { fontSize: 48, marginBottom: 12 },
   docName: {
-    color: '#f8fafc',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '700',
+    color: '#f8fafc',
     textAlign: 'center',
     marginBottom: 6,
   },
   docUrl: {
-    color: '#94a3b8',
-    fontSize: 12,
+    fontSize: 11,
+    color: '#64748b',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  docActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  docActions: { flexDirection: 'row', gap: 10 },
   docBtn: {
     backgroundColor: '#6366f1',
     paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: Radius.md,
+    borderRadius: Radius.pill,
   },
-  docBtnTxt: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
+  docBtnTxt: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
   footer: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     borderTopWidth: 1,
     borderTopColor: 'rgba(51, 65, 85, 0.5)',
     backgroundColor: 'rgba(30, 41, 59, 0.5)',
   },
-  openExternalBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: Radius.sm,
-    backgroundColor: 'rgba(51, 65, 85, 0.4)',
-  },
-  openExternalTxt: {
-    color: '#93c5fd',
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  openExternalBtn: { paddingVertical: 6, paddingHorizontal: 12 },
+  openExternalTxt: { color: '#818cf8', fontSize: 13, fontWeight: '600' },
   doneBtn: {
+    backgroundColor: '#334155',
     paddingHorizontal: 18,
     paddingVertical: 8,
-    borderRadius: Radius.md,
-    backgroundColor: '#4338ca',
+    borderRadius: Radius.pill,
   },
-  doneTxt: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
+  doneTxt: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
 });

@@ -1,6 +1,7 @@
 export interface MediaNode {
   id: string;
   nodeType: 'MOVIE' | 'SHOW' | 'SEASON' | 'EPISODE' | 'COLLECTION' | 'LIVE_CHANNEL';
+  state?: 'DISCOVERED' | 'PARSING_NFO' | 'READY' | 'MISSING_FILE' | 'ERROR';
   title: string;
   originalTitle?: string;
   slug: string;
@@ -43,7 +44,7 @@ export interface TagBadge {
   color_theme: string;
   icon_name: string;
   value_text: string;
-  value_slug: string;
+  value_slug?: string;
   context_role?: string;
   metadata_json?: {
     thumbUrl?: string;

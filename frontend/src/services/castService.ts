@@ -19,6 +19,14 @@ export interface CastDevice {
   lastSeen?: string;
 }
 
+export interface CastMediaPayload {
+  id: string;
+  title: string;
+  streamUrl?: string;
+  posterUrl?: string;
+  positionSeconds?: number;
+}
+
 export type CastAction =
   | 'LOAD'
   | 'PLAY'
@@ -85,27 +93,73 @@ export async function fetchDeviceStatus(deviceId: string): Promise<CastDevice | 
   }
 }
 
-export async function triggerNativeCast(): Promise<boolean> {
+/**
+ * Initialise le framework Google Cast officiel du navigateur
+ */
+export function initGoogleCastFramework(): void {
+  if (typeof window === 'undefined') return;
+
+  (window as any)['__onGCastApiAvailable'] = (isAvailable: boolean) => {
+    if (isAvailable && (window as any).cast?.framework) {
+      try {
+        const castContext = (window as any).cast.framework.CastContext.getInstance();
+        castContext.setOptions({
+          receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID || 'CC1AD845',
+          autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED || 'origin_scoped',
+        });
+      } catch (e) {
+        console.warn('Google Cast init error:', e);
+      }
+    }
+  };
+}
+
+/**
+ * Déclenche le Cast natif (Google Cast / Chromecast ou HTML5 Remote Playback / AirPlay)
+ */
+export async function triggerNativeCast(media?: CastMediaPayload): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
-  // 1. Google Cast SDK
   const cast = (window as any).cast;
   const chrome = (window as any).chrome;
+
+  // 1. Google Cast SDK
   if (cast?.framework && chrome?.cast) {
     try {
       const instance = cast.framework.CastContext.getInstance();
       await instance.requestSession();
+      const session = instance.getCurrentSession();
+      if (session && media) {
+        const streamUrl = media.streamUrl || `${getApiBaseUrl()}/api/media/${media.id}/stream`;
+        const contentType = streamUrl.includes('.m3u8') ? 'application/x-mpegurl' : 'video/mp4';
+        const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, contentType);
+        mediaInfo.metadata = new chrome.cast.media.GenericMediaMetadata();
+        mediaInfo.metadata.title = media.title;
+        if (media.posterUrl) {
+          mediaInfo.metadata.images = [{ url: media.posterUrl }];
+        }
+        const request = new chrome.cast.media.LoadRequest(mediaInfo);
+        if (media.positionSeconds && media.positionSeconds > 0) {
+          request.currentTime = media.positionSeconds;
+        }
+        await session.loadMedia(request);
+      }
       return true;
-    } catch {}
+    } catch (err) {
+      console.warn('Google Cast requestSession:', err);
+    }
   }
 
-  // 2. HTML5 Remote Playback API
-  const video = document.querySelector('video') as any;
-  if (video?.remote) {
+  // 2. HTML5 Remote Playback API (Chromecast/AirPlay natif du lecteur vidéo)
+  const video = (document.querySelector('video[data-video-player="true"]') ||
+    document.querySelector('video')) as any;
+  if (video?.remote && typeof video.remote.prompt === 'function') {
     try {
       await video.remote.prompt();
       return true;
-    } catch {}
+    } catch (err) {
+      console.warn('Remote Playback error:', err);
+    }
   }
 
   // 3. W3C Presentation API

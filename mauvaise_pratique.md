@@ -1,141 +1,69 @@
-  - **Utiliser Exclusivement \`scrollRef.current.scrollTo({ y, animated: true })\` :** C'est la seule méthode universellement comprise et synchronisée par le moteur React Native Web.
-  - **Verrou Anti-Jitter (\`isJumpingRef\`) :** Poser un verrouillage temporaire (750 ms) pendant l'animation de saut pour suspendre la détection intermédiaire de \`updateActiveCategory\` et garantir une arrivée fluide et stable sur la cible.
-
----
-
-## 🛑 84. Faille d'Étanchéité des Dossiers Restreints par Amnésie de Taxonomie, Conteneurs sans Chemins Physiques et Alias Multi-OS
-
-* **Problème / Symptôme :** Un utilisateur restreint (ex: profil Enfant ou Membre sans droit d'accès à certains répertoires) accède quand même aux films, séries ou épisodes situés dans les dossiers physiques qui lui sont interdits.
-* **Conséquences :** Brèche de sécurité majeure dans le contrôle d'accès parental et partitionnement des bibliothèques ; violation directe de la promesse de protection ABAC.
-* **Causes Racines :**
-  - **Amnésie de la Route de Taxonomie Principale :** L'endpoint \`GET /api/ui/taxonomy/medias\`, qui alimente pourtant tous les rails et catalogues de la page d'accueil, n'intégrait aucun filtre utilisateur et servait l'intégralité de la base de données brute.
-  - **Conteneurs sans Chemins Physiques Directs (\`SHOW\`, \`COLLECTION\`, \`SEASON\`) :** Les séries et collections ont \`video_file_path\` à \`null\` en base. Une vérification naïve de \`isMediaAllowedForUser\` sur ces conteneurs testait une chaîne vide, laissant passer toutes les séries dont les épisodes étaient pourtant dans un dossier interdit.
-  - **Discordance Multi-OS (/var/home vs /home sur Fedora Atomic/Bazzite) :** Si un fichier était indexé sous \`video_file_path = /home/...\` et que la règle interdisait \`/var/home/...\` (ou inversement), un simple \`includes\` échouait.
-  - **Assimilation Erronée des Dossiers Relatifs à des Racines Disque :** Une règle comme \`/Films/Adultes\` était traitée comme un chemin absolu à la racine \`/\` du système d'exploitation au lieu de matcher les sous-dossiers correspondants.
-  - **Cache PWA Global Indépendant de l'Utilisateur :** Le \`localStorage\` client partageait la même clé de cache \`tax_...\` entre l'administrateur et les utilisateurs restreints sur le même navigateur.
-* **Bonnes Pratiques de Remédiation :**
-  - **Double Barrière SQL + JS (Loi Zero-Leak) :** Générer systématiquement des clauses SQL \`buildMediaAccessConditions(user, tableAlias)\` directement dans les requêtes de taxonomie, doublées d'un filtre JavaScript strict \`isMediaAllowedForUser\`.
-  - **Résolution Automatique des Chemins d'Enfants :** Pour tout SHOW, SEASON ou COLLECTION, résoudre dynamiquement l'\`effectivePhysicalPath\` et les chemins des enfants (\`childPaths\`) afin que le blocage d'un dossier interdise automatiquement le conteneur parent.
-  - **Normalisation Symétrique des Chemins & Segments :** Traiter de façon transparente les alias \`/var/home\` $\leftrightarrow$ \`/home\`, normaliser en Unicode NFC et valider les frontières de répertoires.
-  - **Isolation Stricte du Cache Local par Utilisateur :** Clés de cache versionnées incluant l'identifiant et le rôle utilisateur (\`tax_v7_${userKey}_...\`) et purge immédiate de tous les caches au \`logout\` ou à la connexion.
-
----
-
-## 🛑 85. Pollution Visuelle de l'Accueil par des Catégories de Tags Vides et Désynchronisation des Raccourcis d'En-tête
-
-* **Problème / Symptôme :** Sur la page d'accueil, des sections de catégories de tags (ex: Sagas, Séries, Films, Studios, etc.) s'affichent avec leur titre et un badge « 0/X tags » alors qu'aucun média n'y est présent, ou un chip de raccourci reste affiché dans la barre supérieure (\`SiteHeader\`) et fait sauter l'utilisateur vers le néant lors du clic.
+* **Problème / Symptôme :**
+  1. Sur la page `/player`, les boutons d'actions supérieures (« Avis & Repost », « Partager », « Cast », « Audio », « ST », « Plein Écran ») débordent de l'écran sur smartphone, écrasent le titre et deviennent illisibles ou inaccessibles.
+  2. Les 24 films disponibles pour un utilisateur restreint par dossier (ex: « Membre Standard [MEMBRE] ») ne s'affichent pas sur la page d'accueil, l'API de taxonomie (`/api/ui/taxonomy`) subissant un timeout réseau HTTP (> 25 secondes) et renvoyant une liste vide.
 * **Conséquences :**
-  - Expérience utilisateur encombrée et dégradée (UI polluée de cadres vides sur mobile, desktop et TV).
-  - Désynchronisation trompeuse entre les raccourcis supérieurs et le contenu réel de la page.
-  - Incohérence lors de l'application de filtres de types (ex: filtre « Films » laissant la section « Séries » vide affichée) ou de recherche textuelle.
+  - Expérience utilisateur dégradée sur smartphone, boutons rognés et impossibilité d'accéder aux fonctionnalités du lecteur.
+  - Page d'accueil vide (« Aucun média trouvé ») pour les profils restreints par dossiers autorisés, donnant la fausse impression que le catalogue est inaccessible.
 * **Causes Racines :**
-  - **Masquage conditionnel restreint à la recherche :** \`CategorySection\` ne renvoyait \`null\` que si \`searchQuery\` était actif (\`if (searchQuery && allEmpty) return null;\`). En navigation normale ou avec un filtre par type (\`activeFilter\`), les sections sans aucun média restaient affichées.
-  - **Amnésie du parent (\`HomeScreen\`) :** \`CategorySection\` n'émettait aucun événement de visibilité vers le haut ; \`SiteHeader\` recevait la liste statique brute de toutes les catégories sans savoir lesquelles contenaient des cartes réelles.
-  - **Absence de filtrage \`HAVING COUNT > 0\` au niveau SQL :** L'endpoint \`GET /api/ui/taxonomy\` renvoyait des tags avec \`count = 0\` et des catégories orphelines.
-  - **Stagnation des compteurs :** Lors d'un changement de filtre, \`counts\` conservait les anciennes valeurs au lieu de les réinitialiser de façon synchrone pendant la phase de rendu React.
+  - Disposées en ligne simple avec largeurs textuelles fixes, les 6 actions du lecteur dépassent la largeur maximale disponible (360-480px) sur smartphone.
+  - L'expression SQL résolvant le chemin physique d'un média (`COALESCE(video_file_path, (SELECT ... FROM media_nodes WHERE parent_id = ...), nfo_file_path)`) plaçait la sous-requête corrélée avant `nfo_file_path`. Faute d'index B-tree sur `parent_id` et `value_id`, et avec la duplication inutile de 10 clauses `ILIKE` non ancrées (causes de scans séquentiels répétés), chaque agrégation de taxonomie prenait plus de 5 secondes.
+  - De plus, les 14 films du dossier ne disposant pas d'attributs EAV de genre étaient absents des rails de genre exclusifs de la catégorie Films.
 * **Bonnes Pratiques de Remédiation :**
-  - **Filtrage SQL Amont & Rejet des Vides :** Appliquer systématiquement \`HAVING COUNT(...) > 0\` sur toutes les agrégations de taxonomie, et éliminer toute catégorie sans aucun tag avec média à la racine de l'API.
-  - **Règle de Masquage Universelle de Section :** Si une catégorie ne contient aucun tag actif avec des médias (\`activeTags.length === 0\`) ou si tous les tags visibles chargés rapportent 0 média (\`allVisibleLoaded && totalCount === 0\`), renvoyer inconditionnellement \`null\` sans afficher de conteneur ni de badge.
-  - **Notification Réactive Parent-Enfant (\`onVisibilityChange\`) :** Informer \`HomeScreen\` dès qu'une section devient vide pour actualiser \`visibleCategories\` transmis à \`SiteHeader\`.
-  - **Repli Automatique du Chip Actif :** Si la catégorie active devient masquée lors d'un filtrage, basculer immédiatement \`activeCategoryId\` sur la première catégorie visible.
+  - **Menu Lecteur Responsive & Modal Adaptatif (`player/[id].tsx`, `PlayerMenuModal.tsx`) :** Détecter la largeur d'écran via `useWindowDimensions()`. Sur smartphone, offrir une barre défilable horizontalement et intégrer un bouton dédié « ⚙️ Options » ouvrant une modale ergonomique plein écran/bottom sheet donnant un accès 1-tap à l'ensemble des 6 actions avec le pattern Sibling Backdrop.
+  - **Optimisation Algorithmique des Conditions d'Accès SQL (`mediaAccessSql.ts`) :** Placer `nfo_file_path` avant toute recherche d'enfants (`COALESCE(video_file_path, nfo_file_path, (SELECT c.video_file_path FROM media_nodes c WHERE c.parent_id = n.id AND c.video_file_path IS NOT NULL LIMIT 1))`). Distinguer par un `else` les racines absolues (`isSystemRoot`) des motifs partiels. Créer les index B-Tree sur `parent_id` et `node_eav_links(value_id)`, abaissant le temps d'exécution de 24 000 ms à 50 ms.
+  - **Exposition Exhaustive du Catalogue Films (`taxonomyRoutes.ts`, `CategorySection.tsx`) :** Ajouter le tag souverain « Tous les Films » en tête de la section Films avec le décompte réel (24) et lever l'exclusion intra-catégorie sur les films et séries pour garantir la visibilité intégrale des œuvres autorisées.
 
 ---
 
-## 🛑 86. Amnésie de Contrôle d'Accès dans les Moteurs de Recommandations Connexes et Cache PWA d'Écran Détail Partagé
+## 🛑 96. Simulation Factice d'Arborescence par Liste Plate sans Filtrage Récursif de Repliement (Expand/Collapse)
 
-* **Problème / Symptôme :** Sur la fiche d'un média (`/media/[id]`), des œuvres interdites apparaissent dans les sections « Genres & Thématiques » (`relatedTags`), « Titres Similaires » (`similarMedias`), les œuvres du même studio ou la saga parente, ou bien un utilisateur restreint visualisant une fiche directement accède aux données restées en cache LocalStorage/Mémoire d'une session précédente.
+* **Problème / Symptôme :** Dans le gestionnaire de dossiers physiques de l'administration (`AdminPhysicalFolderSelector.tsx`), les boutons « ▼ Tout Déplier », « ▲ Tout Replier » et les chevrons de chaque dossier basculent visuellement l'icône de `▶` à `▼`, mais aucun sous-dossier n'est jamais masqué ou déplié. L'arborescence reste une liste plate massive et statique de tous les dossiers existants (plus de 500 dossiers affichés simultanément).
 * **Conséquences :**
-  - Violation flagrante du contrôle parental et du partitionnement physique des dossiers (Loi Zero-Leak).
-  - Un enfant ou invité peut découvrir des affiches, titres ou métadonnées de films interdits via les blocs de recommandation ou le cache PWA.
+  - Impossibilité pour l'administrateur d'explorer confortablement ses disques et bibliothèques ou de replier les dossiers secondaires.
+  - Perte totale du repère hiérarchique : les sous-dossiers ne sont pas visuellement rattachés à leur parent direct car la liste brute était ordonnée par profondeur (`depth`) plutôt que par parcours d'arbre.
 * **Causes Racines :**
-  - **Omission de l'argument `user` dans les calculateurs de graphes et de similarité :** Des fonctions comme `getRelatedTagsForMedia` ou `getTfIdfSimilarMedias` requêtaient la base de données brute sans aucune clause `buildMediaAccessConditions` et sans appeler `isMediaAllowedForUser`.
-  - **Amnésie des routes connexes :** Les endpoints de studios (`studioFilmsRows`), sagas parentes (`parentSaga`), exploration (`/stats`), chaînes IPTV (`/live`), reposts et séances de visionnage partagées ne vérifiaient pas si les médias cibles respectaient les restrictions de l'utilisateur courant.
-  - **Clés de cache frontend globales et amnésie de la mémoire vive :** Les requêtes API et les hooks d'écran de détail mettaient en cache les réponses sous des clés agnostiques à l'utilisateur (`media_detail_${id}`). Au logout, seul une partie du LocalStorage était purgée, laissant la `Map` mémoire vive intacte.
+  - L'état `expandedPaths` mettait à jour un ensemble de chemins en mémoire, mais le rendu JSX exécutait aveuglément `folders.map(...)` sur la totalité des dossiers sans conditionner la présence d'un élément enfant à l'état déplié de ses ancêtres.
+  - Les sous-dossiers n'étaient pas groupés par parent (`childrenMap`), provoquant l'affichage de tous les sous-dossiers de profondeur 3 après l'intégralité des dossiers de profondeur 2.
 * **Bonnes Pratiques de Remédiation :**
-  - **Propagation Universelle du Profil `user` :** Tout moteur de calcul de proximité sémantique, de tag ou de recommandation doit accepter `user: UserSession` en paramètre obligatoire, injecter les filtres SQL amont et filtrer en mémoire JS.
-  - **Filtrage des Conteneurs et Sagas :** Si une saga parente ne compte plus aucun média accessible pour l'utilisateur (`sagaSiblings.length === 0`), masquer l'intégralité du bloc saga.
-  - **Isolation Stricte du Cache Client :** Inclure systématiquement `${userKey}` dans toutes les clés de cache LocalStorage et requêtes GET côté client (`media_detail_${userKey}_${id}`).
-  - **Purge Globale Mémoire + Disque :** Lors du logout ou du switch de compte, vider instantanément à la fois le LocalStorage et la `Map` mémoire vive du client PWA (`clearMemoryCache()`).
-  - **Écran de Repli Convivial :** En cas d'accès direct par URL à une œuvre interdite, renvoyer immédiatement HTTP 403 et afficher une carte soignée « Contenu Restreint » invitant cordialement à revenir à l'accueil.
+  - **Groupement Récursif & Nœuds Racines (`childrenMap`, `topLevelNodes`) :** Construire une table de correspondance parent $\rightarrow$ enfants et identifier automatiquement les nœuds de premier niveau (ceux sans `parentPath` ou dont le parent n'est pas dans l'ensemble indexé).
+  - **Parcours en Profondeur Pré-Ordonné (Pre-Order Depth-First) :** Aplatir l'arborescence via une fonction récursive `traverse(node, level)` qui insère immédiatement chaque dossier parent puis ses enfants directs **uniquement** si `expandedPaths.has(node.path)`.
+  - **Indentation Dynamique & Ergonomie Tactile :** Calculer l'indentation relative au niveau dans l'arbre (`level * 20px`), agrandir la zone tactile du chevron (24x24px) et permettre le clic direct sur le libellé du dossier pour déplier/replier instantanément.
 
 ---
 
-## 🛑 87. Flash Visuel de Données Dépassées ou Fictives (FOUC) et Pré-Rendu Optimiste de Tags Sans Médias Confirmés
+## 🛑 97. Fuite d'Activité / Position Sociale sur Contenus Restreints & Erreur de Flux Trompeuse (Zero-Leak PBAC/ABAC)
 
-* **Problème / Symptôme :** Lors d'un rechargement forcé (`Ctrl+Maj+R`) ou d'une connexion avec profil restreint, les titres de catégories et les noms de tags (y compris d'œuvres interdites ou de faux tags par défaut) s'affichent pendant 2 à 3 secondes, avant de disparaître soudainement une fois les médias chargés. L'utilisateur restreint a ainsi le temps d'apercevoir l'existence de contenus qui lui sont interdits.
+* **Problème / Symptôme :**
+  1. Lorsqu'un utilisateur rejoint la « Position » ou l'activité en direct d'un contact (badge `Position : [Titre]` avec bouton « Rejoindre ➔ » dans le forum, ou statut `🍿 Regarde : [Titre]` avec bouton « Rejoindre ▶ » dans l'onglet Amis) alors que son profil n'a pas les droits PBAC/ABAC sur le média cible (dossier interdit, tag exclu ou âge CSA dépassé), le lecteur affiche à tort une erreur de flux en direct : `Diffusion En Direct Indisponible - Flux multimédia temporairement indisponible (Erreur diffuseur ou lien expiré)`.
+  2. Le titre et la présence de l'œuvre interdite sont fuis auprès des utilisateurs restreints (violation de la politique Zero-Leak).
 * **Conséquences :**
-  - Fuite d'information cognitive : l'utilisateur découvre l'existence de films, sagas ou catégories interdites.
-  - Sensation de bug visuel (sauts d'éléments dans l'interface et disparition brutale de bandeaux).
+  - Confusion chez l'utilisateur qui suppose un bug réseau ou un lien cassé du diffuseur au lieu de comprendre qu'il s'agit d'un contrôle d'accès parental ou physique.
+  - Violation de confidentialité et de cloisonnement (PBAC) : un profil restreint (ex: enfant ou membre limité) peut voir les titres de films adultes ou de répertoires confidentiels consultés par ses amis.
 * **Causes Racines :**
-  - **Constantes de repli avec données mockées en dur :** `DEFAULT_TAXONOMY_CATEGORIES` contenait des titres en dur (Pixar, Rocky, Tarantino...). Sur un rechargement forcé sans cache LocalStorage, le hook `useState` initialisait immédiatement ces catégories fictives.
-  - **Initialisation optimiste de `loading` à `false` :** `HomeScreen` démarrait avec `loading = false`, rendant immédiatement les composants enfants avant même la première réponse HTTP de l'API.
-  - **Fuite du titre de tag avant validation des médias (`TagCard.tsx`) :** Le composant `TagCard` affichait le bandeau d'en-tête (`tag.label`) tant que `loading` était à `true`, même si `medias.length === 0`. Si la requête retournait ensuite 0 média autorisé, le tag disparaissait, mais son titre avait été exposé pendant 3 secondes.
-  - **Affichage prématuré du titre de catégorie (`CategorySection.tsx`) :** La section s'affichait par défaut tant que tous les tags n'avaient pas fini de charger (`!(allVisibleLoaded && totalCount === 0)`).
-  - **Amnésie des enfants dans les requêtes de sagas (`taxonomyRoutes.ts`) :** La clause SQL `COUNT(c.id)` ne filtrait pas les enfants `c` par les permissions de l'utilisateur.
+  - Les points d'entrée d'activité sociale (`GET /topics/:slug/messages` dans `forumRoutes.ts`, `GET /api/friends` dans `friendActionRoutes.ts`, `GET /api/sessions/active` dans `sessionRoutes.ts`) renvoyaient aveuglément les objets de position et de visionnage sans vérifier si l'utilisateur demandeur disposait des droits d'accès sur le `mediaId` ciblé.
+  - Lors de la navigation vers `/player/${mediaId}`, le serveur refusait légitimement le flux vidéo (HTTP 403 Forbidden). L'élément `<video>` échouait donc à charger la source, déclenchant le gestionnaire `onError` de `VideoPlayerView.tsx` qui affichait le message d'erreur générique IPTV/livestream au lieu d'un écran d'accès non autorisé.
 * **Bonnes Pratiques de Remédiation :**
-  - **Bannir les listes de tags mockées :** `DEFAULT_TAXONOMY_CATEGORIES` doit être un tableau strictement vide (`[]`).
-  - **État de chargement strict au boot :** `loading = !cached || cached.length === 0`. Tant que les catégories vérifiées ne sont pas disponibles, afficher uniquement un indicateur d'attente sobre sans aucun texte.
-  - **Zéro affichage sans média confirmé :** Dans `TagCard`, si `medias.length === 0`, renvoyer inconditionnellement `null`. Un titre de tag ne doit JAMAIS apparaître à l'écran sans au moins 1 média accessible certifié.
-  - **Catégorie conditionnée à `hasConfirmedMedia` :** `CategorySection` ne doit afficher son en-tête que si au moins un média a été effectivement validé (`totalCount > 0`).
-  - **Filtrage SQL strict sur les enfants `c` :** Appliquer `childConds = buildMediaAccessConditions(user, 'c')` dans `sagasQuery` pour que les sagas sans aucun film autorisé aient `count = 0` dès la requête SQL initiale.
+  - **Filtrage Zéro-Fuite Côté Serveur (`canUserAccessMediaNodeId`) :**
+    - Dans `forumRoutes.ts`, ne renvoyer `loc` sous `authorLocation` pour chaque message que si `canUserAccessMediaNodeId(user, loc.mediaId)` est vrai. Si l'accès est refusé, `authorLocation` vaut strictement `null`, masquant complètement le badge `Position : [Titre]` et le bouton `Rejoindre ➔`.
+    - Dans `friendActionRoutes.ts`, assigner `currentActivity = null` si l'ami visionne un média interdit au profil connecté. L'ami reste indiqué en ligne (`isOnline: true`), mais le titre restreint et le bouton `Rejoindre ▶` sont invisibilisés.
+    - Dans `sessionRoutes.ts`, filtrer les `activeMediaCounts` et séances actives pour exclure les médias interdits pour les non-administrateurs.
+  - **Écran de Garde Explicite Côté Lecteur (`player/[id].tsx`) :**
+    - Intercepter les réponses 403 Forbidden de `fetchMediaDetail` et positionner l'état `isForbidden(true)` sans monter `<VideoPlayerView>` ni tenter de charger le flux vidéo.
+    - Afficher une carte sombre explicite « 🔒 Accès non autorisé » expliquant la politique de restriction avec un bouton tactile « ← Retour au catalogue ».
 
 ---
 
-## 🛑 88. Troncature Mobile des Onglets et Barres d'Actions par Absence de Conteneur Défilable Horizontal
+## 🛑 98. Masquage Prématuré d'un Composant Parent Avant Chargement de ses Enfants Asynchrones (Deadlock de Rendu)
 
-* **Problème / Symptôme :** Sur écran de smartphone ou petit écran tactile (< 600px), les barres de navigation multi-onglets (ex: Panneau d'administration, Espace utilisateur, sélecteurs de zones de layout) sont tronquées sur le côté droit. Les onglets situés après le 2e ou 3e élément sont masqués ou inaccessibles.
+* **Problème / Symptôme :** Sur la page d'accueil (`HomeScreen`), les 24 films autorisés pour un profil restreint (ex: « Membre Standard [MEMBRE] ») ne s'affichent pas du tout lorsque le cache local du navigateur est vierge. La catégorie « Films » disparaît de l'écran ainsi que son raccourci dans l'en-tête (`SiteHeader`).
 * **Conséquences :**
-  - Impossibilité pour un administrateur sur mobile d'accéder aux sections clés (« Comptes », « Rails & Layout », « param.yaml », « Sources IPTV »).
-  - Dégradation sévère de l'expérience mobile sur les profils (« Reprendre », « Favoris », « Salons »).
+  - Blocage complet de l'accès au catalogue pour tout nouvel utilisateur ou session sans cache persistant.
+  - Impression d'une interface défaillante ou d'un catalogue vide.
 * **Causes Racines :**
-  - Utilisation d'un simple `<View style={{ flexDirection: 'row' }}>` non scrollable et sans retour à la ligne pour des séries de 5 ou 6 boutons horizontaux de plus de 120px chacun.
-  - Absence de `flexShrink: 0` et de `whiteSpace: 'nowrap'`, provoquant le rétrécissement anormal ou le pliage du libellé des boutons.
+  - `CategorySection.tsx` conditionnait son rendu JSX à `hasConfirmedMedia = totalCount > 0 || Object.values(mediasByTag).some(...)`. Sur un cache vierge, `totalCount` valait initialement `0`. Le composant retournait donc immédiatement `null`.
+  - En retournant `null`, `CategorySection` n'insérait jamais ses composants enfants `<TagCard>` dans l'arborescence React. Ces derniers ne pouvaient donc jamais monter, appeler `fetchTaxonomyMedias` ni incrémenter le décompte (`onCountChange`).
+  - De surcroît, le `useEffect` de `CategorySection` notifiait `onVisibilityChange(category.id, false)` à `HomeScreen`, qui excluait définitivement la catégorie de `visibleCategories`.
 * **Bonnes Pratiques de Remédiation :**
-  - **Encapsulation Systématique dans `<ScrollView horizontal>` :** Remplacer tout conteneur d'onglets ou de filtres par un `<ScrollView horizontal showsHorizontalScrollIndicator={false}>`.
-  - **Prise en charge Web & Tactile :** Configurer `overflowX: 'auto'`, `WebkitOverflowScrolling: 'touch'`, `scrollbarWidth: 'none'` pour garantir un glissement fluide au doigt sur mobile et à la molette sur desktop.
-  - **Boutons Incompressibles :** Appliquer `flexShrink: 0` et `whiteSpace: 'nowrap'` sur chaque onglet pour préserver l'intégrité visuelle des libellés et icônes.
-
----
-
-## 🛑 89. Désynchronisation de Format de Réponse API vs Frontend pour les Favoris et Amnésie de Cache
-
-* **Problème / Symptôme :** L'onglet « Favoris » de la page utilisateur affiche systématiquement une liste vide ou ne charge rien alors que l'utilisateur a plusieurs favoris en base, ou le retrait/ajout d'un favori ne se reflète pas immédiatement à l'écran.
-* **Conséquences :**
-  - Fonctionnalité de favoris perçue comme brisée ou inopérante.
-  - Obligation de recharger toute la page pour espérer voir le changement.
-* **Causes Racines :**
-  - **Incompatibilité de contrat de données :** L'API `GET /api/users/me/favorites` renvoyait un tableau JSON brut `[ { id, ... } ]`, tandis que le client frontend exécutait `data.favorites || []`. Comme `data` était un tableau, `data.favorites` valait `undefined`, résolvant toujours un tableau vide `[]`.
-  - **Amnésie de cache :** Lors du basculement d'un favori (`toggleFavorite`), le cache mémoire du profil n'était pas invalidé ou mis à jour de façon optimiste.
-* **Bonnes Pratiques de Remédiation :**
-  - **Dépouillement Défensif du JSON :** Utiliser systématiquement `Array.isArray(data) ? data : (data.favorites || [])` pour absorber les variantes de formats de réponse.
-  - **Mise à Jour Optimiste et Émission d'Événements :** Mettre à jour immédiatement la liste locale de favoris (retrait instantané de la carte sans rechargement lourd) et synchroniser le cache mémoire avec la nouvelle liste.
-
----
-
-## 🛑 90. Asymétrie Relationnelle dans les Requêtes d'Amis et Divergence de Salons Privés 1-on-1
-
-* **Problème / Symptôme :** Deux utilisateurs amis ne voient pas les publications de l'autre dans leur fil d'avis, ou lorsqu'un utilisateur ouvre un message privé avec un ami, les deux personnes se retrouvent dans des salons séparés et ne reçoivent pas les messages mutuels.
-* **Conséquences :**
-  - Rupture totale de la communication privée 1-on-1.
-  - Fil d'avis tronqué masquant la moitié des interactions sociales entre amis.
-* **Causes Racines :**
-  - **Requête unilatérale en base :** La table `user_friends` enregistre `(userId, friendId)`. Une requête naïve `WHERE userId = sessionUser.id` omettait systématiquement toutes les amitiés où l'utilisateur courant était le destinataire `friendId`.
-  - **Génération asymétrique de slug de topic :** La génération de slug basée sur `private-user-${otherUserId}` créait un salon `private-user-B` pour l'utilisateur A et un salon `private-user-A` pour l'utilisateur B, cloisonnant les deux correspondants dans des discussions étanches.
-* **Bonnes Pratiques de Remédiation :**
-  - **Requête Bidirectionnelle Symétrique :** Utiliser systématiquement `or(eq(userId, sessionUser.id), eq(friendId, sessionUser.id))` et extraire l'ID du partenaire `row.userId === sessionUser.id ? row.friendId : row.userId`.
-  - **Génération Déterministe de Slug Trié :** Construire les salons de messagerie directe avec les identifiants triés par ordre lexicographique : `dm-${[userA.id, userB.id].sort().join('-')}`, garantissant un identifiant unique partagé par les deux participants.
-
----
-
-## 🛑 91. Absence d'Upsert et Omission de Flux Global dans les Avis et Activités Sociales
-
-* **Problème / Symptôme :** Un utilisateur publiant un deuxième avis sur une œuvre crée un doublon au lieu de mettre à jour son appréciation, ou l'onglet « Fil d'avis » reste vide tant qu'un utilisateur n'a pas explicitement ajouté des amis.
-* **Conséquences :**
-  - Encombrement et duplication des avis communautaires sous les œuvres.
-  - Sensation de réseau social « ville fantôme » pour tout nouvel utilisateur sans cercle d'amis préexistant.
-* **Causes Racines :**
-  - Insertion brute `INSERT INTO user_reposts` sans clause d'upsert (`onConflictDoUpdate`) ou vérification d'unicité préalable par `(userId, mediaId)`.
-  - Absence d'un endpoint de feed d'activité combiné réunissant les avis des amis, les avis de l'utilisateur et les avis récents de la communauté.
-* **Bonnes Pratiques de Remédiation :**
-  - **Mise à Jour Idempotente (Upsert) :** Avant d'insérer une critique, vérifier si l'utilisateur a déjà publié sur l'œuvre et effectuer un `UPDATE` (mise à jour de la note et du commentaire) plutôt qu'un double `INSERT`.
-  - **Feed Hybride & Tri Temporel :** Proposer un endpoint `GET /api/reposts/feed` combinant dynamiquement les avis du cercle d'amis et les avis publics récents, tout en appliquant les restrictions d'accès ABAC/PBAC.
+  - **Ne Jamais Bloquer le Montage des Nœuds Enfants en Cours de Chargement :** Un composant conteneur ne doit être considéré vide (`isConfirmedEmpty`) **uniquement** lorsque tous ses nœuds enfants visibles ont terminé leur requête asynchrone (`allVisibleLoaded === true`) ET que la somme des éléments retournés est égale à 0.
+  - **Faire Foi aux Données Structurelles du Serveur :** Si l'API `/api/ui/taxonomy` indique déjà que la catégorie contient des médias (`cat.tags.some(t => Number(t.count) > 0)`), la catégorie doit rester visible et montée par défaut tant qu'aucune recherche ou filtre utilisateur actif n'a formellement infirmé la présence de résultats.
+  - **Alignement des Clés de Cache Initiales :** Veiller à ce que la limite passée à `getCachedTaxonomyMedias` dans `getInitialCounts` corresponde exactement à celle utilisée par l'enfant lors de son fetch (ex: limite de 30 pour `all-movies`).
