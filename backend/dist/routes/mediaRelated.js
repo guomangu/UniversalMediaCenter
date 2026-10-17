@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
-export async function getRelatedTagsForMedia(mediaId, parentId) {
+import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
+import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
+export async function getRelatedTagsForMedia(mediaId, parentId, user) {
     const allTagsRes = await db.execute(sql `
     SELECT DISTINCT v.value_text AS label, v.value_slug AS slug, a.color_theme, a.code AS attr_code
     FROM node_eav_links l
@@ -14,10 +16,22 @@ export async function getRelatedTagsForMedia(mediaId, parentId) {
       AND a.code IN ('director', 'genre', 'subject', 'studio')
     ORDER BY v.value_text ASC;
   `);
+    // Construction des conditions d'accès SQL pour filtrer les nœuds autorisés dès la base
+    const accessConds = buildMediaAccessConditions(user, 'n');
+    let accessCondsSql = sql ``;
+    for (const cond of accessConds) {
+        accessCondsSql = sql `${accessCondsSql} AND ${cond}`;
+    }
     const relatedMediasRes = await db.execute(sql `
     SELECT DISTINCT 
       v.value_slug AS tag_slug,
-      n.id, n.title, n.node_type, n.release_year, n.poster_path, n.community_rating
+      n.id, n.title, n.node_type, n.release_year, n.poster_path, n.community_rating,
+      n.video_file_path, n.nfo_file_path, n.search_vector_text,
+      COALESCE(
+        n.video_file_path,
+        n.nfo_file_path,
+        (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = n.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = n.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+      ) AS effective_physical_path
     FROM node_eav_links l
     JOIN eav_values v ON l.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
@@ -37,10 +51,22 @@ export async function getRelatedTagsForMedia(mediaId, parentId) {
       AND n.id != ${mediaId}
       ${parentId ? sql `AND n.id != ${parentId}` : sql ``}
       AND (n.parent_id IS NULL OR n.parent_id != ${mediaId})
+      ${accessCondsSql}
     ORDER BY n.community_rating DESC NULLS LAST, n.release_year DESC NULLS LAST;
   `);
     const mediasByTag = new Map();
     for (const row of Array.from(relatedMediasRes)) {
+        // Double barrière de sécurité : validation mémoire stricte (Loi Zero-Leak)
+        if (!isMediaAllowedForUser(user, {
+            title: row.title,
+            nodeType: row.node_type,
+            videoFilePath: row.video_file_path,
+            nfoFilePath: row.nfo_file_path,
+            effectivePhysicalPath: row.effective_physical_path,
+            searchVectorText: row.search_vector_text,
+        })) {
+            continue;
+        }
         if (!mediasByTag.has(row.tag_slug))
             mediasByTag.set(row.tag_slug, []);
         mediasByTag.get(row.tag_slug).push({
@@ -63,7 +89,7 @@ export async function getRelatedTagsForMedia(mediaId, parentId) {
             medias: mediasByTag.get(t.slug) || [],
         };
     });
-    // Filtrer uniquement les groupes contenant au moins un film/série connexe
+    // Filtrer uniquement les groupes contenant au moins un film/série connexe autorisé
     const activeGroups = groups.filter((g) => g.medias.length > 0);
     // 1. Déduplication stricte sans doublons inter-tags :
     // Le réalisateur est prioritaire et conserve l'intégralité de sa filmographie
@@ -99,11 +125,15 @@ export async function getRelatedTagsForMedia(mediaId, parentId) {
  * Pondère chaque tag partagé par sa rareté documentaire globale (IDF)
  * et par un coefficient de catégorie (Réalisateur > Franchise > Auteur > Acteur > Genre).
  */
-export async function getTfIdfSimilarMedias(mediaId, limit = 12) {
+export async function getTfIdfSimilarMedias(mediaId, limit = 12, user) {
     try {
+        const accessConds = buildMediaAccessConditions(user, 'm');
+        let accessCondsSql = sql ``;
+        for (const cond of accessConds) {
+            accessCondsSql = sql `${accessCondsSql} AND ${cond}`;
+        }
         const res = await db.execute(sql `
-      WITH target_tags AS (
-        SELECT l.value_id, a.code as attr_code
+      WITH target_tags AS (\n        SELECT l.value_id, a.code as attr_code
         FROM node_eav_links l
         JOIN eav_values v ON v.id = l.value_id
         JOIN eav_attributes a ON a.id = v.attribute_id
@@ -136,16 +166,32 @@ export async function getTfIdfSimilarMedias(mediaId, limit = 12) {
         GROUP BY l.node_id
       )
       SELECT m.id, m.title, m.node_type, m.release_year, m.poster_path, m.community_rating,
+             m.video_file_path, m.nfo_file_path, m.search_vector_text,
+             COALESCE(
+               m.video_file_path,
+               m.nfo_file_path,
+               (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = m.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = m.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+             ) AS effective_physical_path,
              s.relevance_score, s.shared_tags_count
       FROM scored_nodes s
       JOIN media_nodes m ON m.id = s.node_id
       WHERE m.node_type IN ('MOVIE', 'SHOW', 'COLLECTION')
         AND m.is_extra = false
+        ${accessCondsSql}
       ORDER BY s.relevance_score DESC, m.community_rating DESC NULLS LAST
       LIMIT ${limit};
     `);
         const rows = Array.isArray(res) ? res : res.rows || [];
-        return rows.map((r) => ({
+        return rows
+            .filter((r) => isMediaAllowedForUser(user, {
+            title: r.title,
+            nodeType: r.node_type,
+            videoFilePath: r.video_file_path,
+            nfoFilePath: r.nfo_file_path,
+            effectivePhysicalPath: r.effective_physical_path,
+            searchVectorText: r.search_vector_text,
+        }))
+            .map((r) => ({
             id: r.id,
             title: r.title,
             nodeType: r.node_type,

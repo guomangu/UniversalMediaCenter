@@ -17,8 +17,8 @@ export function buildMediaAccessConditions(user, tableAlias = 'n') {
     // Expression SQL résolvant le chemin physique représentatif du média
     const physicalPathExpr = sql `COALESCE(
     ${sql.raw(tableAlias)}.video_file_path,
-    ${sql.raw(tableAlias)}.nfo_file_path,
-    (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = ${sql.raw(tableAlias)}.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = ${sql.raw(tableAlias)}.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+    (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = ${sql.raw(tableAlias)}.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = ${sql.raw(tableAlias)}.id)) AND c.video_file_path IS NOT NULL LIMIT 1),
+    ${sql.raw(tableAlias)}.nfo_file_path
   )`;
     // 2. Exclusion de dossiers (Blacklist)
     if (user.blockedFolders && user.blockedFolders.length > 0) {
@@ -48,6 +48,10 @@ export function buildMediaAccessConditions(user, tableAlias = 'n') {
     // 3. Autorisation exclusive de dossiers (Whitelist)
     if (user.allowedFolders && user.allowedFolders.length > 0) {
         const allowOrClauses = [];
+        // Les chaînes IPTV virtuelles ne résident pas sur disque physique
+        if (user.canWatchIptv !== false) {
+            allowOrClauses.push(sql `${sql.raw(tableAlias)}.node_type = \x27LIVE_CHANNEL\x27`);
+        }
         for (const folder of user.allowedFolders) {
             if (!folder || !folder.trim())
                 continue;
@@ -93,6 +97,21 @@ export function buildMediaAccessConditions(user, tableAlias = 'n') {
         }
         if (tagOrClauses.length > 0) {
             conditions.push(sql `(${sql.join(tagOrClauses, sql ` OR `)})`);
+        }
+    }
+    // 6. Plafond d\x27âge CSA (Contrôle Parental)
+    if (user.maxCsaAgeLimit !== undefined && user.maxCsaAgeLimit !== null && user.maxCsaAgeLimit >= 0) {
+        if (user.maxCsaAgeLimit < 18) {
+            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* \x27(?i)\\y(csa\\s*:\\s*-18|-18|nc-17|18\\+)\\y\x27)`);
+        }
+        if (user.maxCsaAgeLimit < 16) {
+            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* \x27(?i)\\y(csa\\s*:\\s*-16|-16|tv-ma|16\\+)\\y\x27)`);
+        }
+        if (user.maxCsaAgeLimit < 12) {
+            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* \x27(?i)\\y(csa\\s*:\\s*-12|-12|pg-13|12\\+)\\y\x27)`);
+        }
+        if (user.maxCsaAgeLimit < 10) {
+            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* \x27(?i)\\y(csa\\s*:\\s*-10|-10|10\\+)\\y\x27)`);
         }
     }
     return conditions;

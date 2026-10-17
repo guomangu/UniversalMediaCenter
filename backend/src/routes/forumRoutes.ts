@@ -35,6 +35,58 @@ async function canAccessPrivateForum(userId: string, ownerId: string): Promise<b
   return Boolean(friendship);
 }
 
+// Vérification universelle pour salons privés de membres (private-user-) et salons directs (dm-)
+async function canAccessPrivateTopic(user: any, slug: string): Promise<{ allowed: boolean; error?: string; topicTitle?: string }> {
+  if (!slug.startsWith('private-user-') && !slug.startsWith('dm-')) {
+    return { allowed: true };
+  }
+
+  if (!user?.id) {
+    return { allowed: false, error: 'Connexion requise pour accéder à ce salon privé' };
+  }
+
+  if (slug.startsWith('private-user-')) {
+    const ownerId = slug.replace('private-user-', '');
+    const allowed = await canAccessPrivateForum(user.id, ownerId);
+    if (!allowed && !user.isAdmin) {
+      return { allowed: false, error: 'Ce forum privé est strictement réservé aux amis de cet utilisateur' };
+    }
+    const owner = await db.query.users.findFirst({ where: (t, { eq }) => eq(t.id, ownerId) });
+    return { allowed: true, topicTitle: `🔒 Salon Privé de ${owner?.displayName || 'Membre'}` };
+  }
+
+  if (slug.startsWith('dm-')) {
+    const raw = slug.replace('dm-', '');
+    const parts = raw.split('-');
+    let u1 = '';
+    let u2 = '';
+    if (parts.length === 10) {
+      u1 = parts.slice(0, 5).join('-');
+      u2 = parts.slice(5).join('-');
+    } else if (parts.length === 2) {
+      u1 = parts[0];
+      u2 = parts[1];
+    } else {
+      return { allowed: false, error: 'Identifiant de salon direct invalide' };
+    }
+
+    if (user.id !== u1 && user.id !== u2 && !user.isAdmin) {
+      return { allowed: false, error: 'Vous ne participez pas à ce salon privé direct' };
+    }
+
+    const otherId = user.id === u1 ? u2 : u1;
+    const allowed = await canAccessPrivateForum(user.id, otherId);
+    if (!allowed && !user.isAdmin) {
+      return { allowed: false, error: 'Vous devez être amis pour échanger dans ce salon privé' };
+    }
+
+    const otherUser = await db.query.users.findFirst({ where: (t, { eq }) => eq(t.id, otherId) });
+    return { allowed: true, topicTitle: `💬 Discussion avec ${otherUser?.displayName || 'Ami'}` };
+  }
+
+  return { allowed: true };
+}
+
 // -------------------------------------------------------------
 // 1. ESPACES D'EXPLORATION & CONTEXTE DU FORUM (ACCÈS PUBLIC AVEC FILTRAGE DES DROITS)
 // -------------------------------------------------------------
@@ -65,18 +117,9 @@ forumRouter.get('/topics/:slug/messages', async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
   const user = (c as any).get('user') as any;
 
-  if (slug.startsWith('private-user-')) {
-    if (!user?.id) {
-      return c.json({ error: 'Connexion requise pour accéder à un salon privé' }, 401);
-    }
-    const ownerId = slug.replace('private-user-', '');
-    const allowed = await canAccessPrivateForum(user.id, ownerId);
-    if (!allowed) {
-      return c.json(
-        { error: 'Ce forum privé est strictement réservé aux amis de cet utilisateur' },
-        403
-      );
-    }
+  const access = await canAccessPrivateTopic(user, slug);
+  if (!access.allowed) {
+    return c.json({ error: access.error }, 403);
   }
 
   const messages = await db.query.forumMessages.findMany({
@@ -132,26 +175,12 @@ forumRouter.post('/topics/:slug/messages', async (c) => {
     quotedMediaPoster,
   } = body;
 
-  if (slug.startsWith('private-user-')) {
-    if (!user?.id) {
-      return c.json({ error: 'Connexion requise pour poster dans un salon privé' }, 401);
-    }
-    const ownerId = slug.replace('private-user-', '');
-    const allowed = await canAccessPrivateForum(user.id, ownerId);
-    if (!allowed) {
-      return c.json(
-        { error: 'Ce forum privé est strictement réservé aux amis de cet utilisateur' },
-        403
-      );
-    }
+  const access = await canAccessPrivateTopic(user, slug);
+  if (!access.allowed) {
+    return c.json({ error: access.error }, 403);
   }
 
-  let finalTitle = topicTitle || slug;
-  if (slug.startsWith('private-user-')) {
-    const ownerId = slug.replace('private-user-', '');
-    const owner = await db.query.users.findFirst({ where: (t, { eq }) => eq(t.id, ownerId) });
-    finalTitle = `🔒 Salon Privé de ${owner?.displayName || 'Membre'}`;
-  }
+  const finalTitle = access.topicTitle || topicTitle || slug;
 
   const [newMessage] = await db
     .insert(forumMessages)
@@ -185,39 +214,35 @@ forumRouter.post('/topics/:slug/messages', async (c) => {
   });
 });
 
-// Voter pour un message (Upvote toggle)
+// Voter (Like / Réaction) sur un message du forum
 forumRouter.post('/messages/:id/vote', requireAuth, async (c) => {
   const messageId = c.req.param('id');
-  if (!messageId) return c.json({ error: 'ID de message requis' }, 400);
+  const user = (c as any).get('user');
+  const userId = user.id;
 
-  const user = (c as any).get('user') as any;
-  if (!user?.id) return c.json({ error: 'Non autorisé' }, 401);
-
-  const userId = user.id as string;
-
-  const existingVote = await db.query.forumMessageVotes.findFirst({
-    where: (t, { and, eq }) => and(eq(t.messageId, messageId), eq(t.userId, userId)),
+  const existingVote = await (db.query as any).forumMessageVotes.findFirst({
+    where: (t: any, { and, eq }: any) => and(eq(t.messageId, messageId), eq(t.userId, userId)),
   });
 
   let hasVoted = false;
   if (existingVote) {
-    await db.delete(forumMessageVotes).where(eq(forumMessageVotes.id, existingVote.id));
+    await db.delete(forumMessageVotes).where(eq((forumMessageVotes as any).id, existingVote.id));
     await db
       .update(forumMessages)
       .set({ voteCount: sql`GREATEST(0, ${forumMessages.voteCount} - 1)` })
-      .where(eq(forumMessages.id, messageId));
+      .where(eq((forumMessages as any).id, messageId));
     hasVoted = false;
   } else {
-    await db.insert(forumMessageVotes).values({ messageId, userId });
+    await (db as any).insert(forumMessageVotes).values({ messageId, userId });
     await db
       .update(forumMessages)
       .set({ voteCount: sql`${forumMessages.voteCount} + 1` })
-      .where(eq(forumMessages.id, messageId));
+      .where(eq((forumMessages as any).id, messageId));
     hasVoted = true;
   }
 
-  const updatedMsg = await db.query.forumMessages.findFirst({
-    where: (t, { eq }) => eq(t.id, messageId),
+  const updatedMsg = await (db.query as any).forumMessages.findFirst({
+    where: (t: any, { eq }: any) => eq(t.id, messageId),
   });
 
   return c.json({
@@ -235,6 +260,11 @@ forumRouter.post('/topics/:slug/call/join', requireAuth, async (c) => {
   const user = (c as any).get('user') as any;
   const body = await c.req.json().catch(() => ({}));
   const isMuted = Boolean(body.isMuted);
+
+  const access = await canAccessPrivateTopic(user, slug);
+  if (!access.allowed) {
+    return c.json({ error: access.error }, 403);
+  }
 
   joinVoiceCall(slug, user.id, user.displayName || 'Participant', isMuted);
   const participants = getVoiceCallParticipants(slug);
@@ -265,27 +295,36 @@ forumRouter.post('/topics/:slug/call/ping', requireAuth, async (c) => {
 forumRouter.get('/topics/:slug/call/status', async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
   const participants = getVoiceCallParticipants(slug);
-  return c.json({ success: true, activeCount: participants.length, participants });
+  return c.json({ success: true, participants });
 });
 
-// Envoyer un fragment audio continu (vocal continu pour discuter en direct)
-forumRouter.post('/topics/:slug/call/chunk', requireAuth, async (c) => {
+// Envoyer un fragment audio vocal
+forumRouter.post('/topics/:slug/voice/chunk', requireAuth, async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
   const user = (c as any).get('user') as any;
   const body = await c.req.json().catch(() => ({}));
-  const { audioBase64, mimeType } = body;
+  const { audioBase64, mimeType = 'audio/webm' } = body;
 
-  if (!audioBase64) return c.json({ error: 'Données audio requises' }, 400);
+  if (!audioBase64) {
+    return c.json({ error: 'Données audio manquantes' }, 400);
+  }
 
-  const chunk = pushVoiceAudioChunk(slug, user.id, user.displayName || 'Participant', audioBase64, mimeType);
+  const chunk = pushVoiceAudioChunk(
+    slug,
+    user.id,
+    user.displayName || 'Participant',
+    audioBase64,
+    mimeType
+  );
+
   return c.json({ success: true, chunkId: chunk.id });
 });
 
-// Récupérer les fragments audio récents des autres participants
-forumRouter.get('/topics/:slug/call/chunks', async (c) => {
+// Récupérer les nouveaux fragments audio depuis un timestamp donné
+forumRouter.get('/topics/:slug/voice/chunks', requireAuth, async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
-  const user = (c as any).get('user') as any;
   const since = Number(c.req.query('since') || 0);
+  const user = (c as any).get('user') as any;
 
   const chunks = getVoiceAudioChunks(slug, since, user?.id);
   return c.json({ success: true, chunks });

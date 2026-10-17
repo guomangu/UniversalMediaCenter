@@ -2,10 +2,11 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { userFriends, users } from '../db/schema/index.js';
 import { eq, or, sql } from 'drizzle-orm';
+import { getUserLastLocation } from '../watcher/presenceStore.js';
 
 export const friendActionRouter = new Hono();
 
-// Liste des amis, demandes reçues et demandes envoyées
+// Liste des amis, demandes reçues et demandes envoyées avec statut temps réel
 friendActionRouter.get('/', async (c) => {
   const sessionUser = (c as any).get('user');
   const allFriendships = await db
@@ -23,6 +24,8 @@ friendActionRouter.get('/', async (c) => {
   const pendingReceived: any[] = [];
   const pendingSent: any[] = [];
 
+  const now = Date.now();
+
   for (const f of allFriendships) {
     const isRequester = f.userId === sessionUser.id;
     const otherUserId = isRequester ? f.friendId : f.userId;
@@ -31,6 +34,20 @@ friendActionRouter.get('/', async (c) => {
     });
     if (!otherUser) continue;
 
+    const loc = await getUserLastLocation(otherUser.id);
+    const isOnline = Boolean(loc && now - loc.updatedAt < 60000);
+    const currentActivity =
+      loc && isOnline && loc.isLive
+        ? {
+            isWatching: true,
+            title: loc.title,
+            mediaId: loc.mediaId,
+            path: loc.path,
+          }
+        : null;
+
+    const dmTopicSlug = `dm-${[sessionUser.id, otherUser.id].sort().join('-')}`;
+
     const friendInfo = {
       friendshipId: f.id,
       userId: otherUser.id,
@@ -38,7 +55,10 @@ friendActionRouter.get('/', async (c) => {
       email: otherUser.email,
       avatarUrl: otherUser.avatarUrl,
       bio: otherUser.bio,
+      dmTopicSlug,
       privateTopicSlug: `private-user-${otherUser.id}`,
+      isOnline,
+      currentActivity,
       createdAt: f.createdAt,
     };
 
@@ -100,7 +120,7 @@ friendActionRouter.post('/accept/:id', async (c) => {
   return c.json({ success: true, message: 'Demande acceptée !' });
 });
 
-// Refuser, annuler ou supprimer un ami
+// Refuser, annuler une demande ou retirer un ami
 friendActionRouter.post('/reject/:id', async (c) => {
   const sessionUser = (c as any).get('user');
   const friendshipId = c.req.param('id');

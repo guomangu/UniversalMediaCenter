@@ -16,6 +16,7 @@ import { fetchExternalMetadata, cleanShowTitle } from '../watcher/externalMetada
 import { linkTagToNode } from '../watcher/tagExtractor.js';
 import { createShareToken } from '../auth/shareToken.js';
 import { checkMediaAccess, isMediaAllowedForUser } from '../auth/mediaAccess.js';
+import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
 import { requireAuth } from '../middleware/access.js';
 import { recordActivePlayback, removeActivePlayback } from '../watcher/presenceStore.js';
 import { removeUserFromMediaSessions } from './sessionRoutes.js';
@@ -619,7 +620,7 @@ mediaRouter.get('/:id', async (c) => {
         posterPath: ex.posterPath ? `/api/media/${ex.id}/poster` : formattedMedia.posterPath,
         thumbPath: ex.thumbPath ? `/api/media/${ex.id}/thumb` : undefined,
     }));
-    // 4. Saga parente et films de la saga
+    // 4. Saga parente et films de la saga (filtrage strict de sécurité)
     let parentSaga = null;
     let targetParentId = media.parentId;
     if (!targetParentId && media.nodeType === 'MOVIE') {
@@ -645,38 +646,52 @@ mediaRouter.get('/:id', async (c) => {
         const pNode = await db.query.mediaNodes.findFirst({
             where: (t, { eq }) => eq(t.id, targetParentId),
         });
-        if (pNode) {
+        // Vérifier que la saga parente elle-même est autorisée pour le profil
+        if (pNode && isMediaAllowedForUser(user, pNode)) {
             const rawSagaSiblings = await db.query.mediaNodes.findMany({
                 where: (t, { eq, and }) => and(eq(t.parentId, targetParentId), eq(t.isExtra, false)),
                 orderBy: (t, { asc }) => [asc(t.orderIndex), asc(t.releaseYear), asc(t.title)],
             });
             const sagaSiblings = rawSagaSiblings.filter((s) => isMediaAllowedForUser(user, s));
-            parentSaga = {
-                id: pNode.id,
-                title: pNode.title,
-                nodeType: pNode.nodeType,
-                overview: pNode.overview,
-                posterPath: pNode.posterPath ? `/api/media/${pNode.id}/poster` : undefined,
-                fanartPath: pNode.fanartPath ? `/api/media/${pNode.id}/fanart` : undefined,
-                movies: sagaSiblings.map((s) => ({
-                    id: s.id,
-                    title: s.title,
-                    releaseYear: s.releaseYear,
-                    nodeType: s.nodeType,
-                    orderIndex: s.orderIndex,
-                    communityRating: s.communityRating,
-                    posterPath: s.posterPath ? `/api/media/${s.id}/poster` : (pNode.posterPath ? `/api/media/${pNode.id}/poster` : undefined),
-                })),
-            };
+            // Ne pas exposer une saga si tous ses films sont interdits pour l'utilisateur
+            if (sagaSiblings.length > 0) {
+                parentSaga = {
+                    id: pNode.id,
+                    title: pNode.title,
+                    nodeType: pNode.nodeType,
+                    overview: pNode.overview,
+                    posterPath: pNode.posterPath ? `/api/media/${pNode.id}/poster` : undefined,
+                    fanartPath: pNode.fanartPath ? `/api/media/${pNode.id}/fanart` : undefined,
+                    movies: sagaSiblings.map((s) => ({
+                        id: s.id,
+                        title: s.title,
+                        releaseYear: s.releaseYear,
+                        nodeType: s.nodeType,
+                        orderIndex: s.orderIndex,
+                        communityRating: s.communityRating,
+                        posterPath: s.posterPath ? `/api/media/${s.id}/poster` : (pNode.posterPath ? `/api/media/${pNode.id}/poster` : undefined),
+                    })),
+                };
+            }
         }
     }
-    // 5. Studios de production et films dépendants/associés
+    // 5. Studios de production et films dépendants/associés (avec barrière SQL & JS)
     const targetNodeId = media.id;
     const parentNodeId = targetParentId || '00000000-0000-0000-0000-000000000000';
+    const studioAccessConds = buildMediaAccessConditions(user, 'm');
+    let studioAccessSql = sql ``;
+    for (const cond of studioAccessConds) {
+        studioAccessSql = sql `${studioAccessSql} AND ${cond}`;
+    }
     const studioFilmsRows = await db.execute(sql `
     SELECT DISTINCT v.value_text AS studio_name,
            m.id, m.title, m.release_year, m.poster_path, m.community_rating, m.node_type,
-           m.video_file_path, m.nfo_file_path, m.search_vector_text
+           m.video_file_path, m.nfo_file_path, m.search_vector_text,
+           COALESCE(
+             m.video_file_path,
+             m.nfo_file_path,
+             (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = m.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = m.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+           ) AS effective_physical_path
     FROM node_eav_links l
     JOIN eav_values v ON l.value_id = v.id
     JOIN eav_attributes a ON v.attribute_id = a.id
@@ -687,29 +702,24 @@ mediaRouter.get('/:id', async (c) => {
       AND m.id != ${media.id}::uuid
       AND m.is_extra = false
       AND (m.node_type IN ('SHOW', 'COLLECTION') OR (m.node_type = 'MOVIE' AND (m.parent_id IS NULL OR m.parent_id != ${parentNodeId}::uuid)))
+      ${studioAccessSql}
     ORDER BY v.value_text, m.community_rating DESC NULLS LAST, m.release_year DESC NULLS LAST
     LIMIT 60;
   `);
     const studioMap = new Map();
-    const mediaStudios = await db.execute(sql `
-    SELECT DISTINCT v.value_text AS studio_name
-    FROM node_eav_links l
-    JOIN eav_values v ON l.value_id = v.id
-    JOIN eav_attributes a ON v.attribute_id = a.id
-    WHERE a.code = 'studio'
-      AND (l.node_id = ${targetNodeId}::uuid OR l.node_id = ${parentNodeId}::uuid);
-  `);
-    const rawStudioNames = Array.isArray(mediaStudios) ? mediaStudios : mediaStudios.rows || [];
-    for (const sRow of rawStudioNames) {
-        if (sRow.studio_name) {
-            studioMap.set(sRow.studio_name, []);
-        }
-    }
     const rawStudioList = Array.isArray(studioFilmsRows) ? studioFilmsRows : studioFilmsRows.rows || [];
     for (const row of rawStudioList) {
-        // Filtrage strict ABAC sur les suggestions studio
-        if (!isMediaAllowedForUser(user, row))
+        // Filtrage strict ABAC/PBAC sur les suggestions studio
+        if (!isMediaAllowedForUser(user, {
+            title: row.title,
+            nodeType: row.node_type,
+            videoFilePath: row.video_file_path,
+            nfoFilePath: row.nfo_file_path,
+            effectivePhysicalPath: row.effective_physical_path,
+            searchVectorText: row.search_vector_text,
+        })) {
             continue;
+        }
         const sName = row.studio_name;
         if (!studioMap.has(sName))
             studioMap.set(sName, []);
@@ -724,13 +734,14 @@ mediaRouter.get('/:id', async (c) => {
             });
         }
     }
-    const studioMedias = Array.from(studioMap.entries()).map(([studioName, medias]) => ({
+    const studioMedias = Array.from(studioMap.entries())
+        .filter(([_, medias]) => medias.length > 0)
+        .map(([studioName, medias]) => ({
         studioName,
         medias,
     }));
-    const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId);
-    const rawSimilar = await getTfIdfSimilarMedias(media.id, 12);
-    const similarMedias = rawSimilar.filter((sim) => isMediaAllowedForUser(user, sim));
+    const relatedTags = await getRelatedTagsForMedia(media.id, media.parentId, user);
+    const similarMedias = await getTfIdfSimilarMedias(media.id, 12, user);
     return c.json({
         media: formattedMedia,
         tags: tagsByZone,
@@ -746,9 +757,8 @@ mediaRouter.get('/:id/similar', async (c) => {
     const id = c.req.param('id');
     const user = c.get('user');
     const limit = parseInt(c.req.query('limit') || '12', 10);
-    const similar = await getTfIdfSimilarMedias(id, limit);
-    const allowedSimilar = similar.filter((sim) => isMediaAllowedForUser(user, sim));
-    return c.json({ similar: allowedSimilar });
+    const similar = await getTfIdfSimilarMedias(id, limit, user);
+    return c.json({ similar });
 });
 export async function processSingleNfo(filePath) {
     return await processNfoFile(filePath);

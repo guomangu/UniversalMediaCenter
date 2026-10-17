@@ -11,6 +11,7 @@ import {
   fetchWatchHistory,
   fetchFavorites,
   fetchUserProfile,
+  toggleFavorite,
 } from '@/services/userApi';
 import { UserProfileCard } from '@/components/user/UserProfileCard';
 import { UserStatsCard } from '@/components/user/UserStatsCard';
@@ -24,6 +25,7 @@ import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 import { goBackOrFallback } from '@/utils/navigation';
 
 type UserTab = 'CONTINUE' | 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED';
+type FavFilter = 'ALL' | 'MOVIE' | 'SHOW' | 'EPISODE';
 
 export default function UserScreen() {
   const router = useRouter();
@@ -32,12 +34,14 @@ export default function UserScreen() {
   const [profile, setProfile] = useState<any>(authUser);
   const { tab } = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useTabState<UserTab>('user_active_tab', 'CONTINUE');
+  const [favFilter, setFavFilter] = useState<FavFilter>('ALL');
 
   useEffect(() => {
     if (tab && ['CONTINUE', 'FAVORITES', 'FRIENDS', 'FORUMS', 'FEED'].includes(tab.toUpperCase())) {
       setActiveTab(tab.toUpperCase() as UserTab);
     }
   }, [tab]);
+
   const [stats, setStats] = useState<any>(null);
   const [continueList, setContinueList] = useState<any[]>([]);
   const [historyList, setHistoryList] = useState<any[]>([]);
@@ -51,7 +55,7 @@ export default function UserScreen() {
       fetchUserStats(),
       fetchContinueWatching(),
       fetchWatchHistory(),
-      fetchFavorites(),
+      fetchFavorites(true),
     ]);
     if (p) setProfile(p);
     if (s) setStats(s);
@@ -69,6 +73,19 @@ export default function UserScreen() {
     logout();
     router.replace('/login');
   };
+
+  const handleRemoveFavorite = async (nodeId: string) => {
+    setFavoritesList((prev) => prev.filter((item) => item.id !== nodeId));
+    await toggleFavorite(nodeId, false);
+  };
+
+  const filteredFavorites = favoritesList.filter((item) => {
+    if (favFilter === 'ALL') return true;
+    if (favFilter === 'MOVIE') return item.nodeType === 'MOVIE';
+    if (favFilter === 'SHOW') return item.nodeType === 'SHOW' || item.nodeType === 'COLLECTION';
+    if (favFilter === 'EPISODE') return item.nodeType === 'EPISODE';
+    return true;
+  });
 
   return (
     <AuthGuard>
@@ -136,7 +153,7 @@ export default function UserScreen() {
                 onPress={() => setActiveTab('FORUMS')}
                 style={[styles.tabBtn, activeTab === 'FORUMS' && styles.tabBtnActive]}>
                 <Text style={[styles.tabTxt, activeTab === 'FORUMS' && styles.tabTxtActive]}>
-                  💬 Mes Salons
+                  💬 Salons
                 </Text>
               </Pressable>
 
@@ -198,7 +215,41 @@ export default function UserScreen() {
 
             {activeTab === 'FAVORITES' && (
               <View style={styles.tabBody}>
-                <Text style={styles.subSecTitle}>❤️ Mes Médias Favoris ({favoritesList.length})</Text>
+                <View style={styles.favHeaderRow}>
+                  <Text style={styles.subSecTitle}>❤️ Mes Médias Favoris ({favoritesList.length})</Text>
+
+                  {/* Filtres par type de média */}
+                  <View style={styles.favFilterRow}>
+                    <Pressable
+                      focusable={true}
+                      onPress={() => setFavFilter('ALL')}
+                      style={[styles.favFilterPill, favFilter === 'ALL' && styles.favFilterPillActive]}
+                    >
+                      <Text style={[styles.favFilterPillTxt, favFilter === 'ALL' && styles.favFilterPillTxtActive]}>
+                        Tous
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      focusable={true}
+                      onPress={() => setFavFilter('MOVIE')}
+                      style={[styles.favFilterPill, favFilter === 'MOVIE' && styles.favFilterPillActive]}
+                    >
+                      <Text style={[styles.favFilterPillTxt, favFilter === 'MOVIE' && styles.favFilterPillTxtActive]}>
+                        Films
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      focusable={true}
+                      onPress={() => setFavFilter('SHOW')}
+                      style={[styles.favFilterPill, favFilter === 'SHOW' && styles.favFilterPillActive]}
+                    >
+                      <Text style={[styles.favFilterPillTxt, favFilter === 'SHOW' && styles.favFilterPillTxtActive]}>
+                        Séries
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
                 {favoritesList.length === 0 ? (
                   <View style={styles.emptyBox}>
                     <Text style={styles.emptyTxt}>Vous n'avez pas encore ajouté de favoris.</Text>
@@ -206,10 +257,32 @@ export default function UserScreen() {
                       <Text style={styles.actionBtnTxt}>Découvrir le catalogue</Text>
                     </Pressable>
                   </View>
+                ) : filteredFavorites.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Text style={styles.emptyTxt}>Aucun favori ne correspond à ce filtre.</Text>
+                  </View>
                 ) : (
                   <View style={styles.mediaGrid}>
-                    {favoritesList.map((item) => (
-                      <MediaCard key={item.id} item={item} styleVariant="POSTER" />
+                    {filteredFavorites.map((item) => (
+                      <View key={item.id} style={styles.favoriteItemWrapper}>
+                        <MediaCard item={item} styleVariant="POSTER" />
+                        <View style={styles.favActionFooter}>
+                          <Pressable
+                            focusable={true}
+                            onPress={() => router.push(`/player/${item.id}` as any)}
+                            style={styles.favPlayBtn}
+                          >
+                            <Text style={styles.favPlayTxt}>▶ Regarder</Text>
+                          </Pressable>
+                          <Pressable
+                            focusable={true}
+                            onPress={() => handleRemoveFavorite(item.id)}
+                            style={styles.favRemoveBtn}
+                          >
+                            <Text style={styles.favRemoveTxt}>✕ Retirer</Text>
+                          </Pressable>
+                        </View>
+                      </View>
                     ))}
                   </View>
                 )}
@@ -282,8 +355,42 @@ const styles = StyleSheet.create({
   },
   tabTxt: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
   tabTxtActive: { color: '#ffffff', fontWeight: '800' },
-  tabBody: { gap: 12 },
-  subSecTitle: { fontSize: 15, fontWeight: '800', color: '#818cf8', textTransform: 'uppercase', marginBottom: 8 },
+  tabBody: { gap: 14 },
+  subSecTitle: { fontSize: 14, fontWeight: '800', color: '#818cf8', textTransform: 'uppercase', letterSpacing: 0.5 },
+  favHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 6,
+  },
+  favFilterRow: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    padding: 4,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(71, 85, 105, 0.3)',
+  },
+  favFilterPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+  },
+  favFilterPillActive: {
+    backgroundColor: '#6366f1',
+  },
+  favFilterPillTxt: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  favFilterPillTxtActive: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
   horizontalRow: { gap: 12, paddingVertical: 8 },
   emptyBox: {
     backgroundColor: 'rgba(30, 41, 59, 0.5)',
@@ -314,5 +421,33 @@ const styles = StyleSheet.create({
   historyBadge: { color: '#818cf8', fontSize: 11, fontWeight: '700', marginTop: 2 },
   historyProgress: { color: '#94a3b8', fontSize: 12, fontWeight: '700' },
   replayTxt: { color: '#6366f1', fontWeight: '800', fontSize: 13 },
-  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  favoriteItemWrapper: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  favActionFooter: {
+    flexDirection: 'row',
+    gap: 6,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  favPlayBtn: {
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+  },
+  favPlayTxt: { color: '#c7d2fe', fontSize: 10, fontWeight: '800' },
+  favRemoveBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+  },
+  favRemoveTxt: { color: '#f87171', fontSize: 10, fontWeight: '700' },
 });

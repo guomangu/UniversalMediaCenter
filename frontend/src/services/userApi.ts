@@ -24,7 +24,7 @@ export async function fetchContinueWatching(): Promise<any[]> {
       });
       if (!res.ok) return [];
       const data = await res.json();
-      return data.items || [];
+      return Array.isArray(data) ? data : data.items || [];
     } catch {
       return [];
     }
@@ -39,26 +39,34 @@ export async function fetchWatchHistory(): Promise<any[]> {
       });
       if (!res.ok) return [];
       const data = await res.json();
-      return data.history || [];
+      return Array.isArray(data) ? data : data.history || [];
     } catch {
       return [];
     }
   });
 }
 
-export async function fetchFavorites(): Promise<any[]> {
-  return fetchWithCache('user_favorites', async () => {
+export async function fetchFavorites(forceFresh = false): Promise<any[]> {
+  const fetcher = async () => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/user/favorites`, {
         headers: getAuthHeaders(),
       });
       if (!res.ok) return [];
       const data = await res.json();
-      return data.favorites || [];
+      return Array.isArray(data) ? data : data.favorites || [];
     } catch {
       return [];
     }
-  });
+  };
+
+  if (forceFresh) {
+    const fresh = await fetcher();
+    setCachedData('user_favorites', fresh);
+    return fresh;
+  }
+
+  return fetchWithCache('user_favorites', fetcher);
 }
 
 export async function toggleFavorite(nodeId: string, shouldAdd: boolean): Promise<boolean> {
@@ -110,7 +118,7 @@ export async function fetchUserForums(): Promise<any[]> {
       });
       if (!res.ok) return [];
       const data = await res.json();
-      return data.forums || [];
+      return Array.isArray(data) ? data : data.forums || [];
     } catch {
       return [];
     }

@@ -41,56 +41,101 @@
 
 ---
 
-## 🛑 86. Amnésie de Contrôle d\x27Accès dans les Moteurs de Recommandations Connexes et Cache PWA d\x27Écran Détail Partagé
+## 🛑 86. Amnésie de Contrôle d'Accès dans les Moteurs de Recommandations Connexes et Cache PWA d'Écran Détail Partagé
 
-* **Problème / Symptôme :** Sur la fiche d\x27un média (`/media/[id]`), des œuvres interdites apparaissent dans les sections « Genres & Thématiques » (`relatedTags`), « Titres Similaires » (`similarMedias`), les œuvres du même studio ou la saga parente, ou bien un utilisateur restreint visualisant une fiche directement accède aux données restées en cache LocalStorage/Mémoire d\x27une session précédente.
+* **Problème / Symptôme :** Sur la fiche d'un média (`/media/[id]`), des œuvres interdites apparaissent dans les sections « Genres & Thématiques » (`relatedTags`), « Titres Similaires » (`similarMedias`), les œuvres du même studio ou la saga parente, ou bien un utilisateur restreint visualisant une fiche directement accède aux données restées en cache LocalStorage/Mémoire d'une session précédente.
 * **Conséquences :**
   - Violation flagrante du contrôle parental et du partitionnement physique des dossiers (Loi Zero-Leak).
   - Un enfant ou invité peut découvrir des affiches, titres ou métadonnées de films interdits via les blocs de recommandation ou le cache PWA.
 * **Causes Racines :**
-  - **Omission de l\x27argument `user` dans les calculateurs de graphes et de similarité :** Des fonctions comme `getRelatedTagsForMedia` ou `getTfIdfSimilarMedias` requêtaient la base de données brute sans aucune clause `buildMediaAccessConditions` et sans appeler `isMediaAllowedForUser`.
-  - **Amnésie des routes connexes :** Les endpoints de studios (`studioFilmsRows`), sagas parentes (`parentSaga`), exploration (`/stats`), chaînes IPTV (`/live`), reposts et séances de visionnage partagées ne vérifiaient pas si les médias cibles respectaient les restrictions de l\x27utilisateur courant.
-  - **Clés de cache frontend globales et amnésie de la mémoire vive :** Les requêtes API et les hooks d\x27écran de détail mettaient en cache les réponses sous des clés agnostiques à l\x27utilisateur (`media_detail_${id}`). Au logout, seul une partie du LocalStorage était purgée, laissant la `Map` mémoire vive intacte.
+  - **Omission de l'argument `user` dans les calculateurs de graphes et de similarité :** Des fonctions comme `getRelatedTagsForMedia` ou `getTfIdfSimilarMedias` requêtaient la base de données brute sans aucune clause `buildMediaAccessConditions` et sans appeler `isMediaAllowedForUser`.
+  - **Amnésie des routes connexes :** Les endpoints de studios (`studioFilmsRows`), sagas parentes (`parentSaga`), exploration (`/stats`), chaînes IPTV (`/live`), reposts et séances de visionnage partagées ne vérifiaient pas si les médias cibles respectaient les restrictions de l'utilisateur courant.
+  - **Clés de cache frontend globales et amnésie de la mémoire vive :** Les requêtes API et les hooks d'écran de détail mettaient en cache les réponses sous des clés agnostiques à l'utilisateur (`media_detail_${id}`). Au logout, seul une partie du LocalStorage était purgée, laissant la `Map` mémoire vive intacte.
 * **Bonnes Pratiques de Remédiation :**
   - **Propagation Universelle du Profil `user` :** Tout moteur de calcul de proximité sémantique, de tag ou de recommandation doit accepter `user: UserSession` en paramètre obligatoire, injecter les filtres SQL amont et filtrer en mémoire JS.
-  - **Filtrage des Conteneurs et Sagas :** Si une saga parente ne compte plus aucun média accessible pour l\x27utilisateur (`sagaSiblings.length === 0`), masquer l\x27intégralité du bloc saga.
+  - **Filtrage des Conteneurs et Sagas :** Si une saga parente ne compte plus aucun média accessible pour l'utilisateur (`sagaSiblings.length === 0`), masquer l'intégralité du bloc saga.
   - **Isolation Stricte du Cache Client :** Inclure systématiquement `${userKey}` dans toutes les clés de cache LocalStorage et requêtes GET côté client (`media_detail_${userKey}_${id}`).
   - **Purge Globale Mémoire + Disque :** Lors du logout ou du switch de compte, vider instantanément à la fois le LocalStorage et la `Map` mémoire vive du client PWA (`clearMemoryCache()`).
-  - **Écran de Repli Convivial :** En cas d\x27accès direct par URL à une œuvre interdite, renvoyer immédiatement HTTP 403 et afficher une carte soignée « Contenu Restreint » invitant cordialement à revenir à l\x27accueil.
+  - **Écran de Repli Convivial :** En cas d'accès direct par URL à une œuvre interdite, renvoyer immédiatement HTTP 403 et afficher une carte soignée « Contenu Restreint » invitant cordialement à revenir à l'accueil.
 
 ---
 
 ## 🛑 87. Flash Visuel de Données Dépassées ou Fictives (FOUC) et Pré-Rendu Optimiste de Tags Sans Médias Confirmés
 
-* **Problème / Symptôme :** Lors d\x27un rechargement forcé (`Ctrl+Maj+R`) ou d\x27une connexion avec profil restreint, les titres de catégories et les noms de tags (y compris d\x27œuvres interdites ou de faux tags par défaut) s\x27affichent pendant 2 à 3 secondes, avant de disparaître soudainement une fois les médias chargés. L\x27utilisateur restreint a ainsi le temps d\x27apercevoir l\x27existence de contenus qui lui sont interdits.
+* **Problème / Symptôme :** Lors d'un rechargement forcé (`Ctrl+Maj+R`) ou d'une connexion avec profil restreint, les titres de catégories et les noms de tags (y compris d'œuvres interdites ou de faux tags par défaut) s'affichent pendant 2 à 3 secondes, avant de disparaître soudainement une fois les médias chargés. L'utilisateur restreint a ainsi le temps d'apercevoir l'existence de contenus qui lui sont interdits.
 * **Conséquences :**
-  - Fuite d\x27information cognitive : l\x27utilisateur découvre l\x27existence de films, sagas ou catégories interdites.
-  - Sensation de bug visuel (sauts d\x27éléments dans l\x27interface et disparition brutale de bandeaux).
+  - Fuite d'information cognitive : l'utilisateur découvre l'existence de films, sagas ou catégories interdites.
+  - Sensation de bug visuel (sauts d'éléments dans l'interface et disparition brutale de bandeaux).
 * **Causes Racines :**
   - **Constantes de repli avec données mockées en dur :** `DEFAULT_TAXONOMY_CATEGORIES` contenait des titres en dur (Pixar, Rocky, Tarantino...). Sur un rechargement forcé sans cache LocalStorage, le hook `useState` initialisait immédiatement ces catégories fictives.
-  - **Initialisation optimiste de `loading` à `false` :** `HomeScreen` démarrait avec `loading = false`, rendant immédiatement les composants enfants avant même la première réponse HTTP de l\x27API.
-  - **Fuite du titre de tag avant validation des médias (`TagCard.tsx`) :** Le composant `TagCard` affichait le bandeau d\x27en-tête (`tag.label`) tant que `loading` était à `true`, même si `medias.length === 0`. Si la requête retournait ensuite 0 média autorisé, le tag disparaissait, mais son titre avait été exposé pendant 3 secondes.
-  - **Affichage prématuré du titre de catégorie (`CategorySection.tsx`) :** La section s\x27affichait par défaut tant que tous les tags n\x27avaient pas fini de charger (`!(allVisibleLoaded && totalCount === 0)`).
-  - **Amnésie des enfants dans les requêtes de sagas (`taxonomyRoutes.ts`) :** La clause SQL `COUNT(c.id)` ne filtrait pas les enfants `c` par les permissions de l\x27utilisateur.
+  - **Initialisation optimiste de `loading` à `false` :** `HomeScreen` démarrait avec `loading = false`, rendant immédiatement les composants enfants avant même la première réponse HTTP de l'API.
+  - **Fuite du titre de tag avant validation des médias (`TagCard.tsx`) :** Le composant `TagCard` affichait le bandeau d'en-tête (`tag.label`) tant que `loading` était à `true`, même si `medias.length === 0`. Si la requête retournait ensuite 0 média autorisé, le tag disparaissait, mais son titre avait été exposé pendant 3 secondes.
+  - **Affichage prématuré du titre de catégorie (`CategorySection.tsx`) :** La section s'affichait par défaut tant que tous les tags n'avaient pas fini de charger (`!(allVisibleLoaded && totalCount === 0)`).
+  - **Amnésie des enfants dans les requêtes de sagas (`taxonomyRoutes.ts`) :** La clause SQL `COUNT(c.id)` ne filtrait pas les enfants `c` par les permissions de l'utilisateur.
 * **Bonnes Pratiques de Remédiation :**
   - **Bannir les listes de tags mockées :** `DEFAULT_TAXONOMY_CATEGORIES` doit être un tableau strictement vide (`[]`).
-  - **État de chargement strict au boot :** `loading = !cached || cached.length === 0`. Tant que les catégories vérifiées ne sont pas disponibles, afficher uniquement un indicateur d\x27attente sobre sans aucun texte.
-  - **Zéro affichage sans média confirmé :** Dans `TagCard`, si `medias.length === 0`, renvoyer inconditionnellement `null`. Un titre de tag ne doit JAMAIS apparaître à l\x27écran sans au moins 1 média accessible certifié.
+  - **État de chargement strict au boot :** `loading = !cached || cached.length === 0`. Tant que les catégories vérifiées ne sont pas disponibles, afficher uniquement un indicateur d'attente sobre sans aucun texte.
+  - **Zéro affichage sans média confirmé :** Dans `TagCard`, si `medias.length === 0`, renvoyer inconditionnellement `null`. Un titre de tag ne doit JAMAIS apparaître à l'écran sans au moins 1 média accessible certifié.
   - **Catégorie conditionnée à `hasConfirmedMedia` :** `CategorySection` ne doit afficher son en-tête que si au moins un média a été effectivement validé (`totalCount > 0`).
-  - **Filtrage SQL strict sur les enfants `c` :** Appliquer `childConds = buildMediaAccessConditions(user, \x27c\x27)` dans `sagasQuery` pour que les sagas sans aucun film autorisé aient `count = 0` dès la requête SQL initiale.
+  - **Filtrage SQL strict sur les enfants `c` :** Appliquer `childConds = buildMediaAccessConditions(user, 'c')` dans `sagasQuery` pour que les sagas sans aucun film autorisé aient `count = 0` dès la requête SQL initiale.
 
 ---
 
-## 🛑 88. Troncature Mobile des Onglets et Barres d\x27Actions par Absence de Conteneur Défilable Horizontal
+## 🛑 88. Troncature Mobile des Onglets et Barres d'Actions par Absence de Conteneur Défilable Horizontal
 
-* **Problème / Symptôme :** Sur écran de smartphone ou petit écran tactile (< 600px), les barres de navigation multi-onglets (ex: Panneau d\x27administration, Espace utilisateur, sélecteurs de zones de layout) sont tronquées sur le côté droit. Les onglets situés après le 2e ou 3e élément sont masqués ou inaccessibles.
+* **Problème / Symptôme :** Sur écran de smartphone ou petit écran tactile (< 600px), les barres de navigation multi-onglets (ex: Panneau d'administration, Espace utilisateur, sélecteurs de zones de layout) sont tronquées sur le côté droit. Les onglets situés après le 2e ou 3e élément sont masqués ou inaccessibles.
 * **Conséquences :**
-  - Impossibilité pour un administrateur sur mobile d\x27accéder aux sections clés (« Comptes », « Rails & Layout », « param.yaml », « Sources IPTV »).
-  - Dégradation sévère de l\x27expérience mobile sur les profils (« Reprendre », « Favoris », « Salons »).
+  - Impossibilité pour un administrateur sur mobile d'accéder aux sections clés (« Comptes », « Rails & Layout », « param.yaml », « Sources IPTV »).
+  - Dégradation sévère de l'expérience mobile sur les profils (« Reprendre », « Favoris », « Salons »).
 * **Causes Racines :**
-  - Utilisation d\x27un simple `<View style={{ flexDirection: \x27row\x27 }}>` non scrollable et sans retour à la ligne pour des séries de 5 ou 6 boutons horizontaux de plus de 120px chacun.
-  - Absence de `flexShrink: 0` et de `whiteSpace: \x27nowrap\x27`, provoquant le rétrécissement anormal ou le pliage du libellé des boutons.
+  - Utilisation d'un simple `<View style={{ flexDirection: 'row' }}>` non scrollable et sans retour à la ligne pour des séries de 5 ou 6 boutons horizontaux de plus de 120px chacun.
+  - Absence de `flexShrink: 0` et de `whiteSpace: 'nowrap'`, provoquant le rétrécissement anormal ou le pliage du libellé des boutons.
 * **Bonnes Pratiques de Remédiation :**
-  - **Encapsulation Systématique dans `<ScrollView horizontal>` :** Remplacer tout conteneur d\x27onglets ou de filtres par un `<ScrollView horizontal showsHorizontalScrollIndicator={false}>`.
-  - **Prise en charge Web & Tactile :** Configurer `overflowX: \x27auto\x27`, `WebkitOverflowScrolling: \x27touch\x27`, `scrollbarWidth: \x27none\x27` pour garantir un glissement fluide au doigt sur mobile et à la molette sur desktop.
-  - **Boutons Incompressibles :** Appliquer `flexShrink: 0` et `whiteSpace: \x27nowrap\x27` sur chaque onglet pour préserver l\x27intégrité visuelle des libellés et icônes.
+  - **Encapsulation Systématique dans `<ScrollView horizontal>` :** Remplacer tout conteneur d'onglets ou de filtres par un `<ScrollView horizontal showsHorizontalScrollIndicator={false}>`.
+  - **Prise en charge Web & Tactile :** Configurer `overflowX: 'auto'`, `WebkitOverflowScrolling: 'touch'`, `scrollbarWidth: 'none'` pour garantir un glissement fluide au doigt sur mobile et à la molette sur desktop.
+  - **Boutons Incompressibles :** Appliquer `flexShrink: 0` et `whiteSpace: 'nowrap'` sur chaque onglet pour préserver l'intégrité visuelle des libellés et icônes.
+
+---
+
+## 🛑 89. Désynchronisation de Format de Réponse API vs Frontend pour les Favoris et Amnésie de Cache
+
+* **Problème / Symptôme :** L'onglet « Favoris » de la page utilisateur affiche systématiquement une liste vide ou ne charge rien alors que l'utilisateur a plusieurs favoris en base, ou le retrait/ajout d'un favori ne se reflète pas immédiatement à l'écran.
+* **Conséquences :**
+  - Fonctionnalité de favoris perçue comme brisée ou inopérante.
+  - Obligation de recharger toute la page pour espérer voir le changement.
+* **Causes Racines :**
+  - **Incompatibilité de contrat de données :** L'API `GET /api/users/me/favorites` renvoyait un tableau JSON brut `[ { id, ... } ]`, tandis que le client frontend exécutait `data.favorites || []`. Comme `data` était un tableau, `data.favorites` valait `undefined`, résolvant toujours un tableau vide `[]`.
+  - **Amnésie de cache :** Lors du basculement d'un favori (`toggleFavorite`), le cache mémoire du profil n'était pas invalidé ou mis à jour de façon optimiste.
+* **Bonnes Pratiques de Remédiation :**
+  - **Dépouillement Défensif du JSON :** Utiliser systématiquement `Array.isArray(data) ? data : (data.favorites || [])` pour absorber les variantes de formats de réponse.
+  - **Mise à Jour Optimiste et Émission d'Événements :** Mettre à jour immédiatement la liste locale de favoris (retrait instantané de la carte sans rechargement lourd) et synchroniser le cache mémoire avec la nouvelle liste.
+
+---
+
+## 🛑 90. Asymétrie Relationnelle dans les Requêtes d'Amis et Divergence de Salons Privés 1-on-1
+
+* **Problème / Symptôme :** Deux utilisateurs amis ne voient pas les publications de l'autre dans leur fil d'avis, ou lorsqu'un utilisateur ouvre un message privé avec un ami, les deux personnes se retrouvent dans des salons séparés et ne reçoivent pas les messages mutuels.
+* **Conséquences :**
+  - Rupture totale de la communication privée 1-on-1.
+  - Fil d'avis tronqué masquant la moitié des interactions sociales entre amis.
+* **Causes Racines :**
+  - **Requête unilatérale en base :** La table `user_friends` enregistre `(userId, friendId)`. Une requête naïve `WHERE userId = sessionUser.id` omettait systématiquement toutes les amitiés où l'utilisateur courant était le destinataire `friendId`.
+  - **Génération asymétrique de slug de topic :** La génération de slug basée sur `private-user-${otherUserId}` créait un salon `private-user-B` pour l'utilisateur A et un salon `private-user-A` pour l'utilisateur B, cloisonnant les deux correspondants dans des discussions étanches.
+* **Bonnes Pratiques de Remédiation :**
+  - **Requête Bidirectionnelle Symétrique :** Utiliser systématiquement `or(eq(userId, sessionUser.id), eq(friendId, sessionUser.id))` et extraire l'ID du partenaire `row.userId === sessionUser.id ? row.friendId : row.userId`.
+  - **Génération Déterministe de Slug Trié :** Construire les salons de messagerie directe avec les identifiants triés par ordre lexicographique : `dm-${[userA.id, userB.id].sort().join('-')}`, garantissant un identifiant unique partagé par les deux participants.
+
+---
+
+## 🛑 91. Absence d'Upsert et Omission de Flux Global dans les Avis et Activités Sociales
+
+* **Problème / Symptôme :** Un utilisateur publiant un deuxième avis sur une œuvre crée un doublon au lieu de mettre à jour son appréciation, ou l'onglet « Fil d'avis » reste vide tant qu'un utilisateur n'a pas explicitement ajouté des amis.
+* **Conséquences :**
+  - Encombrement et duplication des avis communautaires sous les œuvres.
+  - Sensation de réseau social « ville fantôme » pour tout nouvel utilisateur sans cercle d'amis préexistant.
+* **Causes Racines :**
+  - Insertion brute `INSERT INTO user_reposts` sans clause d'upsert (`onConflictDoUpdate`) ou vérification d'unicité préalable par `(userId, mediaId)`.
+  - Absence d'un endpoint de feed d'activité combiné réunissant les avis des amis, les avis de l'utilisateur et les avis récents de la communauté.
+* **Bonnes Pratiques de Remédiation :**
+  - **Mise à Jour Idempotente (Upsert) :** Avant d'insérer une critique, vérifier si l'utilisateur a déjà publié sur l'œuvre et effectuer un `UPDATE` (mise à jour de la note et du commentaire) plutôt qu'un double `INSERT`.
+  - **Feed Hybride & Tri Temporel :** Proposer un endpoint `GET /api/reposts/feed` combinant dynamiquement les avis du cercle d'amis et les avis publics récents, tout en appliquant les restrictions d'accès ABAC/PBAC.

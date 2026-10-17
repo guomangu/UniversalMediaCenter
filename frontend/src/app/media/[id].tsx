@@ -4,7 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchMediaDetail, resolveImageUrl } from '@/services/api';
 import { checkFavorite, toggleFavorite } from '@/services/userApi';
-import { fetchMediaReposts } from '@/services/repostApi';
+import { fetchMediaReposts, deleteRepost, MediaRepostItem } from '@/services/repostApi';
+import { fetchMediaSessions, MediaSession } from '@/services/sessionApi';
 import { MediaDetailResponse } from '@/services/types';
 import { getCachedData } from '@/services/pwaDataCache';
 import { getCurrentUser } from '@/services/authStore';
@@ -16,6 +17,7 @@ import { MediaStudioSection } from '@/components/MediaStudioSection';
 import { MediaGenreSection } from '@/components/MediaGenreSection';
 import { MediaRepostModal } from '@/components/MediaRepostModal';
 import { MediaForumSection } from '@/components/MediaForumSection';
+import { ProposeSessionModal } from '@/components/ProposeSessionModal';
 import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
 import { CastModal } from '@/components/CastModal';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
@@ -34,8 +36,31 @@ export default function MediaDetailScreen() {
   const [isForbidden, setIsForbidden] = useState(false);
   const [showCast, setShowCast] = useState(false);
   const [showRepostModal, setShowRepostModal] = useState(false);
+  const [showSessionModal, setShowSessionModal] = useState(false);
   const [isFav, setIsFav] = useState(false);
-  const [reposts, setReposts] = useState<any[]>([]);
+  const [reposts, setReposts] = useState<MediaRepostItem[]>([]);
+  const [repostStats, setRepostStats] = useState<{ averageRating: number | null; totalCount: number }>({
+    averageRating: null,
+    totalCount: 0,
+  });
+  const [activeSessions, setActiveSessions] = useState<MediaSession[]>([]);
+  const [totalViewers, setTotalViewers] = useState(0);
+
+  const loadReposts = () => {
+    if (!id) return;
+    fetchMediaReposts(id).then((res) => {
+      setReposts(res.reposts || []);
+      setRepostStats({ averageRating: res.averageRating, totalCount: res.totalCount });
+    });
+  };
+
+  const loadSessions = () => {
+    if (!id) return;
+    fetchMediaSessions(id).then((res) => {
+      setActiveSessions(res.sessions || []);
+      setTotalViewers(res.totalViewers || 0);
+    });
+  };
 
   const loadData = () => {
     if (!id) return;
@@ -65,11 +90,14 @@ export default function MediaDetailScreen() {
       .finally(() => setLoading(false));
 
     checkFavorite(id).then(setIsFav);
-    fetchMediaReposts(id).then(setReposts);
+    loadReposts();
+    loadSessions();
   };
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadSessions, 10000);
+    return () => clearInterval(interval);
   }, [id, share]);
 
   const handleToggleFav = async () => {
@@ -77,6 +105,13 @@ export default function MediaDetailScreen() {
     const nextState = !isFav;
     setIsFav(nextState);
     await toggleFavorite(id, nextState);
+  };
+
+  const handleDeleteRepost = async (repostId: string) => {
+    const ok = await deleteRepost(repostId);
+    if (ok) {
+      loadReposts();
+    }
   };
 
   const {
@@ -233,6 +268,30 @@ export default function MediaDetailScreen() {
           <Text style={styles.backTxt}>← Retour</Text>
         </Pressable>
 
+        {/* Bannière Séance Collective en Direct si active */}
+        {activeSessions.length > 0 && (
+          <View style={styles.liveSessionBanner}>
+            <View style={styles.liveSessionPulse}>
+              <View style={styles.livePulseDot} />
+              <Text style={styles.liveSessionBannerTxt}>
+                Séance de visionnage active • {totalViewers} spectateur{totalViewers > 1 ? 's' : ''} en direct
+              </Text>
+            </View>
+            <Pressable
+              focusable={true}
+              onPress={() =>
+                router.push({
+                  pathname: `/player/${playId}`,
+                  params: { sessionId: activeSessions[0].id, title: media.title },
+                } as any)
+              }
+              style={styles.liveSessionJoinBtn}
+            >
+              <Text style={styles.liveSessionJoinBtnTxt}>Rejoindre le salon ▶</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* ======================================================== */}
         {/* 1. MEDIA : Hero Spotlight Header                          */}
         {/* ======================================================== */}
@@ -291,25 +350,74 @@ export default function MediaDetailScreen() {
               <Pressable focusable={true} onPress={handlePlay} style={styles.playBtn}>
                 <Text style={styles.btnText}>{playLabel}</Text>
               </Pressable>
+
+              {/* Bouton Favoris YouTube-Quality */}
               <Pressable
                 focusable={true}
                 onPress={handleToggleFav}
                 style={[
                   styles.playBtn,
                   isFav
-                    ? { backgroundColor: 'rgba(168, 70, 70, 0.9)' }
-                    : { backgroundColor: 'rgba(45, 52, 64, 0.7)' },
+                    ? { backgroundColor: '#e11d48', borderColor: '#f43f5e', borderWidth: 1 }
+                    : { backgroundColor: 'rgba(51, 65, 85, 0.75)' },
                 ]}
               >
-                <Text style={styles.btnText}>{isFav ? 'Favori' : 'Ajouter aux favoris'}</Text>
+                <Text style={styles.btnText}>{isFav ? '❤️ Dans mes favoris' : '🤍 Ajouter aux favoris'}</Text>
               </Pressable>
+
+              {/* Bouton Salon de visionnage / Watch Party */}
+              <Pressable
+                focusable={true}
+                onPress={() => {
+                  if (activeSessions.length > 0) {
+                    router.push({
+                      pathname: `/player/${playId}`,
+                      params: { sessionId: activeSessions[0].id, title: media.title },
+                    } as any);
+                  } else {
+                    setShowSessionModal(true);
+                  }
+                }}
+                style={[
+                  styles.playBtn,
+                  activeSessions.length > 0
+                    ? { backgroundColor: '#16a34a', borderColor: '#4ade80', borderWidth: 1 }
+                    : { backgroundColor: 'rgba(99, 102, 241, 0.8)' },
+                ]}
+              >
+                <Text style={styles.btnText}>
+                  {activeSessions.length > 0
+                    ? `🔴 Séance active (${totalViewers})`
+                    : '🍿 Salon de visionnage'}
+                </Text>
+              </Pressable>
+
+              {/* Bouton Donner mon avis */}
               <Pressable
                 focusable={true}
                 onPress={() => setShowRepostModal(true)}
-                style={[styles.playBtn, { backgroundColor: 'rgba(55, 75, 95, 0.7)' }]}
+                style={[styles.playBtn, { backgroundColor: 'rgba(55, 75, 95, 0.75)' }]}
               >
-                <Text style={styles.btnText}>Avis & Repost</Text>
+                <Text style={styles.btnText}>✍️ Avis & Repost</Text>
               </Pressable>
+
+              {/* Bouton Salon de discussion */}
+              <Pressable
+                focusable={true}
+                onPress={() =>
+                  router.push({
+                    pathname: '/forum/[topic]',
+                    params: {
+                      topic: media.slug || media.id,
+                      title: media.title,
+                    },
+                  } as any)
+                }
+                style={[styles.playBtn, { backgroundColor: 'rgba(30, 41, 59, 0.85)' }]}
+              >
+                <Text style={styles.btnText}>💬 Salon de discussion</Text>
+              </Pressable>
+
               <Pressable
                 focusable={true}
                 onPress={() => setShowCast(true)}
@@ -352,209 +460,20 @@ export default function MediaDetailScreen() {
                   onPress={() =>
                     router.push({
                       pathname: `/player/${extra.id}`,
-                      params: { title: `${media.title} - ${extra.title}` },
+                      params: { title: extra.title },
                     } as any)
                   }
                   style={styles.extraCard}
                 >
-                  <View style={styles.extraThumbWrap}>
-                    <Text style={styles.extraThumbTxt}>BONUS</Text>
-                    <View style={styles.extraTypeBadge}>
-                      <Text style={styles.extraTypeBadgeTxt}>
-                        {extra.extraType ? extra.extraType.toUpperCase() : 'BONUS'}
-                      </Text>
-                    </View>
+                  <View style={styles.extraPosterBox}>
+                    <Text style={{ fontSize: 24 }}>🎬</Text>
                   </View>
                   <Text style={styles.extraTitle} numberOfLines={1}>
                     {extra.title}
                   </Text>
-                  {extra.runtimeSeconds ? (
-                    <Text style={styles.extraRuntime}>
-                      {Math.round(extra.runtimeSeconds / 60)} min
-                    </Text>
-                  ) : null}
                 </Pressable>
               ))}
             </ScrollView>
-          </View>
-        )}
-
-        {/* ======================================================== */}
-        {/* 5. ACTEURS : Casting des Acteurs avec Photos et Rôles     */}
-        {/* ======================================================== */}
-        {actors.length > 0 && (
-          <View style={styles.metaSubSection}>
-            <View style={styles.secHeaderRow}>
-              <Text style={styles.secTitle}>
-                {media.nodeType === 'COLLECTION' ? 'Casting de la saga' : 'Casting & Artistes'} ({actors.length})
-              </Text>
-              <Text style={styles.secHint}>Sélectionnez un artiste pour consulter sa filmographie</Text>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.actorsScroll}
-            >
-              {actors.map((actor: any, idx: number) => {
-                const thumb = actor.metadata_json?.thumbUrl;
-                return (
-                  <Pressable
-                    key={idx}
-                    focusable={true}
-                    onPress={() => handleActorPress(actor)}
-                    style={({ pressed }) => [styles.actorCard, pressed && styles.actorCardPressed]}
-                  >
-                    <View style={styles.actorAvatarWrap}>
-                      {thumb ? (
-                        <Image source={{ uri: thumb }} style={styles.actorAvatar} />
-                      ) : (
-                        <View style={styles.actorAvatarPlaceholder}>
-                          <Text style={styles.actorAvatarPlaceholderTxt}>
-                            {actor.value_text?.slice(0, 2).toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.actorName} numberOfLines={1}>
-                      {actor.value_text}
-                    </Text>
-                    {actor.context_role ? (
-                      <Text style={styles.actorRole} numberOfLines={1}>
-                        {actor.context_role}
-                      </Text>
-                    ) : null}
-                    <View style={styles.actorTagBadge}>
-                      <Text style={styles.actorTagBadgeTxt}>Filmographie</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* ======================================================== */}
-        {/* 6. REALISATEURS, AUTEURS & EQUIPE CREATIVE                */}
-        {/* ======================================================== */}
-        {(directors.length > 0 || writers.length > 0 || composers.length > 0 || producers.length > 0) && (
-          <View style={styles.crewCard}>
-            <Text style={styles.secTitle}>Équipe Créative & Réalisation</Text>
-            <View style={styles.crewGrid}>
-              {directors.length > 0 && (
-                <View style={styles.crewCol}>
-                  <Text style={styles.crewRoleTitle}>Réalisation</Text>
-                  <View style={styles.crewNamesList}>
-                    {directors.map((d: any, i: number) => (
-                      <Pressable
-                        key={`d-${i}`}
-                        focusable={true}
-                        onPress={() => handleActorPress(d)}
-                        style={styles.crewPill}
-                      >
-                        <Text style={styles.crewPillTxt}>{d.value_text}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
-              {writers.length > 0 && (
-                <View style={styles.crewCol}>
-                  <Text style={styles.crewRoleTitle}>Scénario & Écriture</Text>
-                  <View style={styles.crewNamesList}>
-                    {writers.map((w: any, i: number) => (
-                      <Pressable
-                        key={`w-${i}`}
-                        focusable={true}
-                        onPress={() => handleActorPress(w)}
-                        style={styles.crewPill}
-                      >
-                        <Text style={styles.crewPillTxt}>{w.value_text}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
-              {composers.length > 0 && (
-                <View style={styles.crewCol}>
-                  <Text style={styles.crewRoleTitle}>Musique & Bande Originale</Text>
-                  <View style={styles.crewNamesList}>
-                    {composers.map((m: any, i: number) => (
-                      <Pressable
-                        key={`m-${i}`}
-                        focusable={true}
-                        onPress={() => handleActorPress(m)}
-                        style={styles.crewPill}
-                      >
-                        <Text style={styles.crewPillTxt}>{m.value_text}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
-              {producers.length > 0 && (
-                <View style={styles.crewCol}>
-                  <Text style={styles.crewRoleTitle}>Production</Text>
-                  <View style={styles.crewNamesList}>
-                    {producers.map((p: any, i: number) => (
-                      <Pressable
-                        key={`p-${i}`}
-                        focusable={true}
-                        onPress={() => handleActorPress(p)}
-                        style={styles.crewPill}
-                      >
-                        <Text style={styles.crewPillTxt}>{p.value_text}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* ======================================================== */}
-        {/* 7. METADONNEES CULTURELLES & TECHNIQUES                   */}
-        {/* ======================================================== */}
-        {(ratings.length > 0 || countries.length > 0 || technicalSpecs.length > 0) && (
-          <View style={styles.metaSubSection}>
-            <Text style={styles.secTitle}>Fiche Technique & Classification</Text>
-            {ratings.length > 0 && (
-              <View style={styles.infoBlock}>
-                <Text style={styles.secSubTitle}>Notes & Certifications</Text>
-                <View style={styles.zoneRow}>
-                  {ratings.map((r, i) => (
-                    <TagPill key={`rat-${i}`} label={r.value} subtext={r.label} theme={r.theme} />
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {countries.length > 0 && (
-              <View style={styles.infoBlock}>
-                <Text style={styles.secSubTitle}>Origine & Lieux de tournage</Text>
-                <View style={styles.zoneRow}>
-                  {countries.map((c: any, i: number) => (
-                    <TagPill key={`cnt-${i}`} label={c.value_text} subtext="Pays / Lieu" theme="teal" />
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {technicalSpecs.length > 0 && (
-              <View style={styles.infoBlock}>
-                <Text style={styles.secSubTitle}>Caractéristiques techniques & Codecs</Text>
-                <View style={styles.zoneRow}>
-                  {technicalSpecs.map((t: any, i: number) => (
-                    <TagPill
-                      key={`tech-${i}`}
-                      label={t.value_text}
-                      subtext={t.display_name}
-                      theme="slate"
-                    />
-                  ))}
-                </View>
-              </View>
-            )}
           </View>
         )}
 
@@ -585,31 +504,97 @@ export default function MediaDetailScreen() {
           fallbackTags={tags.PRIMARY_PILL}
         />
 
-        {/* Section Avis & Reposts communautaires */}
-        {reposts.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.secTitle}>Avis & Retours de la communauté ({reposts.length})</Text>
+        {/* Section Avis & Critiques de la communauté YouTube-Quality */}
+        <View style={styles.section}>
+          <View style={styles.repostSecHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={styles.secTitle}>💬 Avis & Critiques ({reposts.length})</Text>
+              {repostStats.averageRating ? (
+                <View style={styles.avgRatingBadge}>
+                  <Text style={styles.avgRatingStar}>★</Text>
+                  <Text style={styles.avgRatingTxt}>{repostStats.averageRating} / 5</Text>
+                </View>
+              ) : null}
+            </View>
+            <Pressable
+              focusable={true}
+              onPress={() => setShowRepostModal(true)}
+              style={styles.addReviewBtn}
+            >
+              <Text style={styles.addReviewBtnTxt}>+ Donner mon avis</Text>
+            </Pressable>
+          </View>
+
+          {reposts.length === 0 ? (
+            <View style={styles.emptyRepostBox}>
+              <Text style={styles.emptyRepostTxt}>
+                Aucun avis pour l'instant. Partagez votre critique avec la communauté !
+              </Text>
+              <Pressable
+                focusable={true}
+                onPress={() => setShowRepostModal(true)}
+                style={styles.emptyReviewActionBtn}
+              >
+                <Text style={styles.emptyReviewActionTxt}>✍️ Rédiger une critique</Text>
+              </Pressable>
+            </View>
+          ) : (
             <View style={{ gap: 10 }}>
               {reposts.map((r) => (
                 <View key={r.id} style={styles.repostCard}>
                   <View style={styles.repostHeader}>
-                    <Text style={styles.repostAuthor}>{r.author?.displayName || 'Membre'}</Text>
-                    {r.rating ? <Text style={styles.repostRating}>{'★'.repeat(r.rating)}</Text> : null}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={styles.repostAvatar}>{r.author?.avatarUrl || '👤'}</Text>
+                      <Text style={styles.repostAuthor}>{r.author?.displayName || 'Membre'}</Text>
+                      {r.isMine ? (
+                        <View style={styles.mineBadge}>
+                          <Text style={styles.mineBadgeTxt}>Moi</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      {r.rating ? <Text style={styles.repostRating}>{'★'.repeat(r.rating)}</Text> : null}
+                      {r.isMine ? (
+                        <Pressable focusable={true} onPress={() => handleDeleteRepost(r.id)}>
+                          <Text style={styles.delAvisTxt}>✕</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
                   </View>
-                  {r.comment ? <Text style={styles.repostComment}>{r.comment}</Text> : null}
+                  {r.comment ? <Text style={styles.repostComment}>« {r.comment} »</Text> : null}
                 </View>
               ))}
             </View>
-          </View>
-        )}
+          )}
+        </View>
       </ScrollView>
 
+      {/* Modale de proposition de salon de visionnage */}
+      <ProposeSessionModal
+        visible={showSessionModal}
+        nodeId={media.id}
+        topicSlug={media.slug || media.id}
+        defaultTitle={`Séance collective : ${media.title}`}
+        onClose={() => setShowSessionModal(false)}
+        onCreated={(session) => {
+          setShowSessionModal(false);
+          loadSessions();
+          router.push({
+            pathname: `/player/${playId}`,
+            params: { sessionId: session.id, title: media.title },
+          } as any);
+        }}
+      />
+
+      {/* Modale d'avis & repost */}
       <MediaRepostModal
         visible={showRepostModal}
         mediaId={media.id}
         mediaTitle={media.title}
         onClose={() => setShowRepostModal(false)}
-        onSuccess={() => fetchMediaReposts(media.id).then(setReposts)}
+        onSuccess={() => {
+          loadReposts();
+        }}
       />
 
       <CastModal
@@ -637,6 +622,46 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(160, 175, 195, 0.14)',
   },
   backTxt: { color: '#9ba7b7', fontSize: 13, fontWeight: '600' },
+  liveSessionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.45)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  liveSessionPulse: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  livePulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+  },
+  liveSessionBannerTxt: {
+    color: '#fecaca',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  liveSessionJoinBtn: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+  },
+  liveSessionJoinBtnTxt: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   forbiddenCard: {
     backgroundColor: 'rgba(38, 44, 54, 0.85)',
     borderRadius: Radius.lg,
@@ -649,158 +674,126 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 40,
   },
-  forbiddenIcon: { fontSize: 40 },
-  forbiddenTitle: { color: '#fca5a5', fontSize: 18, fontWeight: '700' },
-  forbiddenDesc: { color: '#94a1b3', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  forbiddenIcon: { fontSize: 48 },
+  forbiddenTitle: { color: '#f87171', fontSize: 20, fontWeight: '800' },
+  forbiddenDesc: { color: '#cbd5e1', fontSize: 14, textAlign: 'center', lineHeight: 20 },
   heroBox: {
     position: 'relative',
-    minHeight: 340,
-    justifyContent: 'flex-end',
-    padding: Spacing.four,
     borderRadius: Radius.lg,
     overflow: 'hidden',
-    backgroundColor: 'rgba(38, 44, 54, 0.75)',
-    marginBottom: Spacing.three,
+    backgroundColor: 'rgba(38, 44, 54, 0.7)',
+    minHeight: 280,
+    justifyContent: 'flex-end',
     borderWidth: 1,
     borderColor: 'rgba(160, 175, 195, 0.14)',
   },
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.3 },
-  heroContent: { maxWidth: MaxContentWidth, gap: 10 },
-  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
-  seasonTagPill: {
-    backgroundColor: 'rgba(26, 31, 40, 0.82)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.pill,
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.35,
+    resizeMode: 'cover',
   },
-  seasonTagTxt: { color: '#9ba7b7', fontSize: 11, fontWeight: '700' },
-  metaYearPill: {
-    backgroundColor: 'rgba(42, 48, 58, 0.75)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.14)',
+  heroContent: {
+    padding: Spacing.five,
+    gap: Spacing.two,
+    backgroundColor: 'rgba(29, 33, 39, 0.65)',
   },
-  metaYearTxt: { color: '#d2d9e4', fontSize: 11, fontWeight: '600' },
-  editionPill: { borderWidth: 1, borderColor: 'rgba(160, 175, 195, 0.18)' },
-  verifyPill: { borderWidth: 1, borderColor: 'rgba(226, 163, 163, 0.3)' },
-  title: { fontSize: 26, fontWeight: '800', color: '#edeef2', letterSpacing: -0.5 },
-  taglineTxt: { fontSize: 13, fontStyle: 'italic', color: '#94a1b3' },
-  overview: { fontSize: 13, color: '#a0afc3', lineHeight: 20 },
+  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
+  title: { fontSize: 28, fontWeight: '800', color: '#edeef2', letterSpacing: -0.5 },
+  taglineTxt: { fontSize: 14, fontStyle: 'italic', color: '#c5cedb', marginTop: -2 },
+  overview: { fontSize: 14, color: '#c5cedb', lineHeight: 20, maxWidth: 800 },
   playBtn: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two,
     borderRadius: Radius.pill,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   btnText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
-  section: { gap: 10 },
-  secTitle: { fontSize: 15, fontWeight: '700', color: '#edeef2', letterSpacing: -0.2 },
-  secSubTitle: { fontSize: 13, fontWeight: '600', color: '#94a1b3', marginBottom: 4 },
-  secHeaderRow: { gap: 4 },
-  secHint: { fontSize: 11, color: '#8a95a5' },
-  infoBlock: { gap: 6 },
-  crewCard: {
-    backgroundColor: 'rgba(38, 44, 54, 0.75)',
+  section: {
+    backgroundColor: 'rgba(38, 44, 54, 0.6)',
     borderRadius: Radius.lg,
     padding: Spacing.four,
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.14)',
-    gap: 12,
-  },
-  crewGrid: { gap: 12 },
-  crewCol: { gap: 6 },
-  crewRoleTitle: { fontSize: 12, fontWeight: '700', color: '#8a95a5', textTransform: 'uppercase' },
-  crewNamesList: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  crewPill: {
-    backgroundColor: 'rgba(45, 52, 64, 0.65)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.12)',
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
-  },
-  crewPillTxt: { color: '#d2d9e4', fontSize: 12, fontWeight: '600' },
-  extraCard: {
-    width: 140,
-    gap: 4,
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
-  },
-  extraThumbWrap: {
-    width: 140,
-    height: 80,
-    backgroundColor: 'rgba(26, 31, 40, 0.9)',
-    borderRadius: Radius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.14)',
-  },
-  extraThumbTxt: { color: '#4a5568', fontWeight: '800', fontSize: 14 },
-  extraTypeBadge: {
-    position: 'absolute',
-    bottom: 4,
-    left: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: Radius.pill,
-  },
-  extraTypeBadgeTxt: { color: '#c5cedb', fontSize: 9, fontWeight: '600' },
-  extraTitle: { color: '#edeef2', fontSize: 12, fontWeight: '600' },
-  extraRuntime: { color: '#8e9ab0', fontSize: 11, marginTop: 2 },
-  metaSubSection: {
-    backgroundColor: 'rgba(38, 44, 54, 0.75)',
-    borderRadius: Radius.lg,
-    padding: Spacing.four,
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.14)',
-    gap: 12,
-  },
-  actorsScroll: { gap: 12, paddingVertical: 4 },
-  actorCard: {
-    width: 100,
-    alignItems: 'center',
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
-  },
-  actorCardPressed: {
-    transform: [{ scale: 0.96 }],
-  },
-  actorAvatarWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: Radius.pill,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(26, 31, 40, 0.8)',
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(160, 175, 195, 0.14)',
-  },
-  actorAvatar: { width: '100%', height: '100%', resizeMode: 'cover' },
-  actorAvatarPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(45, 52, 64, 0.8)',
-  },
-  actorAvatarPlaceholderTxt: { color: '#8e9ab0', fontSize: 14, fontWeight: '700' },
-  actorName: { color: '#edeef2', fontSize: 11, fontWeight: '700', textAlign: 'center' },
-  actorRole: { color: '#8e9ab0', fontSize: 10, textAlign: 'center', marginTop: 2 },
-  actorTagBadge: {
-    marginTop: 4,
-    backgroundColor: 'rgba(55, 68, 85, 0.4)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: Radius.pill,
+    gap: Spacing.three,
     borderWidth: 1,
     borderColor: 'rgba(160, 175, 195, 0.1)',
   },
-  actorTagBadgeTxt: { color: '#a0afc3', fontSize: 9, fontWeight: '600' },
+  secTitle: { fontSize: 15, fontWeight: '800', color: '#818cf8', letterSpacing: 0.3 },
+  repostSecHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  avgRatingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.35)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+  },
+  avgRatingStar: { color: '#fbbf24', fontSize: 12 },
+  avgRatingTxt: { color: '#fde68a', fontSize: 11, fontWeight: '800' },
+  addReviewBtn: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+  },
+  addReviewBtnTxt: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
+  emptyRepostBox: {
+    padding: 16,
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    borderRadius: 14,
+  },
+  emptyRepostTxt: { color: '#94a3b8', fontSize: 13, fontStyle: 'italic', textAlign: 'center' },
+  emptyReviewActionBtn: {
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.5)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+  },
+  emptyReviewActionTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '700' },
+  extraCard: { width: 140, gap: 6 },
+  extraPosterBox: {
+    width: 140,
+    height: 80,
+    borderRadius: Radius.md,
+    backgroundColor: 'rgba(55, 68, 85, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(160, 175, 195, 0.1)',
+  },
+  extraTitle: { color: '#edeef2', fontSize: 12, fontWeight: '600' },
+  seasonTagPill: {
+    backgroundColor: 'rgba(65, 80, 105, 0.55)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+  },
+  editionPill: { backgroundColor: 'rgba(55, 68, 85, 0.4)' },
+  verifyPill: { backgroundColor: 'rgba(150, 50, 50, 0.4)' },
+  seasonTagTxt: { color: '#e8edf5', fontSize: 11, fontWeight: '700' },
+  metaYearPill: {
+    backgroundColor: 'rgba(40, 50, 65, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+  },
+  metaYearTxt: { color: '#c5cedb', fontSize: 11, fontWeight: '700' },
   repostCard: {
     backgroundColor: 'rgba(26, 31, 40, 0.6)',
     borderRadius: Radius.md,
@@ -810,7 +803,18 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(160, 175, 195, 0.08)',
   },
   repostHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  repostAvatar: { fontSize: 16 },
   repostAuthor: { color: '#edeef2', fontWeight: '700', fontSize: 12 },
+  mineBadge: {
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.5)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+  },
+  mineBadgeTxt: { color: '#a5b4fc', fontSize: 9, fontWeight: '800' },
+  delAvisTxt: { color: '#f87171', fontSize: 13, fontWeight: '800', paddingHorizontal: 4 },
   repostRating: { color: '#fcd34d', fontSize: 12 },
-  repostComment: { color: '#c5cedb', fontSize: 12, lineHeight: 18 },
+  repostComment: { color: '#c5cedb', fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
 });

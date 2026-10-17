@@ -148,13 +148,19 @@ sessionRouter.get('/active', async (c) => {
     limit: 50,
   });
 
+  const nodeIds = Array.from(new Set(sessions.map((s) => s.nodeId)));
+  const nodes =
+    nodeIds.length > 0
+      ? await db.query.mediaNodes.findMany({
+          where: (t, { inArray: inArr }) => inArr(t.id, nodeIds),
+        })
+      : [];
+
+  const nodesMap = new Map(nodes.map((n) => [n.id, n]));
+
   // Filtrer les séances dont le média est autorisé pour l'utilisateur
   let allowedSessions = sessions;
-  if (user && !user.isAdmin && sessions.length > 0) {
-    const nodeIds = Array.from(new Set(sessions.map((s) => s.nodeId)));
-    const nodes = await db.query.mediaNodes.findMany({
-      where: (t, { inArray: inArr }) => inArr(t.id, nodeIds),
-    });
+  if (user && !user.isAdmin) {
     const allowedNodeIds = new Set(
       nodes.filter((n) => isMediaAllowedForUser(user, n)).map((n) => n.id)
     );
@@ -162,27 +168,38 @@ sessionRouter.get('/active', async (c) => {
   }
 
   const sessionIds = allowedSessions.map((s) => s.id);
-  const participants = sessionIds.length > 0
-    ? await db
-        .select({
-          sessionId: mediaSessionParticipants.sessionId,
-          userId: mediaSessionParticipants.userId,
-          displayName: mediaSessionParticipants.displayName,
-          isHost: mediaSessionParticipants.isHost,
-          isMuted: mediaSessionParticipants.isMuted,
-          isIncognito: users.isIncognito,
-        })
-        .from(mediaSessionParticipants)
-        .leftJoin(users, eq(mediaSessionParticipants.userId, users.id))
-        .where(inArray(mediaSessionParticipants.sessionId, sessionIds))
-    : [];
+  const participants =
+    sessionIds.length > 0
+      ? await db
+          .select({
+            sessionId: mediaSessionParticipants.sessionId,
+            userId: mediaSessionParticipants.userId,
+            displayName: mediaSessionParticipants.displayName,
+            isHost: mediaSessionParticipants.isHost,
+            isMuted: mediaSessionParticipants.isMuted,
+            isIncognito: users.isIncognito,
+          })
+          .from(mediaSessionParticipants)
+          .leftJoin(users, eq(mediaSessionParticipants.userId, users.id))
+          .where(inArray(mediaSessionParticipants.sessionId, sessionIds))
+      : [];
 
   const grouped = allowedSessions
     .map((s) => {
       // Filtrer les spectateurs discrets pour la visibilité publique
       const parts = participants.filter((p) => p.sessionId === s.id && !p.isIncognito);
+      const node = nodesMap.get(s.nodeId);
       return {
         ...s,
+        media: node
+          ? {
+              id: node.id,
+              title: node.title,
+              posterPath: node.posterPath ? `/api/media/${node.id}/poster` : null,
+              nodeType: node.nodeType,
+              releaseYear: node.releaseYear,
+            }
+          : null,
         participants: parts,
         participantCount: parts.length,
       };
