@@ -15,10 +15,11 @@ export function buildMediaAccessConditions(user, tableAlias = 'n') {
         conditions.push(sql `${sql.raw(tableAlias)}.node_type != 'LIVE_CHANNEL'`);
     }
     // Expression SQL résolvant le chemin physique représentatif du média
+    // Ordre optimisé : videoFilePath direct -> nfoFilePath direct -> chemin du premier enfant (SHOW / COLLECTION)
     const physicalPathExpr = sql `COALESCE(
     ${sql.raw(tableAlias)}.video_file_path,
-    (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = ${sql.raw(tableAlias)}.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = ${sql.raw(tableAlias)}.id)) AND c.video_file_path IS NOT NULL LIMIT 1),
-    ${sql.raw(tableAlias)}.nfo_file_path
+    ${sql.raw(tableAlias)}.nfo_file_path,
+    (SELECT c.video_file_path FROM media_nodes c WHERE c.parent_id = ${sql.raw(tableAlias)}.id AND c.video_file_path IS NOT NULL LIMIT 1)
   )`;
     // 2. Exclusion de dossiers (Blacklist)
     if (user.blockedFolders && user.blockedFolders.length > 0) {
@@ -34,13 +35,15 @@ export function buildMediaAccessConditions(user, tableAlias = 'n') {
             OR ${physicalPathExpr} ILIKE ${v}
           )`);
                 }
-                const clean = v.replace(/^\/+|\/+$/g, '');
-                if (clean.length > 0) {
-                    conditions.push(sql `NOT (
-            ${physicalPathExpr} ILIKE ${'%/' + clean + '/%'}
-            OR ${physicalPathExpr} ILIKE ${'%/' + clean}
-            OR ${physicalPathExpr} ILIKE ${clean + '/%'}
-          )`);
+                else {
+                    const clean = v.replace(/^\/+|\/+$/g, '');
+                    if (clean.length > 0) {
+                        conditions.push(sql `NOT (
+              ${physicalPathExpr} ILIKE ${'%/' + clean + '/%'}
+              OR ${physicalPathExpr} ILIKE ${'%/' + clean}
+              OR ${physicalPathExpr} ILIKE ${clean + '/%'}
+            )`);
+                    }
                 }
             }
         }
@@ -50,7 +53,7 @@ export function buildMediaAccessConditions(user, tableAlias = 'n') {
         const allowOrClauses = [];
         // Les chaînes IPTV virtuelles ne résident pas sur disque physique
         if (user.canWatchIptv !== false) {
-            allowOrClauses.push(sql `${sql.raw(tableAlias)}.node_type = \x27LIVE_CHANNEL\x27`);
+            allowOrClauses.push(sql `${sql.raw(tableAlias)}.node_type = 'LIVE_CHANNEL'`);
         }
         for (const folder of user.allowedFolders) {
             if (!folder || !folder.trim())
@@ -62,11 +65,13 @@ export function buildMediaAccessConditions(user, tableAlias = 'n') {
                     allowOrClauses.push(sql `${physicalPathExpr} ILIKE ${v + '/%'}`);
                     allowOrClauses.push(sql `${physicalPathExpr} ILIKE ${v}`);
                 }
-                const clean = v.replace(/^\/+|\/+$/g, '');
-                if (clean.length > 0) {
-                    allowOrClauses.push(sql `${physicalPathExpr} ILIKE ${'%/' + clean + '/%'}`);
-                    allowOrClauses.push(sql `${physicalPathExpr} ILIKE ${'%/' + clean}`);
-                    allowOrClauses.push(sql `${physicalPathExpr} ILIKE ${clean + '/%'}`);
+                else {
+                    const clean = v.replace(/^\/+|\/+$/g, '');
+                    if (clean.length > 0) {
+                        allowOrClauses.push(sql `${physicalPathExpr} ILIKE ${'%/' + clean + '/%'}`);
+                        allowOrClauses.push(sql `${physicalPathExpr} ILIKE ${'%/' + clean}`);
+                        allowOrClauses.push(sql `${physicalPathExpr} ILIKE ${clean + '/%'}`);
+                    }
                 }
             }
         }
@@ -99,19 +104,19 @@ export function buildMediaAccessConditions(user, tableAlias = 'n') {
             conditions.push(sql `(${sql.join(tagOrClauses, sql ` OR `)})`);
         }
     }
-    // 6. Plafond d\x27âge CSA (Contrôle Parental)
+    // 6. Plafond d'âge CSA (Contrôle Parental)
     if (user.maxCsaAgeLimit !== undefined && user.maxCsaAgeLimit !== null && user.maxCsaAgeLimit >= 0) {
         if (user.maxCsaAgeLimit < 18) {
-            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* \x27(?i)\\y(csa\\s*:\\s*-18|-18|nc-17|18\\+)\\y\x27)`);
+            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* '(?i)\\y(csa\\s*:\\s*-18|-18|nc-17|18\\+)\\y')`);
         }
         if (user.maxCsaAgeLimit < 16) {
-            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* \x27(?i)\\y(csa\\s*:\\s*-16|-16|tv-ma|16\\+)\\y\x27)`);
+            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* '(?i)\\y(csa\\s*:\\s*-16|-16|tv-ma|16\\+)\\y')`);
         }
         if (user.maxCsaAgeLimit < 12) {
-            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* \x27(?i)\\y(csa\\s*:\\s*-12|-12|pg-13|12\\+)\\y\x27)`);
+            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* '(?i)\\y(csa\\s*:\\s*-12|-12|pg-13|12\\+)\\y')`);
         }
         if (user.maxCsaAgeLimit < 10) {
-            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* \x27(?i)\\y(csa\\s*:\\s*-10|-10|10\\+)\\y\x27)`);
+            conditions.push(sql `NOT (${sql.raw(tableAlias)}.search_vector_text ~* '(?i)\\y(csa\\s*:\\s*-10|-10|10\\+)\\y')`);
         }
     }
     return conditions;

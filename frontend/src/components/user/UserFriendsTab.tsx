@@ -253,13 +253,47 @@ export function UserFriendsTab() {
                     {/* Activité en direct si l'ami regarde un média */}
                     {f.currentActivity?.isWatching ? (
                       <View style={styles.activityBadge}>
-                        <Text style={styles.activityTxt}>
-                          🍿 Regarde : <Text style={styles.activityTitle}>{f.currentActivity.title}</Text>
-                        </Text>
+                        <Pressable
+                          focusable={true}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Rejoindre le visionnage de ${f.displayName}`}
+                          onPress={() => {
+                            if (!f.currentActivity?.mediaId) return;
+                            router.push({
+                              pathname: '/player/[id]',
+                              params: {
+                                id: f.currentActivity.mediaId,
+                                joinTime: String(Math.floor(f.currentActivity.positionSeconds || 0)),
+                                targetUser: f.displayName,
+                              },
+                            } as any);
+                          }}
+                          style={styles.activityPressable}
+                        >
+                          <Text style={styles.activityTxt}>
+                            🍿 Regarde : <Text style={styles.activityTitle}>{f.currentActivity.title}</Text>
+                          </Text>
+                          {f.currentActivity.positionSeconds && f.currentActivity.positionSeconds > 0 ? (
+                            <Text style={styles.activityTimestamp}>
+                              ({Math.floor(f.currentActivity.positionSeconds / 60)}:{String(Math.floor(f.currentActivity.positionSeconds % 60)).padStart(2, '0')})
+                            </Text>
+                          ) : null}
+                        </Pressable>
                         {f.currentActivity.mediaId ? (
                           <Pressable
                             focusable={true}
-                            onPress={() => router.push(`/player/${f.currentActivity.mediaId}` as any)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Rejoindre le visionnage de ${f.displayName}`}
+                            onPress={() =>
+                              router.push({
+                                pathname: '/player/[id]',
+                                params: {
+                                  id: f.currentActivity.mediaId,
+                                  joinTime: String(Math.floor(f.currentActivity.positionSeconds || 0)),
+                                  targetUser: f.displayName,
+                                },
+                              } as any)
+                            }
                             style={styles.joinWatchBtn}
                           >
                             <Text style={styles.joinWatchTxt}>Rejoindre ▶</Text>
@@ -419,6 +453,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     marginTop: 6,
+  },
+  activityPressable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+    flex: 1,
+    cursor: 'pointer' as any,
+  },
+  activityTimestamp: {
+    color: '#818cf8',
+    fontSize: 10,
+    fontWeight: '700',
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: Radius.pill,
+    marginLeft: 2,
   },
   activityTxt: { color: '#c7d2fe', fontSize: 11, fontWeight: '600' },
   activityTitle: { color: '#ffffff', fontWeight: '800' },

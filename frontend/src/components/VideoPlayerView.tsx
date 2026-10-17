@@ -22,6 +22,8 @@ interface Props {
   onPause?: () => void;
   onSkipIntro?: () => void;
   showSkipIntro?: boolean;
+  showRestartBtn?: boolean;
+  onRestartFromBeginning?: () => void;
   statusMessage?: string;
   id?: string;
   isFullscreen?: boolean;
@@ -43,6 +45,8 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
   onPause,
   onSkipIntro,
   showSkipIntro = false,
+  showRestartBtn = false,
+  onRestartFromBeginning,
   statusMessage,
   id = '',
   isFullscreen = false,
@@ -57,6 +61,11 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
 
   const mouseTimer = useRef<any>(null);
   const savedTimeRef = useRef(initialTime || 0);
+  const initialSeekDoneRef = useRef(false);
+
+  useEffect(() => {
+    initialSeekDoneRef.current = false;
+  }, [id, streamUrl]);
 
   const setVideoRef = (el: HTMLVideoElement | null) => {
     innerVideoRef.current = el;
@@ -70,10 +79,11 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    if (!isLive && initialTime && initialTime > 0) {
+    if (!isLive && initialTime && initialTime > 0 && !initialSeekDoneRef.current) {
       savedTimeRef.current = initialTime;
-      if (innerVideoRef.current && Math.abs(innerVideoRef.current.currentTime - initialTime) > 1) {
+      if (innerVideoRef.current && innerVideoRef.current.readyState >= 1) {
         innerVideoRef.current.currentTime = initialTime;
+        initialSeekDoneRef.current = true;
       }
     }
   }, [initialTime, isLive]);
@@ -210,10 +220,11 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
   }, [activeSubtitle, subtitleUrl]);
 
   const handleLoaded = () => {
-    if (!isLive) {
+    if (!isLive && !initialSeekDoneRef.current) {
       const target = initialTime && initialTime > 0 ? initialTime : savedTimeRef.current;
       if (target > 0 && innerVideoRef.current && Math.abs(innerVideoRef.current.currentTime - target) > 0.5) {
         innerVideoRef.current.currentTime = target;
+        initialSeekDoneRef.current = true;
       }
     }
     onLoadedMetadata?.();
@@ -253,9 +264,26 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
             onPause?.();
           }}
           onCanPlay={() => {
+            if (!isLive && !initialSeekDoneRef.current) {
+              const target = initialTime && initialTime > 0 ? initialTime : savedTimeRef.current;
+              if (target > 0 && innerVideoRef.current && Math.abs(innerVideoRef.current.currentTime - target) > 0.5) {
+                innerVideoRef.current.currentTime = target;
+                initialSeekDoneRef.current = true;
+              }
+            }
             if (innerVideoRef.current?.paused && !userPausedRef.current) {
               innerVideoRef.current.play().catch(() => {});
             }
+          }}
+          onSeeking={() => {
+            initialSeekDoneRef.current = true;
+          }}
+          onSeeked={() => {
+            initialSeekDoneRef.current = true;
+            const t = innerVideoRef.current?.currentTime || 0;
+            const d = innerVideoRef.current?.duration || 0;
+            setCurTime(t);
+            onTimeUpdate?.(t, d);
           }}
           onWaiting={() => {
             if (isLive && innerVideoRef.current?.paused && !userPausedRef.current) {
@@ -331,6 +359,19 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
           <Text style={styles.statusText}>{statusMessage}</Text>
         </View>
       ) : null}
+      {showRestartBtn && !isLive && (
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          accessibilityLabel="Recommencer depuis le début"
+          {...({ dataSet: { restartBeginning: 'true', focusable: 'true' } } as any)}
+          onPress={onRestartFromBeginning}
+          style={({ focused }: any) => [styles.restartBtn, focused && styles.restartBtnFocused]}
+        >
+          <Text style={styles.restartBtnIcon}>⏮️</Text>
+          <Text style={styles.restartBtnText}>Recommencer depuis le début</Text>
+        </Pressable>
+      )}
       {showBtn && (
         <Pressable
           focusable={true}

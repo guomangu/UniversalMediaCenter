@@ -318,7 +318,11 @@ sessionRouter.post('/:id/join', requireAuth, async (c) => {
       set: { lastPingAt: new Date() },
     });
 
-  return c.json({ success: true });
+  return c.json({
+    success: true,
+    currentPosition: session.currentPosition || 0,
+    nodeId: session.nodeId,
+  });
 });
 
 // Quitter une séance

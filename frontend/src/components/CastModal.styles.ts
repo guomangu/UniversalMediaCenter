@@ -18,6 +18,77 @@ export const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '700', color: '#f8fafc' },
   closeBtn: { padding: Spacing.one },
   closeText: { color: '#94a3b8', fontSize: 16 },
+
+  // Notice info / warning
+  infoBanner: {
+    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    borderColor: 'rgba(234, 179, 8, 0.4)',
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: 10,
+    marginBottom: 12,
+  },
+  infoBannerText: {
+    color: '#fef08a',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
+  // Appareil actif connecté
+  activeBox: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderColor: 'rgba(56, 189, 248, 0.5)',
+    borderWidth: 1.5,
+    borderRadius: Radius.md,
+    padding: 12,
+    marginBottom: 14,
+  },
+  activeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  activeTitle: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  activeName: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  activeActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  stopBtn: {
+    backgroundColor: '#ef4444',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+  },
+  stopBtnTxt: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  disconnectBtn: {
+    backgroundColor: '#334155',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+  },
+  disconnectBtnTxt: {
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+
   nativeCastBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -27,12 +98,13 @@ export const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1.5,
     borderColor: '#6366f1',
-    marginBottom: 16,
+    marginBottom: 14,
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   nativeCastIcon: { fontSize: 28 },
   nativeCastTitle: { color: '#ffffff', fontWeight: '800', fontSize: 14 },
   nativeCastSub: { color: '#a5b4fc', fontSize: 11, marginTop: 2 },
+
   localBox: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: 'rgba(15, 23, 42, 0.7)', padding: 10, borderRadius: Radius.md,

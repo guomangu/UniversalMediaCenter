@@ -44,6 +44,7 @@ friendActionRouter.get('/', async (c) => {
             title: loc.title,
             mediaId: loc.mediaId,
             path: loc.path,
+            positionSeconds: loc.positionSeconds || 0,
           }
         : null;
 

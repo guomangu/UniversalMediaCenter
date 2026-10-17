@@ -8,10 +8,11 @@ import {
   setLocalDeviceName,
   registerAsReceiver,
   triggerNativeCast,
+  resolveLanStreamUrl,
   CastDevice,
   CastMediaPayload,
 } from '@/services/castService';
-import { setActiveCastTarget } from '@/services/castState';
+import { useActiveCastTarget, setActiveCastTarget } from '@/services/castState';
 import { styles } from './CastModal.styles';
 
 interface CastModalProps {
@@ -19,18 +20,30 @@ interface CastModalProps {
   onClose: () => void;
   currentMedia?: CastMediaPayload;
   onTargetSelected?: (target: CastDevice) => void;
+  onCastStarted?: () => void;
 }
 
-export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentMedia, onTargetSelected }) => {
+export const CastModal: React.FC<CastModalProps> = ({
+  visible,
+  onClose,
+  currentMedia,
+  onTargetSelected,
+  onCastStarted,
+}) => {
   const [devices, setDevices] = useState<CastDevice[]>([]);
   const [myDeviceName, setMyDeviceName] = useState(getLocalDeviceName());
+  const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
   const localId = getLocalDeviceId();
+  const activeCastTarget = useActiveCastTarget();
   const nativeBtnRef = useRef<any>(null);
 
   const refresh = () => fetchCastDevices().then((d) => setDevices(d.filter((x) => x.id !== localId)));
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setFeedbackNotice(null);
+      return;
+    }
     refresh();
     setTimeout(() => nativeBtnRef.current?.focus?.(), 60);
     const interval = setInterval(refresh, 2500);
@@ -40,8 +53,16 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
   if (!visible) return null;
 
   const handleNativeCast = async () => {
-    onClose();
-    await triggerNativeCast(currentMedia);
+    setFeedbackNotice(null);
+    const result = await triggerNativeCast(currentMedia);
+    if (result.success) {
+      onCastStarted?.();
+      onClose();
+    } else {
+      setFeedbackNotice(
+        result.message || 'Aucun récepteur Cast trouvé sur ce réseau local. Allumez votre TV ou Chromecast et réessayez.'
+      );
+    }
   };
 
   const handleRename = () => {
@@ -55,16 +76,29 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
 
   const handleSelect = async (device: CastDevice, cast: boolean) => {
     if (cast && currentMedia) {
+      const lanUrl = await resolveLanStreamUrl(currentMedia.streamUrl, currentMedia.id);
       await sendCastCommand(device.id, 'LOAD', {
         mediaId: currentMedia.id,
         title: currentMedia.title,
-        streamUrl: currentMedia.streamUrl,
-        positionSeconds: currentMedia.positionSeconds,
+        streamUrl: lanUrl,
+        positionSeconds: currentMedia.positionSeconds || 0,
       });
+      onCastStarted?.();
     }
     setActiveCastTarget(device);
     onTargetSelected?.(device);
     onClose();
+  };
+
+  const handleStopActiveCast = async () => {
+    if (activeCastTarget) {
+      await sendCastCommand(activeCastTarget.id, 'STOP');
+      setActiveCastTarget(null);
+    }
+  };
+
+  const handleDisconnectTarget = () => {
+    setActiveCastTarget(null);
   };
 
   return (
@@ -87,6 +121,31 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
             <Text style={styles.closeText}>✕</Text>
           </Pressable>
         </View>
+
+        {/* Message d'information ou avertissement */}
+        {feedbackNotice && (
+          <View style={styles.infoBanner}>
+            <Text style={styles.infoBannerText}>⚠️ {feedbackNotice}</Text>
+          </View>
+        )}
+
+        {/* Appareil actuellement casté / contrôlé */}
+        {activeCastTarget && (
+          <View style={styles.activeBox}>
+            <View style={styles.activeHeader}>
+              <Text style={styles.activeTitle}>Diffusion en cours</Text>
+              <Text style={styles.activeName}>📺 {activeCastTarget.name}</Text>
+            </View>
+            <View style={styles.activeActions}>
+              <Pressable focusable={true} style={styles.stopBtn} onPress={handleStopActiveCast}>
+                <Text style={styles.stopBtnTxt}>⏹ Arrêter la lecture TV</Text>
+              </Pressable>
+              <Pressable focusable={true} style={styles.disconnectBtn} onPress={handleDisconnectTarget}>
+                <Text style={styles.disconnectBtnTxt}>Déconnecter</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {/* Bouton Cast Natif Officiel (Chromecast, Smart TV, Android TV, AirPlay) */}
         <Pressable ref={nativeBtnRef} focusable={true} style={styles.nativeCastBtn} onPress={handleNativeCast}>
@@ -116,7 +175,9 @@ export const CastModal: React.FC<CastModalProps> = ({ visible, onClose, currentM
               <View key={d.id} style={styles.deviceRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.deviceName} numberOfLines={1}>{d.name}</Text>
-                  <Text style={styles.deviceSub} numberOfLines={1}>{d.isPlaying ? `🟢 ${d.mediaTitle || 'Lecture'}` : '⚪ En veille'}</Text>
+                  <Text style={styles.deviceSub} numberOfLines={1}>
+                    {d.isPlaying ? `🟢 ${d.mediaTitle || 'Lecture'}` : '⚪ En veille'}
+                  </Text>
                 </View>
                 <View style={styles.rowActions}>
                   {currentMedia && (

@@ -164,7 +164,15 @@ export function MediaForumSection({
   const handleJoinSession = async (sess: MediaSession) => {
     await joinSession(sess.id);
     await loadData();
-    router.push(`/player/${sess.nodeId}` as any);
+    router.push({
+      pathname: '/player/[id]',
+      params: {
+        id: sess.nodeId,
+        sessionId: sess.id,
+        joinTime: String(Math.floor(sess.currentPosition || 0)),
+        targetUser: sess.hostDisplayName,
+      },
+    } as any);
   };
 
   const handleLeaveSession = async (sess: MediaSession) => {

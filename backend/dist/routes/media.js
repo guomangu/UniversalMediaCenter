@@ -93,7 +93,7 @@ mediaRouter.post('/:id/progress', async (c) => {
         },
     });
     // Enregistrer le spectateur actif dans le registre de présence (solo ou groupe)
-    recordActivePlayback(media.id, media.parentId, userId, user?.displayName || 'Spectateur', media.title, isPlaying);
+    recordActivePlayback(media.id, media.parentId, userId, user?.displayName || 'Spectateur', media.title, isPlaying, positionSeconds);
     return c.json({ success: true });
 });
 mediaRouter.get('/:id/progress', requireAuth, async (c) => {

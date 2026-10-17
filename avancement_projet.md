@@ -168,3 +168,43 @@
   - **Synchronisation Globale des Profils & Cache PWA (`taxonomyApi.ts`, `auth.ts`) :**
     - Incrémentation du cache vers `TAXONOMY_CACHE_VERSION = 'v9'`.
     - Transmission de `allowedFolders` dans les réponses d'authentification (`/me`, `/login`, `/register`).
+
+- [x] **68. Synchronisation Temps Réel de Visionnage Amis & Bouton UX « Recommencer depuis le début » (`presenceStore.ts`, `friendActionRoutes.ts`, `UserFriendsTab.tsx`, `ForumMessageBubble.tsx`, `UserForumsTab.tsx`, `MediaForumSection.tsx`, `VideoPlayerView.tsx`, `player/[id].tsx`, `PlayerScreen.styles.ts`) :**
+  - **Mémorisation et Synchronisation Précise de la Progression Active (`presenceStore.ts`, `media.ts`, `friendActionRoutes.ts`, `testSocialFeatures.ts`) :**
+    - Enrichissement de `WatcherInfo` et `UserLocationInfo` avec `positionSeconds`.
+    - Propagation continue de la position de lecture lors des pings toutes les 3 secondes dans `recordActivePlayback(..., positionSeconds)`.
+    - Calcul dynamique de l'avance temporelle écoulée (`elapsedSec = isPlaying ? Math.min(30, (now - lastPing)/1000) : 0`) garantissant un raccord parfait avec le flux en direct de la cible sans latence ni décalage.
+    - Exposition dans `currentActivity.positionSeconds` (Amis) et `authorLocation.positionSeconds` (Forum/Salons).
+  - **Embarquement Tactile Fluide (« 🍿 Regarde : [Titre] (MM:SS) ➔ Rejoindre ▶ ») :**
+    - Raccordement du clic sur l'ensemble du badge d'activité ou sur le bouton « Rejoindre ▶ » dans `UserFriendsTab.tsx` transmettant `joinTime` et `targetUser` à la route du lecteur.
+    - Transmission identique sur les badges de localisation du forum (`ForumMessageBubble.tsx`) et les salons en direct (`UserForumsTab.tsx`, `MediaForumSection.tsx`).
+  - **Démarrage Synchrone et Bouton UX Temporaire « Recommencer depuis le début » (`player/[id].tsx`, `VideoPlayerView.tsx`, `PlayerScreen.styles.ts`) :**
+    - Prise en compte prioritaire du paramètre `joinTime` sur `/player/[id]`, calant instantanément le lecteur sur la progression de l'ami ou de la séance.
+    - Affichage d'une notification toast dédiée : « Visionnage synchronisé avec [Ami] à MM:SS ».
+    - Affichage d'un bouton ergonomique tactile « ⏮️ Recommencer depuis le début » pendant exactement 5 secondes (auto-dismiss via timer propre et nettoyage au démontage).
+    - Clic sur le bouton repositionnant instantanément la lecture à 0:00 avec confirmation visuelle immédiate.
+
+- [x] **69. Déverrouillage Intégral du Contrôle Temporel & Activation Opérationnelle du Mode Micro sur `/player` (`VideoPlayerView.tsx`, `usePlayerVoiceCall.ts`, `player/[id].tsx`) :**
+  - **Sanctuarisation de la Liberté de Scrubbing & Déverrouillage de la Barre de Progression (`VideoPlayerView.tsx`) :**
+    - Autopsie du verrouillage : `onCanPlay` forçait continuellement `innerVideoRef.current.currentTime = target` à chaque bufferisation induite par un déplacement de la tête de lecture.
+    - Mise en place du garde-fou `initialSeekDoneRef` : calage initial unique à l'arrivée sur l'œuvre, puis désactivation immédiate dès la première interaction (`onSeeking`, `onSeeked`, ou premier calage validé).
+    - Réinitialisation propre lors du changement d'œuvre (`[id, streamUrl]`), conférant à l'utilisateur un contrôle 100% fluide et sans contrainte sur toute la durée du média.
+  - **Mode Micro et Discussion Vocale en Direct sur `/player` (`usePlayerVoiceCall.ts`, `player/[id].tsx`) :**
+    - Désactivation stricte par défaut : initialisation de `isMuted` à `true` (Mode Silence / micro inactif et non sollicité au chargement).
+    - Création du hook dédié `usePlayerVoiceCall.ts` encapsulant la capture micro réelle via `getUserMedia` (avec annulation d'écho et suppression de bruit), le découpage audio autonome en tranches de 2.5s (Opus/WebM) et la transmission automatique au serveur.
+    - Écoute et restitution fluide des flux audio des autres spectateurs en temps réel via une file d'attente séquentielle Web Audio sans coupure ni cacophonie.
+    - Libération immédiate des pistes matérielles (`track.stop()`) lors de la coupure du micro ou de la sortie de page.
+
+- [x] **70. Éradication des Carences & Résolution Intégrale du Mode Micro et du Mode Cast (`forumRoutes.ts`, `cast.ts`, `sessionApi.ts`, `castService.ts`, `usePlayerVoiceCall.ts`, `CastModal.tsx`, `PlayerMenuModal.tsx`, `player/[id].tsx`, `_layout.tsx`, `useCastReceiver.ts`) :**
+  - **Résolution des Carences et Dysfonctionnements du Mode Micro sur `/player` :**
+    - **Alignement d'API Critique (`forumRoutes.ts`, `sessionApi.ts`) :** Le frontend sollicitait les routes `/call/chunk` et `/call/chunks`, tandis que le backend n'écoutait que sur `/voice/chunk` et `/voice/chunks`, entraînant des erreurs HTTP 404 systématiques. Implémentation des alias bidirectionnels sur Hono (`/call/chunk` et `/call/chunks`) et assouplissement de l'authentification avec `resolveVoiceUser` pour permettre les discussions vocales en mode invité ou partagé sans rejet 401.
+    - **Levée du Blocage Artificiel de Visibilité & Activation (`player/[id].tsx`, `PlayerMenuModal.tsx`) :** Suppression de la condition bloquante `viewersCount >= 2` qui masquait complètement le bouton micro lorsqu'un utilisateur était seul ou venait de lancer une vidéo. Le bouton micro est désormais toujours accessible dans la barre supérieure et dans le menu d'options (`PlayerMenuModal`), restant par défaut coupé (`isMuted: true`) et activable instantanément en 1 clic.
+    - **Robustesse de la File Audio Web Audio (`usePlayerVoiceCall.ts`) :** Ajout d'un garde-fou anti-blocage (timeout de 4s par fragment audio) empêchant la file de lecture de se figer si le conteneur audio WebM ne déclenche pas l'événement `onended`.
+  - **Résolution des Carences et Fiabilisation Complète du Mode Cast :**
+    - **Résolution d'URL Réseau Certifiée (LAN IP vs Localhost) (`cast.ts`, `castService.ts`) :** Remplacement dynamique de `localhost` ou de l'IP bridge de conteneur (`10.89.x`) par l'IP LAN réelle joignable (`192.168.1.93` ou en-tête `Host`/`X-Forwarded-Host`) et injection automatique du jeton d'authentification (`token=...`) pour que les téléviseurs et Chromecast tiers puissent lire le flux sans cookie.
+    - **Compatibilité Multi-Écrans Universelle (`castService.ts`) :** Détection native hiérarchisée : Google Cast SDK officiel (`CastContext`), AirPlay sur Safari / WebKit (`webkitShowPlaybackTargetPicker`), Remote Playback HTML5 standard (`video.remote.prompt`) et W3C Presentation API.
+    - **Synchronisation de Position et Pause Locale sur Cast UMS (`CastModal.tsx`, `_layout.tsx`, `useCastReceiver.ts`, `player/[id].tsx`) :**
+      - Lors de la diffusion vers un autre écran UMS, transmission de `positionSeconds` via `joinTime` sur le récepteur pour reprendre immédiatement au moment exact du média.
+      - Mise en pause automatique de la vidéo locale sur l'appareil expéditeur pour éliminer toute cacophonie audio (`onCastStarted`).
+      - Réduction de la latence de télécommande de 4.5s à **1.2s** sur le récepteur pour des réactions quasi instantanées aux commandes Play, Pause, Seek et Stop.
+      - Interface de contrôle de session active dans `CastModal` avec boutons d'arrêt de lecture TV et de déconnexion.

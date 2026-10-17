@@ -31,10 +31,23 @@ taxonomyRouter.get('/', async (c) => {
     LIMIT 50;
   `;
     const sagasRes = await db.execute(sagasQuery);
-    // 2. Séries par Genre
+    // 2. Séries par Genre + Toutes les Séries
+    let totalSeriesQuery = sql `
+    SELECT COUNT(DISTINCT n.id)::int AS count
+    FROM media_nodes n
+    WHERE n.node_type = 'SHOW' AND n.is_extra = false
+  `;
+    if (hasAccessLimits) {
+        for (const cond of accessConds) {
+            totalSeriesQuery = sql `${totalSeriesQuery} AND ${cond}`;
+        }
+    }
+    const totalSeriesRes = await db.execute(totalSeriesQuery);
+    const totalSeriesCount = Number(totalSeriesRes[0]?.count || 0);
     let seriesQuery = sql `
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count
-    FROM (\n      SELECT l.value_id, n.id AS target_id
+    FROM (
+      SELECT l.value_id, n.id AS target_id
       FROM node_eav_links l
       JOIN media_nodes n ON l.node_id = n.id
       WHERE n.node_type = 'SHOW'
@@ -62,7 +75,30 @@ taxonomyRouter.get('/', async (c) => {
     LIMIT 40;
   `;
     const seriesRes = await db.execute(seriesQuery);
-    // 3. Films par Genre
+    const seriesTags = [];
+    if (totalSeriesCount > 0) {
+        seriesTags.push({
+            label: 'Toutes les Séries',
+            slug: 'all-series',
+            count: totalSeriesCount,
+        });
+    }
+    for (const t of Array.from(seriesRes)) {
+        seriesTags.push(t);
+    }
+    // 3. Films par Genre + Tous les Films
+    let totalMoviesQuery = sql `
+    SELECT COUNT(DISTINCT n.id)::int AS count
+    FROM media_nodes n
+    WHERE n.node_type = 'MOVIE' AND n.is_extra = false
+  `;
+    if (hasAccessLimits) {
+        for (const cond of accessConds) {
+            totalMoviesQuery = sql `${totalMoviesQuery} AND ${cond}`;
+        }
+    }
+    const totalMoviesRes = await db.execute(totalMoviesQuery);
+    const totalMoviesCount = Number(totalMoviesRes[0]?.count || 0);
     let moviesQuery = sql `
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count
     FROM (
@@ -88,6 +124,17 @@ taxonomyRouter.get('/', async (c) => {
     LIMIT 40;
   `;
     const moviesRes = await db.execute(moviesQuery);
+    const movieTags = [];
+    if (totalMoviesCount > 0) {
+        movieTags.push({
+            label: 'Tous les Films',
+            slug: 'all-movies',
+            count: totalMoviesCount,
+        });
+    }
+    for (const t of Array.from(moviesRes)) {
+        movieTags.push(t);
+    }
     // 4. Studios de Production
     let studiosQuery = sql `
     SELECT v.value_text AS label, v.value_slug AS slug, COUNT(DISTINCT target_id)::int AS count FROM (
@@ -270,8 +317,8 @@ taxonomyRouter.get('/', async (c) => {
     const countriesRes = await db.execute(countriesQuery);
     const rawCategories = [
         { id: 'sagas', title: 'Sagas', tags: Array.from(sagasRes).filter((t) => Number(t.count) > 0) },
-        { id: 'series', title: 'Séries', tags: Array.from(seriesRes).filter((t) => Number(t.count) > 0) },
-        { id: 'movies', title: 'Films', tags: Array.from(moviesRes).filter((t) => Number(t.count) > 0) },
+        { id: 'series', title: 'Séries', tags: seriesTags.filter((t) => Number(t.count) > 0) },
+        { id: 'movies', title: 'Films', tags: movieTags.filter((t) => Number(t.count) > 0) },
         { id: 'studios', title: 'Studios', tags: Array.from(studiosRes).filter((t) => Number(t.count) > 0) },
         { id: 'directors', title: 'Réalisateur', tags: Array.from(directorsRes).filter((t) => Number(t.count) > 0) },
         { id: 'qualities', title: 'Qualité', tags: Array.from(qualitiesRes).filter((t) => Number(t.count) > 0) },
@@ -295,7 +342,7 @@ taxonomyRouter.get('/medias', async (c) => {
            COALESCE(
              n.video_file_path,
              n.nfo_file_path,
-             (SELECT c.video_file_path FROM media_nodes c WHERE (c.parent_id = n.id OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = n.id)) AND c.video_file_path IS NOT NULL LIMIT 1)
+             (SELECT c.video_file_path FROM media_nodes c WHERE c.parent_id = n.id AND c.video_file_path IS NOT NULL LIMIT 1)
            ) AS effective_physical_path
     FROM media_nodes n 
     LEFT JOIN node_eav_links l ON l.node_id = n.id 
@@ -321,7 +368,7 @@ taxonomyRouter.get('/medias', async (c) => {
     }
     else if (category === 'series') {
         querySql = sql `${querySql} AND n.node_type = 'SHOW'`;
-        if (tag) {
+        if (tag && tag !== 'all-series' && tag !== 'all') {
             querySql = sql `${querySql} AND (
         ((v.value_slug = ${tag} OR v.value_text ILIKE ${tag}) AND a.code = 'genre')
         OR n.id IN (
@@ -336,7 +383,7 @@ taxonomyRouter.get('/medias', async (c) => {
     }
     else if (category === 'movies' || category === 'films') {
         querySql = sql `${querySql} AND n.node_type = 'MOVIE'`;
-        if (tag) {
+        if (tag && tag !== 'all-movies' && tag !== 'all') {
             querySql = sql `${querySql} AND (
         ((v.value_slug = ${tag} OR v.value_text ILIKE ${tag}) AND a.code = 'genre')
         OR n.parent_id IN (
@@ -384,8 +431,7 @@ taxonomyRouter.get('/medias', async (c) => {
             else if (tagLower === '360p' || tagLower === '360' || tagLower.includes('360')) {
                 qualPattern = '(?i)\\y(360p|360)\\y';
             }
-            querySql = sql `${querySql} AND (
-        n.video_file_path ~* ${qualPattern}
+            querySql = sql `${querySql} AND (\n        n.video_file_path ~* ${qualPattern}
         OR n.search_vector_text ~* ${qualPattern}
         OR n.id IN (
           SELECT l.node_id FROM node_eav_links l
@@ -537,8 +583,7 @@ taxonomyRouter.get('/medias', async (c) => {
           LEFT JOIN node_eav_links cl ON cl.node_id = c.id
           LEFT JOIN eav_values cv ON cl.value_id = cv.id
           LEFT JOIN eav_attributes ca ON cv.attribute_id = ca.id
-          WHERE (c.video_file_path ILIKE ${fp} OR c.search_vector_text ILIKE ${fp} OR (cv.value_text ILIKE ${fp} AND ca.code IN ('genre', 'subject', 'tag')))
-        )
+          WHERE (c.video_file_path ILIKE ${fp} OR c.search_vector_text ILIKE ${fp} OR (cv.value_text ILIKE ${fp} AND ca.code IN ('genre', 'subject', 'tag')))\n        )
       )`;
         }
     }
@@ -608,8 +653,7 @@ taxonomyRouter.get('/medias', async (c) => {
           )
         ) AS video_quality
       FROM media_nodes n
-      WHERE n.id IN (${sql.join(itemIds.map((id) => sql `${id}::uuid`), sql `, `)});
-    `);
+      WHERE n.id IN (${sql.join(itemIds.map((id) => sql `${id}::uuid`), sql `, `)});\n    `);
         for (const r of Array.from(qualRows)) {
             if (r.video_quality) {
                 qualityMap[r.id] = r.video_quality;

@@ -16,7 +16,7 @@ interface UseCastReceiverProps {
   setActiveAudio?: (a: string) => void;
   setActiveSubtitle?: (s: string) => void;
   onStop: () => void;
-  onLoad?: (mediaId: string) => void;
+  onLoad?: (mediaId: string, payload?: any) => void;
 }
 
 export function useCastReceiver({
@@ -75,14 +75,22 @@ export function useCastReceiver({
             setActiveAudio?.(cmd.payload.audio);
           } else if (cmd.action === 'SET_SUBTITLE' && cmd.payload?.subtitle) {
             setActiveSubtitle?.(cmd.payload.subtitle);
-          } else if (cmd.action === 'LOAD' && cmd.payload?.mediaId && cmd.payload.mediaId !== id) {
-            onLoad?.(cmd.payload.mediaId);
+          } else if (cmd.action === 'LOAD' && cmd.payload?.mediaId) {
+            if (cmd.payload.mediaId === id) {
+              if (cmd.payload.positionSeconds !== undefined && v) {
+                v.currentTime = cmd.payload.positionSeconds;
+              }
+              setIsPlaying(true);
+              v?.play?.();
+            } else {
+              onLoad?.(cmd.payload.mediaId, cmd.payload);
+            }
           } else if (cmd.action === 'STOP') {
             onStop();
           }
         }).catch?.(() => {});
       }
-    }, 4000);
+    }, 1200);
 
     return () => clearInterval(interval);
   }, [id, mediaTitle, isPlaying]);

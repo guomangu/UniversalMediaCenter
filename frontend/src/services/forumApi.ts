@@ -8,6 +8,7 @@ export interface AuthorLocation {
   path: string;
   mediaId?: string;
   isLive?: boolean;
+  positionSeconds?: number;
   label?: string;
 }
 

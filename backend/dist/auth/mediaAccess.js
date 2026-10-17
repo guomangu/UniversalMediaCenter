@@ -1,4 +1,7 @@
 import { verifyShareToken } from './shareToken.js';
+import { db } from '../db/connection.js';
+import { mediaNodes } from '../db/schema/index.js';
+import { sql, eq } from 'drizzle-orm';
 /**
  * Normalise un chemin de dossier ou fichier pour comparaison multi-plateforme.
  * Gère les séparateurs, Unicode NFC, et les alias d'OS immuables (/var/home vs /home).
@@ -176,4 +179,61 @@ export function checkMediaAccess(user, mediaId, shareToken, parentId, nodeType, 
         return isMediaAllowedForUser(user, { ...mediaData, nodeType });
     }
     return true;
+}
+/**
+ * Vérifie de manière asynchrone si un utilisateur a le droit d'accéder à un nœud média par son identifiant ID (UUID).
+ * Résout le nœud en base et applique les contrôles de sécurité PBAC/ABAC (dossiers autorisés/bloqués, tags, IPTV).
+ */
+export async function canUserAccessMediaNodeId(user, nodeId) {
+    if (!nodeId || typeof nodeId !== 'string')
+        return false;
+    if (!user)
+        return false;
+    if (user.isAdmin)
+        return true;
+    try {
+        const node = await db.query.mediaNodes.findFirst({
+            where: (t, { eq: eqNode }) => eqNode(t.id, nodeId),
+        });
+        if (!node)
+            return false;
+        // Pour les chaînes IPTV en direct
+        if (node.nodeType === 'LIVE_CHANNEL') {
+            return isMediaAllowedForUser(user, node);
+        }
+        // Pour les conteneurs (SHOW, COLLECTION, SEASON), récupérer les chemins de leurs enfants
+        let containerChildPaths = [];
+        if (node.nodeType === 'SHOW' || node.nodeType === 'COLLECTION' || node.nodeType === 'SEASON') {
+            const containerSamples = await db.execute(sql `
+        SELECT c.video_file_path, c.nfo_file_path FROM media_nodes c
+        WHERE (c.parent_id = ${node.id}::uuid OR c.parent_id IN (SELECT id FROM media_nodes WHERE parent_id = ${node.id}::uuid))
+          AND (c.video_file_path IS NOT NULL OR c.nfo_file_path IS NOT NULL)
+        LIMIT 30
+      `);
+            containerChildPaths = Array.from(containerSamples)
+                .flatMap((r) => [r.video_file_path, r.nfo_file_path])
+                .filter((p) => Boolean(p));
+        }
+        else if (node.parentId && !node.videoFilePath && !node.nfoFilePath) {
+            // Si c'est un nœud enfant sans fichier direct, vérifier aussi l'autorisation du parent
+            const parent = await db.query.mediaNodes.findFirst({
+                where: (t, { eq: eqParent }) => eqParent(t.id, node.parentId),
+            });
+            if (parent && !isMediaAllowedForUser(user, parent)) {
+                return false;
+            }
+        }
+        return isMediaAllowedForUser(user, {
+            title: node.title,
+            videoFilePath: node.videoFilePath,
+            nfoFilePath: node.nfoFilePath,
+            searchVectorText: node.searchVectorText,
+            nodeType: node.nodeType,
+            childPaths: containerChildPaths,
+        });
+    }
+    catch (err) {
+        console.error('Error in canUserAccessMediaNodeId:', err);
+        return false;
+    }
 }

@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
+import { getAuthToken } from './authStore';
 
 export type DeviceType = 'TV' | 'CHROMECAST' | 'AIRPLAY' | 'BROWSER' | 'MOBILE';
 
@@ -69,6 +70,16 @@ export function setLocalDeviceName(name: string): void {
   }
 }
 
+export async function fetchCastServerInfo(): Promise<{ lanIp: string; port: number; gatewayPort: number } | null> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/cast/info`).catch(() => null);
+    if (!res || !res.ok) return null;
+    return await res.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchCastDevices(): Promise<CastDevice[]> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/cast/devices`).catch(() => null);
@@ -99,40 +110,95 @@ export async function fetchDeviceStatus(deviceId: string): Promise<CastDevice | 
 export function initGoogleCastFramework(): void {
   if (typeof window === 'undefined') return;
 
-  (window as any)['__onGCastApiAvailable'] = (isAvailable: boolean) => {
-    if (isAvailable && (window as any).cast?.framework) {
-      try {
+  const configureContext = () => {
+    try {
+      if ((window as any).cast?.framework && (window as any).chrome?.cast) {
         const castContext = (window as any).cast.framework.CastContext.getInstance();
         castContext.setOptions({
           receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID || 'CC1AD845',
           autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED || 'origin_scoped',
         });
-      } catch (e) {
-        console.warn('Google Cast init error:', e);
       }
+    } catch (e) {
+      console.warn('Google Cast init error:', e);
     }
   };
+
+  (window as any)['__onGCastApiAvailable'] = (isAvailable: boolean) => {
+    if (isAvailable) {
+      configureContext();
+    }
+  };
+
+  if ((window as any).cast?.framework) {
+    configureContext();
+  }
 }
 
 /**
- * Déclenche le Cast natif (Google Cast / Chromecast ou HTML5 Remote Playback / AirPlay)
+ * Résout une URL de flux lisible par un Chromecast ou une Smart TV externe
+ * Remplace localhost par l'IP LAN et ajoute le jeton d'authentification si requis
  */
-export async function triggerNativeCast(media?: CastMediaPayload): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
+export async function resolveLanStreamUrl(rawUrl?: string, mediaId?: string): Promise<string> {
+  let url = rawUrl;
+  if (!url && mediaId) {
+    url = `${getApiBaseUrl()}/api/media/${mediaId}/stream`;
+  }
+  if (!url) return '';
+
+  const serverInfo = await fetchCastServerInfo();
+  const lanIp = serverInfo?.lanIp || '192.168.1.93';
+
+  // Si l'URL pointe vers localhost ou 127.0.0.1, substituer par l'IP LAN accessible du serveur
+  if (url.includes('localhost') || url.includes('127.0.0.1')) {
+    url = url.replace(/localhost|127\.0\.0\.1/g, lanIp);
+  }
+
+  // Si l'URL est relative
+  if (url.startsWith('/')) {
+    const port = serverInfo?.gatewayPort || 8080;
+    url = `http://${lanIp}:${port}${url}`;
+  }
+
+  // Joindre le jeton d'authentification pour que le Chromecast puisse lire le flux sans cookies
+  const token = getAuthToken();
+  if (token && !url.includes('token=') && !url.includes('share=')) {
+    const sep = url.includes('?') ? '&' : '?';
+    url = `${url}${sep}token=${encodeURIComponent(token)}`;
+  }
+
+  return url;
+}
+
+export interface NativeCastResult {
+  success: boolean;
+  message?: string;
+  target?: 'GOOGLE_CAST' | 'REMOTE_PLAYBACK' | 'AIRPLAY' | 'NONE';
+}
+
+/**
+ * Déclenche le Cast natif (Google Cast / Chromecast, AirPlay, ou HTML5 Remote Playback)
+ */
+export async function triggerNativeCast(media?: CastMediaPayload): Promise<NativeCastResult> {
+  if (typeof window === 'undefined') {
+    return { success: false, message: 'Non supporté hors environnement web' };
+  }
 
   const cast = (window as any).cast;
   const chrome = (window as any).chrome;
 
-  // 1. Google Cast SDK
+  // Résolution de l'URL LAN certifiée
+  const lanStreamUrl = await resolveLanStreamUrl(media?.streamUrl, media?.id);
+
+  // 1. Google Cast SDK officiel (Chromecast, Google TV, Android TV)
   if (cast?.framework && chrome?.cast) {
     try {
       const instance = cast.framework.CastContext.getInstance();
       await instance.requestSession();
       const session = instance.getCurrentSession();
       if (session && media) {
-        const streamUrl = media.streamUrl || `${getApiBaseUrl()}/api/media/${media.id}/stream`;
-        const contentType = streamUrl.includes('.m3u8') ? 'application/x-mpegurl' : 'video/mp4';
-        const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, contentType);
+        const contentType = lanStreamUrl.includes('.m3u8') ? 'application/x-mpegurl' : 'video/mp4';
+        const mediaInfo = new chrome.cast.media.MediaInfo(lanStreamUrl, contentType);
         mediaInfo.metadata = new chrome.cast.media.GenericMediaMetadata();
         mediaInfo.metadata.title = media.title;
         if (media.posterUrl) {
@@ -143,35 +209,54 @@ export async function triggerNativeCast(media?: CastMediaPayload): Promise<boole
           request.currentTime = media.positionSeconds;
         }
         await session.loadMedia(request);
+        return { success: true, target: 'GOOGLE_CAST', message: 'Connecté via Google Cast' };
       }
-      return true;
-    } catch (err) {
-      console.warn('Google Cast requestSession:', err);
+    } catch (err: any) {
+      if (err?.code !== 'cancel') {
+        console.warn('Google Cast requestSession notice:', err);
+      }
     }
   }
 
-  // 2. HTML5 Remote Playback API (Chromecast/AirPlay natif du lecteur vidéo)
+  // 2. AirPlay natif pour Safari / Apple WebKit
   const video = (document.querySelector('video[data-video-player="true"]') ||
     document.querySelector('video')) as any;
+
+  if (video && typeof video.webkitShowPlaybackTargetPicker === 'function') {
+    try {
+      video.webkitShowPlaybackTargetPicker();
+      return { success: true, target: 'AIRPLAY', message: 'Sélecteur AirPlay ouvert' };
+    } catch (err) {
+      console.warn('AirPlay picker notice:', err);
+    }
+  }
+
+  // 3. HTML5 Remote Playback API standard (Chromecast & écrans sans fil du navigateur)
   if (video?.remote && typeof video.remote.prompt === 'function') {
     try {
       await video.remote.prompt();
-      return true;
-    } catch (err) {
-      console.warn('Remote Playback error:', err);
+      return { success: true, target: 'REMOTE_PLAYBACK', message: 'Sélecteur d’écrans sans fil ouvert' };
+    } catch (err: any) {
+      if (err?.name !== 'NotFoundError' && err?.name !== 'NotAllowedError') {
+        console.warn('Remote Playback notice:', err);
+      }
     }
   }
 
-  // 3. W3C Presentation API
+  // 4. W3C Presentation API
   if ((window as any).PresentationRequest) {
     try {
       const pReq = new (window as any).PresentationRequest(['https://www.google.com/chromecast']);
       await pReq.start();
-      return true;
+      return { success: true, target: 'GOOGLE_CAST', message: 'Diffusion lancée' };
     } catch {}
   }
 
-  return false;
+  return {
+    success: false,
+    target: 'NONE',
+    message: 'Aucun récepteur Google Cast ou AirPlay actif détecté. Vérifiez que votre TV est allumée sur le même réseau Wi-Fi.',
+  };
 }
 
 export async function registerAsReceiver(name: string, state: Partial<CastDevice>): Promise<void> {

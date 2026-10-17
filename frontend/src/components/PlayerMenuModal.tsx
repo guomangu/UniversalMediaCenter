@@ -6,6 +6,8 @@ interface Props {
   visible: boolean;
   mediaTitle: string;
   activeCastTarget?: { name: string } | null;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
   onOpenRepost: () => void;
   onOpenShare: () => void;
   onOpenCast: () => void;
@@ -19,6 +21,8 @@ export function PlayerMenuModal({
   visible,
   mediaTitle,
   activeCastTarget,
+  isMuted = true,
+  onToggleMute,
   onOpenRepost,
   onOpenShare,
   onOpenCast,
@@ -64,8 +68,36 @@ export function PlayerMenuModal({
           </View>
 
           <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+            {onToggleMute && (
+              <Pressable
+                ref={firstBtnRef}
+                focusable={true}
+                accessibilityRole="button"
+                onPress={() => { onToggleMute(); onClose(); }}
+                style={({ focused }: any) => [
+                  styles.item,
+                  !isMuted && styles.itemActive,
+                  focused && styles.itemFocused,
+                ]}
+              >
+                <Text style={styles.itemIcon}>{isMuted ? '🔇' : '🎙️'}</Text>
+                <View style={styles.itemMeta}>
+                  <Text style={styles.itemLabel}>
+                    {isMuted ? 'Micro coupé (Mode Silence)' : 'Micro actif (Discussion en direct)'}
+                  </Text>
+                  <Text style={styles.itemDesc}>
+                    {isMuted
+                      ? 'Cliquez pour ouvrir votre micro aux autres spectateurs'
+                      : 'Votre micro transmet votre voix au salon en temps réel'}
+                  </Text>
+                </View>
+                <Text style={!isMuted ? styles.badgeActive : styles.badgeInactive}>
+                  {isMuted ? 'Silence' : 'Actif'}
+                </Text>
+              </Pressable>
+            )}
+
             <Pressable
-              ref={firstBtnRef}
               focusable={true}
               accessibilityRole="button"
               onPress={() => { onClose(); onOpenRepost(); }}
@@ -159,7 +191,7 @@ export function PlayerMenuModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.three,
@@ -169,29 +201,24 @@ const styles = StyleSheet.create({
     maxWidth: 440,
     backgroundColor: '#0f172a',
     borderRadius: Radius.lg,
-    padding: Spacing.four,
-    borderWidth: 1.5,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderWidth: 1,
+    borderColor: '#334155',
+    padding: Spacing.three,
     maxHeight: '85%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 20,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: Spacing.three,
     paddingBottom: Spacing.two,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: '#1e293b',
   },
   title: {
     color: '#ffffff',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   subtitle: {
     color: '#94a3b8',
@@ -201,12 +228,12 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 6,
     borderRadius: Radius.pill,
-    backgroundColor: 'rgba(51, 65, 85, 0.6)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   close: {
     color: '#94a3b8',
     fontSize: 14,
-    fontWeight: '700',
+    lineHeight: 14,
   },
   list: {
     flexGrow: 0,
@@ -214,23 +241,21 @@ const styles = StyleSheet.create({
   item: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 11,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    backgroundColor: '#1e293b',
     marginBottom: 8,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: 'transparent',
-    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
-  },
-  itemFocused: {
-    backgroundColor: '#312e81',
-    borderColor: '#818cf8',
-    transform: [{ scale: 1.02 }],
   },
   itemActive: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    borderColor: '#6366f1',
+    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+  },
+  itemFocused: {
+    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(56, 189, 248, 0.2)',
   },
   itemIcon: {
     fontSize: 20,
@@ -240,23 +265,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itemLabel: {
-    color: '#f8fafc',
+    color: '#ffffff',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   itemDesc: {
     color: '#94a3b8',
     fontSize: 11,
     marginTop: 2,
-    lineHeight: 14,
   },
   badgeActive: {
-    color: '#10b981',
-    fontSize: 11,
-    fontWeight: '800',
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.pill,
+    color: '#38bdf8',
+    fontSize: 10,
+    fontWeight: '700',
+    backgroundColor: 'rgba(56, 189, 248, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+  },
+  badgeInactive: {
+    color: '#94a3b8',
+    fontSize: 10,
+    fontWeight: '600',
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
   },
 });

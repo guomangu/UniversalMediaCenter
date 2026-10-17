@@ -111,7 +111,8 @@ mediaRouter.post('/:id/progress', async (c) => {
     userId,
     user?.displayName || 'Spectateur',
     media.title,
-    isPlaying
+    isPlaying,
+    positionSeconds
   );
 
   return c.json({ success: true });

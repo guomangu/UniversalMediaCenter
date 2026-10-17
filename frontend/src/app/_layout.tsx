@@ -54,14 +54,19 @@ export default function RootLayout() {
       if (typeof window !== 'undefined' && !window.location.pathname.includes('/player')) {
         pollDeviceCommands(getLocalDeviceId(), (cmd) => {
           if (cmd.action === 'LOAD' && cmd.payload?.mediaId) {
+            const params: any = {};
+            if (cmd.payload.title) params.title = cmd.payload.title;
+            if (cmd.payload.positionSeconds !== undefined && cmd.payload.positionSeconds > 0) {
+              params.joinTime = String(Math.floor(cmd.payload.positionSeconds));
+            }
             router.push({
               pathname: `/player/${cmd.payload.mediaId}`,
-              params: cmd.payload.title ? { title: cmd.payload.title } : undefined,
+              params,
             } as any);
           }
         }).catch(() => {});
       }
-    }, 4500);
+    }, 1500);
 
     return () => clearInterval(interval);
   }, [router]);

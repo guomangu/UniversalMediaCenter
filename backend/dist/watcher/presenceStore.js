@@ -10,7 +10,7 @@ const voiceCallRooms = new Map();
 // Map topicSlug -> AudioChunk[]
 const voiceCallAudioChunks = new Map();
 const PING_TIMEOUT_MS = 25000; // 25s avant expiration de la présence
-export function recordActivePlayback(nodeId, parentId, userId, displayName, mediaTitle, isPlaying = true) {
+export function recordActivePlayback(nodeId, parentId, userId, displayName, mediaTitle, isPlaying = true, positionSeconds = 0) {
     const now = Date.now();
     let watchers = activeWatchersMap.get(nodeId);
     if (!watchers) {
@@ -24,6 +24,7 @@ export function recordActivePlayback(nodeId, parentId, userId, displayName, medi
         parentId,
         mediaTitle,
         isPlaying,
+        positionSeconds,
         lastPing: now,
     });
     // Mettre à jour la dernière page connue de l'utilisateur
@@ -33,6 +34,7 @@ export function recordActivePlayback(nodeId, parentId, userId, displayName, medi
         title: mediaTitle,
         path: `/player/${nodeId}`,
         isLive: isPlaying,
+        positionSeconds,
         updatedAt: now,
     });
 }
@@ -112,12 +114,14 @@ export async function getUserLastLocation(userId) {
     for (const [nodeId, watchers] of activeWatchersMap.entries()) {
         const w = watchers.get(userId);
         if (w && w.isPlaying && now - w.lastPing < PING_TIMEOUT_MS) {
+            const elapsedSec = w.isPlaying ? Math.min(30, Math.max(0, Math.floor((now - w.lastPing) / 1000))) : 0;
             const liveInfo = {
                 userId,
                 mediaId: nodeId,
                 title: w.mediaTitle,
                 path: `/player/${nodeId}`,
                 isLive: true,
+                positionSeconds: (w.positionSeconds || 0) + elapsedSec,
                 updatedAt: now,
             };
             userLocationMap.set(userId, liveInfo);
@@ -138,6 +142,7 @@ export async function getUserLastLocation(userId) {
             .select({
             nodeId: watchProgress.nodeId,
             title: mediaNodes.title,
+            positionSeconds: watchProgress.positionSeconds,
             updatedAt: watchProgress.updatedAt,
         })
             .from(watchProgress)
@@ -153,6 +158,7 @@ export async function getUserLastLocation(userId) {
                 title: p.title,
                 path: `/player/${p.nodeId}`,
                 isLive: false,
+                positionSeconds: p.positionSeconds || 0,
                 updatedAt: p.updatedAt.getTime(),
             };
             userLocationMap.set(userId, info);

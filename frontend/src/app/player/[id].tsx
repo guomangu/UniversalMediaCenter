@@ -24,70 +24,98 @@ import {
 } from '@/services/sessionApi';
 import { styles } from '@/components/PlayerScreen.styles';
 import { toggleFullscreen, isFullscreenActive } from '@/utils/fullscreen';
+import { usePlayerVoiceCall } from '@/hooks/usePlayerVoiceCall';
 import { goBackOrFallback } from '@/utils/navigation';
 
 export default function PlayerScreen() {
-  const { id, title, share, isLive: queryIsLive } = useLocalSearchParams<{ id: string; title?: string; share?: string; isLive?: string }>();
+  const { id, title, share, isLive: queryIsLive, joinTime, time, targetUser } = useLocalSearchParams<{
+    id: string;
+    title?: string;
+    share?: string;
+    isLive?: string;
+    joinTime?: string;
+    time?: string;
+    targetUser?: string;
+  }>();
+
+  const rawJoinTime = joinTime !== undefined ? Number(joinTime) : time !== undefined ? Number(time) : null;
+  const parsedJoinTime = rawJoinTime !== null && !isNaN(rawJoinTime) && rawJoinTime >= 0 ? rawJoinTime : null;
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
-  const isSmallMobile = width < 520;
+  const isSmallMobile = width < 480;
 
-  const videoRef = useRef<any>(null);
-  const savedPosRef = useRef<number>(0);
-  const activeCastTarget = useActiveCastTarget();
   const [isPlaying, setIsPlaying] = useState(true);
-  const [initialTime, setInitialTime] = useState<number>(0);
-  const isDirectLive = queryIsLive === '1' || queryIsLive === 'true';
-  const [showSkipIntro, setShowSkipIntro] = useState(!isDirectLive);
-  const [showCast, setShowCast] = useState(false);
-  const [showSubtitles, setShowSubtitles] = useState(false);
-  const [showAudio, setShowAudio] = useState(false);
-  const [showShare, setShowShare] = useState(false);
-  const [showRepost, setShowRepost] = useState(false);
-  const [showMenuModal, setShowMenuModal] = useState(false);
-  const [activeSubtitle, setActiveSubtitle] = useState('off');
-  const [activeAudio, setActiveAudio] = useState('auto');
-  const [statusMessage, setStatusMessage] = useState<string>('');
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [initialTime, setInitialTime] = useState(parsedJoinTime || 0);
+  const [showSkipIntro, setShowSkipIntro] = useState(false);
+  const [showRestartBtn, setShowRestartBtn] = useState(false);
+  const [introChapter, setIntroChapter] = useState<{ start: number; end: number } | null>(null);
+  const [activeAudio, setActiveAudio] = useState<string>('auto');
+  const [activeSubtitle, setActiveSubtitle] = useState<string>('off');
+  const [isLive, setIsLive] = useState(queryIsLive === 'true');
+  const [resolvedTitle, setResolvedTitle] = useState('');
+  const [resolvedSlug, setResolvedSlug] = useState('');
   const [isForbidden, setIsForbidden] = useState(false);
   const [forbiddenReason, setForbiddenReason] = useState<string>('');
 
+  const [showAudio, setShowAudio] = useState(false);
+  const [showSubtitles, setShowSubtitles] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [showCast, setShowCast] = useState(false);
+  const [showRepost, setShowRepost] = useState(false);
+  const [showMenuModal, setShowMenuModal] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Le mode micro commence systématiquement en silence (isMuted: true)
+  const [isMuted, setIsMuted] = useState(true);
+
+  const [activeSession, setActiveSession] = useState<MediaSession | null>(null);
+  const [viewersCount, setViewersCount] = useState<number>(1);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const activeSessionRef = useRef<MediaSession | null>(null);
+
+  const [nextNode, setNextNode] = useState<{
+    id: string;
+    title: string;
+    nodeType: string;
+    displayBadge?: string;
+    seasonEpisodeTag?: string;
+  } | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const savedPosRef = useRef<number>(parsedJoinTime || 0);
+  const countdownTimer = useRef<any>(null);
+  const isCancelledRef = useRef<boolean>(false);
+  const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
+
+  const activeCastTarget = useActiveCastTarget();
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+  }, []);
+
   useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const updateFs = () => setIsFullscreen(isFullscreenActive());
-    updateFs();
-    document.addEventListener('fullscreenchange', updateFs);
-    document.addEventListener('webkitfullscreenchange', updateFs);
-    document.addEventListener('mozfullscreenchange', updateFs);
-    document.addEventListener('MSFullscreenChange', updateFs);
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(isFullscreenActive());
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
     return () => {
-      document.removeEventListener('fullscreenchange', updateFs);
-      document.removeEventListener('webkitfullscreenchange', updateFs);
-      document.removeEventListener('mozfullscreenchange', updateFs);
-      document.removeEventListener('MSFullscreenChange', updateFs);
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
     };
   }, []);
 
-  const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
-  const [isLive, setIsLive] = useState(isDirectLive);
-  const [nextNode, setNextNode] = useState<any>(null);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const countdownTimer = useRef<any>(null);
-  const isCancelledRef = useRef<boolean>(false);
-
-  // Amélioration gestion du titre réel du média et des chapitres d'intro
-  const [resolvedTitle, setResolvedTitle] = useState<string>(title || '');
-  const [introChapter, setIntroChapter] = useState<{ start: number; end: number } | null>(null);
-
-  // Gestion de la discussion en direct, appel vocal & mode silence
-  const [viewersCount, setViewersCount] = useState<number>(1);
-  const [activeSession, setActiveSession] = useState<MediaSession | null>(null);
-  const activeSessionRef = useRef<MediaSession | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
-
   useEffect(() => {
     if (id) {
+      const isDirectLive = queryIsLive === 'true' || String(id).startsWith('iptv-');
+      setIsLive(isDirectLive);
+
       fetchMediaDetail(String(id), share).then((res) => {
         if (res?.forbidden || res?.code === 'FORBIDDEN') {
           setIsForbidden(true);
@@ -103,6 +131,7 @@ export default function PlayerScreen() {
           setIsForbidden(false);
           const badge = res.media.displayBadge || res.media.seasonEpisodeTag;
           setResolvedTitle(badge ? `${res.media.title} (${badge})` : res.media.title);
+          setResolvedSlug(res.media.slug || '');
           const isChannel = res.media.nodeType === 'LIVE_CHANNEL' || Boolean(res.media.streamUrl) || isDirectLive;
           setIsLive(isChannel);
 
@@ -110,6 +139,7 @@ export default function PlayerScreen() {
             setShowSkipIntro(false);
             setIntroChapter(null);
             setInitialTime(0);
+            setShowRestartBtn(false);
           } else {
             const chapters = res.media.chaptersJson || [];
             const foundIntro = chapters.find((ch: any) => ch.type === 'INTRO');
@@ -120,9 +150,23 @@ export default function PlayerScreen() {
               setIntroChapter(null);
             }
 
-            if (res.media.positionSeconds && res.media.positionSeconds > 10 && !res.media.isCompleted) {
+            if (parsedJoinTime !== null) {
+              savedPosRef.current = parsedJoinTime;
+              setInitialTime(parsedJoinTime);
+              if (parsedJoinTime > 0) {
+                setShowRestartBtn(true);
+                const m = Math.floor(parsedJoinTime / 60);
+                const s = Math.floor(parsedJoinTime % 60);
+                showToast(
+                  targetUser
+                    ? `Visionnage synchronisé avec ${targetUser} à ${m}:${String(s).padStart(2, '0')}`
+                    : `Visionnage synchronisé à ${m}:${String(s).padStart(2, '0')}`
+                );
+              }
+            } else if (res.media.positionSeconds && res.media.positionSeconds > 10 && !res.media.isCompleted) {
               savedPosRef.current = res.media.positionSeconds;
               setInitialTime(res.media.positionSeconds);
+              setShowRestartBtn(true);
               const m = Math.floor(res.media.positionSeconds / 60);
               const s = Math.floor(res.media.positionSeconds % 60);
               showToast(`Reprise de la lecture à ${m}:${String(s).padStart(2, '0')}`);
@@ -131,13 +175,28 @@ export default function PlayerScreen() {
         }
       });
     }
-  }, [id, title, share]);
+  }, [id, title, share, joinTime, time, targetUser]);
+
+  useEffect(() => {
+    if (showRestartBtn) {
+      const timer = setTimeout(() => {
+        setShowRestartBtn(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showRestartBtn]);
+
+  const handleRestartFromBeginning = useCallback(() => {
+    setShowRestartBtn(false);
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0;
+    }
+    savedPosRef.current = 0;
+    setInitialTime(0);
+    showToast('Lecture recommencée depuis le début ⏪');
+  }, [showToast]);
 
   const mediaTitle = resolvedTitle || title || `Média #${id}`;
-  const showToast = useCallback((msg: string) => {
-    setStatusMessage(msg);
-    setTimeout(() => setStatusMessage(''), 3000);
-  }, []);
 
   const streamUrl = useMemo(() => {
     if (!id || isForbidden) return '';
@@ -160,16 +219,22 @@ export default function PlayerScreen() {
         }
         if (data.defaultSubtitle && data.defaultSubtitle !== 'off') {
           setActiveSubtitle(data.defaultSubtitle);
-          if (data.subtitleFallbackTriggered) {
-            showToast('VOST : Sous-titres activés automatiquement');
-          }
         }
       });
-      isCancelledRef.current = false;
-      setCountdown(null);
       fetchNextMedia(String(id)).then(setNextNode);
     }
   }, [id, isForbidden, showToast]);
+
+  // Salon vocal unifié pour ce média (ou session active)
+  const voiceTopicSlug = activeSession?.topicSlug || (resolvedSlug ? `media-${resolvedSlug}` : `media-${id}`);
+  const isVoiceEnabled = !isForbidden && Boolean(voiceTopicSlug);
+  const { isLiveSpeaking } = usePlayerVoiceCall({
+    topicSlug: voiceTopicSlug,
+    isMuted,
+    setIsMuted,
+    isEnabled: isVoiceEnabled,
+    showToast,
+  });
 
   // Surveillance de la présence et des séances communautaires (uniquement pour VOD / contenus planifiés)
   useEffect(() => {
@@ -200,23 +265,6 @@ export default function PlayerScreen() {
       if (activeSessionRef.current) {
         leaveSession(activeSessionRef.current.id);
       }
-    };
-  }, [id, isLive, isMuted, isForbidden]);
-
-  // Nettoyage immédiat si l'utilisateur quitte l'onglet ou ferme la fenêtre
-  useEffect(() => {
-    if (typeof window === 'undefined' || !id || isLive || isForbidden) return;
-    const handleUnload = () => {
-      leavePlayback(String(id));
-      if (activeSessionRef.current) {
-        leaveSession(activeSessionRef.current.id);
-      }
-    };
-    window.addEventListener('beforeunload', handleUnload);
-    window.addEventListener('pagehide', handleUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleUnload);
-      window.removeEventListener('pagehide', handleUnload);
     };
   }, [id, isLive, isForbidden]);
 
@@ -282,9 +330,21 @@ export default function PlayerScreen() {
   }, [isLive, introChapter, showToast]);
 
   useCastReceiver({
-    id: String(id), mediaTitle, isPlaying: isForbidden ? false : isPlaying, videoRef, setIsPlaying, setActiveAudio, setActiveSubtitle,
+    id: String(id),
+    mediaTitle,
+    isPlaying: isForbidden ? false : isPlaying,
+    videoRef,
+    setIsPlaying,
+    setActiveAudio,
+    setActiveSubtitle,
     onStop: () => goBackOrFallback(router, '/'),
-    onLoad: (newId) => router.replace(`/player/${newId}`),
+    onLoad: (newId, payload) => {
+      const pos = payload?.positionSeconds ? Math.floor(payload.positionSeconds) : 0;
+      router.replace({
+        pathname: `/player/${newId}`,
+        params: pos > 0 ? { joinTime: String(pos) } : undefined,
+      } as any);
+    },
   });
 
   const isModalOpen = showAudio || showSubtitles || showShare || showCast || showRepost || showMenuModal;
@@ -298,41 +358,36 @@ export default function PlayerScreen() {
             maxWidth: 480,
             width: '100%',
             backgroundColor: '#0f172a',
-            borderRadius: 20,
-            padding: 32,
+            borderRadius: 16,
+            padding: 24,
             alignItems: 'center',
-            borderWidth: 1.5,
-            borderColor: 'rgba(239, 68, 68, 0.4)',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: 0.6,
-            shadowRadius: 24,
+            borderWidth: 1,
+            borderColor: '#ef4444',
           }}
         >
-          <Text style={{ fontSize: 44, marginBottom: 16 }}>🔒</Text>
-          <Text style={{ fontSize: 20, fontWeight: '800', color: '#f8fafc', textAlign: 'center', marginBottom: 12 }}>
-            Accès non autorisé
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>🚫</Text>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: '#ffffff', textAlign: 'center', marginBottom: 12 }}>
+            Contenu Bloqué
           </Text>
-          <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
-            {forbiddenReason || "Vous n'avez pas les autorisations nécessaires pour visionner ce contenu (dossier restreint, restriction parentale ou tag non autorisé)."}
+          <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
+            {forbiddenReason || 'Ce média est restreint par les règles de contrôle parental ou les autorisations de votre profil.'}
           </Text>
           <Pressable
             focusable={true}
-            accessibilityRole="button"
             onPress={() => goBackOrFallback(router, '/')}
             style={({ focused }: any) => [
               {
-                backgroundColor: '#6366f1',
-                paddingHorizontal: 24,
+                backgroundColor: '#3b82f6',
                 paddingVertical: 12,
-                borderRadius: 9999,
-                borderWidth: 2,
-                borderColor: focused ? '#ffffff' : 'transparent',
+                paddingHorizontal: 24,
+                borderRadius: 8,
+                alignItems: 'center',
               },
+              focused && { borderWidth: 2, borderColor: '#ffffff' },
             ]}
           >
             <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
-              ← Retour au catalogue
+              Retour à l'accueil
             </Text>
           </Pressable>
         </View>
@@ -353,7 +408,7 @@ export default function PlayerScreen() {
         intro={isLive ? null : introChapter}
         activeSubtitle={activeSubtitle}
         activeAudio={activeAudio}
-        statusMessage={statusMessage}
+        statusMessage={toastMessage || undefined}
         isFullscreen={isFullscreen}
         onSkipIntro={handleSkipIntro}
         onPlay={handlePlay}
@@ -363,28 +418,28 @@ export default function PlayerScreen() {
         onEnded={handleVideoEnded}
       />
 
-      {!isFullscreen && (
-        <View
-          style={styles.topBar}
-          {...({ dataSet: { playerTopbar: 'true' } } as any)}
-        >
+      {/* Barre supérieure ergonomique et contextuelle */}
+      <View style={styles.topBar}>
         <Pressable
           focusable={true}
           accessibilityRole="button"
+          accessibilityLabel="Retour"
           onPress={() => goBackOrFallback(router, '/')}
           style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
         >
           <Text style={styles.topBtnText}>{isSmallMobile ? '←' : '← Retour'}</Text>
         </Pressable>
 
-        {/* Contrôles d'appel en direct ou vocal dès qu'au moins 2 spectateurs regardent un contenu */}
-        {viewersCount >= 2 || activeSession ? (          <Pressable
+        {/* Contrôles du mode micro et discussion vocale en direct */}
+        {!isForbidden && (
+          <Pressable
             focusable={true}
             accessibilityRole="button"
+            accessibilityLabel={isMuted ? 'Activer le micro' : 'Couper le micro (Mode Silence)'}
             onPress={() => {
               const nextMute = !isMuted;
               setIsMuted(nextMute);
-              showToast(nextMute ? 'Mode Silence activé' : 'Discussion en direct activée 🎙️');
+              showToast(nextMute ? 'Mode Silence activé (micro coupé) 🔇' : 'Discussion en direct activée (micro actif) 🎙️');
             }}
             style={({ focused }: any) => [
               styles.voiceBtn,
@@ -393,10 +448,17 @@ export default function PlayerScreen() {
             ]}
           >
             <Text style={styles.voiceBtnTxt}>
-              {isMuted ? '🔇' : '🎙️'} {isMobile ? viewersCount : `${isMuted ? 'Mode Silence' : 'Discussion en direct'} (${viewersCount})`}
+              {isMuted ? '🔇' : '🎙️'}{' '}
+              {isMobile
+                ? (viewersCount > 1 ? viewersCount : isMuted ? 'Silence' : 'Micro')
+                : isMuted
+                ? `Mode Silence (${viewersCount})`
+                : isLiveSpeaking
+                ? `Micro en direct (${viewersCount})`
+                : `Discussion active (${viewersCount})`}
             </Text>
           </Pressable>
-        ) : null}
+        )}
 
         <Text numberOfLines={1} style={styles.headerTitle}>{mediaTitle}</Text>
 
@@ -558,14 +620,50 @@ export default function PlayerScreen() {
               }}
               style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
             >
-              <Text style={styles.topBtnText}>⛶ Plein Écran</Text>
+              <Text style={styles.topBtnText}>⛶</Text>
             </Pressable>
           </View>
         )}
       </View>
+
+      {/* Toast d'information éphémère */}
+      {toastMessage && (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
       )}
 
-      {/* Netflix Binge-Watching Next Episode Overlay */}
+      {/* Bouton d'action "Recommencer depuis le début" */}
+      {showRestartBtn && (
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          accessibilityLabel="Recommencer depuis le début"
+          onPress={handleRestartFromBeginning}
+          style={({ focused }: any) => [
+            styles.restartBtn,
+            focused && styles.restartBtnFocused,
+          ]}
+        >
+          <Text style={styles.restartBtnIcon}>⏪</Text>
+          <Text style={styles.restartBtnText}>Recommencer</Text>
+        </Pressable>
+      )}
+
+      {/* Bouton "Passer l'intro" pour les animes/séries TV */}
+      {showSkipIntro && !isLive && (
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          accessibilityLabel="Passer le générique d'introduction"
+          onPress={handleSkipIntro}
+          style={({ focused }: any) => [styles.skipBtn, focused && styles.skipBtnFocused]}
+        >
+          <Text style={styles.skipText}>Passer l'intro ⏩</Text>
+        </Pressable>
+      )}
+
+      {/* Compte à rebours automatique Next Netflix */}
       {countdown !== null && nextNode && (
         <View style={styles.nextOverlay}>
           <View style={styles.nextHeader}>
@@ -625,8 +723,13 @@ export default function PlayerScreen() {
 
       <CastModal
         visible={showCast}
-        currentMedia={{ id: String(id), title: mediaTitle, positionSeconds: savedPosRef.current }}
+        currentMedia={{ id: String(id), title: mediaTitle, positionSeconds: savedPosRef.current, streamUrl }}
         onClose={() => setShowCast(false)}
+        onCastStarted={() => {
+          videoRef.current?.pause?.();
+          setIsPlaying(false);
+          showToast('Diffusion en cours sur l’écran distant 📡');
+        }}
       />
 
       <MediaRepostModal
@@ -641,6 +744,12 @@ export default function PlayerScreen() {
         visible={showMenuModal}
         mediaTitle={mediaTitle}
         activeCastTarget={activeCastTarget}
+        isMuted={isMuted}
+        onToggleMute={() => {
+          const next = !isMuted;
+          setIsMuted(next);
+          showToast(next ? 'Mode Silence activé (micro coupé) 🔇' : 'Discussion en direct activée (micro actif) 🎙️');
+        }}
         onOpenRepost={() => setShowRepost(true)}
         onOpenShare={() => setShowShare(true)}
         onOpenCast={() => setShowCast(true)}

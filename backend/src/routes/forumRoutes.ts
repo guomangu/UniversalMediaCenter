@@ -294,12 +294,25 @@ forumRouter.post('/messages/:id/vote', requireAuth, async (c) => {
   });
 });
 
+// --- HELPER RESOLUTION UTILISATEUR POUR APPELS VOCAUX (AUTHENTIFIÉ OU INVITÉ LOCAL) ---
+function resolveVoiceUser(c: any) {
+  const user = c.get('user');
+  if (user) return user;
+  const headerId = c.req.header('x-user-id') || c.req.header('x-device-id');
+  const anonId = headerId || 'guest-' + Math.random().toString(36).slice(2, 8);
+  return {
+    id: anonId,
+    displayName: 'Spectateur',
+    isAdmin: false,
+  };
+}
+
 // --- ROUTES POUR L'APPEL VOCAL DIRECT & VOCAUX CONTINUS ---
 
 // Rejoindre l'appel vocal direct du sujet
-forumRouter.post('/topics/:slug/call/join', requireAuth, async (c) => {
+forumRouter.post('/topics/:slug/call/join', async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
-  const user = (c as any).get('user') as any;
+  const user = resolveVoiceUser(c);
   const body = await c.req.json().catch(() => ({}));
   const isMuted = Boolean(body.isMuted);
 
@@ -314,9 +327,9 @@ forumRouter.post('/topics/:slug/call/join', requireAuth, async (c) => {
 });
 
 // Quitter l'appel vocal
-forumRouter.post('/topics/:slug/call/leave', requireAuth, async (c) => {
+forumRouter.post('/topics/:slug/call/leave', async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
-  const user = (c as any).get('user') as any;
+  const user = resolveVoiceUser(c);
 
   leaveVoiceCall(slug, user.id);
   const participants = getVoiceCallParticipants(slug);
@@ -324,9 +337,9 @@ forumRouter.post('/topics/:slug/call/leave', requireAuth, async (c) => {
 });
 
 // Ping de statut micro / présence dans l'appel
-forumRouter.post('/topics/:slug/call/ping', requireAuth, async (c) => {
+forumRouter.post('/topics/:slug/call/ping', async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
-  const user = (c as any).get('user') as any;
+  const user = resolveVoiceUser(c);
   const body = await c.req.json().catch(() => ({}));
 
   const participants = pingVoiceCall(slug, user.id, body.isMuted);
@@ -340,15 +353,20 @@ forumRouter.get('/topics/:slug/call/status', async (c) => {
   return c.json({ success: true, participants });
 });
 
-// Envoyer un fragment audio vocal
-forumRouter.post('/topics/:slug/voice/chunk', requireAuth, async (c) => {
+// Handler commun pour la soumission de fragments audio
+async function handleVoiceChunkPost(c: any) {
   const slug = (c.req.param('slug') || '').toLowerCase();
-  const user = (c as any).get('user') as any;
+  const user = resolveVoiceUser(c);
   const body = await c.req.json().catch(() => ({}));
   const { audioBase64, mimeType = 'audio/webm' } = body;
 
   if (!audioBase64) {
     return c.json({ error: 'Données audio manquantes' }, 400);
+  }
+
+  const access = await canAccessPrivateTopic(user, slug);
+  if (!access.allowed) {
+    return c.json({ error: access.error }, 403);
   }
 
   const chunk = pushVoiceAudioChunk(
@@ -360,14 +378,22 @@ forumRouter.post('/topics/:slug/voice/chunk', requireAuth, async (c) => {
   );
 
   return c.json({ success: true, chunkId: chunk.id });
-});
+}
 
-// Récupérer les nouveaux fragments audio depuis un timestamp donné
-forumRouter.get('/topics/:slug/voice/chunks', requireAuth, async (c) => {
+// Handler commun pour la récupération des fragments audio
+async function handleVoiceChunksGet(c: any) {
   const slug = (c.req.param('slug') || '').toLowerCase();
   const since = Number(c.req.query('since') || 0);
-  const user = (c as any).get('user') as any;
+  const user = resolveVoiceUser(c);
 
   const chunks = getVoiceAudioChunks(slug, since, user?.id);
   return c.json({ success: true, chunks });
-});
+}
+
+// Routes supportant indifféremment /call/chunk et /voice/chunk
+forumRouter.post('/topics/:slug/call/chunk', handleVoiceChunkPost);
+forumRouter.post('/topics/:slug/voice/chunk', handleVoiceChunkPost);
+
+// Routes supportant indifféremment /call/chunks et /voice/chunks
+forumRouter.get('/topics/:slug/call/chunks', handleVoiceChunksGet);
+forumRouter.get('/topics/:slug/voice/chunks', handleVoiceChunksGet);

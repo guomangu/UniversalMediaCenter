@@ -128,7 +128,12 @@ export function UserForumsTab() {
                         onPress={() =>
                           router.push({
                             pathname: '/player/[id]',
-                            params: { id: s.nodeId, sessionId: s.id },
+                            params: {
+                              id: s.nodeId,
+                              sessionId: s.id,
+                              joinTime: String(Math.floor(s.currentPosition || 0)),
+                              targetUser: s.hostDisplayName,
+                            },
                           } as any)
                         }
                         style={styles.joinBtn}

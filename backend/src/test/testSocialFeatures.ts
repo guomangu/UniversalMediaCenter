@@ -100,6 +100,26 @@ async function runTests() {
   assert.strictEqual(unauthenticatedAllowed, false, 'Un utilisateur non connecté ne doit avoir aucun accès');
   console.log('  ✅ Zero-Leak canUserAccessMediaNodeId verified');
 
+  // 6. Synchronisation de Progression (Regarde : ... -> Position temps réel)
+  console.log('  Testing Active Playback Progress Synchronization...');
+  const { recordActivePlayback, getUserLastLocation } = await import('../watcher/presenceStore.js');
+  recordActivePlayback(
+    media.id,
+    media.parentId,
+    testUser.id,
+    testUser.displayName || 'Testeur',
+    media.title,
+    true,
+    1540
+  );
+
+  const loc = await getUserLastLocation(testUser.id);
+  assert(loc, "La position de l'utilisateur doit être retournée");
+  assert.strictEqual(loc.isLive, true, 'La session doit être active (isLive: true)');
+  assert.strictEqual(loc.mediaId, media.id, 'Le mediaId doit correspondre');
+  assert(loc.positionSeconds && loc.positionSeconds >= 1540, 'La position (positionSeconds) doit être synchronisée à 1540+ secondes');
+  console.log(`  ✅ Active playback position synchronized at ${loc.positionSeconds}s`);
+
   console.log('🎉 All Social & User Feature tests completed successfully!');
   process.exit(0);
 }

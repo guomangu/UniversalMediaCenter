@@ -9,6 +9,7 @@ export interface WatcherInfo {
   parentId: string | null;
   mediaTitle: string;
   isPlaying: boolean;
+  positionSeconds?: number;
   lastPing: number;
 }
 
@@ -18,6 +19,7 @@ export interface UserLocationInfo {
   title: string;
   path: string;
   isLive: boolean;
+  positionSeconds?: number;
   updatedAt: number;
 }
 
@@ -54,7 +56,8 @@ export function recordActivePlayback(
   userId: string,
   displayName: string,
   mediaTitle: string,
-  isPlaying = true
+  isPlaying = true,
+  positionSeconds = 0
 ) {
   const now = Date.now();
 
@@ -71,6 +74,7 @@ export function recordActivePlayback(
     parentId,
     mediaTitle,
     isPlaying,
+    positionSeconds,
     lastPing: now,
   });
 
@@ -81,6 +85,7 @@ export function recordActivePlayback(
     title: mediaTitle,
     path: `/player/${nodeId}`,
     isLive: isPlaying,
+    positionSeconds,
     updatedAt: now,
   });
 }
@@ -176,12 +181,14 @@ export async function getUserLastLocation(userId: string): Promise<UserLocationI
   for (const [nodeId, watchers] of activeWatchersMap.entries()) {
     const w = watchers.get(userId);
     if (w && w.isPlaying && now - w.lastPing < PING_TIMEOUT_MS) {
+      const elapsedSec = w.isPlaying ? Math.min(30, Math.max(0, Math.floor((now - w.lastPing) / 1000))) : 0;
       const liveInfo: UserLocationInfo = {
         userId,
         mediaId: nodeId,
         title: w.mediaTitle,
         path: `/player/${nodeId}`,
         isLive: true,
+        positionSeconds: (w.positionSeconds || 0) + elapsedSec,
         updatedAt: now,
       };
       userLocationMap.set(userId, liveInfo);
@@ -204,6 +211,7 @@ export async function getUserLastLocation(userId: string): Promise<UserLocationI
       .select({
         nodeId: watchProgress.nodeId,
         title: mediaNodes.title,
+        positionSeconds: watchProgress.positionSeconds,
         updatedAt: watchProgress.updatedAt,
       })
       .from(watchProgress)
@@ -220,6 +228,7 @@ export async function getUserLastLocation(userId: string): Promise<UserLocationI
         title: p.title,
         path: `/player/${p.nodeId}`,
         isLive: false,
+        positionSeconds: p.positionSeconds || 0,
         updatedAt: p.updatedAt.getTime(),
       };
       userLocationMap.set(userId, info);

@@ -61,7 +61,22 @@ export function ForumMessageBubble({ msg, isMe, onReply, onVote }: Props) {
           {msg.authorLocation ? (
             <Pressable
               focusable={true}
-              onPress={() => router.push(msg.authorLocation!.path as any)}
+              onPress={() => {
+                const targetPath = msg.authorLocation!.path;
+                const targetMediaId = msg.authorLocation!.mediaId || (targetPath.startsWith('/player/') ? targetPath.replace('/player/', '') : null);
+                if (targetMediaId) {
+                  router.push({
+                    pathname: '/player/[id]',
+                    params: {
+                      id: targetMediaId,
+                      joinTime: String(Math.floor(msg.authorLocation!.positionSeconds || 0)),
+                      targetUser: msg.authorName,
+                    },
+                  } as any);
+                } else {
+                  router.push(targetPath as any);
+                }
+              }}
               style={[
                 styles.authorLocationBadge,
                 msg.authorLocation.isLive && styles.authorLocationBadgeLive,
