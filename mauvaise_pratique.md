@@ -1,3 +1,26 @@
+## 🛑 118. Positionnement Relatif de la Miniature Vidéo dans le Lecteur Dépliable, Décalage Flexbox et Éjection des Boutons Hors-Écran (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`)
+
+* **Problème / Symptôme :**
+  1. Lors du repliement du lecteur dépliable en mode mini-lecteur flottant au bas de l'écran, l'élément `<video>` apparaissait en dehors de l'emplacement de miniature prévu (`posterThumb`), se superposant en haut à gauche et provoquant un bug graphique majeur.
+  2. La rangée principale des commandes (`mainRow`) et tous ses boutons (Play/Pause, -10s, +30s, Cast, Déplier, Fermer) étaient repoussés vers le bas et se retrouvaient partiellement ou totalement hors-écran.
+* **Conséquences :**
+  - Impossibilité pour l'utilisateur de cliquer confortablement sur les commandes du mini-lecteur.
+  - Artefact visuel disgracieux : le conteneur mesurant 68px de hauteur se retrouvait saturé à plus de 108px de contenu vertical sans masquage de débordement (`overflow: hidden` manquant).
+* **Causes Racines :**
+  - **Positionnement en Flux Relatif (`position: 'relative'`) sur `videoContainerMini`** : La miniature vidéo était déclarée comme un bloc standard en flux vertical (`flexDirection: 'column'`) avant la barre de progression (4px) et la rangée principale (64px). La vidéo ajoutait donc ses 40px de hauteur au-dessus de la barre de progression, repoussant `mainRow` de 44px vers le bas et éjectant les boutons en dehors du conteneur de 68px.
+  - **Absence d'alignement absolu sur le slot d'ancrage** : L'élément vidéo n'était pas ancré de manière absolue au-dessus de `posterThumb` (`top: 16px`, `left: 12px`, `width: 58px`, `height: 40px`), ce qui rompait le gabarit visuel.
+  - **Absence de protection `overflow: 'hidden'` sur le conteneur replié** : Le conteneur laissait déborder les éléments enfants au lieu de verrouiller hermétiquement sa hauteur à 68px.
+* **Bonnes Pratiques de Remédiation :**
+  - **Isolation Absolue de la Miniature Vidéo (`FloatingBottomPlayer.styles.ts`)** :
+    - Attribuer `position: 'absolute', top: 16, left: 12, width: 58, height: 40, borderRadius: 6, zIndex: 10` à `videoContainerMini`. L'élément vidéo est ainsi totalement extrait du flux Flexbox vertical du conteneur replié et se positionne au pixel près au-dessus de `posterThumb`.
+    - Le flux Flexbox ne contient plus que `progressBarBg` (4px) et `mainRow` (64px), totalisant exactement 68px de hauteur, garantissant un centrage vertical parfait de tous les boutons et éliminant tout débordement.
+  - **Verrouillage Hermétique `overflow: 'hidden'` sur `containerCollapsed`** : Garantit qu'aucun élément ou défilement parasite ne peut franchir la frontière des 68px.
+  - **Délégation Tactile d'Agrandissement & Gestion du Cast** :
+    - Sur `videoContainerMini`, encapsuler dans un `Pressable` avec `onPress={!isExpanded ? handleExpand : undefined}` et `pointerEvents: isExpanded ? 'auto' : 'none'` sur la balise `<video>` pour que tout clic sur la miniature déplie immédiatement le lecteur vers la vue cinéma.
+    - Lorsque le Cast est actif ou qu'aucun flux direct n'est joué, masquer le conteneur vidéo avec `{ display: 'none' }` pour laisser apparaître le visuel de couverture (`posterThumb`) sans voile noir.
+
+---
+
 ## 🛑 117. Duplication de Balises Vidéo entre Page Lecteur et Mini-Lecteur Flottant, Destruction Inutile du Flux lors du Changement de Page & Écrasement de l'État par Battements Suiveurs Passifs (`FloatingBottomPlayer.tsx`, `player/[id].tsx`, `userPlaybackSync.ts`, `playerStore.ts`, `accountSyncService.ts`)
 
 * **Problème / Symptôme :**

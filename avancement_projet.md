@@ -1,3 +1,19 @@
+- [x] **89. Correction du Positionnement de la Miniature Vidéo et Rétablissement des Boutons du Mini-Lecteur Replié (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `mauvaise_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic du Décalage Graphique et de l'Éjection des Commandes :**
+    - Dès que le lecteur se repliait en mode barre basse (68px), la div vidéo apparaissait en dehors de l'encadré de prévisualisation et décalait toute la rangée de boutons (`mainRow`), les repoussant en dehors de l'écran.
+    - Cause Racine : `videoContainerMini` était configuré en `position: 'relative'` dans le flux vertical Flexbox du conteneur parent au-dessus de la barre de progression (4px) et de `mainRow` (64px). Ses 40px de hauteur gonflaient la hauteur totale à 108px, propulsant `mainRow` 44px trop bas et éjectant les boutons hors de la vue.
+  - **Sanctuarisation de la Géométrie et Positionnement Absolu Pixel-Perfect :**
+    - Dans `FloatingBottomPlayer.styles.ts`, requalification de `videoContainerMini` en `position: 'absolute', top: 16, left: 12, width: 58, height: 40, borderRadius: 6, zIndex: 10`.
+    - L'élément vidéo est totalement extrait du flux Flexbox vertical : le flux vertical se compose désormais exclusivement de `progressBarBg` (4px) et de `mainRow` (64px), respectant scrupuleusement la hauteur totale de 68px.
+    - La miniature vidéo se cale au pixel près par-dessus le slot `posterThumb` sans aucun décalage visuel.
+    - Ajout de `overflow: 'hidden'` sur `containerCollapsed` pour interdire tout débordement d'éléments enfants.
+    - Ajout de `flexShrink: 0` sur `centerControls` et `rightSection`, et `flexShrink: 1` sur `leftSection` et `titleCol` pour garantir la visibilité absolue de toutes les commandes sur smartphones comme sur desktop.
+  - **Gestion Réactive du Clic & Mode Cast :**
+    - Encapsulation dans un `Pressable` avec `onPress={!isExpanded ? handleExpand : undefined}` et `pointerEvents: isExpanded ? 'auto' : 'none'` sur la balise `<video>`, permettant d'agrandir instantanément le lecteur par simple clic sur la miniature.
+    - Masquage automatique (`{ display: 'none' }`) lorsque le Cast est actif pour laisser apparaître l'affiche du média sans boîte noire superflue, et écran d'information dédié avec badge Cast en mode plein écran cinéma.
+  - **Validation & Contrôle d'Intégrité :**
+    - Compilation TypeScript Frontend (`npx tsc --noEmit`) : 0 erreur.
+
 - [x] **88. Le Lecteur Autonome Dépliable comme Cœur Unique du Site PWA & Souveraineté du Dernier Appareil Touchant le Player (`FloatingBottomPlayer.tsx`, `playerStore.ts`, `userPlaybackSync.ts`, `player/[id].tsx`, `TvChannelCard.tsx`, `media/[id].tsx`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `sommaire.md`) :**
   - **Le Lecteur Dépliable (`player_div`) Érigé en Cœur Unique du Site :**
     - Diagnostic : Auparavant, l'application maintenait deux lecteurs concurrents (`player/[id].tsx` et `FloatingBottomPlayer.tsx`). Lors de la navigation vers ou depuis la page lecteur, la balise `<video>` et l'instance Hls.js étaient détruites et recréées, provoquant re-buffering, perte de position et saccades.

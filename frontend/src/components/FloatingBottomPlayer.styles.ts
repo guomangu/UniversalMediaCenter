@@ -1,7 +1,7 @@
 import { StyleSheet, Platform } from 'react-native';
 
 export const styles = StyleSheet.create({
-  // Conteneur en mode replié (barre flottante en bas)
+  // Conteneur en mode replié (barre flottante en bas du site)
   containerCollapsed: {
     position: (Platform.OS === 'web' ? 'fixed' : 'absolute') as any,
     bottom: 0,
@@ -12,6 +12,7 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.96)',
     borderTopWidth: 1,
     borderTopColor: '#334155',
+    overflow: 'hidden',
     ...(Platform.OS === 'web'
       ? { boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.6)' }
       : { shadowColor: '#000000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.6, shadowRadius: 16, elevation: 20 }),
@@ -45,7 +46,7 @@ export const styles = StyleSheet.create({
     borderRadius: 2,
   },
 
-  // Ligne principale en mode replié
+  // Ligne principale en mode replié (hauteur 64px, s'insère parfaitement avec les 4px du scrubber)
   mainRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -59,7 +60,8 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     minWidth: 0,
-    marginRight: 12,
+    flexShrink: 1,
+    marginRight: 10,
     cursor: 'pointer' as any,
   },
   posterThumb: {
@@ -72,6 +74,7 @@ export const styles = StyleSheet.create({
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   posterImg: {
     width: '100%',
@@ -89,14 +92,23 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
+
+  // Miniature vidéo en mode replié : positionnée en absolute pour ne pas impacter le flux flexbox
+  // Alignée au pixel près sur posterThumb (top: 16 = 4px barre + 12px padding centré)
   videoContainerMini: {
+    position: 'absolute',
+    top: 16,
+    left: 12,
     width: 58,
     height: 40,
     borderRadius: 6,
     overflow: 'hidden',
-    backgroundColor: '#000',
-    position: 'relative',
+    backgroundColor: '#000000',
+    zIndex: 10,
+    cursor: 'pointer' as any,
   },
+
+  // Conteneur vidéo en mode déplié cinéma
   videoContainerFull: {
     position: 'absolute',
     top: 0,
@@ -108,9 +120,11 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   titleCol: {
     flex: 1,
     minWidth: 0,
+    flexShrink: 1,
   },
   titleText: {
     color: '#ffffff',
@@ -125,8 +139,9 @@ export const styles = StyleSheet.create({
   centerControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 8,
+    gap: 6,
+    marginHorizontal: 6,
+    flexShrink: 0,
   },
   controlBtn: {
     paddingHorizontal: 8,
@@ -156,6 +171,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 0,
   },
   actionChip: {
     flexDirection: 'row',

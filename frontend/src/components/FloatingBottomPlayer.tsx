@@ -480,7 +480,40 @@ export const FloatingBottomPlayer: React.FC = () => {
       style={isExpanded ? styles.containerExpanded : styles.containerCollapsed}
     >
       {/* 1. ÉLÉMENT VIDÉO NOUVEAU CŒUR DU SITE : UNIQUE, CONTINU, JAMAIS DÉTRUIT */}
-      <View style={isExpanded ? styles.videoContainerFull : styles.videoContainerMini}>
+      <Pressable
+        focusable={!isExpanded}
+        accessibilityRole={!isExpanded ? 'button' : undefined}
+        accessibilityLabel={!isExpanded ? 'Agrandir le lecteur vidéo en plein écran' : undefined}
+        style={
+          isExpanded
+            ? styles.videoContainerFull
+            : (Platform.OS === 'web' && !isCasting && activeMedia?.streamUrl
+                ? styles.videoContainerMini
+                : { display: 'none' })
+        }
+        onPress={!isExpanded ? handleExpand : undefined}
+      >
+        {isCasting && isExpanded ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
+            {posterUri ? (
+              <Image
+                source={{ uri: posterUri }}
+                style={{ width: '100%', height: '100%', opacity: 0.35 }}
+                resizeMode="contain"
+              />
+            ) : null}
+            <View style={{ position: 'absolute', alignItems: 'center', padding: 20 }}>
+              <Text style={{ fontSize: 48, marginBottom: 12 }}>📡</Text>
+              <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center' }}>
+                Diffusion en cours
+              </Text>
+              <Text style={{ color: '#94a3b8', fontSize: 14, marginTop: 4, textAlign: 'center' }}>
+                {activeCastTarget?.name || 'Écran distant'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {Platform.OS === 'web' && !isCasting && activeMedia?.streamUrl ? (
           <video
             ref={localVideoRef}
@@ -499,6 +532,7 @@ export const FloatingBottomPlayer: React.FC = () => {
               borderRadius: isExpanded ? 0 : 6,
               backgroundColor: '#000',
               zIndex: 1,
+              pointerEvents: isExpanded ? 'auto' : 'none',
             }}
             onPlay={() => {
               if (userInitiatedRef.current) {
@@ -572,7 +606,7 @@ export const FloatingBottomPlayer: React.FC = () => {
             ) : null}
           </video>
         ) : null}
-      </View>
+      </Pressable>
 
       {/* 2. MODE DÉPLIÉ (CINÉMA / VUE COMPLÈTE) */}
       {isExpanded ? (
@@ -764,9 +798,13 @@ export const FloatingBottomPlayer: React.FC = () => {
             {/* Section gauche : Miniature vidéo et Titre (cliquable pour déplier) */}
             <Pressable focusable={true} style={styles.leftSection} onPress={handleExpand}>
               <View style={styles.posterThumb}>
-                {posterUri && !activeMedia?.streamUrl ? (
+                {posterUri ? (
                   <Image source={{ uri: posterUri }} style={styles.posterImg} resizeMode="cover" />
-                ) : null}
+                ) : (
+                  <View style={styles.posterPlaceholder}>
+                    <Text style={styles.posterPlaceholderTxt}>▶</Text>
+                  </View>
+                )}
               </View>
               <View style={styles.titleCol}>
                 <Text style={styles.titleText} numberOfLines={1}>
@@ -852,7 +890,7 @@ export const FloatingBottomPlayer: React.FC = () => {
                 style={styles.expandBtn}
                 onPress={handleExpand}
               >
-                <Text style={styles.expandBtnTxt}>▲ Déplier</Text>
+                <Text style={styles.expandBtnTxt}>{isMobile ? '▲' : '▲ Déplier'}</Text>
               </Pressable>
 
               <Pressable
