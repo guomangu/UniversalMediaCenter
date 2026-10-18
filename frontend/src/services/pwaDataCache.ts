@@ -97,8 +97,13 @@ export async function fetchWithCache<T>(
   }
 ): Promise<T> {
   const fullKey = CACHE_PREFIX + key;
-  const entry = memoryStore.get(fullKey);
-  const cached = entry ? entry.data : getCachedData<T>(key);
+  let entry = memoryStore.get(fullKey);
+  if (!entry) {
+    // Si absent de la RAM vive, hydrater depuis le stockage persistant LocalStorage
+    getCachedData<T>(key);
+    entry = memoryStore.get(fullKey);
+  }
+  const cached = entry ? entry.data : null;
   const staleTime = options?.staleTime ?? DEFAULT_STALE_TIME;
   const ttl = options?.ttl ?? DEFAULT_TTL;
 

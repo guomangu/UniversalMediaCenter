@@ -160,3 +160,23 @@ Le développement de fonctionnalités interactives multi-utilisateurs (Favoris, 
     *   Toute séance abandonnée par son hôte ou inactive est automatiquement purgée afin d'éviter tout encombrement des listes publiques.
 *   **Upsert Idempotent pour les Avis et Critiques :**
     *   La notation et la rédaction d'avis sur un média doivent toujours utiliser une logique d'upsert (`INSERT ... ON CONFLICT DO UPDATE`), permettant à un spectateur d'ajuster son appréciation sans générer de doublons polluants.
+
+---
+
+## 13. Fiabilité des Contrôles Multimédia, Défilement Isolé & Robustesse Événementielle Web
+Pour assurer une réactivité instantanée et éliminer tout gel de navigation ou désynchronisation du lecteur :
+
+*   **Vérité Réactive d'État pour les Bascules Play/Pause :**
+    *   Ne jamais déduire la prochaine action du lecteur à partir de propriétés DOM asynchrones volatiles (`video.paused`).
+    *   La commande de bascule doit toujours s'appuyer sur la négation de l'état réactif unifié `!isPlaying`, avec mise à jour immédiate du store (`playerStore.setPlaying(nextPlay, true, true)`) avant l'appel à `v.play()` / `v.pause()`.
+    *   Gérer les blocages d'autoplay des navigateurs via un rattrapage muet automatique en cas de rejet `NotAllowedError`.
+*   **Double Écouteur React Native / Web Natif (`onPress` + `onClick`) :**
+    *   Sur React Native Web, les composants `Pressable` situés dans des conteneurs à défilement peuvent voir leur `onPress` annulé par le PanResponder en cas de micro-mouvement de souris ou trackpad (1 à 2 pixels de jitter).
+    *   Toujours attacher un écouteur DOM natif `{...(Platform.OS === 'web' ? { onClick: (e) => { e.stopPropagation(); handleAction(); } } : {})}` sur les boutons interactifs critiques (barre d'en-tête, filtres, commandes de lecture, boutons du mini-lecteur).
+    *   Appliquer systématiquement `pointerEvents="none"` sur les enfants textuels ou icônes afin que le conteneur cliquable reçoive directement 100% des événements de souris.
+*   **Défilement Horizontal Strictement Isolé :**
+    *   Ne jamais invoquer `scrollIntoView()` sur des sous-éléments d'un en-tête horizontal au sein d'une page défilable verticalement : cette méthode propage un défilement animé global qui verrouille le ScrollResponder et neutralise les clics.
+    *   Cibler exclusivement le nœud DOM du conteneur horizontal via `scrollEl.scrollTo({ left: targetOffset, behavior: 'smooth' })`.
+*   **Sanctuarisation des Sauts de Catégories & ScrollToTop :**
+    *   Dans les gestionnaires de saut (`handleJumpToCategory`, `handleScrollToTop`), toujours libérer immédiatement les verrous de restauration (`isRestoringScroll = false`, `scrollRestoredRef = true`) pour empêcher tout snap-back lors du chargement différé des médias.
+    *   S'assurer que les fonctions de défilement gèrent `y = 0` (`Math.max(0, y)`) sans garde bloquante `if (y <= 0) return;`.

@@ -50,6 +50,14 @@ export const FloatingBottomPlayer: React.FC = () => {
   const [nextNode, setNextNode] = useState<{ id: string; title: string; displayBadge?: string } | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubPos, setScrubPos] = useState<number | null>(null);
+  const [hoverPos, setHoverPos] = useState<number | null>(null);
+  const [hoverRatio, setHoverRatio] = useState<number | null>(null);
+  const isScrubbingRef = useRef(false);
+  const scrubTargetRef = useRef<number | null>(null);
+  const scrubberExpandedRef = useRef<any>(null);
+  const scrubberCollapsedRef = useRef<any>(null);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsInstanceRef = useRef<Hls | null>(null);
@@ -66,10 +74,13 @@ export const FloatingBottomPlayer: React.FC = () => {
   const mediaTitle = activeCastTarget?.mediaTitle || activeMedia?.title || 'Média en cours';
   const pos = isCasting ? (activeCastTarget?.positionSeconds ?? 0) : (activeMedia?.positionSeconds ?? 0);
   const dur = isCasting ? (activeCastTarget?.durationSeconds ?? 0) : (activeMedia?.durationSeconds ?? 0);
+  const effectiveDur = dur > 0 ? dur : (localVideoRef.current?.duration && Number.isFinite(localVideoRef.current.duration) ? Math.floor(localVideoRef.current.duration) : 0);
+  const currentPos = scrubPos !== null ? scrubPos : pos;
+  const currentDur = effectiveDur;
   const isPlaying = isCasting ? Boolean(activeCastTarget?.isPlaying) : Boolean(activeMedia?.isPlaying);
   const posterUri = resolveImageUrl(activeMedia?.posterUrl || activeCastTarget?.posterUrl);
 
-  const pct = dur > 0 ? (pos / dur) * 100 : 0;
+  const pct = currentDur > 0 ? Math.min(100, Math.max(0, (currentPos / currentDur) * 100)) : 0;
 
   // Calcul dynamique des styles responsive pour la miniature vidéo et son ancrage
   const miniVideoStyle = useMemo(() => ({
@@ -310,12 +321,40 @@ export const FloatingBottomPlayer: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isExpanded, isPlaying, playerState.volume, playerState.isMuted, resetMouseActivity]);
 
-  const handleBarClick = (e: any) => {
-    if (Platform.OS !== 'web' || !dur) return;
-    const rect = e.currentTarget?.getBoundingClientRect?.();
-    if (!rect) return;
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const target = Math.floor(ratio * dur);
+  const extractClientX = useCallback((e: any): number | null => {
+    if (typeof e?.clientX === 'number') return e.clientX;
+    if (typeof e?.nativeEvent?.clientX === 'number') return e.nativeEvent.clientX;
+    if (typeof e?.pageX === 'number') return e.pageX;
+    if (typeof e?.nativeEvent?.pageX === 'number') return e.nativeEvent.pageX;
+    if (e?.touches?.[0]?.clientX !== undefined) return e.touches[0].clientX;
+    if (e?.nativeEvent?.touches?.[0]?.clientX !== undefined) return e.nativeEvent.touches[0].clientX;
+    if (e?.changedTouches?.[0]?.clientX !== undefined) return e.changedTouches[0].clientX;
+    if (e?.nativeEvent?.changedTouches?.[0]?.clientX !== undefined) return e.nativeEvent.changedTouches[0].clientX;
+    return null;
+  }, []);
+
+  const getTargetFromEvent = useCallback((e: any, isExp: boolean): { target: number; ratio: number } | null => {
+    if (Platform.OS !== 'web' || !currentDur) return null;
+    const ref = isExp ? scrubberExpandedRef.current : scrubberCollapsedRef.current;
+    const el = ref?.getScrollableNode?.() || (ref as any);
+    const rect = el?.getBoundingClientRect?.() || e.currentTarget?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0) return null;
+
+    const clientX = extractClientX(e);
+    let ratio: number;
+    if (clientX !== null) {
+      ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    } else if (typeof e?.nativeEvent?.locationX === 'number') {
+      ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / rect.width));
+    } else {
+      return null;
+    }
+    const target = Math.floor(ratio * currentDur);
+    return { target: Math.max(0, Math.min(currentDur, target)), ratio };
+  }, [currentDur, extractClientX]);
+
+  const performSeek = useCallback((target: number) => {
+    if (!Number.isFinite(target)) return;
     userInitiatedRef.current = true;
     if (isCasting && activeCastTarget) {
       sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: target });
@@ -325,25 +364,97 @@ export const FloatingBottomPlayer: React.FC = () => {
       }
       playerStore.seekTo(target, true, true);
     }
-  };
+  }, [isCasting, activeCastTarget]);
+
+  const handleScrubberPointerDown = useCallback((e: any, isExp: boolean) => {
+    if (Platform.OS !== 'web' || !currentDur) return;
+    const info = getTargetFromEvent(e, isExp);
+    if (!info) return;
+
+    isScrubbingRef.current = true;
+    scrubTargetRef.current = info.target;
+    setIsScrubbing(true);
+    setScrubPos(info.target);
+
+    const onPointerMove = (moveEvt: any) => {
+      if (!isScrubbingRef.current) return;
+      const moveInfo = getTargetFromEvent(moveEvt, isExp);
+      if (moveInfo) {
+        scrubTargetRef.current = moveInfo.target;
+        setScrubPos(moveInfo.target);
+      }
+    };
+
+    const onPointerUp = (upEvt: any) => {
+      if (!isScrubbingRef.current) return;
+      isScrubbingRef.current = false;
+      setIsScrubbing(false);
+      const finalInfo = getTargetFromEvent(upEvt, isExp);
+      const finalTarget = finalInfo?.target ?? scrubTargetRef.current;
+      if (finalTarget !== null && Number.isFinite(finalTarget)) {
+        performSeek(finalTarget);
+      }
+      setScrubPos(null);
+      scrubTargetRef.current = null;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+        window.removeEventListener('mousemove', onPointerMove);
+        window.removeEventListener('mouseup', onPointerUp);
+        window.removeEventListener('touchmove', onPointerMove);
+        window.removeEventListener('touchend', onPointerUp);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+      window.addEventListener('mousemove', onPointerMove);
+      window.addEventListener('mouseup', onPointerUp);
+      window.addEventListener('touchmove', onPointerMove, { passive: true });
+      window.addEventListener('touchend', onPointerUp);
+    }
+  }, [currentDur, getTargetFromEvent, performSeek]);
+
+  const handleScrubberPointerMove = useCallback((e: any, isExp: boolean) => {
+    if (Platform.OS !== 'web' || !currentDur || isScrubbingRef.current) return;
+    const info = getTargetFromEvent(e, isExp);
+    if (info) {
+      setHoverPos(info.target);
+      setHoverRatio(info.ratio);
+    }
+  }, [currentDur, getTargetFromEvent]);
+
+  const handleScrubberPointerLeave = useCallback(() => {
+    setHoverPos(null);
+    setHoverRatio(null);
+  }, []);
 
   const handleTogglePlay = () => {
     userInitiatedRef.current = true;
     if (isCasting && activeCastTarget) {
       sendCastCommand(activeCastTarget.id, isPlaying ? 'PAUSE' : 'PLAY');
     } else {
+      const nextPlay = !isPlaying;
+      playerStore.setPlaying(nextPlay, true, true);
       const v = localVideoRef.current;
       if (v) {
-        if (v.paused) {
-          v.play()
-            .then(() => playerStore.setPlaying(true, true, true))
-            .catch(() => playerStore.setPlaying(false, true, true));
+        if (nextPlay) {
+          const p = v.play();
+          if (p !== undefined) {
+            p.catch((err) => {
+              if (err.name === 'NotAllowedError') {
+                v.muted = true;
+                setAudioBlocked(true);
+                v.play().catch(() => {});
+              }
+            });
+          }
         } else {
           v.pause();
-          playerStore.setPlaying(false, true, true);
         }
-      } else {
-        playerStore.togglePlayPause();
       }
     }
   };
@@ -561,15 +672,17 @@ export const FloatingBottomPlayer: React.FC = () => {
               pointerEvents: isExpanded ? 'auto' : 'none',
             }}
             onPlay={() => {
-              if (userInitiatedRef.current) {
-                playerStore.setPlaying(true, true, true);
-                userInitiatedRef.current = false;
+              const isExplicit = userInitiatedRef.current;
+              userInitiatedRef.current = false;
+              if (!playerStore.isApplyingRemoteSync()) {
+                playerStore.setPlaying(true, true, isExplicit);
               }
             }}
             onPause={() => {
-              if (userInitiatedRef.current) {
-                playerStore.setPlaying(false, true, true);
-                userInitiatedRef.current = false;
+              const isExplicit = userInitiatedRef.current;
+              userInitiatedRef.current = false;
+              if (!playerStore.isApplyingRemoteSync()) {
+                playerStore.setPlaying(false, true, isExplicit);
               }
             }}
             onTimeUpdate={() => {
@@ -713,10 +826,18 @@ export const FloatingBottomPlayer: React.FC = () => {
           <Pressable
             style={styles.centerTouchOverlay}
             onPress={handleTogglePlay}
+            {...(Platform.OS === 'web'
+              ? ({
+                  onClick: (e: any) => {
+                    e?.stopPropagation?.();
+                    handleTogglePlay();
+                  },
+                } as any)
+              : {})}
           >
             {!isPlaying && (
-              <View style={styles.centerPlayIcon}>
-                <Text style={styles.centerPlayIconTxt}>▶</Text>
+              <View style={styles.centerPlayIcon} pointerEvents="none">
+                <Text style={styles.centerPlayIconTxt} pointerEvents="none">▶</Text>
               </View>
             )}
           </Pressable>
@@ -775,9 +896,26 @@ export const FloatingBottomPlayer: React.FC = () => {
 
           {/* Barre inférieure Dépliée (Scrubber & Contrôles) */}
           <View style={[styles.bottomBarExpanded, { opacity: mouseActive || !isPlaying ? 1 : 0 }]}>
-            <Pressable style={styles.scrubberExpandedBg} onPress={handleBarClick as any}>
-              <View style={[styles.scrubberExpandedFill, { width: `${Math.min(100, Math.max(0, pct))}%` }]} />
-            </Pressable>
+            {/* Scrubber haute précision avec glisser-déplacer (drag), hit-box 26px et infobulle */}
+            <View
+              ref={scrubberExpandedRef}
+              style={styles.scrubberExpandedContainer}
+              {...({
+                onPointerDown: (e: any) => handleScrubberPointerDown(e, true),
+                onPointerMove: (e: any) => handleScrubberPointerMove(e, true),
+                onPointerLeave: handleScrubberPointerLeave,
+              } as any)}
+            >
+              {hoverRatio !== null && hoverPos !== null && (
+                <View style={[styles.scrubberTooltip, { left: `${Math.min(95, Math.max(5, hoverRatio * 100))}%` }]}>
+                  <Text style={styles.scrubberTooltipText}>{formatTime(hoverPos)}</Text>
+                </View>
+              )}
+              <View style={styles.scrubberExpandedBg} pointerEvents="none">
+                <View style={[styles.scrubberExpandedFill, { width: `${pct}%` }]} />
+                <View style={[styles.scrubberThumb, { left: `${pct}%` }]} />
+              </View>
+            </View>
 
             <View style={styles.bottomControlsRow}>
               <View style={styles.bottomLeftControls}>
@@ -785,8 +923,20 @@ export const FloatingBottomPlayer: React.FC = () => {
                   <Text style={styles.controlBtnTxt}>{isMobile ? '⏪ 10' : '⏪ 10s'}</Text>
                 </Pressable>
 
-                <Pressable focusable={true} style={styles.playBtn} onPress={handleTogglePlay}>
-                  <Text style={styles.playBtnTxt}>{isPlaying ? '⏸' : '▶'}</Text>
+                <Pressable
+                  focusable={true}
+                  style={styles.playBtn}
+                  onPress={handleTogglePlay}
+                  {...(Platform.OS === 'web'
+                    ? ({
+                        onClick: (e: any) => {
+                          e?.stopPropagation?.();
+                          handleTogglePlay();
+                        },
+                      } as any)
+                    : {})}
+                >
+                  <Text style={styles.playBtnTxt} pointerEvents="none">{isPlaying ? '⏸' : '▶'}</Text>
                 </Pressable>
 
                 <Pressable focusable={true} style={styles.controlBtn} onPress={() => handleSeekRelative(30)}>
@@ -794,7 +944,7 @@ export const FloatingBottomPlayer: React.FC = () => {
                 </Pressable>
 
                 <Text style={styles.timeExpandedText} numberOfLines={1}>
-                  {activeMedia?.isLive ? '🔴 Direct' : `${formatTime(pos)} / ${formatTime(dur)}`}
+                  {activeMedia?.isLive ? '🔴 Direct' : `${formatTime(currentPos)} / ${formatTime(currentDur)}`}
                 </Text>
               </View>
 
@@ -819,10 +969,19 @@ export const FloatingBottomPlayer: React.FC = () => {
       ) : (
         /* 3. MODE REPLIÉ (BARRE FLOTTANTE EN BAS DU SITE) */
         <>
-          {/* Barre de progression scrubber interactive */}
-          <Pressable style={styles.progressBarBg} onPress={handleBarClick as any}>
-            <View style={[styles.progressBarFill, { width: `${Math.min(100, Math.max(0, pct))}%` }]} />
-          </Pressable>
+          {/* Barre de progression scrubber interactive repliée avec hit-box confortable */}
+          <View
+            ref={scrubberCollapsedRef}
+            style={styles.progressBarContainer}
+            {...({
+              onPointerDown: (e: any) => handleScrubberPointerDown(e, false),
+            } as any)}
+          >
+            <View style={styles.progressBarBg} pointerEvents="none">
+              <View style={[styles.progressBarFill, { width: `${pct}%` }]} />
+            </View>
+            <View style={[styles.progressBarThumb, { left: `${pct}%` }]} pointerEvents="none" />
+          </View>
 
           <View style={styles.mainRow}>
             {/* Section gauche : Miniature vidéo et Titre (cliquable pour déplier) */}
@@ -845,7 +1004,7 @@ export const FloatingBottomPlayer: React.FC = () => {
                     ? `Diffusé sur ${activeCastTarget?.name}`
                     : activeMedia?.isLive
                     ? '🔴 Direct'
-                    : `${formatTime(pos)} / ${formatTime(dur)}`}
+                    : `${formatTime(currentPos)} / ${formatTime(currentDur)}`}
                 </Text>
               </View>
             </Pressable>
@@ -859,8 +1018,16 @@ export const FloatingBottomPlayer: React.FC = () => {
                   accessibilityLabel="Reculer de 10 secondes"
                   style={styles.controlBtn}
                   onPress={() => handleSeekRelative(-10)}
+                  {...(Platform.OS === 'web'
+                    ? ({
+                        onClick: (e: any) => {
+                          e?.stopPropagation?.();
+                          handleSeekRelative(-10);
+                        },
+                      } as any)
+                    : {})}
                 >
-                  <Text style={styles.controlBtnTxt}>-10s</Text>
+                  <Text style={styles.controlBtnTxt} pointerEvents="none">-10s</Text>
                 </Pressable>
               )}
 
@@ -870,8 +1037,16 @@ export const FloatingBottomPlayer: React.FC = () => {
                 accessibilityLabel={isPlaying ? 'Pause' : 'Lecture'}
                 style={styles.playBtn}
                 onPress={handleTogglePlay}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      onClick: (e: any) => {
+                        e?.stopPropagation?.();
+                        handleTogglePlay();
+                      },
+                    } as any)
+                  : {})}
               >
-                <Text style={styles.playBtnTxt}>{isPlaying ? '⏸' : '▶'}</Text>
+                <Text style={styles.playBtnTxt} pointerEvents="none">{isPlaying ? '⏸' : '▶'}</Text>
               </Pressable>
 
               {!isMobile && (
@@ -881,8 +1056,16 @@ export const FloatingBottomPlayer: React.FC = () => {
                   accessibilityLabel="Avancer de 30 secondes"
                   style={styles.controlBtn}
                   onPress={() => handleSeekRelative(30)}
+                  {...(Platform.OS === 'web'
+                    ? ({
+                        onClick: (e: any) => {
+                          e?.stopPropagation?.();
+                          handleSeekRelative(30);
+                        },
+                      } as any)
+                    : {})}
                 >
-                  <Text style={styles.controlBtnTxt}>+30s</Text>
+                  <Text style={styles.controlBtnTxt} pointerEvents="none">+30s</Text>
                 </Pressable>
               )}
             </View>
@@ -923,8 +1106,16 @@ export const FloatingBottomPlayer: React.FC = () => {
                 accessibilityLabel="Déplier le lecteur en plein écran"
                 style={styles.expandBtn}
                 onPress={handleExpand}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      onClick: (e: any) => {
+                        e?.stopPropagation?.();
+                        handleExpand();
+                      },
+                    } as any)
+                  : {})}
               >
-                <Text style={styles.expandBtnTxt}>{isMobile ? '▲' : '▲ Déplier'}</Text>
+                <Text style={styles.expandBtnTxt} pointerEvents="none">{isMobile ? '▲' : '▲ Déplier'}</Text>
               </Pressable>
 
               <Pressable
@@ -933,8 +1124,16 @@ export const FloatingBottomPlayer: React.FC = () => {
                 accessibilityLabel="Fermer la lecture"
                 style={styles.closeBtn}
                 onPress={handleClose}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      onClick: (e: any) => {
+                        e?.stopPropagation?.();
+                        handleClose();
+                      },
+                    } as any)
+                  : {})}
               >
-                <Text style={styles.closeBtnTxt}>✕</Text>
+                <Text style={styles.closeBtnTxt} pointerEvents="none">✕</Text>
               </Pressable>
             </View>
           </View>

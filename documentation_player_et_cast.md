@@ -92,6 +92,19 @@ Le lecteur vidéo d'UMS est conçu pour offrir une expérience de lecture fluide
   - Timeout étendu à 20 secondes.
   - Mise en cache mémoire RAM (`subtitleCache`) pour un temps de réponse de 0 ms dès le deuxième appel.
 
+
+### 1.6. Barre de Progression Haute Précision & Glisser-Déplacer Tactile (Scrubbing Drag & Drop)
+- **Normalisation Événementielle Cross-Platform :**
+  Dans React Native Web, les événements synthétiques ne fournissent pas `e.clientX` à la racine. La fonction `extractClientX(e)` inspecte hiérarchiquement `e.clientX`, `e.nativeEvent.clientX`, `e.pageX`, `e.nativeEvent.pageX`, `touches` et `changedTouches` avec un repli sur `e.nativeEvent.locationX`, éliminant 100% des erreurs `NaN` lors du saut temporel.
+- **Support Intégral du Glisser-Déplacer (Drag & Drop Scrubbing) :**
+  L'interaction supporte aussi bien le simple clic qu'un glissement continu du doigt ou de la souris :
+  - Dès l'appui (`onPointerDown`), le mode scrubbing est enclenché (`isScrubbing = true`).
+  - Pendant le mouvement (`onPointerMove` sur window), la barre bleue, le curseur rond (thumb) et le libellé de minutage suivent en temps réel le pointeur sans à-coup.
+  - Une infobulle de prévisualisation temporelle (tooltip) s'affiche au-dessus du curseur avec le temps ciblé (`formatTime`).
+  - Au relâchement (`onPointerUp`), la position définitive est affectée à la balise vidéo (`video.currentTime`), au `playerStore` et aux cibles de diffusion Cast.
+- **Hit-Box Tactile de 22-26px :**
+  Pour garantir un toucher infaillible sur mobile ou souris rapide, la barre visuelle fine (4px ou 6px) est enveloppée dans une zone tactile élargie (`paddingVertical: 10`), et les enfants internes sont munis de `pointerEvents: "none"` pour sanctuariser le calcul géométrique (`getBoundingClientRect`).
+
 ### 1.5. Commandes & Raccourcis Clavier / Télécommande
 - **Espace / MediaPlayPause :** Bascule Lecture / Pause.
 - **Flèches Gauche / Droite :** Recul rapide de -10 secondes / Avance de +10 secondes (ou +30 secondes).
@@ -105,7 +118,7 @@ Le lecteur vidéo d'UMS est conçu pour offrir une expérience de lecture fluide
 Le lecteur multimédia est le **cœur central et souverain** de toute l'application. Au lieu d'avoir des lecteurs multiples qui se détruisent et se recréent à chaque changement de page, un conteneur persistant unique (`FloatingBottomPlayer`, `#player_div`) est arrimé à la racine de la PWA dans `_layout.tsx`. Il s'agit d'une **div dépliable autonome au chargement asynchrone** qui persiste de façon continue pendant le chargement et la navigation entre toutes les pages (`/`, `/media/[id]`, `/explore`, `/tv`, `/user`, `/admin`).
 
 Il dispose de deux modes de présentation fluides (0 ms de re-buffering grâce à la préservation de la balise `<video>` unique) :
-1. **Mode Replié (Mini-Barre Flottante 68px)** : Arrimage discret au bas de l'écran avec prévisualisation vidéo, titre, scrubber scrubber cliquable, contrôles réactifs (-10s, play/pause, +30s), audio, sous-titres, Cast, et bouton « ▲ Déplier ».
+1. **Mode Replié (Mini-Barre Flottante 72px)** : Arrimage discret au bas de l'écran avec prévisualisation vidéo (50x36 mobile / 58x40 desktop), titre, scrubber haute précision interactif avec glisser-déplacer continu (drag & drop), contrôles réactifs fiabilisés (bouton central Play/Pause 38x34px renforcé avec double écouteur natif `onClick`, -10s, +30s sur desktop), audio, sous-titres, Cast, et bouton « ▲ Déplier ».
 2. **Mode Déplié (Vue Cinéma Plein Écran 100vw x 100vh)** : Couverture instantanée du viewport avec contrôles complets (bouton « ▼ Réduire », titre & badge, audio, sous-titres WebVTT, Cast, partage, repost, plein écran natif, saut de générique, compte à rebours épisode suivant, scrubber haute précision et curseur de volume).
 
 ```
@@ -134,7 +147,7 @@ Il dispose de deux modes de présentation fluides (0 ms de re-buffering grâce �
 3. **Contrôles Complets & Scrubbing :**
    - **Barre de Scrubbing Cliquable :** Clic direct pour sauter à n'importe quel instant du média.
    - **Saut Rapide (-10s / +30s) :** Recul ou avance immédiate via `handleSeekRelative`.
-   - **Play / Pause :** Bascule réactive locale ou distante sur la cible Cast.
+   - **Play / Pause Haute Fiabilité (0 ms) :** Bascule synchrone univoque basée sur la négation de l'état réactif React (`nextPlay = !isPlaying`) avec mise à jour immédiate du store et synchronisation matérielle avec `video.play()` (avec rattrapage automatique muet si blocage `NotAllowedError`) ou `video.pause()`. L'écouteur natif web `onClick` garantit l'exécution directe du clic même sous React Native Web.
    - **Sélecteurs Modaux Intégrés :** Accès direct à `PlayerSubtitleModal`, `PlayerAudioModal` et `CastModal`.
    - **Agrandir (Expand) :** Clic sur la vidéo, le titre ou « ⛶ Agrandir » pour retourner en plein écran sur `/player/[id]` en passant le paramètre `joinTime` pour une reprise immédiate.
    - **Fermer (Close) :** Arrêt propre du flux vidéo, destruction de l'instance HLS, déconnexion Cast et bascule vers la bannière de reprise.

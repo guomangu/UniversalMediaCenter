@@ -64,13 +64,21 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
     }
   }, [currentUser]);
 
-  // Animation de défilement automatique du raccourci actif pour rester centré dans la barre
+  // Animation de défilement horizontal isolé du raccourci actif pour rester centré dans la barre
   useEffect(() => {
     if (!activeCategoryId) return;
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const el = document.getElementById(`cat-chip-${activeCategoryId}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      const chipEl = document.getElementById(`cat-chip-${activeCategoryId}`);
+      const scrollEl = (categoryScrollRef.current as any)?.getScrollableNode?.() || (categoryScrollRef.current as any);
+      if (chipEl && scrollEl) {
+        const chipRect = chipEl.getBoundingClientRect();
+        const scrollRect = scrollEl.getBoundingClientRect();
+        const targetScrollLeft = chipEl.offsetLeft - (scrollRect.width / 2) + (chipRect.width / 2);
+        if (typeof scrollEl.scrollTo === 'function') {
+          scrollEl.scrollTo({ left: Math.max(0, targetScrollLeft), behavior: 'smooth' });
+        } else {
+          scrollEl.scrollLeft = Math.max(0, targetScrollLeft);
+        }
       }
     }
   }, [activeCategoryId]);
@@ -93,8 +101,21 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
     <View style={styles.fixedWrap}>
       <View style={styles.header}>
         <View style={styles.topRow}>
-          <Pressable focusable={true} onPress={onScrollToTop || (() => router.push('/'))} style={styles.logoBtn}>
-            <Text style={styles.logoText}>{isMobile ? 'UMS' : siteName}</Text>
+          <Pressable
+            focusable={true}
+            onPress={onScrollToTop || (() => router.push('/'))}
+            {...(Platform.OS === 'web'
+              ? ({
+                  onClick: (e: any) => {
+                    e?.stopPropagation?.();
+                    if (onScrollToTop) onScrollToTop();
+                    else router.push('/');
+                  },
+                } as any)
+              : {})}
+            style={styles.logoBtn}
+          >
+            <Text style={styles.logoText} pointerEvents="none">{isMobile ? 'UMS' : siteName}</Text>
           </Pressable>
 
           <View style={styles.actions}>
@@ -105,58 +126,135 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                   focusable={true}
                   style={styles.userNavPill}
                   onPress={() => navigateUserTab('FAVORITES')}
+                  {...(Platform.OS === 'web'
+                    ? ({
+                        onClick: (e: any) => {
+                          e?.stopPropagation?.();
+                          navigateUserTab('FAVORITES');
+                        },
+                      } as any)
+                    : {})}
                 >
-                  <Text style={styles.userNavPillTxt}>Favoris ({favoritesCount})</Text>
+                  <Text style={styles.userNavPillTxt} pointerEvents="none">Favoris ({favoritesCount})</Text>
                 </Pressable>
 
                 <Pressable
                   focusable={true}
                   style={styles.userNavPill}
                   onPress={() => navigateUserTab('FRIENDS')}
+                  {...(Platform.OS === 'web'
+                    ? ({
+                        onClick: (e: any) => {
+                          e?.stopPropagation?.();
+                          navigateUserTab('FRIENDS');
+                        },
+                      } as any)
+                    : {})}
                 >
-                  <Text style={styles.userNavPillTxt}>Amis</Text>
+                  <Text style={styles.userNavPillTxt} pointerEvents="none">Amis</Text>
                 </Pressable>
 
                 <Pressable
                   focusable={true}
                   style={styles.userNavPill}
                   onPress={() => navigateUserTab('FORUMS')}
+                  {...(Platform.OS === 'web'
+                    ? ({
+                        onClick: (e: any) => {
+                          e?.stopPropagation?.();
+                          navigateUserTab('FORUMS');
+                        },
+                      } as any)
+                    : {})}
                 >
-                  <Text style={styles.userNavPillTxt}>Salons</Text>
+                  <Text style={styles.userNavPillTxt} pointerEvents="none">Salons</Text>
                 </Pressable>
 
                 <Pressable
                   focusable={true}
                   style={styles.userNavPill}
                   onPress={() => navigateUserTab('FEED')}
+                  {...(Platform.OS === 'web'
+                    ? ({
+                        onClick: (e: any) => {
+                          e?.stopPropagation?.();
+                          navigateUserTab('FEED');
+                        },
+                      } as any)
+                    : {})}
                 >
-                  <Text style={styles.userNavPillTxt}>Fil d'avis</Text>
+                  <Text style={styles.userNavPillTxt} pointerEvents="none">Fil d'avis</Text>
                 </Pressable>
               </View>
             ) : null}
 
-            <Pressable focusable={true} style={styles.tvBtn} onPress={() => router.push('/tv' as any)}>
-              <Text style={styles.tvBtnText}>TV</Text>
+            <Pressable
+              focusable={true}
+              style={styles.tvBtn}
+              onPress={() => router.push('/tv' as any)}
+              {...(Platform.OS === 'web'
+                ? ({
+                    onClick: (e: any) => {
+                      e?.stopPropagation?.();
+                      router.push('/tv' as any);
+                    },
+                  } as any)
+                : {})}
+            >
+              <Text style={styles.tvBtnText} pointerEvents="none">TV</Text>
             </Pressable>
 
             {currentUser ? (
               <Pressable
                 focusable={true}
                 style={styles.profileBtn}
-                onPress={() => router.push('/user' as any)}>
-                <Text style={styles.profileBtnText}>
+                onPress={() => router.push('/user' as any)}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      onClick: (e: any) => {
+                        e?.stopPropagation?.();
+                        router.push('/user' as any);
+                      },
+                    } as any)
+                  : {})}
+              >
+                <Text style={styles.profileBtnText} pointerEvents="none">
                   {currentUser.displayName}{currentUser.isAdmin ? ' • Admin' : ''}
                 </Text>
               </Pressable>
             ) : (
-              <Pressable focusable={true} style={styles.loginBtn} onPress={() => router.push('/login' as any)}>
-                <Text style={styles.loginBtnText}>Connexion</Text>
+              <Pressable
+                focusable={true}
+                style={styles.loginBtn}
+                onPress={() => router.push('/login' as any)}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      onClick: (e: any) => {
+                        e?.stopPropagation?.();
+                        router.push('/login' as any);
+                      },
+                    } as any)
+                  : {})}
+              >
+                <Text style={styles.loginBtnText} pointerEvents="none">Connexion</Text>
               </Pressable>
             )}
 
             {currentUser?.isAdmin ? (
-              <Pressable focusable={true} style={styles.adminBtn} onPress={() => router.push('/admin' as any)}>
-                <Text style={styles.adminBtnText}>Admin</Text>
+              <Pressable
+                focusable={true}
+                style={styles.adminBtn}
+                onPress={() => router.push('/admin' as any)}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      onClick: (e: any) => {
+                        e?.stopPropagation?.();
+                        router.push('/admin' as any);
+                      },
+                    } as any)
+                  : {})}
+              >
+                <Text style={styles.adminBtnText} pointerEvents="none">Admin</Text>
               </Pressable>
             ) : null}
           </View>
@@ -169,32 +267,64 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               focusable={true}
               style={[styles.userNavPill, styles.mobileUserPill]}
               onPress={() => navigateUserTab('FAVORITES')}
+              {...(Platform.OS === 'web'
+                ? ({
+                    onClick: (e: any) => {
+                      e?.stopPropagation?.();
+                      navigateUserTab('FAVORITES');
+                    },
+                  } as any)
+                : {})}
             >
-              <Text style={styles.userNavPillTxt}>Favoris ({favoritesCount})</Text>
+              <Text style={styles.userNavPillTxt} pointerEvents="none">Favoris ({favoritesCount})</Text>
             </Pressable>
 
             <Pressable
               focusable={true}
               style={[styles.userNavPill, styles.mobileUserPill]}
               onPress={() => navigateUserTab('FRIENDS')}
+              {...(Platform.OS === 'web'
+                ? ({
+                    onClick: (e: any) => {
+                      e?.stopPropagation?.();
+                      navigateUserTab('FRIENDS');
+                    },
+                  } as any)
+                : {})}
             >
-              <Text style={styles.userNavPillTxt}>Amis</Text>
+              <Text style={styles.userNavPillTxt} pointerEvents="none">Amis</Text>
             </Pressable>
 
             <Pressable
               focusable={true}
               style={[styles.userNavPill, styles.mobileUserPill]}
               onPress={() => navigateUserTab('FORUMS')}
+              {...(Platform.OS === 'web'
+                ? ({
+                    onClick: (e: any) => {
+                      e?.stopPropagation?.();
+                      navigateUserTab('FORUMS');
+                    },
+                  } as any)
+                : {})}
             >
-              <Text style={styles.userNavPillTxt}>Salons</Text>
+              <Text style={styles.userNavPillTxt} pointerEvents="none">Salons</Text>
             </Pressable>
 
             <Pressable
               focusable={true}
               style={[styles.userNavPill, styles.mobileUserPill]}
               onPress={() => navigateUserTab('FEED')}
+              {...(Platform.OS === 'web'
+                ? ({
+                    onClick: (e: any) => {
+                      e?.stopPropagation?.();
+                      navigateUserTab('FEED');
+                    },
+                  } as any)
+                : {})}
             >
-              <Text style={styles.userNavPillTxt}>Fil d'avis</Text>
+              <Text style={styles.userNavPillTxt} pointerEvents="none">Fil d'avis</Text>
             </Pressable>
           </ScrollView>
         ) : null}
@@ -206,11 +336,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.scroll}>
-              {onScrollToTop ? (
-                <Pressable focusable={true} onPress={onScrollToTop} style={styles.homeBtn}>
-                  <Text style={styles.homeTxt}>Haut</Text>
-                </Pressable>
-              ) : null}
+
               {categories.map((cat) => {
                 const isActive = activeCategoryId === cat.id;
                 return (
@@ -219,10 +345,18 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                     key={cat.id}
                     nativeID={`cat-chip-${cat.id}`}
                     onPress={() => onSelectCategory(cat.id)}
+                    {...(Platform.OS === 'web'
+                      ? ({
+                          onClick: (e: any) => {
+                            e?.stopPropagation?.();
+                            onSelectCategory(cat.id);
+                          },
+                        } as any)
+                      : {})}
                     style={[styles.chip, isActive && styles.actChip]}>
-                    {isActive ? <View style={styles.activeDot} /> : null}
-                    <Text style={[styles.chipTxt, isActive && styles.actTxt]}>{cat.title}</Text>
-                    {isActive ? <View style={styles.activeUnderline} /> : null}
+                    {isActive ? <View style={styles.activeDot} pointerEvents="none" /> : null}
+                    <Text style={[styles.chipTxt, isActive && styles.actTxt]} pointerEvents="none">{cat.title}</Text>
+                    {isActive ? <View style={styles.activeUnderline} pointerEvents="none" /> : null}
                   </Pressable>
                 );
               })}
@@ -252,8 +386,6 @@ const styles = StyleSheet.create({
   logoText: { fontSize: 15, fontWeight: '700', color: '#edeef2', letterSpacing: -0.3 },
   secondTierRow: { width: '100%', flexDirection: 'row', alignItems: 'center', paddingTop: 5, borderTopWidth: 1, borderTopColor: 'rgba(160, 175, 195, 0.1)' },
   scroll: { gap: 6, alignItems: 'center', paddingRight: 16 },
-  homeBtn: { backgroundColor: 'rgba(55, 65, 80, 0.45)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: Radius.pill, marginRight: 2 },
-  homeTxt: { color: '#c5cedb', fontSize: 11, fontWeight: '700' },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',

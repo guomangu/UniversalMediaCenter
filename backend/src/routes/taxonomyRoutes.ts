@@ -5,10 +5,27 @@ import type { UserSession } from '../middleware/access.js';
 import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
 
+
+interface ServerCacheEntry {
+  data: any;
+  timestamp: number;
+}
+const taxonomyServerCache = new Map<string, ServerCacheEntry>();
+const TAXONOMY_SERVER_TTL = 60 * 1000; // 60 secondes de rétention en RAM
+
+export function invalidateServerTaxonomyCache(): void {
+  taxonomyServerCache.clear();
+}
+
 export const taxonomyRouter = new Hono();
 
 taxonomyRouter.get('/', async (c) => {
   const user = (c as any).get('user') as UserSession | undefined;
+  const cacheKey = user ? `${user.id}_${user.isAdmin ? 'admin' : (user as any).profileRole || 'user'}_${user.maxCsaAgeLimit ?? 'all'}` : 'anon';
+  const cached = taxonomyServerCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < TAXONOMY_SERVER_TTL) {
+    return c.json(cached.data);
+  }
   const accessConds = buildMediaAccessConditions(user, 'n');
   const hasAccessLimits = accessConds.length > 0;
 
@@ -342,9 +359,12 @@ taxonomyRouter.get('/', async (c) => {
     { id: 'countries', title: 'Pays', tags: Array.from(countriesRes).filter((t: any) => Number(t.count) > 0) },
   ];
 
-  return c.json({
+  const result = {
     categories: rawCategories.filter((cat) => cat.tags.length > 0),
-  });
+  };
+  taxonomyServerCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+  return c.json(result);
 });
 
 taxonomyRouter.get('/medias', async (c) => {

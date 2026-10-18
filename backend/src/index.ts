@@ -1,3 +1,4 @@
+import { compress } from "hono/compress";
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -25,6 +26,8 @@ import { inviteRouter } from './routes/inviteRoutes.js';
 import { playbackSyncRouter } from './routes/userPlaybackSync.js';
 
 const app = new Hono();
+
+app.use("*", compress());
 
 app.use('*', cors({
   origin: (origin) => origin || '*',

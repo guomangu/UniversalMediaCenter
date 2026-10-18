@@ -1,3 +1,65 @@
+## 🛑 121. Désynchronisation de Pause/Play en Mode Replié & Perte de Clics sur les Raccourcis du Menu par Verrouillage PanResponder et ScrollIntoView Global (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `SiteHeader.tsx`, `index.tsx`, `TagSearchBar.tsx`)
+
+* **Problème / Symptôme :**
+  1. En mode replié (mini-lecteur flottant en bas de l'écran), cliquer sur le bouton Play/Pause (`▶` / `⏸`) ne répondait pas correctement : le bouton semblait inactif, basculait parfois sans relancer ou couper la vidéo, ou restait bloqué dans un état incohérent avec le flux réel.
+  2. Par intermittence, les boutons des raccourcis du menu de navigation (catégories Sagas, Films, Séries, etc. ainsi que les raccourcis utilisateur Favoris, Amis, Salons, Fil d'avis) devenaient totalement inactifs (les clics ne faisaient rien). Le problème ne se résolvait que par un rechargement forcé de la page (`F5`), ce qui dégradait l'expérience utilisateur et rompait la fluidité PWA.
+  3. Cliquer sur le premier raccourci de catégorie ("Sagas") ou sur le logo UMS pour revenir au sommet de l'accueil ne fonctionnait pas si l'utilisateur avait déjà fait défiler la page.
+  4. Dès qu'une image ou un composant finissait de charger après un saut de catégorie, l'écran était brutalement ramené en arrière à l'ancienne position de défilement.
+* **Conséquences :**
+  - Impossibilité pour l'utilisateur de mettre en pause ou de reprendre sa lecture sans déplier le lecteur en grand écran.
+  - Sensation de freeze ou de bugs intermittents sur la barre de navigation supérieure, obligeant à des rechargements sauvages.
+  - Perte de contrôle sur la navigation par catégories.
+* **Causes Racines :**
+  - **Inversion d'État Asynchrone dans `handleTogglePlay`** : Dans `FloatingBottomPlayer.tsx`, `handleTogglePlay` inspectait la propriété DOM de l'élément vidéo `v.paused` au lieu de la vérité de l'état React `isPlaying`. En cas de mise en mémoire tampon, de suspension d'arrière-plan ou de décalage de frame, `v.paused` pouvait être vrai alors que le store était en lecture, tentant un `v.play()` au lieu d'une pause. De plus, `playerStore.setPlaying(true)` n'était appelé que dans la résolution asynchrone du `.then()` de `v.play()`, laissant l'UI dans un état transitoire où un second clic provoquait une interruption de promesse (`AbortError: The play() request was interrupted by a call to pause()`).
+  - **Ignorance des Événements Vidéo Matériels dans `onPause` / `onPlay`** : La condition `if (userInitiatedRef.current)` bloquait la synchronisation vers le store si la pause provenait du système (casque Bluetooth, touche multimédia clavier, fin de média ou mise en veille), laissant l'icône sur `⏸` alors que la vidéo était à l'arrêt.
+  - **Verrouillage Global du `PanResponder` par `scrollIntoView`** : Dans `SiteHeader.tsx`, un `useEffect` déclenchait `chipEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })` sur le document dès que la catégorie active changeait (par le scroll de l'utilisateur). Ce défilement automatique global plaçait le `ScrollView` horizontal en état de défilement animé permanent. Dans React Native Web, tout clic sur un composant enfant (`Pressable`) pendant un défilement actif est intercepté et consommé par le `ScrollResponder` pour arrêter l'animation, annulant purement et simplement le `onPress`.
+  - **Sensibilité aux Micro-Mouvements Souris** : Les utilisateurs de souris et trackpads effectuent naturellement 1 à 2 pixels de micro-déplacement entre le pointer-down et le pointer-up. React Native Web interprète ce jitter comme une intention de drag horizontal et annule l'événement `onPress`.
+  - **Blocage du Retour Sommet dans `applyScroll`** : La fonction `applyScroll(y)` contenait la garde `if (y <= 0) return;`. Par conséquent, tout appel avec `y = 0` (retour au sommet ou catégorie d'indice 0) retournait immédiatement sans exécuter le scroll !
+  - **Snap-Back Agressif de Restauration (`isRestoringScroll`)** : Lors du retour depuis une fiche média, `isRestoringScroll.current` restait vrai jusqu'à un événement `wheel` ou `touchstart`. Lors d'un clic de saut de catégorie, ce flag n'était pas désactivé : dès que `onContentSizeChange` se déclenchait lors du chargement des miniatures, `applyScroll(savedHomeScrollY)` était ré-exécuté, annulant le saut et renvoyant l'utilisateur à sa position précédente.
+* **Bonnes Pratiques de Remédiation :**
+  - **Bascule Synchrone Immédiate & Indépendante du DOM (`nextPlay = !isPlaying`)** :
+    - Déterminer la prochaine action directement à partir de la négation de l'état réactif `!isPlaying`.
+    - Appeler immédiatement `playerStore.setPlaying(nextPlay, true, true)` pour mettre à jour l'interface instantanément (0 ms de latence perceptuelle).
+    - Exécuter ensuite `v.play()` (avec rattrapage automatique si le navigateur bloque l'autoplay non-muet via `NotAllowedError`) ou `v.pause()`.
+  - **Double Écouteur Clic Web Natif & Isolation Pointer-Events** :
+    - Ajouter systématiquement la prop `{...(Platform.OS === 'web' ? { onClick: (e) => { e.stopPropagation(); handleAction(); } } : {})}` sur tous les boutons interactifs du lecteur et des barres d'en-tête pour contourner les limitations du PanResponder.
+    - Appliquer `pointerEvents="none"` sur les textes et icônes enfants pour garantir que l'élément cliquable parent reçoit 100% des événements de souris.
+  - **Défilement Horizontal Strictement Isolé (`scrollEl.scrollTo`)** :
+    - Bannir `scrollIntoView` global sur les éléments d'en-tête. Cibler uniquement le nœud DOM du `ScrollView` horizontal (`scrollEl.scrollTo({ left: targetScrollLeft, behavior: 'smooth' })`).
+  - **Libération Immédiate de la Restauration & Correction de `applyScroll`** :
+    - Remplacer `if (y <= 0) return;` par `const targetY = Math.max(0, y);` dans `applyScroll`.
+    - Dans `handleJumpToCategory` et `handleScrollToTop`, positionner immédiatement `isRestoringScroll.current = false` et `scrollRestoredRef.current = true` pour sanctuariser la position d'arrivée.
+    - Calculer l'offset de saut dans `handleJumpToCategory` en soustrayant la hauteur réelle du header fixe (`headerPaddingTop`), garantissant un alignement pixel-perfect du titre de catégorie sous la barre.
+
+---
+
+## 🛑 120. Échec de Déplacement dans la Barre de Progression (Seek / Scrubber `NaN`), Absence de Dragging Interactif et Goulots d'Étranglement de Chargement Initial (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `CastControlBar.tsx`, `pwaDataCache.ts`, `pwaImageCache.ts`, `taxonomyRoutes.ts`, `index.ts`, `index.tsx`)
+
+* **Problème / Symptôme :**
+  1. Lors de la lecture d'un média (mode replié ou mode cinéma déplié), impossible d'avancer ou reculer depuis la barre de progression : cliquer dessus ne déplaçait pas la lecture ou provoquait un blocage / reset.
+  2. Aucun support du glisser-déplacer (drag/scrubbing tactile et souris) : l'utilisateur ne pouvait pas faire défiler la tête de lecture de manière continue le long de la barre.
+  3. La zone tactile était limitée à 4px ou 6px de haut, rendant le ciblage extrêmement pénible et imprécis sur smartphone et tablette.
+  4. Temps de chargement initial ralenti par plusieurs anomalies : re-téléchargement double de chaque affiche (`new Image()` + second `fetch()` redondant), hydratation erronée du cache mémoire reconnaissant toute donnée LocalStorage comme périmée, absence de compression HTTP Hono sur les gros payloads JSON, et 8 à 9 requêtes SQL lourdes exécutées systématiquement sans cache serveur sur `/api/ui/taxonomy`.
+* **Conséquences :**
+  - Perte de contrôle sur la lecture : impossible de sauter un passage ou de naviguer dans un film.
+  - Exception silencieuse `TypeError: Failed to set the currentTime property on HTMLMediaElement: The provided double value is non-finite` due à des coordonnées évaluées à `NaN`.
+  - Surcharge réseau et latence perceptible au démarrage de l'application.
+* **Causes Racines :**
+  - **Incompatibilité Événementielle React Native Web (`e.clientX` non défini)** : Dans l'événement `GestureResponderEvent` de React Native Web, la propriété `clientX` n'existe pas à la racine de l'objet `e` (contrairement au DOM natif). L'opération `(e.clientX - rect.left)` évaluait donc `(undefined - rect.left) => NaN`. La variable `target` valait `NaN`, ce qui bloquait l'affectation de `currentTime` et injectait `NaN` dans le `playerStore`.
+  - **Hit-Box Trop Étroite (4px - 6px)** : Les conteneurs n'avaient pas de zone tampon de capture (hit-area) transparente.
+  - **Hydratation du Cache PWA (`isFresh` avant hydratation de `entry`)** : Dans `fetchWithCache`, la variable `entry` en RAM était inspectée avant d'appeler `getCachedData`. Au rechargement, `entry` valait `undefined`, ce qui invalidait faussement le cache LocalStorage encore frais et relançait toutes les requêtes réseau.
+  - **Double Téléchargement d'Images dans `pwaImageCache.ts`** : `prefetchImageToCache` instanciat `new Image().src = url` tout en déclenchant un `fetch(url)` parallèle, doublant le trafic réseau pour chaque vignette alors que le Service Worker intercepte déjà nativement les requêtes du constructeur d'images.
+  - **Absence de Cache Mémoire Côté Backend (`GET /api/ui/taxonomy`)** : Requêtes SQL lourdes avec jointures multiples et expressions régulières exécutées à chaque appel HTTP sans mémoïsation serveur.
+* **Bonnes Pratiques de Remédiation :**
+  - **Extracteur Universel de Coordonnées Tactiles / Souris** : Normaliser l'accès aux coordonnées via `extractClientX(e)` inspectant `e.clientX`, `e.nativeEvent.clientX`, `e.pageX`, `e.nativeEvent.pageX`, `touches[0].clientX`, `changedTouches[0].clientX` et fallback sur `locationX`.
+  - **Moteur de Scrubbing Interactif Continu (Drag & Drop)** : Implémenter un cycle complet `onPointerDown` / `onPointerMove` / `onPointerUp` avec mise à jour en direct de `scrubPos` et de la barre bleue, affichage d'un thumb rond blanc et d'une infobulle de prévisualisation temporelle (tooltip), puis application du `seekTo` définitif au relâchement.
+  - **Hit-Area Confortable de 22-26px** : Encapsuler la fine barre de 4px ou 6px dans un conteneur interactif avec `paddingVertical` et `pointerEvents: "none"` sur les enfants internes.
+  - **Hydratation Préalable du Cache LocalStorage** : Vérifier et hydrater `entry` depuis le LocalStorage avant de tester la fraîcheur (`Date.now() - entry.timestamp < staleTime`).
+  - **Suppression du Second Fetch Redondant** : Se fier à `new Image()` et à l'interception native du Service Worker pour mettre en cache les visuels sans saturer la bande passante.
+  - **Activation de la Compression Hono (`compress()`) & Cache Serveur 60s** : Compression Gzip/Brotli automatique et mémoïsation en RAM serveur de `/api/ui/taxonomy` (< 1 ms de réponse).
+
+---
+
 ## 🛑 119. Encombrement Non-Responsive des Barres de Contrôles sur Smartphone, Éjection de Boutons Hors-Écran et Dépréciation de `style.resizeMode` (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `media/[id].tsx`, `MediaStudioSection.tsx`, `ForumAssociationsModule.tsx`)
 
 * **Problème / Symptôme :**

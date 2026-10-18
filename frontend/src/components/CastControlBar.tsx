@@ -39,9 +39,31 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
   const handleBarClick = (e: any) => {
     if (Platform.OS !== 'web' || !dur) return;
     const rect = e.currentTarget?.getBoundingClientRect?.();
-    if (!rect) return;
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    if (!rect || rect.width <= 0) return;
+    const clientX =
+      typeof e?.clientX === 'number'
+        ? e.clientX
+        : typeof e?.nativeEvent?.clientX === 'number'
+        ? e.nativeEvent.clientX
+        : typeof e?.pageX === 'number'
+        ? e.pageX
+        : typeof e?.nativeEvent?.pageX === 'number'
+        ? e.nativeEvent.pageX
+        : e?.touches?.[0]?.clientX !== undefined
+        ? e.touches[0].clientX
+        : e?.nativeEvent?.touches?.[0]?.clientX !== undefined
+        ? e.nativeEvent.touches[0].clientX
+        : null;
+    let ratio: number;
+    if (clientX !== null) {
+      ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    } else if (typeof e?.nativeEvent?.locationX === 'number') {
+      ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / rect.width));
+    } else {
+      return;
+    }
     const target = Math.floor(ratio * dur);
+    if (!Number.isFinite(target)) return;
     setDevice((d) => ({ ...d, positionSeconds: target }));
     sendCastCommand(device.id, 'SEEK', { positionSeconds: target });
   };

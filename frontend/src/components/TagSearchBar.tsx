@@ -77,8 +77,16 @@ export function TagSearchBar({ searchQuery, onSearchChange, activeFilter, onFilt
               focusable={true}
               key={f}
               onPress={() => onFilterChange(f === activeFilter ? 'Tous' : f)}
+              {...(Platform.OS === 'web'
+                ? ({
+                    onClick: (e: any) => {
+                      e?.stopPropagation?.();
+                      onFilterChange(f === activeFilter ? 'Tous' : f);
+                    },
+                  } as any)
+                : {})}
               style={[styles.filterChip, isSelected && styles.activeChip]}>
-              <Text style={[styles.filterText, isSelected && styles.activeText]}>
+              <Text style={[styles.filterText, isSelected && styles.activeText]} pointerEvents="none">
                 {getFilterLabel(f)}
               </Text>
             </Pressable>

@@ -92,12 +92,12 @@ export default function HomeScreen() {
   }, [visibleCategories, activeCategoryId]);
 
   const applyScroll = useCallback((y: number) => {
-    if (y <= 0) return;
-    scrollRef.current?.scrollTo({ y, animated: false });
+    const targetY = Math.max(0, y);
+    scrollRef.current?.scrollTo({ y: targetY, animated: false });
     if (Platform.OS === 'web' && scrollRef.current) {
       const node = (scrollRef.current as any).getScrollableNode?.() || (scrollRef.current as any);
       if (node && node.scrollTop !== undefined) {
-        node.scrollTop = y;
+        node.scrollTop = targetY;
       }
     }
   }, []);
@@ -173,8 +173,8 @@ export default function HomeScreen() {
     if (savedHomeScrollY > 0) {
       isRestoringScroll.current = true;
     }
-    // Rechargement frais immédiat dès le premier rendu ou changement d'utilisateur
-    loadData(true);
+    // Rechargement optimisé via cache mémoire / persistant (0 ms si frais, revalidation en tâche de fond)
+    loadData(false);
   }, [currentUser?.id, currentUser?.isAdmin]);
 
   // Détection des interactions utilisateur réelles pour relâcher le mode restauration
@@ -211,14 +211,30 @@ export default function HomeScreen() {
   }, []);
 
   const handleJumpToCategory = (id: string) => {
+    isRestoringScroll.current = false;
+    scrollRestoredRef.current = true;
     isJumpingRef.current = true;
     activeCatRef.current = id;
     setActiveCategoryId(id);
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
       const el = document.getElementById(`cat-section-${id}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (scrollNode && el) {
+        const elRect = el.getBoundingClientRect();
+        const scrollRect = scrollNode.getBoundingClientRect();
+        const currentScroll = scrollNode.scrollTop;
+        const target = currentScroll + (elRect.top - scrollRect.top) - headerPaddingTop - 8;
+        const finalY = Math.max(0, target);
+        if (typeof scrollNode.scrollTo === 'function') {
+          scrollNode.scrollTo({ top: finalY, behavior: 'smooth' });
+        } else {
+          scrollNode.scrollTop = finalY;
+        }
+        savedHomeScrollY = finalY;
+        if (window.sessionStorage) {
+          sessionStorage.setItem('ums_home_scroll_y', String(finalY));
+        }
         setTimeout(() => {
           isJumpingRef.current = false;
         }, 800);
@@ -228,7 +244,12 @@ export default function HomeScreen() {
 
     const pos = catPositions.current[id];
     if (typeof pos === 'number') {
-      applyScroll(Math.max(0, pos - headerPaddingTop - 12));
+      const target = Math.max(0, pos - headerPaddingTop - 12);
+      applyScroll(target);
+      savedHomeScrollY = target;
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+        sessionStorage.setItem('ums_home_scroll_y', String(target));
+      }
     }
     setTimeout(() => {
       isJumpingRef.current = false;
@@ -236,8 +257,21 @@ export default function HomeScreen() {
   };
 
   const handleScrollToTop = () => {
+    isRestoringScroll.current = false;
+    scrollRestoredRef.current = true;
+    savedHomeScrollY = 0;
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
+      if (scrollNode) {
+        if (typeof scrollNode.scrollTo === 'function') {
+          scrollNode.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          scrollNode.scrollTop = 0;
+        }
+      }
+      if (window.sessionStorage) {
+        sessionStorage.setItem('ums_home_scroll_y', '0');
+      }
     }
     applyScroll(0);
     const firstId = visibleCategories[0]?.id || 'sagas';

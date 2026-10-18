@@ -69,7 +69,8 @@ function isCacheableApiRequest(request) {
   if (request.method !== 'GET') return false;
   // Exclure strictement tous les flux live, segments vidéo, sessions et progressions
   if (isLiveOrStreamRequest(url)) return false;
-  return url.includes('/api/ui/') || url.includes('/api/media/') || url.includes('/api/iptv/') || url.includes('/api/user/');
+  if (url.includes('/api/user/') || url.includes('/api/auth/')) return false;
+  return url.includes('/api/ui/') || url.includes('/api/media/') || url.includes('/api/iptv/');
 }
 
 self.addEventListener('fetch', (event) => {

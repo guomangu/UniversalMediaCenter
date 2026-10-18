@@ -100,9 +100,9 @@ sequenceDiagram
 ---
 
 ### Phase T1 : Premier Chargement à Froid (Cold Start)
-- **Consultation L1 (RAM) :** La mémoire vive est vide.
-- **Consultation L2 (LocalStorage) :** Le cache persistant fournit les dernières catégories et médias connus si disponibles.
-- **Requête Réseau Initiale :** Si aucun cache n'existe, l'API backend est interrogée (`/api/ui/taxonomy`).
+- **Consultation L1 (RAM) :** La mémoire vive est vide au démarrage.
+- **Hydratation Directe L2 (LocalStorage) :** Le module `pwaDataCache.ts` hydratera immédiatement l'objet `entry` avec son timestamp d'origine. Si les données ont moins de 5 minutes (`Date.now() - entry.timestamp < staleTime`), le cache est déclaré frais et **aucune requête réseau n'est émise**, garantissant un démarrage 0 ms réel.
+- **Requête Réseau Initiale & Cache Serveur :** Si aucun cache local n'existe, l'API backend est interrogée (`/api/ui/taxonomy`). Le serveur backend Hono dispose de son propre cache RAM (TTL 60s) et de la compression HTTP native (`hono/compress`), répondant en moins de 1 ms et transférant un payload compressé ultra-léger.
 - **Enregistrement Tripartite :** La réponse est instantanément inscrite :
   1. En **Mémoire Vive (RAM)** avec horodatage `Date.now()`.
   2. Dans le **LocalStorage** sous la clé `ums_cache_data_taxonomy_categories`.
