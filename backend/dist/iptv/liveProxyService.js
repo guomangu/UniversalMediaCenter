@@ -1,18 +1,19 @@
 /**
- * Proxy live IPTV streams (HLS/m3u8) with CORS, manifest URL rewriting,
- * and robust error isolation preventing client-side raw HTTP/403 leakage.
+ * Proxy live IPTV streams (HLS/m3u8) with full CORS, HTTPS URL rewriting,
+ * and robust error isolation preventing Mixed Content and CORS leakage.
  */
 export async function proxyLiveStream(c, streamUrl) {
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    c.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range');
+    c.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range, Authorization');
+    c.header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
     try {
         const upstreamRes = await fetch(streamUrl, {
             headers: {
                 'User-Agent': 'UniversalMediaStack/3.0 (compatible; VLC/3.0.18)',
                 'Accept': '*/*',
             },
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(9000),
         });
         if (!upstreamRes.ok) {
             const status = upstreamRes.status;
@@ -43,7 +44,8 @@ export async function proxyLiveStream(c, streamUrl) {
                     // Réécrire les URI="..." relatives contenues dans les en-têtes HLS (#EXT-X-MEDIA, #EXT-X-MAP, #EXT-X-KEY)
                     return line.replace(/URI=["']([^"']+)["']/g, (match, relUri) => {
                         try {
-                            return `URI="${new URL(relUri, baseUrl).toString()}"`;
+                            const absUri = new URL(relUri, baseUrl).toString();
+                            return `URI="/api/iptv/proxy?url=${encodeURIComponent(absUri)}"`;
                         }
                         catch {
                             return match;
@@ -51,7 +53,8 @@ export async function proxyLiveStream(c, streamUrl) {
                     });
                 }
                 try {
-                    return new URL(trimmed, baseUrl).toString();
+                    const absUrl = new URL(trimmed, baseUrl).toString();
+                    return `/api/iptv/proxy?url=${encodeURIComponent(absUrl)}`;
                 }
                 catch {
                     return line;
@@ -60,10 +63,12 @@ export async function proxyLiveStream(c, streamUrl) {
                 .join('\n');
             c.header('Content-Type', 'application/vnd.apple.mpegurl');
             c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
-            return c.body(rewritten);
+            return c.text(rewritten);
         }
-        // For direct binary streams, redirect or pipe
-        return c.redirect(streamUrl, 302);
+        // Flux binaire direct (.ts, audio/video)
+        c.header('Content-Type', contentType || 'video/mp2t');
+        c.header('Cache-Control', 'public, max-age=3600');
+        return c.body(upstreamRes.body);
     }
     catch (err) {
         return c.json({

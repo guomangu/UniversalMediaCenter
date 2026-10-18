@@ -73,6 +73,7 @@ export function matchesLanguagePreference(trackLang, trackLabel, preference) {
 }
 const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 const BROWSER_NATIVE_AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
+const BROWSER_NATIVE_VIDEO_CODECS = ['h264', 'av1', 'vp8', 'vp9'];
 tracksRouter.get('/:id/tracks', async (c) => {
     const id = c.req.param('id');
     let user = c.get('user');
@@ -94,7 +95,6 @@ tracksRouter.get('/:id/tracks', async (c) => {
         return c.json({ error: 'Média introuvable' }, 404);
     }
     // Contrôle d'accès : vérification uniquement si utilisateur explicite ou shareToken fourni
-    // Si anonyme sur un média existant, on autorise l'accès aux métadonnées des pistes (comme /subtitles et /artworks)
     let isAuthorized = true;
     if (user) {
         isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
@@ -120,9 +120,12 @@ tracksRouter.get('/:id/tracks', async (c) => {
     const subMode = mediaConfig.subtitleMode || 'fallback_if_audio_missing';
     if (!media.videoFilePath) {
         return c.json({
+            durationSeconds: 0,
             audioTracks: [],
             subtitleTracks: [],
             qualities: [],
+            requiresHls: false,
+            streamType: 'direct',
             defaultAudioTrack: 'auto',
             defaultSubtitle: 'off',
             isDefaultAudioAvailable: true,
@@ -263,10 +266,21 @@ tracksRouter.get('/:id/tracks', async (c) => {
             if (height >= 480)
                 qualities.push('SD (480p)');
         }
+        // Détection de la nécessité de transcodage / HLS (non-compatibilité vidéo, audio non-native, ou conteneur .avi)
+        const videoCodec = (videoStream?.codec_name || '').toLowerCase();
+        const ext = path.extname(media.videoFilePath || '').toLowerCase();
+        const isVideoNative = BROWSER_NATIVE_VIDEO_CODECS.includes(videoCodec) && ext !== '.avi';
+        const selectedTrack = audioTracks.find((t) => String(t.index) === String(defaultAudioTrack)) || audioTracks[0];
+        const isAudioNative = selectedTrack ? BROWSER_NATIVE_AUDIO_CODECS.includes(selectedTrack.codec.toLowerCase()) : true;
+        const requiresHls = !isVideoNative || !isAudioNative || ext === '.avi';
         const result = {
             durationSeconds: Math.round(duration),
             width,
             height,
+            videoCodec,
+            isVideoNative,
+            requiresHls,
+            streamType: requiresHls ? 'hls' : 'direct',
             audioTracks,
             subtitleTracks: allSubtitles,
             qualities,

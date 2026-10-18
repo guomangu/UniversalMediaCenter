@@ -2,12 +2,17 @@ import { db } from '../db/connection.js';
 import { mediaNodes } from '../db/schema/index.js';
 import { eq, and, inArray } from 'drizzle-orm';
 /**
- * Teste la disponibilité en direct d'un flux vidéo HTTP / HLS / IPTV.
- * Effectue une requête GET minimale avec Range header et timeout strict.
- * Dès réception du code de statut HTTP (200-399), la requête est immédiatement avortée
- * afin de vérifier l'état du flux sans saturer la bande passante ni télécharger le segment vidéo.
+ * Teste la disponibilité en direct d'un flux vidéo HTTP / HLS / IPTV avec validation stricte.
+ * Exigences de validation :
+ * 1. Statut HTTP 200/206 (les codes 4xx/5xx sont rejetés).
+ * 2. Exclusion formelle des réponses HTML (pages d'erreur, portails captifs, challenges bot).
+ * 3. Pour les playlists HLS (.m3u8) :
+ *    - Vérification de l'en-tête #EXTM3U.
+ *    - Pour les master playlists (#EXT-X-STREAM-INF), résolution et validation de la sous-playlist.
+ *    - Vérification et sonde réelle du premier segment vidéo (.ts) pour certifier que le flux diffuse du contenu vidéo réel.
+ * 4. Pour les flux binaires directs : vérification que le flux renvoie des octets vidéo réels.
  */
-export async function checkChannelStreamAvailability(streamUrl, timeoutMs = 3500) {
+export async function checkChannelStreamAvailability(streamUrl, timeoutMs = 4500) {
     if (!streamUrl || !streamUrl.startsWith('http'))
         return false;
     const controller = new AbortController();
@@ -18,19 +23,111 @@ export async function checkChannelStreamAvailability(streamUrl, timeoutMs = 3500
             redirect: 'follow',
             signal: controller.signal,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) UniversalMediaStack/3.0',
+                'User-Agent': 'UniversalMediaStack/3.0 (compatible; VLC/3.0.18)',
                 'Accept': '*/*',
-                'Range': 'bytes=0-1024',
             },
         });
-        clearTimeout(timer);
-        const isSuccess = res.status >= 200 && res.status < 400;
-        // Interrompre la lecture du corps immédiatement
-        try {
-            controller.abort();
+        if (!res.ok) {
+            clearTimeout(timer);
+            return false;
         }
-        catch { }
-        return isSuccess;
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        // Rejet formel des pages HTML ou JSON d'erreur
+        if (contentType.includes('text/html') || contentType.includes('application/json')) {
+            clearTimeout(timer);
+            return false;
+        }
+        const isM3u = streamUrl.includes('.m3u8') || streamUrl.includes('m3u') || contentType.includes('mpegurl') || contentType.includes('text');
+        if (isM3u) {
+            const text = await res.text();
+            clearTimeout(timer);
+            if (!text.includes('#EXTM3U') && !text.includes('#EXTINF')) {
+                return false;
+            }
+            const baseUrl = new URL(streamUrl);
+            const lines = text.split('\n').map((l) => l.trim()).filter((l) => Boolean(l) && !l.startsWith('#'));
+            if (lines.length === 0) {
+                return false;
+            }
+            const firstEntry = lines[0];
+            let childUrl;
+            try {
+                childUrl = new URL(firstEntry, baseUrl).toString();
+            }
+            catch {
+                return false;
+            }
+            // Sonde du child (sous-playlist ou premier segment .ts)
+            const childController = new AbortController();
+            const childTimer = setTimeout(() => childController.abort(), 3500);
+            try {
+                const childRes = await fetch(childUrl, {
+                    method: 'GET',
+                    redirect: 'follow',
+                    signal: childController.signal,
+                    headers: {
+                        'User-Agent': 'UniversalMediaStack/3.0 (compatible; VLC/3.0.18)',
+                        'Accept': '*/*',
+                        'Range': 'bytes=0-1024',
+                    },
+                });
+                clearTimeout(childTimer);
+                if (!childRes.ok)
+                    return false;
+                const childType = (childRes.headers.get('content-type') || '').toLowerCase();
+                if (childType.includes('text/html') || childType.includes('application/json'))
+                    return false;
+                // Si le child est une sous-playlist (ex: variant mono.m3u8)
+                if (childUrl.includes('.m3u8') || childType.includes('mpegurl')) {
+                    const childText = await childRes.text();
+                    if (!childText.includes('#EXTM3U'))
+                        return false;
+                    const subLines = childText.split('\n').map((l) => l.trim()).filter((l) => Boolean(l) && !l.startsWith('#'));
+                    if (subLines.length === 0)
+                        return false;
+                    // Tester le premier vrai segment .ts de cette sous-playlist
+                    let segUrl;
+                    try {
+                        segUrl = new URL(subLines[0], new URL(childUrl)).toString();
+                    }
+                    catch {
+                        return false;
+                    }
+                    const segController = new AbortController();
+                    const segTimer = setTimeout(() => segController.abort(), 3500);
+                    try {
+                        const segRes = await fetch(segUrl, {
+                            method: 'GET',
+                            redirect: 'follow',
+                            signal: segController.signal,
+                            headers: {
+                                'User-Agent': 'UniversalMediaStack/3.0 (compatible; VLC/3.0.18)',
+                                'Accept': '*/*',
+                                'Range': 'bytes=0-1024',
+                            },
+                        });
+                        clearTimeout(segTimer);
+                        if (!segRes.ok)
+                            return false;
+                        const segType = (segRes.headers.get('content-type') || '').toLowerCase();
+                        if (segType.includes('text/html') || segType.includes('application/json'))
+                            return false;
+                        return true;
+                    }
+                    catch {
+                        clearTimeout(segTimer);
+                        return false;
+                    }
+                }
+                return true;
+            }
+            catch {
+                clearTimeout(childTimer);
+                return false;
+            }
+        }
+        clearTimeout(timer);
+        return true;
     }
     catch {
         clearTimeout(timer);

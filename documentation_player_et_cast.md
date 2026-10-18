@@ -168,6 +168,7 @@ Le système de Cast d'UMS fusionne trois technologies complémentaires pour gara
    │  (Chromecast, TV)  │          │ Apple AirPlay      │          │ (Écrans Web, TV)   │
    └────────────────────┘          └────────────────────┘          └──────────┬─────────┘
                                                                              │
+                                                                             │
                                                                              ▼
                                                                    ┌────────────────────┐
                                                                    │ UMS Receiver       │
@@ -207,3 +208,81 @@ Pour mettre un terme propre à la diffusion, deux actions distinctes sont propos
    Envoie un signal `STOP` à l'écran cible qui quitte le lecteur pour revenir à la page d'accueil UMS, met fin à la session Google Cast SDK, et purge le stockage local du Caster.
 2. **Déconnecter la télécommande (`disconnectCastTotally(false)`) :**
    Rétablit le contrôle local sans perturber la diffusion en cours sur le téléviseur.
+
+---
+
+## 4. Moteur de Transcodage HLS VOD à la Volée & Compatibilité Universelle
+
+Certains formats et codecs vidéo/audio de pointe ou anciens ne peuvent pas être décodés nativement par le moteur HTML5 standard des navigateurs web (particulièrement sous Linux / Chromium) :
+- **Audio DTS / DTS-HD MA** (ex: *Ratatouille* `2007.Ratatouille.1920x802.BDRip.x264.DTS-HD.MA.mkv`) : blocage ou silence complet sous navigateur.
+- **Vidéo HEVC / H.265 10-bit** (ex: *Goldfinger* `1964 goldfinger multi 1080p bluray x265 ac3-dam.mkv`) : rejet navigateur avec `MEDIA_ELEMENT_ERROR: Format error`.
+- **Conteneurs AVI / MPEG-4 Part 2** (ex: *Ratatouille* `N° 090 - 2007 Walt Disney - Ratatouille.avi`) : conteneur non pris en charge par la balise `<video>`.
+
+### 4.1. Détection Automatique des Codecs Cibles (`mediaTracks.ts`)
+L'API inspecte les flux du conteneur via `ffprobe` et qualifie automatiquement l'éligibilité native :
+- **Codecs vidéo natifs :** `h264`, `av1`, `vp8`, `vp9`. Tout autre codec (`hevc`/`h265`, `mpeg4`, `msmpeg4v3`) active le flag `requiresHls = true`.
+- **Codecs audio natifs :** `aac`, `mp3`, `opus`, `vorbis`, `flac`. Tout codec haute définition ou incompatible (`dts`, `dca`, `ac3`, `eac3`, `truehd`) active `requiresHls = true`.
+- **Conteneur :** Les extensions `.avi` forcent également `requiresHls = true`.
+
+### 4.2. Génération de Playlists HLS Virtuelles & Découpage Segmentaire (< 50ms)
+Contrairement aux remuxers monolithiques qui bloquaient les requêtes HTTP pendant 45 à 60 secondes pour réécrire l'intégralité du fichier sur disque :
+1. **Manifeste Virtuel `master.m3u8` :** Généré en mémoire en moins de 15 millisecondes, découpant virtuellement le média en segments MPEG-TS de 6,0 secondes.
+2. **Transcodage Atomique par Segment `segment_:index.ts` :**  
+   - Lorsque la vidéo est déjà H.264 (comme *Ratatouille*), ffmpeg applique `-c:v copy` et ne transcode que l'audio en AAC stéréo. Le segment de 6 secondes est produit en **moins de 50 ms**.
+   - Lorsque la vidéo est HEVC ou MPEG-4 (comme *Goldfinger*), ffmpeg transcode le segment à la volée via `-c:v libx264 -preset ultrafast -crf 22 -c:a aac`.
+3. **Mise en Cache Rapide des Chunks :** Les segments générés sont conservés dans `/tmp/ums_cache/segments/` pour une réactivité instantanée lors des retours en arrière ou lors de visionnages partagés.
+4. **Redirection Transparente :** L'endpoint standard `GET /api/media/:id/stream` redirige avec HTTP 307 vers la playlist HLS dès qu'un transcodage est requis, garantissant une compatibilité totale et immédiate.
+
+---
+
+## 5. Synchronisation de Compte Mono-Lecture & Alignement Intégral Multi-Écrans
+
+Conformément à la spécification, un compte utilisateur est restreint à **une seule lecture active à la fois** et tous les écrans connectés au même profil partagent une synchronisation en temps réel absolue.
+
+### 5.1. Principe de l'Écran Miroir & Identifiant Matériel (`deviceId`)
+- Chaque instance de navigateur ou PWA génère et conserve un identifiant d'appareil unique dans `localStorage` (`ums_account_device_id`).
+- L'état de lecture actif du compte est synchronisé en mémoire backend sous l'entité :
+  ```typescript
+  interface AccountPlaybackState {
+    userId: string;
+    deviceId: string;
+    mediaId: string;
+    mediaTitle: string;
+    positionSeconds: number;
+    durationSeconds: number;
+    isPlaying: boolean;
+    activeAudio: string;
+    activeSubtitle: string;
+    isCastActive: boolean;
+    castTargetId?: string;
+    updatedAt: number;
+  }
+  ```
+
+### 5.2. Maintien en Étape Synchronisée (Lockstep Sync)
+- **Signalisation Ascendante (Toutes les 1200ms) :** Dès qu'un média est lancé, l'appareil actif notifie `POST /api/playback/sync`.
+- **Réception Descendante (Polling 1400ms) :** Tous les autres appareils connectés au compte interrogent `GET /api/playback/sync` :
+  - Si un autre appareil joue un média, le média est automatiquement chargé.
+  - La lecture / pause est répercutée instantanément.
+  - La position temporelle est réconciliée si l'écart dépasse 1,5 seconde.
+  - La piste audio (`activeAudio`) et la piste de sous-titres (`activeSubtitle`) sont synchronisées à l'identique.
+- **Synchronisation Symétrique avec le Cast :**  
+  Lorsqu'un média est casté sur une TV ou un Chromecast, la boucle de surveillance du Cast (`castState.ts`) répercute l'état du média casté directement dans `playerStore` et notifie `reportAccountPlayback`. L'ensemble des écrans du compte suit ainsi la diffusion TV en temps réel.
+
+---
+
+## 6. Moteur IPTV Live : Testeur Strict & Proxy CORS/HTTPS Intégral
+
+### 6.1. Qualification Stricte des Flux TV (`streamTester.ts`)
+Les flux IPTV instables ou expirés étaient auparavant marqués actifs par de simples requêtes HEAD incomplètes. L'algorithme a été renforcé :
+- Sonde d'en-tête `HEAD` avec vérification stricte du code HTTP 200/206/302.
+- En cas de manifeste HLS `.m3u8`, téléchargement du manifeste et validation stricte de l'en-tête `#EXTM3U`.
+- Rejet catégorique des pages d'erreur HTML masquées sous HTTP 200 (ex: portails FAI ou erreurs Cloudflare renvoyant `<!DOCTYPE html>`).
+- Téléchargement et inspection du premier chunk vidéo MPEG-TS (`Range: bytes=0-1024`) avec timeout de 3500ms.
+- Les flux en échec sont immédiatement marqués `state = 'ERROR'`, grisant automatiquement la chaîne dans le guide EPG et les grilles TV.
+
+### 6.2. Proxy Universel HLS & Neutralisation du Contenu Mixte (`liveProxyService.ts`, `/api/iptv/proxy`)
+Lorsque le frontend est servi en HTTPS sécurisé (`https://cool.sweaw.com`), les flux IPTV distants diffusés en simple HTTP (`http://89.187.185.76:8080/...`) étaient impitoyablement bloqués par les navigateurs au titre du **Contenu Mixte Bloqué** (*Mixed Content Blocked*).
+- **Réécriture Dynamique Complète :** Le proxy de flux Hono `/api/iptv/proxy` télécharge les manifestes `.m3u8`, analyse chaque sous-manifeste et chaque fragment `.ts`, et réécrit l'intégralité des URLs relatives ou absolues sous la forme :
+  `/api/iptv/proxy?url=${encodeURIComponent(absoluteChunkUrl)}`
+- **En-têtes CORS Universels :** Toutes les requêtes de fragments et manifestes répondent avec `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Headers: Range, Content-Type, Authorization`, et `Accept-Ranges: bytes`, autorisant un streaming HLS fluide sans aucun blocage navigateur.

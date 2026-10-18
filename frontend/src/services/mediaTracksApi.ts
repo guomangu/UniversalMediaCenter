@@ -7,6 +7,11 @@ export interface MediaTracksData {
   qualities: { label: string; value: string }[];
   intro?: { start: number; end: number };
   duration?: number;
+  durationSeconds?: number;
+  videoCodec?: string;
+  isVideoNative?: boolean;
+  requiresHls?: boolean;
+  streamType?: 'hls' | 'direct';
   defaultAudioTrack?: string;
   defaultSubtitle?: string;
   isDefaultAudioAvailable?: boolean;
@@ -43,7 +48,12 @@ export async function fetchMediaTracks(id: string, shareToken?: string | null): 
       subtitleTracks: Array.isArray(data.subtitleTracks) ? data.subtitleTracks : [],
       qualities: Array.isArray(data.qualities) ? data.qualities : [],
       intro: data.intro,
-      duration: data.duration,
+      duration: data.durationSeconds || data.duration,
+      durationSeconds: data.durationSeconds,
+      videoCodec: data.videoCodec,
+      isVideoNative: data.isVideoNative,
+      requiresHls: Boolean(data.requiresHls),
+      streamType: data.streamType || (data.requiresHls ? 'hls' : 'direct'),
       defaultAudioTrack: data.defaultAudioTrack,
       defaultSubtitle: data.defaultSubtitle,
       isDefaultAudioAvailable: data.isDefaultAudioAvailable,

@@ -212,17 +212,31 @@ export default function PlayerScreen() {
     showToast('Lecture recommencée depuis le début ⏮');
   }, [showToast]);
 
-  const mediaTitle = resolvedTitle || title || `Média #${id}`;
+  const mediaTitle = resolvedTitle || title || `Média #${id}` ;
 
+  // Calcul d'URL de flux dynamique : HLS on-the-fly si format non-natif, ou direct stream
   const streamUrl = useMemo(() => {
     if (!id || isForbidden) return '';
-    const base = getVideoStreamUrl(id, share);
+    const useHls = Boolean(tracks?.requiresHls);
+    const base = getVideoStreamUrl(id, share, useHls);
     const p = new URLSearchParams();
     if (activeAudio && activeAudio !== 'auto') p.set('audio', activeAudio);
     if (share) p.set('share', share);
     const qs = p.toString();
     return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
-  }, [id, activeAudio, share, isForbidden]);
+  }, [id, activeAudio, share, isForbidden, tracks?.requiresHls]);
+
+  // Synchronisation descendante depuis le playerStore (changement sur Cast ou autre appareil du compte)
+  useEffect(() => {
+    if (playerState.activeMedia && playerState.activeMedia.id === String(id)) {
+      if (playerState.activeMedia.activeAudio && playerState.activeMedia.activeAudio !== activeAudio) {
+        setActiveAudio(playerState.activeMedia.activeAudio);
+      }
+      if (playerState.activeMedia.activeSubtitle && playerState.activeMedia.activeSubtitle !== activeSubtitle) {
+        setActiveSubtitle(playerState.activeMedia.activeSubtitle);
+      }
+    }
+  }, [playerState.activeMedia?.activeAudio, playerState.activeMedia?.activeSubtitle, id, activeAudio, activeSubtitle]);
 
   useEffect(() => {
     if (resolvedTitle && streamUrl && !isForbidden && !isCorrupted) {
@@ -379,28 +393,33 @@ export default function PlayerScreen() {
       const pos = payload?.positionSeconds ? Math.floor(payload.positionSeconds) : 0;
       router.replace({
         pathname: `/player/${newId}`,
-        params: pos > 0 ? { joinTime: String(pos) } : undefined,
+        params: { joinTime: String(pos), title: payload?.title || '' },
       } as any);
     },
   });
 
-  const isModalOpen = showAudio || showSubtitles || showShare || showCast || showRepost || showMenuModal;
-  usePlayerControls({ videoRef, isPlaying: isForbidden ? false : isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast, isFullscreen });
+  const isAnyModalOpen = Boolean(showAudio || showSubtitles || showShare || showCast || showRepost || showMenuModal);
 
-  // Libellés pour le menu d'options
+  usePlayerControls({
+    videoRef,
+    isPlaying: isForbidden ? false : isPlaying,
+    isFullscreen,
+    isModalOpen: isAnyModalOpen,
+    activeCastTarget,
+    setIsPlaying,
+    showToast,
+  });
+
   const activeAudioLabel = useMemo(() => {
-    if (!activeAudio || activeAudio === 'auto') return 'Auto';
-    const found = tracks.audioTracks.find((t) => String(t.index) === String(activeAudio));
-    return found ? found.label : `Piste #${activeAudio}`;
+    if (activeAudio === 'auto') return 'Automatique';
+    const track = tracks.audioTracks.find((t) => String(t.index) === String(activeAudio));
+    return track ? track.label : `Piste #${activeAudio}`;
   }, [activeAudio, tracks.audioTracks]);
 
   const activeSubtitleLabel = useMemo(() => {
-    if (!activeSubtitle || activeSubtitle === 'off') return 'Désactivé';
-    const found = tracks.subtitleTracks.find((s) => {
-      const val = s.fileName ? `file:${s.fileName}` : `track:${s.index}`;
-      return val === activeSubtitle;
-    });
-    return found ? found.label : activeSubtitle;
+    if (activeSubtitle === 'off') return 'Désactivés';
+    const track = tracks.subtitleTracks.find((s) => (s.fileName ? `file:${s.fileName}` : `track:${s.index}`) === activeSubtitle);
+    return track ? track.label : activeSubtitle;
   }, [activeSubtitle, tracks.subtitleTracks]);
 
   if (isCorrupted) {
@@ -408,14 +427,14 @@ export default function PlayerScreen() {
       <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#000000' }]}>
         <View
           style={{
-            maxWidth: 500,
+            maxWidth: 480,
             width: '100%',
             backgroundColor: '#0a0a0a',
             borderRadius: 16,
             padding: 24,
             alignItems: 'center',
             borderWidth: 1,
-            borderColor: '#f59e0b',
+            borderColor: '#ef4444',
           }}
         >
           <Text style={{ fontSize: 48, marginBottom: 16 }}>⚠️</Text>
@@ -423,7 +442,7 @@ export default function PlayerScreen() {
             Fichier Incomplet ou Corrompu
           </Text>
           <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
-            {corruptedReason || 'Ce fichier vidéo est incomplet sur le disque de stockage (téléchargement inachevé ou en-tête manquant). Veuillez terminer le téléchargement ou remplacer le fichier source.'}
+            {corruptedReason || "Ce fichier vidéo est incomplet ou corrompu sur le disque de stockage (téléchargement inachevé ou en-tête manquant)."}
           </Text>
           <Pressable
             focusable={true}
@@ -440,7 +459,7 @@ export default function PlayerScreen() {
             ]}
           >
             <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
-              ← Retour au catalogue
+              Retour à l'accueil
             </Text>
           </Pressable>
         </View>
@@ -668,6 +687,7 @@ export default function PlayerScreen() {
         activeAudio={activeAudio}
         onSelect={(val) => {
           setActiveAudio(val);
+          playerStore.setAudio(val);
           setShowAudio(false);
           const found = tracks.audioTracks.find((t) => String(t.index) === String(val));
           showToast(`Piste audio : ${found ? found.label : val === 'auto' ? 'Auto' : val} 🔊`);
@@ -681,6 +701,7 @@ export default function PlayerScreen() {
         activeSubtitle={activeSubtitle}
         onSelect={(val) => {
           setActiveSubtitle(val);
+          playerStore.setSubtitle(val);
           setShowSubtitles(false);
           const found = tracks.subtitleTracks.find((s) => (s.fileName ? `file:${s.fileName}` : `track:${s.index}`) === val);
           showToast(`Sous-titres : ${found ? found.label : val === 'off' ? 'Désactivés' : val} 💬`);

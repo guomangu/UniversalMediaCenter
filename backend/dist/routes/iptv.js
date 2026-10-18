@@ -9,6 +9,20 @@ import { proxyLiveStream } from '../iptv/liveProxyService.js';
 export const iptvRouter = new Hono();
 // Déléguer la gestion des sources IPTV (Admin)
 iptvRouter.route('/sources', iptvSourcesRouter);
+// Proxy de flux en direct universel (HLS manifest, audio, ts chunks) sans blocage d'en-tête XHR
+iptvRouter.options('/proxy', (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    c.header('Access-Control-Allow-Headers', '*');
+    return c.body(null, 204);
+});
+iptvRouter.get('/proxy', async (c) => {
+    const url = c.req.query('url');
+    if (!url || !url.startsWith('http')) {
+        return c.text('URL param required', 400);
+    }
+    return await proxyLiveStream(c, url);
+});
 iptvRouter.use('*', requireAuth);
 iptvRouter.get('/channels', async (c) => {
     const user = c.get('user');

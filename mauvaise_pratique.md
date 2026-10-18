@@ -1,3 +1,34 @@
+## 🛑 111. Blocage de Lecture sur Codecs Non-Natifs (DTS-HD MA, HEVC, AVI), Désynchronisation Multi-Appareils d'un Même Compte & Échec IPTV par Contenu Mixte
+
+* **Problème / Symptôme :**
+  1. Certains médias encodés avec des pistes audio DTS/DTS-HD MA (ex: *Ratatouille* `2007.Ratatouille.1920x802.BDRip.x264.DTS-HD.MA.mkv`), de la vidéo HEVC/H.265 (ex: *James Bond Goldfinger* `1964 goldfinger multi 1080p bluray x265 ac3-dam.mkv`) ou des conteneurs AVI (ex: *Ratatouille.avi*) fonctionnaient parfaitement sous VLC mais bloquaient indéfiniment ou restaient muets dans le navigateur web.
+  2. Lorsqu'un utilisateur lançait un média sur un appareil ou démarrait un Cast vers une TV, les autres appareils connectés au même compte continuaient leur propre lecture isolée ou ne suivaient pas le média casté (aucune synchronisation du média en cours, des secondes écoulées, ni des pistes audio et sous-titres).
+  3. Des chaînes IPTV non fonctionnelles restaient affichées comme actives sans être grisées, et des chaînes légitimes en HTTP (ex: *France 3 Côte d'Azur* `http://89.187.185.76:8080/France3/...`) étaient bloquées par le navigateur en déploiement HTTPS au titre du Contenu Mixte (*Mixed Content Blocked*).
+* **Conséquences :**
+  - Blocage frustrant de films emblématiques du catalogue et échec incompréhensible pour l'utilisateur alors que les fichiers sont sains sous VLC.
+  - Absence de contrôle unifié : un compte pouvait lancer plusieurs lectures concurrentes sans synchronisation, brisant l'expérience multi-écrans fluide et la télécommande de Cast.
+  - Guide des chaînes TV pollué par des flux morts ou bloqués par les règles de sécurité HTTPS des navigateurs.
+* **Causes Racines :**
+  - **Remuxing Monolithique Bloquant vs Requêtes HTTP Range :** Pour les fichiers audio non-natifs, le serveur tentait un remuxing FFMPEG intégral du fichier de 6.5 Go. Le processus monopolisait la réponse HTTP pendant plus de 45 secondes, provoquant l'expiration des délais de connexion (*timeout*) de la balise `<video>` du navigateur. Pour le HEVC, Chromium sous Linux ne dispose pas de décodeur matériel natif et rejette le conteneur MP4/MKV.
+  - **Absence d'Architecture de Synchronisation de Compte Mono-Lecture :** Aucune route centralisée ne synchronisait l'état de lecture global du compte utilisateur entre ses différents terminaux (smartphones, PC, PWA TV), et la boucle de Cast ne répercutait pas l'état du média casté sur le compte.
+  - **Testeur IPTV Naïf & Blocage de Contenu Mixte :** Le testeur IPTV validait les chaînes sur un simple code HTTP 200 sans vérifier si la réponse était en réalité une page HTML d'erreur du fournisseur. De plus, les flux HTTP directs étaient insérés sans passerelle HTTPS, déclenchant le blocage de sécurité des navigateurs.
+* **Bonnes Pratiques de Remédiation :**
+  - **Moteur de Transcodage HLS VOD à la Volée (< 50ms) (`mediaTracks.ts`, `mediaStream.ts`) :**
+    - Détecter automatiquement si la vidéo (`h264`, `av1`, `vp8`, `vp9`) ou l'audio (`aac`, `mp3`, `opus`) nécessite une adaptation (`requiresHls`).
+    - Générer un manifeste virtuel HLS VOD `master.m3u8` en mémoire (< 15ms) découpé en tranches de 6,0 secondes.
+    - Transcoder dynamiquement à la volée chaque segment `segment_:index.ts` : `-c:v copy` en 45ms pour les vidéos H264 avec transcodage audio AAC, ou `-c:v libx264 -preset ultrafast` pour HEVC/MPEG-4, avec mise en cache locale dans `/tmp/ums_cache/segments/`.
+    - Rediriger automatiquement les requêtes de lecture directe vers HLS (`HTTP 307`) pour les médias incompatibles.
+  - **Moteur de Synchronisation Mono-Lecture par Compte (`userPlaybackSync.ts`, `accountSyncService.ts`, `playerStore.ts`) :**
+    - Assigner un `deviceId` unique persistant à chaque terminal dans `localStorage`.
+    - Maintenir en mémoire backend l'état de lecture actif unique du compte (`userId`, `deviceId`, `mediaId`, `positionSeconds`, `isPlaying`, `activeAudio`, `activeSubtitle`, `castTargetId`).
+    - Établir une boucle de synchronisation réconciliant en temps réel (< 1400ms) tous les terminaux du compte : chargement automatique du média, calage à la seconde, synchronisation de l'état play/pause et des langues audio/sous-titres.
+    - Lier la boucle de Cast (`castState.ts`) à la synchronisation de compte : tout changement sur la TV castée se reflète immédiatement sur l'ensemble des écrans du compte.
+  - **Proxy Universel HLS IPTV & Sonde Stricte (`streamTester.ts`, `liveProxyService.ts`, `iptv.ts`) :**
+    - Renforcer le testeur IPTV : valider l'en-tête `#EXTM3U`, rejeter catégoriquement les réponses `<!DOCTYPE html>`, et vérifier la validité du premier fragment vidéo `.ts` (Range 0-1024 octets).
+    - Mettre en place un proxy inverse de flux IPTV `/api/iptv/proxy` réécrivant à la volée tous les sous-manifestes et chunks `.ts` avec les en-têtes CORS universels, éliminant totalement les erreurs de Contenu Mixte sur domaine HTTPS (`cool.sweaw.com`).
+
+---
+
 ## 🛑 110. Prolifération de Faux Fichiers et Désynchronisation des Dossiers Physiques (PBAC) lors de Déplacements ou Suppressions sur Disque
 
 * **Problème / Symptôme :**

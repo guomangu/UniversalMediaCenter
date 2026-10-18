@@ -10,8 +10,10 @@ export function resolveImageUrl(uri?: string | null): string {
   return `${getApiBaseUrl()}/${uri}`;
 }
 
-export function getVideoStreamUrl(id: string, shareToken?: string | null): string {
-  const base = `${getApiBaseUrl()}/api/media/${id}/stream`;
+export function getVideoStreamUrl(id: string, shareToken?: string | null, useHls?: boolean): string {
+  const base = useHls
+    ? `${getApiBaseUrl()}/api/media/${id}/hls/master.m3u8`
+    : `${getApiBaseUrl()}/api/media/${id}/stream`;
   const token = getAuthToken();
   const p = new URLSearchParams();
   if (shareToken) p.set('share', shareToken);

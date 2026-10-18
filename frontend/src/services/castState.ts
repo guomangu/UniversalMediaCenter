@@ -5,6 +5,8 @@ import {
   endGoogleCastSession,
   CastDevice,
 } from './castService';
+import { playerStore } from './playerStore';
+import { reportAccountPlayback } from './accountSyncService';
 
 const STORAGE_ACTIVE_CAST_KEY = 'ums_active_cast_target_id';
 
@@ -30,6 +32,41 @@ function startSyncLoop(targetId: string) {
       if (live) {
         activeTarget = live;
         notifyListeners();
+
+        // Maintien du lecteur du site en synchronisation totale avec le média casté
+        try {
+          const st = playerStore.getState();
+          if (st.activeMedia) {
+            if (typeof live.positionSeconds === 'number' && Math.abs(st.activeMedia.positionSeconds - live.positionSeconds) > 1.2) {
+              st.activeMedia.positionSeconds = live.positionSeconds;
+            }
+            if (typeof live.durationSeconds === 'number' && live.durationSeconds > 0) {
+              st.activeMedia.durationSeconds = live.durationSeconds;
+            }
+            const isLivePlaying = Boolean(live.isPlaying);
+            if (st.activeMedia.isPlaying !== isLivePlaying) {
+              st.activeMedia.isPlaying = isLivePlaying;
+            }
+            if (live.audioTrack && st.activeMedia.activeAudio !== live.audioTrack) {
+              st.activeMedia.activeAudio = live.audioTrack;
+            }
+            if (live.subtitleTrack && st.activeMedia.activeSubtitle !== live.subtitleTrack) {
+              st.activeMedia.activeSubtitle = live.subtitleTrack;
+            }
+          }
+          // Reporter la synchronisation active vers les autres appareils du compte
+          reportAccountPlayback({
+            mediaId: live.currentMediaId || st.activeMedia?.id,
+            mediaTitle: live.mediaTitle || st.activeMedia?.title,
+            positionSeconds: live.positionSeconds || 0,
+            durationSeconds: live.durationSeconds || 0,
+            isPlaying: Boolean(live.isPlaying),
+            activeAudio: live.audioTrack || st.activeMedia?.activeAudio || 'auto',
+            activeSubtitle: live.subtitleTrack || st.activeMedia?.activeSubtitle || 'off',
+            isCastActive: true,
+            castTargetId: live.id,
+          }).catch(() => {});
+        } catch {}
       } else {
         // Appareil cible hors ligne ou déconnecté
         activeTarget = null;

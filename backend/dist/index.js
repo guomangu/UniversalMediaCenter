@@ -22,6 +22,7 @@ import { sessionRouter } from './routes/sessionRoutes.js';
 import { ratingRouter } from './routes/ratingRoutes.js';
 import { taxonomyRouter } from './routes/taxonomyRoutes.js';
 import { inviteRouter } from './routes/inviteRoutes.js';
+import { playbackSyncRouter } from './routes/userPlaybackSync.js';
 const app = new Hono();
 app.use('*', cors({
     origin: (origin) => origin || '*',
@@ -50,6 +51,7 @@ app.route('/api/search', searchRouter);
 app.route('/api/iptv', iptvRouter);
 app.route('/api/admin', adminRouter);
 app.route('/api/cast', castRouter);
+app.route('/api/playback', playbackSyncRouter);
 app.route('/api/forum', forumRouter);
 app.route('/api/user', userRouter);
 app.route('/api/friends', friendRouter);
