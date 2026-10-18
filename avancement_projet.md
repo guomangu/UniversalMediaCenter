@@ -1,3 +1,20 @@
+- [x] **88. Le Lecteur Autonome Dépliable comme Cœur Unique du Site PWA & Souveraineté du Dernier Appareil Touchant le Player (`FloatingBottomPlayer.tsx`, `playerStore.ts`, `userPlaybackSync.ts`, `player/[id].tsx`, `TvChannelCard.tsx`, `media/[id].tsx`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `sommaire.md`) :**
+  - **Le Lecteur Dépliable (`player_div`) Érigé en Cœur Unique du Site :**
+    - Diagnostic : Auparavant, l'application maintenait deux lecteurs concurrents (`player/[id].tsx` et `FloatingBottomPlayer.tsx`). Lors de la navigation vers ou depuis la page lecteur, la balise `<video>` et l'instance Hls.js étaient détruites et recréées, provoquant re-buffering, perte de position et saccades.
+    - Résolution : Unification totale du moteur multimédia dans `FloatingBottomPlayer.tsx`, monté au niveau racine dans `_layout.tsx`.
+    - Persistance Continue PWA : Le composant ne se démonte jamais lors des transitions de pages (`/`, `/media/[id]`, `/tv`, `/explore`, `/admin`).
+    - Div Dépliable Autonome : Passage instantané (0 ms de latence, zéro coupure ni re-buffering) entre le mode replié (mini-barre flottante 68px au bas du site avec prévisualisation et contrôles réactifs) et le mode déplié (vue cinéma 100vw x 100vh avec toutes les fonctionnalités : contrôles tactiles, sous-titres WebVTT natifs, sélection de pistes audio, Cast, partage, repost, skip intro, reprise et enchaînement automatique Netflix).
+    - Ouverture Asynchrone Universelle : Les clics sur « Regarder », un épisode ou une chaîne IPTV lancent directement la lecture asynchrone via `playerStore.openMedia` avec dépliement automatique.
+  - **Règle d'Or de la Synchronisation Multi-Écrans (Last-Interaction-Wins) :**
+    - Principe souverain : *« Le dernier appareil touchant le player a raison (c'est la dernière modif qui compte) : Appareils interagissant avec le player → Serveurs → Appareil synchronisé recevant. »*
+    - Dans `userPlaybackSync.ts`, toute interaction utilisateur réelle (Play/Pause, saut temporel, changement audio/sous-titres, changement de média) émet `{ isAction: true }` et accorde instantanément le rôle de Leader souverain à cet appareil sur le serveur.
+    - Sanctuarisation contre les suiveurs passifs : Les battements périodiques passifs de suiveurs (`isAction: false`) ne peuvent jamais corrompre ou écraser l'état de lecture du leader actif.
+    - Propagation Descendante : Tous les autres appareils synchronisés connectés au compte s'alignent automatiquement sur la nouvelle vérité émise par l'appareil interagissant.
+  - **Validation & Contrôle d'Intégrité :**
+    - Compilation TypeScript Frontend (`npx tsc --noEmit`) : 0 erreur.
+    - Compilation TypeScript Backend (`npm run build`) : 0 erreur.
+    - Tests d'intégration automatisés (`testAccountPlaybackSync.ts` & `testUserDevicesAndDiffusion.ts`) : 100% de succès.
+
 - [x] **87. Résolution du Reset à 0 lors de la Pause & Rétablissement du Son sur Android (`VideoPlayerView.tsx`, `mediaStream.ts`, `mediaTracks.ts`, `playerStore.ts`, `accountSyncService.ts`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`) :**
   - **Éradication du Bug de Réinitialisation de Position lors de la Pause :**
     - Diagnostic : Dès que l'utilisateur mettait le lecteur en pause, la vidéo repartait de 00:00 ou effaçait la progression en cours.

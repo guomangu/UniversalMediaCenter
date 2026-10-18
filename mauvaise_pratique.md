@@ -1,3 +1,29 @@
+## 🛑 117. Duplication de Balises Vidéo entre Page Lecteur et Mini-Lecteur Flottant, Destruction Inutile du Flux lors du Changement de Page & Écrasement de l'État par Battements Suiveurs Passifs (`FloatingBottomPlayer.tsx`, `player/[id].tsx`, `userPlaybackSync.ts`, `playerStore.ts`, `accountSyncService.ts`)
+
+* **Problème / Symptôme :**
+  1. Conflit, instabilité et latence lors du passage entre la page dédiée `/player/[id]` et le mini-lecteur flottant `FloatingBottomPlayer` (`player_div`) : destruction de l'élément `<video>`, recréation de l'instance Hls.js, rechargement complet des tampons, perte de buffering, et saccades à chaque changement d'écran ou navigation dans la PWA.
+  2. Écrasement erratique de la lecture en cours par les battements de cœur passifs (`isAction: false`) d'anciens appareils suiveurs envoyés au serveur, entrant en collision avec l'appareil actif piloté par l'utilisateur.
+  3. Perte de simplicité et d'élégance architecturale : multiplication de composants de lecture vidéo redondants dans l'application au lieu d'un unique cœur souverain persistant.
+* **Conséquences :**
+  - Coupure audio et vidéo lors de la navigation entre les pages de l'application.
+  - Désynchronisation multi-écrans sur le compte utilisateur : le leader se voyait écrasé par la progression en retard d'un suiveur passif.
+  - Risque d'erreur de rendu et fuites de mémoire par multiplication d'instances Hls.js concurrentes.
+* **Causes Racines :**
+  - **Duplication de Balises `<video>` et d'Instances Hls.js** : Le mini-lecteur flottant masquait son interface et détruisait son flux dès que l'utilisateur atteignait l'URL `/player`, obligeant la page à ré-instancier un lecteur vidéo complet à partir de zéro, détruisant la continuité PWA.
+  - **Absence de Protection sur les Battements Passifs Côté Backend (`userPlaybackSync.ts`)** : Lorsqu'un appareil suiveur envoyait son battement de progression de routine avec `isAction: false`, le serveur réécrivait l'état de groupe avec le corps de cet appareil suiveur même si un leader actif était en train de diffuser.
+* **Bonnes Pratiques de Remédiation :**
+  - **Le Lecteur Autonome Dépliable comme Cœur Unique du Site (`FloatingBottomPlayer.tsx`)** :
+    - Une seule et unique balise `<video>` HTML5 pour toute l'application PWA, montée à la racine dans `_layout.tsx`.
+    - Persistance absolue : le lecteur ne se démonte jamais lors des transitions de pages (`/`, `/media/[id]`, `/tv`, `/explore`, etc.).
+    - Div dépliable autonome : passe instantanément du mode replié (barre flottante 68px au bas du site avec contrôles) au mode déplié (vue cinéma 100vw x 100vh avec toutes les options, contrôles tactiles, sauts d'intro, sous-titres, audio et Cast) par simple mutation CSS, sans aucune interruption du flux vidéo ni re-buffering (0 ms de latence).
+    - Ouverture asynchrone universelle : tout clic sur « Regarder », un épisode ou une chaîne TV active immédiatement `playerStore.openMedia` avec dépliement automatique.
+  - **Souveraineté du Dernier Appareil Touchant le Player (Last-Interaction-Wins) :**
+    - Règle d'or : *Le dernier appareil touchant le player a raison (c'est la dernière modif qui compte) : Appareils interagissant avec le player → Serveurs → Appareil synchronisé recevant.*
+    - Toute interaction utilisateur volontaire (play, pause, seek, audio, sous-titres, changement de média) émet `{ isAction: true }` et accorde instantanément et sans délai le leadership à cet appareil sur le serveur.
+    - Les battements passifs de suiveurs (`isAction: false`) ne peuvent jamais écraser ni modifier l'état de lecture du leader actif.
+
+---
+
 ## 🛑 116. Destruction Récursive de l'Instance HLS au Basculement Play/Pause, Réinitialisation Sauvage de la Progression à 0 et Blocage Audio sur Android (`VideoPlayerView.tsx`, `mediaStream.ts`, `mediaTracks.ts`, `playerStore.ts`, `accountSyncService.ts`)
 
 * **Problème / Symptôme :**

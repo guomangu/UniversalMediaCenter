@@ -100,9 +100,13 @@ Le lecteur vidéo d'UMS est conçu pour offrir une expérience de lecture fluide
 
 ---
 
-## 2. Le Mini-Lecteur Flottant Persistant (`player_div`)
+## 2. Le Lecteur Autonome Dépliable (`player_div`) : Cœur Permanent de l'Application PWA
 
-Afin d'offrir une continuité de lecture analogue à l'expérience YouTube, le lecteur ne s'arrête pas lorsque l'utilisateur quitte la page `/player`. Un conteneur flottant persistant portant l'identifiant strict `player_div` est arrimé en permanence au bas de l'écran sur toutes les pages de l'application.
+Le lecteur multimédia est le **cœur central et souverain** de toute l'application. Au lieu d'avoir des lecteurs multiples qui se détruisent et se recréent à chaque changement de page, un conteneur persistant unique (`FloatingBottomPlayer`, `#player_div`) est arrimé à la racine de la PWA dans `_layout.tsx`. Il s'agit d'une **div dépliable autonome au chargement asynchrone** qui persiste de façon continue pendant le chargement et la navigation entre toutes les pages (`/`, `/media/[id]`, `/explore`, `/tv`, `/user`, `/admin`).
+
+Il dispose de deux modes de présentation fluides (0 ms de re-buffering grâce à la préservation de la balise `<video>` unique) :
+1. **Mode Replié (Mini-Barre Flottante 68px)** : Arrimage discret au bas de l'écran avec prévisualisation vidéo, titre, scrubber scrubber cliquable, contrôles réactifs (-10s, play/pause, +30s), audio, sous-titres, Cast, et bouton « ▲ Déplier ».
+2. **Mode Déplié (Vue Cinéma Plein Écran 100vw x 100vh)** : Couverture instantanée du viewport avec contrôles complets (bouton « ▼ Réduire », titre & badge, audio, sous-titres WebVTT, Cast, partage, repost, plein écran natif, saut de générique, compte à rebours épisode suivant, scrubber haute précision et curseur de volume).
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -267,7 +271,18 @@ Conformément à la spécification, un compte utilisateur est restreint à **une
   ```
 
 ### 5.2. Architecture Ordonnée Leader / Follower & Maintien en Étape Synchronisée (Lockstep Sync)
-Afin d'éliminer définitivement les collisions multi-maîtres (*multi-master ping-pong feedback loops*), la synchronisation repose sur une hiérarchie dynamique et inviolable :
+
+> **Règle d'or de la synchronisation multi-écrans :**  
+> **« Le dernier appareil touchant le player a raison (c'est la dernière modif qui compte) :  
+> Appareils interagissant avec le player → Serveurs → Appareil synchronisé recevant. »**
+
+Afin d'éliminer définitivement les collisions multi-maîtres (*multi-master ping-pong feedback loops*) tout en offrant une réactivité immédiate à l'utilisateur, la synchronisation repose sur une hiérarchie dynamique et inviolable :
+- **Souveraineté de la Dernière Interaction Utilisateur :**  
+  Dès qu'un utilisateur touche le player sur n'importe quel écran (clic Play/Pause, déplacement du scrubber, changement de langue audio, sélection de sous-titres, changement de film ou d'épisode), cet appareil envoie une requête avec `{ isAction: true }`. Le serveur lui accorde immédiatement et souverainement le rôle de Leader (`leaderDeviceId`). Cet appareil devient la vérité absolue du groupe.
+- **Protection contre les Battements de Cœur Passifs des Suiveurs :**  
+  Les appareils suiveurs (Followers) émettent des battements de routine avec `{ isAction: false }`. Le serveur rejette formellement toute tentative d'un battement passif d'écraser la lecture du Leader actif, garantissant que seuls les appareils touchés par un humain modifient l'état global.
+- **Propagation Descendante vers les Appareils Synchronisés :**  
+  Dès que le serveur enregistre la nouvelle vérité émise par l'appareil interagissant, tous les autres appareils synchronisés (recevant) reçoivent cette mise à jour lors de leur battement et s'alignent automatiquement (reprise, pause, calage temporel, changement de piste ou de média).
 - **Attribution Déterministe du Rôle Leader (`leaderDeviceId`) :**
   - Le premier appareil qui lance un média devient le **Leader** (`leaderDeviceId = deviceId`).
   - Le Leader est le **seul** appareil autorisé à émettre des battements de progression temporelle (`positionSeconds`, `isPlaying`).

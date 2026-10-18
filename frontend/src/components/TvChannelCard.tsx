@@ -3,6 +3,7 @@ import { View, Text, Image, Pressable, Platform, StyleSheet } from 'react-native
 import { useRouter } from 'expo-router';
 import { Radius, Spacing } from '@/constants/theme';
 import { MediaRepostModal } from './MediaRepostModal';
+import { playerStore } from '@/services/playerStore';
 
 interface Props {
   channel: any;
@@ -20,8 +21,18 @@ export function TvChannelCard({ channel }: Props) {
   const isBrokenCdn = !logo || logo.includes('dc2.oqee.net');
   const category = (channel.searchVectorText?.replace(title, '') || '').trim().split(';')[0]?.trim() || 'Direct';
 
-  const handlePlay = () => {
-    router.push({ pathname: '/player/[id]', params: { id: channel.id, title, isLive: '1' } } as any);
+const handlePlay = () => {
+    playerStore.openMedia({
+      id: String(channel.id),
+      title,
+      streamUrl: channel.streamUrl?.startsWith('http')
+        ? `/api/iptv/proxy?url=${encodeURIComponent(channel.streamUrl)}`
+        : `/api/media/${channel.id}/stream`,
+      posterUrl: logo,
+      isLive: true,
+      initialTime: 0,
+      expand: true,
+    });
   };
 
   const handleForum = () => {

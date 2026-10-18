@@ -178,6 +178,7 @@ export const playerStore = {
     isCorrupted?: boolean;
     corruptedReason?: string;
     isRemoteSync?: boolean; // Si true, l'ouverture est initiée par un leader distant
+    expand?: boolean; // Si false, ne pas déplier automatiquement
   }) {
     const prevMedia = state.activeMedia;
     const isSameMedia = Boolean(prevMedia && prevMedia.id === media.id);
@@ -213,6 +214,10 @@ export const playerStore = {
     };
     saveLastPlayback(state.lastPlayback);
 
+    if (media.expand !== false && !media.isRemoteSync) {
+      state.isExpanded = true;
+    }
+
     if (media.isRemoteSync) {
       this.beginRemoteSync();
       this.endRemoteSync();
@@ -243,7 +248,7 @@ export const playerStore = {
         activeSubtitle: subtitle,
         volume: state.volume,
         isMuted: state.isMuted,
-      }, true); // isAction: true (prise de leadership légitime)
+      }, true); // isAction: true (prise de leadership légitime : "le dernier appareil touchant le player a raison")
     }
   },
 
@@ -445,6 +450,11 @@ export const playerStore = {
     notify();
   },
 
+  toggleExpanded() {
+    state.isExpanded = !state.isExpanded;
+    notify();
+  },
+
   setMuted(muted: boolean) {
     state.isMuted = muted;
     notify();
@@ -527,6 +537,7 @@ export const playerStore = {
         activeAudio: 'auto',
         activeSubtitle: 'off',
         initialTime: last.positionSeconds || 0,
+        expand: true,
       });
       return true;
     } catch {

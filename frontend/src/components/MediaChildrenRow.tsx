@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { resolveImageUrl } from '@/services/api';
 import { Radius } from '@/constants/theme';
 import { buildMediaHierarchy, type EpisodeSectionGroup, type ParsedChildNode } from '@/utils/mediaHierarchy';
+import { playerStore } from '@/services/playerStore';
 
 interface Props {
   parentType: string;
@@ -111,7 +112,16 @@ function renderEpisodeCard(item: ParsedChildNode, parentPoster: string | undefin
     <Pressable
       focusable={true}
       key={node.id}
-      onPress={() => router.push(`/player/${node.id}` as any)}
+      onPress={() => {
+        playerStore.openMedia({
+          id: String(node.id),
+          title: node.title || displayTitle,
+          posterUrl: node.thumbPath || node.posterPath || parentPoster,
+          streamUrl: `/api/media/${node.id}/stream`,
+          initialTime: node.progress?.positionSeconds || 0,
+          expand: true,
+        });
+      }}
       style={({ focused }: any) => [styles.tile, focused && styles.tileFocused]}
     >
       <View style={styles.imgWrap}>
