@@ -2,6 +2,9 @@ import chokidar from 'chokidar';
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { db } from '../db/connection.js';
+import { mediaNodes } from '../db/schema/index.js';
+import { eq, or, like } from 'drizzle-orm';
 import { parseNfoXml } from './nfoParser.js';
 import { ingestMediaNode, ingestStandaloneVideoFile } from './mediaIngester.js';
 const VIDEO_EXTENSIONS = new Set([
@@ -53,6 +56,57 @@ export async function processAnyMediaFile(filePath) {
         }
     }
 }
+/**
+ * Gestionnaire réactif de suppression de fichier en temps réel
+ */
+export async function handleFileUnlink(filePath) {
+    try {
+        const ext = path.extname(filePath).toLowerCase();
+        if (!VIDEO_EXTENSIONS.has(ext) && ext !== '.nfo')
+            return;
+        console.log(`🗑️ [Watcher] Fichier supprimé détecté : ${filePath}`);
+        const node = await db.query.mediaNodes.findFirst({
+            where: (t, { or: oOp, eq: eOp }) => oOp(eOp(t.videoFilePath, filePath), eOp(t.nfoFilePath, filePath)),
+        });
+        if (!node)
+            return;
+        if (ext === '.nfo') {
+            const videoExists = node.videoFilePath
+                ? await fs.access(node.videoFilePath).then(() => true).catch(() => false)
+                : false;
+            if (!videoExists) {
+                await db.delete(mediaNodes).where(eq(mediaNodes.id, node.id));
+                console.log(`🗑️ [Watcher] Nœud orphelin supprimé : "${node.title}"`);
+            }
+            else {
+                await db
+                    .update(mediaNodes)
+                    .set({ nfoFilePath: null, nfoSha256: null, updatedAt: new Date() })
+                    .where(eq(mediaNodes.id, node.id));
+            }
+        }
+        else if (VIDEO_EXTENSIONS.has(ext)) {
+            await db.delete(mediaNodes).where(eq(mediaNodes.id, node.id));
+            console.log(`🗑️ [Watcher] Nœud vidéo supprimé : "${node.title}"`);
+        }
+    }
+    catch (err) {
+        console.error(`Erreur lors du traitement de la suppression de ${filePath}:`, err);
+    }
+}
+/**
+ * Gestionnaire réactif de suppression de dossier en temps réel
+ */
+export async function handleDirUnlink(dirPath) {
+    try {
+        console.log(`📁🗑️ [Watcher] Dossier supprimé détecté : ${dirPath}`);
+        const normDir = path.normalize(dirPath).replace(/\\/g, '/');
+        await db.delete(mediaNodes).where(or(like(mediaNodes.videoFilePath, `${normDir}/%`), like(mediaNodes.nfoFilePath, `${normDir}/%`), eq(mediaNodes.videoFilePath, normDir), eq(mediaNodes.nfoFilePath, normDir)));
+    }
+    catch (err) {
+        console.error(`Erreur lors du traitement de la suppression du dossier ${dirPath}:`, err);
+    }
+}
 export function startMultiRootNfoWatcher(watchDirs) {
     const watchers = [];
     for (const dir of watchDirs) {
@@ -72,6 +126,8 @@ export function startMultiRootNfoWatcher(watchDirs) {
         watcher
             .on('add', (filePath) => processAnyMediaFile(filePath))
             .on('change', (filePath) => processAnyMediaFile(filePath))
+            .on('unlink', (filePath) => handleFileUnlink(filePath))
+            .on('unlinkDir', (dirPath) => handleDirUnlink(dirPath))
             .on('error', (err) => console.error(`Watcher error on ${dir}:`, err));
         watchers.push(watcher);
     }

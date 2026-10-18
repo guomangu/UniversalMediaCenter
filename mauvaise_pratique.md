@@ -1,3 +1,34 @@
+## 🛑 110. Prolifération de Faux Fichiers et Désynchronisation des Dossiers Physiques (PBAC) lors de Déplacements ou Suppressions sur Disque
+
+* **Problème / Symptôme :**
+  1. Après avoir supprimé des fichiers ou des dossiers multimédias sur disque et relancé un scan, les fichiers supprimés continuaient d'apparaître dans l'interface et dans la recherche comme s'ils étaient toujours présents (tentatives de lecture échouant en HTTP 404 / 422).
+  2. Après avoir déplacé des fichiers vers un nouveau dossier (ex: d'un disque dur externe vers le stockage principal ou réorganisation de répertoires), les médias apparaissaient toujours rattachés à l'ancien dossier manquant dans l'explorateur physique PBAC (`/admin/folders`), ou généraient des doublons parasites.
+  3. Des séries (`SHOW`) et sagas (`COLLECTION`) vides continuaient d'exister en base de données alors que tous leurs épisodes ou films avaient été supprimés.
+* **Conséquences :**
+  - Pollution de la base de données avec des milliers de nœuds fantômes orphelins.
+  - Règles de partitionnement physique (PBAC) faussées par des chemins obsolètes.
+  - Frustration de l'utilisateur confronté à des médias injouables ("faux fichiers").
+* **Causes Racines :**
+  - **Absence de Passe de Purge lors du Scan :** Le crawler parcourait les fichiers présents sur le disque et les insérait, mais ne comparait jamais les chemins enregistrés en base (`video_file_path`, `nfo_file_path`) avec le système de fichiers réel. Les médias disparus n'étaient jamais retirés.
+  - **Absence de Réconciliation par Empreinte lors des Déplacements :** L'ingestion se basait uniquement sur le chemin absolu (`eq(videoFilePath, videoPath)`). Dès qu'un fichier changeait de dossier, le système l'insérait comme un nouveau média sans détecter qu'il s'agissait du même fichier, laissant l'ancien chemin en doublon fantôme.
+  - **Amnésie des Événements `unlink` / `unlinkDir` dans le Watcher Chokidar :** Le service de surveillance en arrière-plan n'écoutait que `add` et `change`. Les suppressions de fichiers ou dossiers physiques n'étaient jamais interceptées.
+  - **Comptage Naïf dans l'Explorateur de Dossiers (`folderExplorer.ts`) :** L'agrégation de dossiers se basait sur les chemins en base sans vérifier `fs.existsSync()`, matérialisant des dossiers fantômes avec des compteurs erronés.
+* **Bonnes Pratiques de Remédiation :**
+  - **Moteur Universel de Réconciliation & Purge (`mediaReconciler.ts`) :**
+    - Exécuter systématiquement une passe de réconciliation (`reconcileAndPruneLibrary`) avant et après chaque scan.
+    - Vérifier l'accessibilité du volume parent (`isDiskAccessibleForPath`) pour sanctuariser les disques amovibles débranchés d'une purge accidentelle.
+    - Réconcilier les fichiers déplacés par empreinte cryptographique (`oshash`, `crc32`) ou nom de fichier (`path.basename`), en migrant automatiquement les favoris (`userFavorites`), progressions (`watchProgress`) et avis (`mediaReposts`) vers le nœud valide, puis supprimer le doublon obsolète.
+    - Purger atomiquement les nœuds dont le fichier n'existe plus sur le disque.
+    - Supprimer automatiquement les séries (`SHOW`) sans aucun épisode et les sagas (`COLLECTION`) sans aucun film.
+  - **Réconciliation Proactive lors de l'Ingestion (`mediaIngester.ts`) :**
+    - Avant toute nouvelle insertion, rechercher si un nœud existant portait le même fichier dont l'ancien chemin n'existe plus sur disque, et mettre à jour directement ses chemins sans créer de doublon.
+  - **Écoute Réactive de Suppression dans Chokidar (`watcher/index.ts`) :**
+    - Brancher les écouteurs `.on('unlink', handleFileUnlink)` et `.on('unlinkDir', handleDirUnlink)` pour réagir instantanément aux suppressions physiques.
+  - **Filtrage Strict dans l'Explorateur de Dossiers (`folderExplorer.ts`) :**
+    - Valider `fs.existsSync(filePath)` avant d'incrémenter le compteur d'un dossier, garantissant que seuls les fichiers réels soient comptabilisés.
+
+---
+
 ## 🛑 109. Disparition des Sous-Titres en Mode Plein Écran (Isolation du Top-Layer Navigateur) et Synchronisation Dynamique des Pistes WebVTT
 
 * **Problème / Symptôme :**

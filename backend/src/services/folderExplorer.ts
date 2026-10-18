@@ -45,12 +45,13 @@ export async function discoverPhysicalFolders(): Promise<FolderDiscoveryResult> 
     columns: { videoFilePath: true, nfoFilePath: true },
   });
 
-  const totalMedia = nodes.length;
   const dirDirectCount = new Map<string, number>();
+  let totalMedia = 0;
 
   for (const n of nodes) {
     const filePath = n.videoFilePath || n.nfoFilePath;
-    if (filePath) {
+    if (filePath && fs.existsSync(filePath)) {
+      totalMedia++;
       const norm = path.normalize(filePath).replace(/\\/g, '/');
       const dir = path.dirname(norm);
       dirDirectCount.set(dir, (dirDirectCount.get(dir) || 0) + 1);
@@ -178,17 +179,13 @@ export async function discoverPhysicalFolders(): Promise<FolderDiscoveryResult> 
   for (const folder of allFolders) {
     let sum = folder.directMediaCount;
     let subCount = 0;
-    const prefix = folder.path.endsWith('/') ? folder.path : `${folder.path}/`;
-
-    for (const [dPath, dCount] of dirDirectCount.entries()) {
-      if (dPath !== folder.path && dPath.startsWith(prefix)) {
-        sum += dCount;
-      }
-    }
 
     for (const other of allFolders) {
-      if (other.parentPath === folder.path) {
-        subCount++;
+      if (other.path !== folder.path && other.path.startsWith(`${folder.path}/`)) {
+        sum += other.directMediaCount;
+        if (other.parentPath === folder.path) {
+          subCount++;
+        }
       }
     }
 
@@ -196,18 +193,14 @@ export async function discoverPhysicalFolders(): Promise<FolderDiscoveryResult> 
     folder.subfolderCount = subCount;
   }
 
-  // Trier logiquement : par racine, puis par profondeur, puis alphabétiquement
-  allFolders.sort((a, b) => {
-    if (a.rootPath !== b.rootPath) return a.rootPath.localeCompare(b.rootPath);
-    if (a.depth !== b.depth) return a.depth - b.depth;
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-  });
+  // Filtrer pour éliminer les dossiers orphelins sans médias et inexistants sur disque
+  const cleanedFolders = allFolders.filter((f) => f.existsOnDisk || f.mediaCount > 0);
 
   return {
     success: true,
     roots: rootsList,
-    folders: allFolders,
-    totalFolders: allFolders.length,
+    folders: cleanedFolders,
+    totalFolders: cleanedFolders.length,
     totalMedia,
   };
 }

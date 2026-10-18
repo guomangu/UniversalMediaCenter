@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { db } from '../db/connection.js';
 import { mediaNodes } from '../db/schema/index.js';
@@ -134,10 +135,42 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
             }
         }
     }
-    // Déduplication stricte par chemin NFO
-    const existing = await db.query.mediaNodes.findFirst({
+    // Déduplication stricte et réconciliation de déplacement par chemin NFO ou vidéo
+    let existing = await db.query.mediaNodes.findFirst({
         where: (t, { eq: eqOp }) => eqOp(t.nfoFilePath, nfoPath),
     });
+    if (!existing && adjacent.videoFilePath) {
+        existing = await db.query.mediaNodes.findFirst({
+            where: (t, { eq: eqOp }) => eqOp(t.videoFilePath, adjacent.videoFilePath),
+        });
+    }
+    // Si non trouvé directement, vérifier si un nœud portait ce NFO ou cette vidéo avant déplacement
+    if (!existing) {
+        const nfoBase = path.basename(nfoPath);
+        const nfoCandidates = await db.query.mediaNodes.findMany({
+            where: (t, { like: lOp }) => lOp(t.nfoFilePath, `%/${nfoBase}`),
+        });
+        for (const c of nfoCandidates) {
+            if (c.nfoFilePath && c.nfoFilePath !== nfoPath && !fs.existsSync(c.nfoFilePath)) {
+                console.log(`🔁 [Ingester] NFO déplacé réconcilié pour ${nfoBase}: ${c.nfoFilePath} -> ${nfoPath}`);
+                existing = c;
+                break;
+            }
+        }
+        if (!existing && adjacent.videoFilePath) {
+            const vidBase = path.basename(adjacent.videoFilePath);
+            const vidCandidates = await db.query.mediaNodes.findMany({
+                where: (t, { like: lOp }) => lOp(t.videoFilePath, `%/${vidBase}`),
+            });
+            for (const c of vidCandidates) {
+                if (c.videoFilePath && c.videoFilePath !== adjacent.videoFilePath && !fs.existsSync(c.videoFilePath)) {
+                    console.log(`🔁 [Ingester] Vidéo adjacente déplacée réconciliée pour ${vidBase}: ${c.videoFilePath} -> ${adjacent.videoFilePath}`);
+                    existing = c;
+                    break;
+                }
+            }
+        }
+    }
     // Calcul d'index d'ordre unifié et sans collision entre saisons
     let orderIndex = 0;
     let absoluteOrderIndex = null;
@@ -385,10 +418,23 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
     return nodeId;
 }
 export async function ingestMediaFile(videoPath) {
-    const existing = await db.query.mediaNodes.findFirst({
+    let existing = await db.query.mediaNodes.findFirst({
         where: (t, { eq: eqOp }) => eqOp(t.videoFilePath, videoPath),
     });
-    if (existing && existing.nfoFilePath) {
+    if (!existing) {
+        const baseName = path.basename(videoPath);
+        const candidates = await db.query.mediaNodes.findMany({
+            where: (t, { like: lOp }) => lOp(t.videoFilePath, `%/${baseName}`),
+        });
+        for (const c of candidates) {
+            if (c.videoFilePath && c.videoFilePath !== videoPath && !fs.existsSync(c.videoFilePath)) {
+                console.log(`🔁 [Ingester] Fichier déplacé réconcilié pour ${baseName}: ${c.videoFilePath} -> ${videoPath}`);
+                existing = c;
+                break;
+            }
+        }
+    }
+    if (existing && existing.nfoFilePath && existing.videoFilePath === videoPath) {
         return existing.id;
     }
     const meta = await identifyVideoFile(videoPath);

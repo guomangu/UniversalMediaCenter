@@ -4,6 +4,7 @@ import { processNfoFile } from './index.js';
 import { ingestStandaloneVideoFile } from './mediaIngester.js';
 import { repairAllMediaHierarchy } from './hierarchyRepair.js';
 import { enrichLibraryMetadata } from './metadataEnricher.js';
+import { reconcileAndPruneLibrary } from './mediaReconciler.js';
 
 const VIDEO_EXTENSIONS = new Set([
   '.mkv', '.mp4', '.avi', '.mov', '.m4v', '.webm', '.ts', '.wmv', '.flv',
@@ -20,7 +21,7 @@ export interface DiscoveredScanFiles {
 
 export interface ScanStatus {
   isScanning: boolean;
-  phase?: 'IDLE' | 'DISCOVERY_NFO' | 'METADATA_ENRICH' | 'HIERARCHY_REPAIR' | 'EAV_CONSOLIDATION' | 'DONE' | 'ERROR';
+  phase?: 'IDLE' | 'RECONCILIATION_PRUNE' | 'DISCOVERY_NFO' | 'METADATA_ENRICH' | 'HIERARCHY_REPAIR' | 'EAV_CONSOLIDATION' | 'DONE' | 'ERROR';
   phaseName?: string;
   totalDiscovered: number;
   processedCount: number;
@@ -102,7 +103,7 @@ export async function findMediaFilesRecursive(dir: string): Promise<DiscoveredSc
 }
 
 /**
- * Lance le pipeline unifié complet des bibliothèques (Pass 1 NFO & Standalone + Pass 2 Enrichissement TMDb/Wiki + Pass 3 Hiérarchie & Sagas + Pass 4 EAV)
+ * Lance le pipeline unifié complet des bibliothèques (Pass 0 Purge/Réconciliation + Pass 1 NFO & Standalone + Pass 2 Enrichissement TMDb/Wiki + Pass 3 Hiérarchie & Sagas + Pass 4 EAV)
  */
 export const runBootMediaScan = triggerMediaScan;
 export async function triggerMediaScan(roots: string[]): Promise<void> {
@@ -112,8 +113,8 @@ export async function triggerMediaScan(roots: string[]): Promise<void> {
   }
 
   activeScanStatus.isScanning = true;
-  activeScanStatus.phase = 'DISCOVERY_NFO';
-  activeScanStatus.phaseName = 'Passe 1/4 : Découverte & Indexation In-Place';
+  activeScanStatus.phase = 'RECONCILIATION_PRUNE';
+  activeScanStatus.phaseName = 'Passe 0/4 : Réconciliation des Déplacements & Purge des Faux Fichiers';
   activeScanStatus.totalDiscovered = 0;
   activeScanStatus.processedCount = 0;
   activeScanStatus.nfoCount = 0;
@@ -125,6 +126,15 @@ export async function triggerMediaScan(roots: string[]): Promise<void> {
   activeScanStatus.report = undefined;
 
   try {
+    // 0ère passe : Réconciliation des déplacements et purge des faux fichiers
+    console.log('🧹 [Pipeline] Running initial reconciliation & ghost files pruning...');
+    activeScanStatus.currentFile = 'Vérification de l\'intégrité disque et détection des déplacements...';
+    const prePruneReport = await reconcileAndPruneLibrary(roots);
+    console.log('🧹 [Pipeline] Pre-scan prune report:', prePruneReport);
+
+    activeScanStatus.phase = 'DISCOVERY_NFO';
+    activeScanStatus.phaseName = 'Passe 1/4 : Découverte & Indexation In-Place';
+
     const allNfos: string[] = [];
     const allStandalones: string[] = [];
 
@@ -174,6 +184,9 @@ export async function triggerMediaScan(roots: string[]): Promise<void> {
     const repairReport = await repairAllMediaHierarchy();
     activeScanStatus.report = repairReport;
     console.log(`✨ [Pipeline] Hierarchy reconciliation finished:`, repairReport);
+
+    // Passe finale : Nettoyage final des résidus orphelins
+    await reconcileAndPruneLibrary(roots);
 
     activeScanStatus.phase = 'DONE';
     activeScanStatus.phaseName = 'Synchronisation Universelle Terminée avec Succès';

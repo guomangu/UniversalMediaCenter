@@ -1,3 +1,22 @@
+- [x] **81. Éradication des Faux Fichiers, Réconciliation Proactive des Médias Déplacés & Purge Automatique (`mediaReconciler.ts`, `mediaIngester.ts`, `bootScanner.ts`, `folderExplorer.ts`, `watcher/index.ts`, `mauvaise_pratique.md`) :**
+  - **Diagnostic & Causes Racines des Faux Fichiers et Désynchronisations de Dossiers :**
+    - Lors de la suppression physique de fichiers multimédias sur disque (ex: collection Ghibli supprimée), le scanner d'indexation ne vérifiait pas la persistance sur disque des enregistrements existants en base (`media_nodes`). Les nœuds supprimés restaient indéfiniment en base de données, générant des erreurs de lecture et polluant les catalogues.
+    - Lors du déplacement physique de fichiers vers un nouveau dossier (ex: *Scary Movie* et *Ghost in the Shell* déplacés de `My Passport` vers `drive/Films` et `drive/Animes`, ou *Mushishi* déplacé de `drive/Animes` vers `My Passport/anime`), l'ingestion insérait de nouveaux nœuds sans purger les anciens chemins obsolètes. Des doublons fantômes persistaient en base, référençant l'ancien dossier manquant dans l'arborescence PBAC et trompant l'utilisateur.
+    - Le watcher Chokidar temps réel n'écoutait que les événements `add` et `change`, ignorant complètement `unlink` et `unlinkDir`.
+  - **Moteur Universel de Réconciliation & Purge (`mediaReconciler.ts`) :**
+    - Module souverain `reconcileAndPruneLibrary(roots)` exécuté avant et après chaque scan de bibliothèque.
+    - **Détection d'Accessibilité Disque :** Vérification fine de l'état monté des volumes (`isDiskAccessibleForPath`) pour protéger les disques durs externes temporairement débranchés d'une purge intempestive.
+    - **Résolution Déterministe des Déplacements :** Réconciliation des nœuds par empreinte cryptographique O(1) (`oshash`, `crc32`) et nom de base de fichier (`path.basename`), migration automatique des progressions de lecture (`watch_progress`), favoris (`userFavorites`) et avis (`mediaReposts`), et élimination des doublons fantômes obsolètes.
+    - **Purge Chirurgicale des Médias Supprimés :** Suppression atomique des nœuds dont le fichier vidéo n'existe plus sur le disque et dont le volume est accessible.
+    - **Nettoyage des Séries & Sagas Orphelines :** Détection et purge immédiate des séries (`SHOW`) à 0 épisode et des sagas (`COLLECTION`) à 0 film.
+  - **Réconciliation Proactive lors de l'Ingestion (`mediaIngester.ts`) :**
+    - Dans `ingestMediaFile` et `ingestMediaNode`, détection préalable des fichiers déplacés avant insertion pour mettre à jour directement le nœud existant vers son nouveau chemin sans générer de doublons.
+  - **Écouteurs Réactifs Temps Réel (`watcher/index.ts`) :**
+    - Ajout des handlers `handleFileUnlink` et `handleDirUnlink` sur Chokidar pour nettoyer instantanément la base dès qu'un fichier ou dossier est supprimé sur le disque.
+  - **Sanctuarisation de l'Explorateur de Dossiers PBAC (`folderExplorer.ts`) :**
+    - Filtrage physique strict `fs.existsSync(filePath)` dans `discoverPhysicalFolders`, éliminant immédiatement tout dossier orphelin ou compteurs résiduels sur des dossiers dont les fichiers ont été retirés.
+  - **Validation & Bilan Mesuré :** 152 nœuds fantômes purgés ou réconciliés, 0 fichier manquant restant en base de données, compilation TypeScript Frontend et Backend 100% sans erreur.
+
 - [x] **80. Rétablissement Universel des Sous-Titres en Mode Plein Écran & Harmonisation du Moteur Native `<track>` (`VideoPlayerView.tsx`, `global.css`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`) :**
   - **Diagnostic & Cause Racine de la Disparition en Plein Écran :**
     - Lors de l'activation du mode plein écran (bouton plein écran des contrôles `<video>`, double-clic ou raccourci clavier), les navigateurs web isolent l'élément `<video>` dans la couche supérieure (*top-layer* GPU).
