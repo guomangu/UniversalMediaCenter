@@ -307,7 +307,7 @@ export default function MediaDetailScreen() {
         {/* 1. MEDIA : Hero Spotlight Header                          */}
         {/* ======================================================== */}
         <View style={styles.heroBox}>
-          {fanartUri ? <Image source={{ uri: fanartUri }} style={styles.backdrop} /> : null}
+          {fanartUri ? <Image source={{ uri: fanartUri }} style={styles.backdrop} resizeMode="cover" /> : null}
           <View style={styles.heroContent}>
             <View style={styles.zoneRow}>
               {seasonTag ? (
@@ -715,7 +715,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     opacity: 0.35,
-    resizeMode: 'cover',
   },
   heroContent: {
     padding: Spacing.five,

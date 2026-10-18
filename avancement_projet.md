@@ -1,3 +1,13 @@
+- [x] **90. Optimisation Responsive Universelle du Lecteur Mobile & Résolution des Dépréciations Image (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `media/[id].tsx`, `MediaStudioSection.tsx`, `ForumAssociationsModule.tsx`, `mauvaise_pratique.md`, `sommaire.md`) :**
+  - **Éradication du Débordement Horizontal sur Smartphone :**
+    - Diagnostic : Sur smartphones (360px - 414px), les contrôles du lecteur en mode replié et en mode cinéma déplié débordaient de l'écran à droite, rendant les boutons de fermeture, Cast ou plein écran inaccessibles.
+    - Résolution Mode Replié : Sur `isMobile (< 768px)`, retrait des boutons superflus `-10s` et `+30s` (le scrubber tactile assurant déjà la navigation rapide) pour sanctuariser l'espace au bouton central Play/Pause et aux trois boutons d'action `[📡] [▲] [✕]`. Dimensionnement réactif de la miniature (50x36 au lieu de 58x40) et calage absolu dynamique.
+    - Résolution Mode Déplié Cinéma : Remplacement des libellés textuels volumineux de la barre supérieure par des puces icônes compactes (`🔊`, `💬`, `📡`, `🔗`, `⭐`, `⛶`), bouton de réduction compact `▼` et troncature automatique du titre (`numberOfLines={1}, flexShrink: 1`), garantissant zéro débordement même sur un écran étroit de 320px.
+  - **Correction de la Dépréciation React Native `style.resizeMode` :**
+    - Remplacement systématique de `resizeMode` dans les objets de style `StyleSheet` par la prop JSX native `<Image resizeMode="cover" />` sur `media/[id].tsx`, `MediaStudioSection.tsx` et `ForumAssociationsModule.tsx`.
+  - **Validation & Contrôle d'Intégrité :**
+    - Compilation TypeScript Frontend (`npx tsc --noEmit`) : 0 erreur.
+
 - [x] **89. Correction du Positionnement de la Miniature Vidéo et Rétablissement des Boutons du Mini-Lecteur Replié (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `mauvaise_pratique.md`, `sommaire.md`) :**
   - **Diagnostic du Décalage Graphique et de l'Éjection des Commandes :**
     - Dès que le lecteur se repliait en mode barre basse (68px), la div vidéo apparaissait en dehors de l'encadré de prévisualisation et décalait toute la rangée de boutons (`mainRow`), les repoussant en dehors de l'écran.

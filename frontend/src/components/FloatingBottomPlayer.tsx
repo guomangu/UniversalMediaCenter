@@ -71,6 +71,33 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   const pct = dur > 0 ? (pos / dur) * 100 : 0;
 
+  // Calcul dynamique des styles responsive pour la miniature vidéo et son ancrage
+  const miniVideoStyle = useMemo(() => ({
+    position: 'absolute' as const,
+    top: isMobile ? 18 : 16,
+    left: isMobile ? 10 : 10,
+    width: isMobile ? 50 : 58,
+    height: isMobile ? 36 : 40,
+    borderRadius: 6,
+    overflow: 'hidden' as const,
+    backgroundColor: '#000000',
+    zIndex: 10,
+    cursor: 'pointer' as const,
+  }), [isMobile]);
+
+  const posterThumbStyle = useMemo(() => ({
+    width: isMobile ? 50 : 58,
+    height: isMobile ? 36 : 40,
+    borderRadius: 6,
+    backgroundColor: '#0f172a',
+    marginRight: isMobile ? 8 : 10,
+    overflow: 'hidden' as const,
+    position: 'relative' as const,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    flexShrink: 0,
+  }), [isMobile]);
+
   // Réinitialisation du minuteur d'inactivité de la souris en mode cinéma déplié
   const resetMouseActivity = useCallback(() => {
     setMouseActive(true);
@@ -345,7 +372,6 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   const handleCollapse = () => {
     playerStore.setExpanded(false);
-    // Si l'utilisateur était sur l'écran /player/[id], revenir en douceur à la page précédente ou accueil
     if (pathname?.startsWith('/player')) {
       if (activeMedia?.id) {
         router.replace(`/media/${activeMedia.id}` as any);
@@ -423,7 +449,7 @@ export const FloatingBottomPlayer: React.FC = () => {
         <View style={styles.resumeBar}>
           <View style={styles.resumeLeft}>
             {resumePosterUri ? (
-              <View style={styles.posterThumb}>
+              <View style={posterThumbStyle}>
                 <Image source={{ uri: resumePosterUri }} style={styles.posterImg} resizeMode="cover" />
               </View>
             ) : (
@@ -433,7 +459,7 @@ export const FloatingBottomPlayer: React.FC = () => {
               <Text style={styles.resumeTitle} numberOfLines={1}>
                 Reprendre : {lastPlayback.title}
               </Text>
-              <Text style={styles.resumeSub}>
+              <Text style={styles.resumeSub} numberOfLines={1}>
                 Position : {formatTime(lastPlayback.positionSeconds)}
                 {lastPlayback.durationSeconds > 0 ? ` / ${formatTime(lastPlayback.durationSeconds)}` : ''}
               </Text>
@@ -488,7 +514,7 @@ export const FloatingBottomPlayer: React.FC = () => {
           isExpanded
             ? styles.videoContainerFull
             : (Platform.OS === 'web' && !isCasting && activeMedia?.streamUrl
-                ? styles.videoContainerMini
+                ? miniVideoStyle
                 : { display: 'none' })
         }
         onPress={!isExpanded ? handleExpand : undefined}
@@ -504,10 +530,10 @@ export const FloatingBottomPlayer: React.FC = () => {
             ) : null}
             <View style={{ position: 'absolute', alignItems: 'center', padding: 20 }}>
               <Text style={{ fontSize: 48, marginBottom: 12 }}>📡</Text>
-              <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' }}>
                 Diffusion en cours
               </Text>
-              <Text style={{ color: '#94a3b8', fontSize: 14, marginTop: 4, textAlign: 'center' }}>
+              <Text style={{ color: '#94a3b8', fontSize: 13, marginTop: 4, textAlign: 'center' }}>
                 {activeCastTarget?.name || 'Écran distant'}
               </Text>
             </View>
@@ -621,7 +647,7 @@ export const FloatingBottomPlayer: React.FC = () => {
                 style={styles.collapseBtn}
                 onPress={handleCollapse}
               >
-                <Text style={styles.collapseBtnTxt}>▼ Réduire</Text>
+                <Text style={styles.collapseBtnTxt}>{isMobile ? '▼' : '▼ Réduire'}</Text>
               </Pressable>
               <Text style={styles.expandedTitle} numberOfLines={1}>
                 {isCasting ? `📡 ${mediaTitle}` : mediaTitle}
@@ -634,7 +660,7 @@ export const FloatingBottomPlayer: React.FC = () => {
                 style={[styles.topActionBtn, showAudioModal && styles.topActionBtnActive]}
                 onPress={() => setShowAudioModal(true)}
               >
-                <Text style={styles.topActionBtnTxt}>🔊 Audio</Text>
+                <Text style={styles.topActionBtnTxt}>{isMobile ? '🔊' : '🔊 Audio'}</Text>
               </Pressable>
 
               <Pressable
@@ -642,15 +668,17 @@ export const FloatingBottomPlayer: React.FC = () => {
                 style={[styles.topActionBtn, showSubModal && styles.topActionBtnActive]}
                 onPress={() => setShowSubModal(true)}
               >
-                <Text style={styles.topActionBtnTxt}>💬 Sous-titres</Text>
+                <Text style={styles.topActionBtnTxt}>{isMobile ? '💬' : '💬 Sous-titres'}</Text>
               </Pressable>
 
               <Pressable
                 focusable={true}
-                style={[styles.topActionBtn, isCasting && styles.topActionBtnActive]}
+                style={[styles.topActionBtn, isCasting && styles.castBadge]}
                 onPress={() => setShowCastModal(true)}
               >
-                <Text style={styles.topActionBtnTxt}>{isCasting ? '📡 Casté' : '📡 Cast'}</Text>
+                <Text style={styles.topActionBtnTxt}>
+                  {isMobile ? (isCasting ? '📡 Casté' : '📡') : (isCasting ? '📡 Casté' : '📡 Cast')}
+                </Text>
               </Pressable>
 
               <Pressable
@@ -658,7 +686,7 @@ export const FloatingBottomPlayer: React.FC = () => {
                 style={styles.topActionBtn}
                 onPress={() => setShowShareModal(true)}
               >
-                <Text style={styles.topActionBtnTxt}>🔗 Partager</Text>
+                <Text style={styles.topActionBtnTxt}>{isMobile ? '🔗' : '🔗 Partager'}</Text>
               </Pressable>
 
               <Pressable
@@ -666,7 +694,7 @@ export const FloatingBottomPlayer: React.FC = () => {
                 style={styles.topActionBtn}
                 onPress={() => setShowRepostModal(true)}
               >
-                <Text style={styles.topActionBtnTxt}>⭐ Avis</Text>
+                <Text style={styles.topActionBtnTxt}>{isMobile ? '⭐' : '⭐ Avis'}</Text>
               </Pressable>
 
               <Pressable
@@ -674,7 +702,9 @@ export const FloatingBottomPlayer: React.FC = () => {
                 style={styles.topActionBtn}
                 onPress={() => toggleFullscreen()}
               >
-                <Text style={styles.topActionBtnTxt}>{isFullscreen ? '⛶ Réduire' : '⛶ Plein écran'}</Text>
+                <Text style={styles.topActionBtnTxt}>
+                  {isMobile ? '⛶' : (isFullscreen ? '⛶ Réduire' : '⛶ Plein écran')}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -698,7 +728,7 @@ export const FloatingBottomPlayer: React.FC = () => {
               style={styles.restartBtn}
               onPress={handleRestartFromBeginning}
             >
-              <Text style={styles.restartTxt}>⏮ Recommencer du début</Text>
+              <Text style={styles.restartTxt}>⏮ Recommencer</Text>
             </Pressable>
           )}
 
@@ -709,14 +739,14 @@ export const FloatingBottomPlayer: React.FC = () => {
               style={styles.skipIntroBtn}
               onPress={handleSkipIntro}
             >
-              <Text style={styles.skipIntroTxt}>⏭ Passer le générique</Text>
+              <Text style={styles.skipIntroTxt}>⏭ Passer générique</Text>
             </Pressable>
           )}
 
           {/* Bannière d'activation audio Android */}
           {audioBlocked && (
             <Pressable style={styles.unmuteBanner} onPress={handleUnmuteGesture}>
-              <Text style={styles.unmuteBannerTxt}>🔇 Son désactivé — Appuyez ici pour activer le son 🔊</Text>
+              <Text style={styles.unmuteBannerTxt}>🔇 Son désactivé — Appuyez pour activer 🔊</Text>
             </Pressable>
           )}
 
@@ -734,7 +764,7 @@ export const FloatingBottomPlayer: React.FC = () => {
               <Text style={styles.nextTitle} numberOfLines={1}>{nextNode.title}</Text>
               <View style={styles.nextActions}>
                 <Pressable style={styles.nextPlayBtn} onPress={handlePlayNext}>
-                  <Text style={styles.nextPlayBtnText}>▶ Lancer maintenant</Text>
+                  <Text style={styles.nextPlayBtnText}>▶ Lancer</Text>
                 </Pressable>
                 <Pressable style={styles.nextCancelBtn} onPress={() => setCountdown(null)}>
                   <Text style={styles.nextCancelBtnText}>Annuler</Text>
@@ -752,7 +782,7 @@ export const FloatingBottomPlayer: React.FC = () => {
             <View style={styles.bottomControlsRow}>
               <View style={styles.bottomLeftControls}>
                 <Pressable focusable={true} style={styles.controlBtn} onPress={() => handleSeekRelative(-10)}>
-                  <Text style={styles.controlBtnTxt}>⏪ 10s</Text>
+                  <Text style={styles.controlBtnTxt}>{isMobile ? '⏪ 10' : '⏪ 10s'}</Text>
                 </Pressable>
 
                 <Pressable focusable={true} style={styles.playBtn} onPress={handleTogglePlay}>
@@ -760,10 +790,10 @@ export const FloatingBottomPlayer: React.FC = () => {
                 </Pressable>
 
                 <Pressable focusable={true} style={styles.controlBtn} onPress={() => handleSeekRelative(30)}>
-                  <Text style={styles.controlBtnTxt}>30s ⏩</Text>
+                  <Text style={styles.controlBtnTxt}>{isMobile ? '30 ⏩' : '30s ⏩'}</Text>
                 </Pressable>
 
-                <Text style={styles.timeExpandedText}>
+                <Text style={styles.timeExpandedText} numberOfLines={1}>
                   {activeMedia?.isLive ? '🔴 Direct' : `${formatTime(pos)} / ${formatTime(dur)}`}
                 </Text>
               </View>
@@ -779,7 +809,7 @@ export const FloatingBottomPlayer: React.FC = () => {
 
                 {nextNode && (
                   <Pressable focusable={true} style={styles.controlBtn} onPress={handlePlayNext}>
-                    <Text style={styles.controlBtnTxt}>Suivant ⏭</Text>
+                    <Text style={styles.controlBtnTxt}>{isMobile ? '⏭' : 'Suivant ⏭'}</Text>
                   </Pressable>
                 )}
               </View>
@@ -797,7 +827,7 @@ export const FloatingBottomPlayer: React.FC = () => {
           <View style={styles.mainRow}>
             {/* Section gauche : Miniature vidéo et Titre (cliquable pour déplier) */}
             <Pressable focusable={true} style={styles.leftSection} onPress={handleExpand}>
-              <View style={styles.posterThumb}>
+              <View style={posterThumbStyle}>
                 {posterUri ? (
                   <Image source={{ uri: posterUri }} style={styles.posterImg} resizeMode="cover" />
                 ) : (
@@ -822,15 +852,17 @@ export const FloatingBottomPlayer: React.FC = () => {
 
             {/* Section centre : -10s, Play/Pause, +30s */}
             <View style={styles.centerControls}>
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                accessibilityLabel="Reculer de 10 secondes"
-                style={styles.controlBtn}
-                onPress={() => handleSeekRelative(-10)}
-              >
-                <Text style={styles.controlBtnTxt}>-10s</Text>
-              </Pressable>
+              {!isMobile && (
+                <Pressable
+                  focusable={true}
+                  accessibilityRole="button"
+                  accessibilityLabel="Reculer de 10 secondes"
+                  style={styles.controlBtn}
+                  onPress={() => handleSeekRelative(-10)}
+                >
+                  <Text style={styles.controlBtnTxt}>-10s</Text>
+                </Pressable>
+              )}
 
               <Pressable
                 focusable={true}
@@ -842,15 +874,17 @@ export const FloatingBottomPlayer: React.FC = () => {
                 <Text style={styles.playBtnTxt}>{isPlaying ? '⏸' : '▶'}</Text>
               </Pressable>
 
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                accessibilityLabel="Avancer de 30 secondes"
-                style={styles.controlBtn}
-                onPress={() => handleSeekRelative(30)}
-              >
-                <Text style={styles.controlBtnTxt}>+30s</Text>
-              </Pressable>
+              {!isMobile && (
+                <Pressable
+                  focusable={true}
+                  accessibilityRole="button"
+                  accessibilityLabel="Avancer de 30 secondes"
+                  style={styles.controlBtn}
+                  onPress={() => handleSeekRelative(30)}
+                >
+                  <Text style={styles.controlBtnTxt}>+30s</Text>
+                </Pressable>
+              )}
             </View>
 
             {/* Section droite : Options, Déplier ▲, Fermer ✕ */}

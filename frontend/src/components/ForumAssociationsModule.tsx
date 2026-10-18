@@ -87,7 +87,7 @@ function AssociationRail({ group }: { group: AssociationGroup }) {
             >
               <View style={styles.posterWrap}>
                 {posterUri ? (
-                  <Image source={{ uri: posterUri }} style={styles.poster} />
+                  <Image source={{ uri: posterUri }} style={styles.poster} resizeMode="cover" />
                 ) : (
                   <View style={styles.placeholderWrap}>
                     <Text style={styles.placeholderTxt}>{typeLabel.toUpperCase()}</Text>
@@ -250,7 +250,6 @@ const styles = StyleSheet.create({
   poster: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
   },
   placeholderWrap: {
     flex: 1,

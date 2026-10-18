@@ -1,3 +1,23 @@
+## 🛑 119. Encombrement Non-Responsive des Barres de Contrôles sur Smartphone, Éjection de Boutons Hors-Écran et Dépréciation de `style.resizeMode` (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `media/[id].tsx`, `MediaStudioSection.tsx`, `ForumAssociationsModule.tsx`)
+
+* **Problème / Symptôme :**
+  1. Sur smartphone (largeur < 768px, notamment écrans 360-414px), les boutons du lecteur multimédia (Cast, Déplier, Fermer en mode replié ; Partager, Avis, Plein écran en mode cinéma) débordaient horizontalement de l'écran et devenaient inaccessibles à droite.
+  2. Avertissement Metro/Webpack : `Image: style.resizeMode is deprecated. Please use props.resizeMode.`
+  3. Erreur de syntaxe Metro : `Expecting Unicode escape sequence \uXXXX` due à une séquence d'échappement mal interprétée dans les chaînes multilignes.
+* **Conséquences :**
+  - Expérience mobile dégradée : boutons de fermeture ou d'agrandissement invisibles, barre supérieure tronquée.
+  - Pollution des logs de console et blocage potentiel du bundler.
+* **Causes Racines :**
+  - **Surcharge Horizontale des Rangées de Contrôles** : Présence simultanée sur smartphone des libellés textuels complets (`🔊 Audio`, `💬 Sous-titres`, `📡 Cast`, `🔗 Partager`, `⭐ Avis`, `⛶ Plein écran`) au lieu d'icônes compactes, et conservation des boutons de saut `-10s` et `+30s` dans la mini-barre basse de 68px alors que le scrubber est déjà accessible au doigt.
+  - **Dépréciation React Native Web** : Propriété `resizeMode` passée dans l'objet de style `StyleSheet.create` au lieu de l'attribut direct JSX `<Image resizeMode="..." />`.
+* **Bonnes Pratiques de Remédiation :**
+  - **Adaptation Granulaire Mobile / Desktop (`isMobile = width < 768`)** :
+    - Mode replié (68px) : Sur mobile, n'afficher que le bouton central `Play/Pause`, la miniature compacte (50x36) et les 3 actions rapides `[📡] [▲] [✕]`. Les boutons `-10s` et `+30s` ainsi que les puces audio/sous-titres restent réservés aux grands écrans desktop.
+    - Mode cinéma déplié : Remplacement des libellés textuels par des puces d'icônes compactes (`🔊`, `💬`, `📡`, `🔗`, `⭐`, `⛶`) et réduction de `collapseBtn` à `▼` avec troncature automatique du titre (`numberOfLines={1}, flex: 1, minWidth: 0`), garantissant un alignement parfait sur 100% des smartphones sans aucun débordement.
+  - **Migration Propre de `resizeMode`** : Utiliser exclusivement la prop native JSX `<Image resizeMode="cover" ... />` et purger toute occurrence de `resizeMode` dans les objets `styles`.
+
+---
+
 ## 🛑 118. Positionnement Relatif de la Miniature Vidéo dans le Lecteur Dépliable, Décalage Flexbox et Éjection des Boutons Hors-Écran (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`)
 
 * **Problème / Symptôme :**
