@@ -1,5 +1,5 @@
 import Hls from 'hls.js';
-import React, { useRef, useEffect, useState, useMemo, memo } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { View, Text, Platform, Pressable } from 'react-native';
 import { styles } from './PlayerScreen.styles';
 import { getApiBaseUrl } from '@/services/apiConfig';
@@ -29,12 +29,13 @@ interface Props {
   isFullscreen?: boolean;
 }
 
-const VideoPlayerViewComponent: React.FC<Props> = ({
+export const VideoPlayerView: React.FC<Props> = ({
   streamUrl,
   initialTime,
   intro,
-  activeSubtitle,
+  activeSubtitle = 'off',
   activeQuality = 'auto',
+  activeAudio = 'auto',
   isLive = false,
   videoRef: externalVideoRef,
   onLoadedMetadata,
@@ -56,19 +57,36 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
   const userPausedRef = useRef(false);
   const [curTime, setCurTime] = useState(0);
   const [mouseActive, setMouseActive] = useState(true);
-  const [currentCue, setCurrentCue] = useState('');
   const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   const mouseTimer = useRef<any>(null);
-  const savedTimeRef = useRef(initialTime || 0);
+  const lastTimeRef = useRef<number>(initialTime || 0);
+  const pendingAudioSeekRef = useRef<number | null>(null);
   const initialSeekDoneRef = useRef(false);
+  const prevStreamUrlRef = useRef<string>(streamUrl);
+
+  // Conserver la position précise lors d'un changement de flux (ex: sélection d'une piste audio)
+  useEffect(() => {
+    if (prevStreamUrlRef.current && prevStreamUrlRef.current !== streamUrl) {
+      const currentPos = innerVideoRef.current?.currentTime || lastTimeRef.current;
+      if (currentPos > 0) {
+        pendingAudioSeekRef.current = currentPos;
+      }
+      initialSeekDoneRef.current = false;
+    }
+    prevStreamUrlRef.current = streamUrl;
+  }, [streamUrl]);
 
   useEffect(() => {
     initialSeekDoneRef.current = false;
-  }, [id, streamUrl]);
+  }, [id]);
 
   const setVideoRef = (el: HTMLVideoElement | null) => {
     innerVideoRef.current = el;
+    if (el) {
+      el.muted = false;
+      el.volume = 1;
+    }
     if (externalVideoRef) {
       if (typeof externalVideoRef === 'function') {
         externalVideoRef(el);
@@ -78,9 +96,18 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
     }
   };
 
+  // Le son du média doit toujours être actif par défaut à 100%
+  useEffect(() => {
+    const v = innerVideoRef.current;
+    if (v) {
+      v.muted = false;
+      v.volume = 1;
+    }
+  }, [streamUrl, activeAudio]);
+
   useEffect(() => {
     if (!isLive && initialTime && initialTime > 0 && !initialSeekDoneRef.current) {
-      savedTimeRef.current = initialTime;
+      lastTimeRef.current = initialTime;
       if (innerVideoRef.current && innerVideoRef.current.readyState >= 1) {
         innerVideoRef.current.currentTime = initialTime;
         initialSeekDoneRef.current = true;
@@ -110,11 +137,13 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
     return Boolean(Hls.isSupported());
   }, [isHlsStream]);
 
-  // Support HLS Live IPTV résilient sur tous les navigateurs avec auto-recovery et buffer anti-décrochage
+  // Support HLS Live IPTV résilient avec auto-recovery
   useEffect(() => {
     if (Platform.OS !== 'web' || !innerVideoRef.current || !streamUrl || !shouldUseHlsJs) return;
     setPlaybackError(null);
     const v = innerVideoRef.current;
+    v.muted = false;
+    v.volume = 1;
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -140,6 +169,8 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
       hls.attachMedia(v);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        v.muted = false;
+        v.volume = 1;
         if (!userPausedRef.current) {
           const playPromise = v.play();
           if (playPromise !== undefined) {
@@ -147,6 +178,18 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
               if (err.name === 'NotAllowedError') {
                 v.muted = true;
                 v.play().catch(() => {});
+                const enableAudio = () => {
+                  if (innerVideoRef.current) {
+                    innerVideoRef.current.muted = false;
+                    innerVideoRef.current.volume = 1;
+                  }
+                  window.removeEventListener('click', enableAudio);
+                  window.removeEventListener('keydown', enableAudio);
+                  window.removeEventListener('touchstart', enableAudio);
+                };
+                window.addEventListener('click', enableAudio, { once: true });
+                window.addEventListener('keydown', enableAudio, { once: true });
+                window.addEventListener('touchstart', enableAudio, { once: true });
               }
             });
           }
@@ -198,46 +241,102 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
     }
   }, [streamUrl, shouldUseHlsJs]);
 
-  const subtitleUrl = React.useMemo(() => {
+  const subtitleUrl = useMemo(() => {
     if (!activeSubtitle || activeSubtitle === 'off') return '';
     if (activeSubtitle.startsWith('file:')) return `${getApiBaseUrl()}/api/media/${id}/subtitles?fileName=${encodeURIComponent(activeSubtitle.slice(5))}`;
     if (activeSubtitle.startsWith('track:')) return `${getApiBaseUrl()}/api/media/${id}/subtitles?trackIndex=${encodeURIComponent(activeSubtitle.slice(6))}`;
     return `${getApiBaseUrl()}/api/media/${id}/subtitles?lang=${encodeURIComponent(activeSubtitle)}`;
   }, [id, activeSubtitle]);
 
+  // Synchronisation stricte de la piste de sous-titres native (mode 'showing' en fenêtre et plein écran)
   useEffect(() => {
-    if (Platform.OS === 'web' && innerVideoRef.current?.textTracks) {
-      const tracks = innerVideoRef.current.textTracks;
-      for (let i = 0; i < tracks.length; i++) {
-        tracks[i].mode = activeSubtitle !== 'off' ? 'showing' : 'disabled';
-        tracks[i].oncuechange = () => {
-          const cue = (tracks[i].activeCues?.[0] as any)?.text;
-          setCurrentCue(activeSubtitle !== 'off' && cue ? cue : '');
-        };
+    const v = innerVideoRef.current;
+    if (!v) return;
+
+    const syncTracks = () => {
+      if (!v.textTracks) return;
+      for (let i = 0; i < v.textTracks.length; i++) {
+        const t = v.textTracks[i];
+        if (activeSubtitle === 'off' || !subtitleUrl) {
+          t.mode = 'disabled';
+        } else {
+          t.mode = 'showing';
+        }
       }
-      if (!activeSubtitle || activeSubtitle === 'off') setCurrentCue('');
+    };
+
+    syncTracks();
+    const tt = v.textTracks;
+    if (tt && tt.addEventListener) {
+      tt.addEventListener('addtrack', syncTracks);
+      tt.addEventListener('change', syncTracks);
+      return () => {
+        tt.removeEventListener('addtrack', syncTracks);
+        tt.removeEventListener('change', syncTracks);
+      };
     }
   }, [activeSubtitle, subtitleUrl]);
 
   const handleLoaded = () => {
-    if (!isLive && !initialSeekDoneRef.current) {
-      const target = initialTime && initialTime > 0 ? initialTime : savedTimeRef.current;
-      if (target > 0 && innerVideoRef.current && Math.abs(innerVideoRef.current.currentTime - target) > 0.5) {
-        innerVideoRef.current.currentTime = target;
+    const v = innerVideoRef.current;
+    if (v) {
+      v.muted = false;
+      v.volume = 1;
+    }
+    if (!isLive) {
+      const seekTarget = pendingAudioSeekRef.current ?? (initialTime && initialTime > 0 && !initialSeekDoneRef.current ? initialTime : null);
+      if (seekTarget !== null && seekTarget > 0 && v) {
+        if (Math.abs(v.currentTime - seekTarget) > 0.5) {
+          v.currentTime = seekTarget;
+        }
+        pendingAudioSeekRef.current = null;
         initialSeekDoneRef.current = true;
       }
     }
     onLoadedMetadata?.();
   };
 
-  const introEnd = intro?.end ?? 90.04;
-  const showBtn = !isLive && !isFullscreen && showSkipIntro && curTime <= 10;
+  const handleCanPlay = () => {
+    const v = innerVideoRef.current;
+    if (v) {
+      v.muted = false;
+      v.volume = 1;
+    }
+    if (!isLive) {
+      const seekTarget = pendingAudioSeekRef.current ?? (initialTime && initialTime > 0 && !initialSeekDoneRef.current ? initialTime : null);
+      if (seekTarget !== null && seekTarget > 0 && v) {
+        if (Math.abs(v.currentTime - seekTarget) > 0.5) {
+          v.currentTime = seekTarget;
+        }
+        pendingAudioSeekRef.current = null;
+        initialSeekDoneRef.current = true;
+      }
+    }
+    if (v?.paused && !userPausedRef.current) {
+      v.play().catch(() => {});
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    const v = innerVideoRef.current;
+    const t = v?.currentTime || 0;
+    const d = v?.duration || 0;
+    if (t > 0) {
+      lastTimeRef.current = t;
+    }
+    setCurTime(t);
+
+    onTimeUpdate?.(t, d);
+    if (!isLive && Number.isFinite(d) && d > 30 && d - t <= 10) {
+      onNearEnd?.(Math.max(0, Math.floor(d - t)));
+    }
+  };
 
   return (
     <View
       ref={containerRef as any}
       {...({ dataSet: { playerContainer: 'true', focusable: 'false' }, tabIndex: -1 } as any)}
-      style={styles.videoPlaceholder}
+      style={[styles.videoPlaceholder, { backgroundColor: '#000000' }]}
       onPointerMove={resetMouse}
     >
       {Platform.OS === 'web' ? (
@@ -247,43 +346,34 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
           controls
           autoPlay
           playsInline
+          muted={false}
           crossOrigin="anonymous"
           tabIndex={-1}
           data-video-player="true"
-          style={{ width: '100%', height: '100%', borderRadius: 16, objectFit: 'contain' }}
+          style={{ width: '100%', height: '100%', backgroundColor: '#000000', borderRadius: 0, objectFit: 'contain' }}
           onFocus={() => {
             containerRef.current?.focus?.();
           }}
           onPlay={() => {
             userPausedRef.current = false;
             setPlaybackError(null);
+            if (innerVideoRef.current && innerVideoRef.current.muted) {
+              innerVideoRef.current.muted = false;
+              innerVideoRef.current.volume = 1;
+            }
             onPlay?.();
           }}
           onPause={() => {
             userPausedRef.current = true;
             onPause?.();
           }}
-          onCanPlay={() => {
-            if (!isLive && !initialSeekDoneRef.current) {
-              const target = initialTime && initialTime > 0 ? initialTime : savedTimeRef.current;
-              if (target > 0 && innerVideoRef.current && Math.abs(innerVideoRef.current.currentTime - target) > 0.5) {
-                innerVideoRef.current.currentTime = target;
-                initialSeekDoneRef.current = true;
-              }
-            }
-            if (innerVideoRef.current?.paused && !userPausedRef.current) {
-              innerVideoRef.current.play().catch(() => {});
-            }
-          }}
+          onCanPlay={handleCanPlay}
           onSeeking={() => {
             initialSeekDoneRef.current = true;
           }}
           onSeeked={() => {
             initialSeekDoneRef.current = true;
-            const t = innerVideoRef.current?.currentTime || 0;
-            const d = innerVideoRef.current?.duration || 0;
-            setCurTime(t);
-            onTimeUpdate?.(t, d);
+            handleTimeUpdate();
           }}
           onWaiting={() => {
             if (isLive && innerVideoRef.current?.paused && !userPausedRef.current) {
@@ -299,26 +389,19 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
           }}
           onError={() => {
             if (!playbackError && !isLive) {
-              setPlaybackError('Flux multimédia temporairement indisponible (Erreur diffuseur ou lien expiré).');
+              setPlaybackError('Flux multimédia temporairement indisponible (Erreur diffuseur ou encodage).');
             }
           }}
-          onTimeUpdate={() => {
-            const t = innerVideoRef.current?.currentTime || 0;
-            const d = innerVideoRef.current?.duration || 0;
-            setCurTime(t);
-            onTimeUpdate?.(t, d);
-            if (!isLive && Number.isFinite(d) && d > 30 && d - t <= 10) {
-              onNearEnd?.(Math.max(0, Math.floor(d - t)));
-            }
-          }}
+          onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoaded}
         >
-          {subtitleUrl ? (
+          {subtitleUrl && activeSubtitle !== 'off' ? (
             <track
+              key={subtitleUrl}
               kind="subtitles"
               src={subtitleUrl}
-              srcLang={activeSubtitle}
-              label={activeSubtitle}
+              srcLang="fr"
+              label="Sous-titres"
               default
             />
           ) : null}
@@ -329,7 +412,7 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
 
       {/* Alerte informative en cas de flux indisponible */}
       {playbackError ? (
-        <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.92)', borderRadius: 16, padding: 24, alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+        <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.95)', padding: 24, alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <Text style={{ fontSize: 36, marginBottom: 8 }}>📡</Text>
           <Text style={{ color: '#f8fafc', fontWeight: '800', fontSize: 16, marginBottom: 6, textAlign: 'center' }}>
             Diffusion En Direct Indisponible
@@ -339,7 +422,7 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
           </Text>
           <Pressable
             focusable={true}
-            style={{ backgroundColor: '#6366f1', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20 }}
+            style={{ backgroundColor: '#4f46e5', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20 }}
             onPress={() => {
               if (Platform.OS === 'web' && typeof window !== 'undefined') window.history.back();
             }}
@@ -349,37 +432,38 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
         </View>
       ) : null}
 
-      {currentCue && activeSubtitle !== 'off' ? (
-        <View style={styles.subtitleOverlay} pointerEvents="none">
-          <Text style={styles.subtitleText}>{currentCue}</Text>
-        </View>
-      ) : null}
       {statusMessage ? (
         <View style={styles.statusToast} pointerEvents="none">
           <Text style={styles.statusText}>{statusMessage}</Text>
         </View>
       ) : null}
+
       {showRestartBtn && !isLive && (
         <Pressable
           focusable={true}
           accessibilityRole="button"
           accessibilityLabel="Recommencer depuis le début"
-          {...({ dataSet: { restartBeginning: 'true', focusable: 'true' } } as any)}
           onPress={onRestartFromBeginning}
-          style={({ focused }: any) => [styles.restartBtn, focused && styles.restartBtnFocused]}
+          style={({ focused }: any) => [
+            styles.restartBtn,
+            focused && styles.restartBtnFocused,
+          ]}
         >
-          <Text style={styles.restartBtnIcon}>⏮️</Text>
-          <Text style={styles.restartBtnText}>Recommencer depuis le début</Text>
+          <Text style={styles.restartBtnIcon}>⏮</Text>
+          <Text style={styles.restartBtnText}>Recommencer</Text>
         </Pressable>
       )}
-      {showBtn && (
+
+      {showSkipIntro && !isLive && (
         <Pressable
           focusable={true}
           accessibilityRole="button"
-          accessibilityLabel="Passer l'intro"
-          {...({ dataSet: { skipIntro: 'true', focusable: 'true' } } as any)}
+          accessibilityLabel="Passer le générique d'introduction"
           onPress={onSkipIntro}
-          style={({ focused }: any) => [styles.skipBtn, focused && styles.skipBtnFocused]}
+          style={({ focused }: any) => [
+            styles.skipBtn,
+            focused && styles.skipBtnFocused,
+          ]}
         >
           <Text style={styles.skipText}>Passer l'intro ⏩</Text>
         </Pressable>
@@ -388,4 +472,4 @@ const VideoPlayerViewComponent: React.FC<Props> = ({
   );
 };
 
-export const VideoPlayerView = memo(VideoPlayerViewComponent);
+export default VideoPlayerView;

@@ -47,11 +47,13 @@ function getLanIp(clientHost) {
 }
 // En-têtes CORS stricts et immédiats sur tous les endpoints de Cast
 castRouter.use('*', async (c, next) => {
-    c.header('Access-Control-Allow-Origin', '*');
+    const reqOrigin = c.req.header('origin') || '*';
+    c.header('Access-Control-Allow-Origin', reqOrigin);
     c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    c.header('Access-Control-Allow-Headers', '*');
+    c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, Accept, Origin, Range, X-Requested-With');
+    c.header('Access-Control-Allow-Credentials', 'true');
     if (c.req.method === 'OPTIONS')
-        return c.text('OK', 200);
+        return c.body(null, 204);
     return await next();
 });
 castRouter.get('/info', (c) => {
@@ -94,9 +96,15 @@ castRouter.post('/heartbeat', async (c) => {
     const { id, ...updates } = await c.req.json().catch(() => ({}));
     if (!id)
         return c.json({ error: 'id is required' }, 400);
-    const updated = castRegistry.updateHeartbeat(id, updates);
-    if (!updated)
-        return c.json({ error: 'Device not found or expired' }, 404);
+    let updated = castRegistry.updateHeartbeat(id, updates);
+    if (!updated) {
+        updated = castRegistry.register({
+            id,
+            name: updates.name || 'Écran Récepteur',
+            deviceType: updates.deviceType || 'BROWSER',
+            ...updates,
+        });
+    }
     return c.json({ success: true, device: updated });
 });
 castRouter.post('/command', async (c) => {

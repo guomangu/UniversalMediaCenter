@@ -1,11 +1,17 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, Modal, Pressable, ScrollView, Platform, StyleSheet } from 'react-native';
+import { View, Text, Modal, Pressable, ScrollView, Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 
 interface Props {
   visible: boolean;
   mediaTitle: string;
   activeCastTarget?: { name: string } | null;
+  activeAudioLabel?: string;
+  activeSubtitleLabel?: string;
+  isVoiceMuted?: boolean;
+  viewersCount?: number;
+  isLiveSpeaking?: boolean;
+  onToggleVoiceMute?: () => void;
   isMuted?: boolean;
   onToggleMute?: () => void;
   onOpenRepost: () => void;
@@ -21,6 +27,12 @@ export function PlayerMenuModal({
   visible,
   mediaTitle,
   activeCastTarget,
+  activeAudioLabel,
+  activeSubtitleLabel,
+  isVoiceMuted,
+  viewersCount = 1,
+  isLiveSpeaking = false,
+  onToggleVoiceMute,
   isMuted = true,
   onToggleMute,
   onOpenRepost,
@@ -32,6 +44,13 @@ export function PlayerMenuModal({
   onClose,
 }: Props) {
   const firstBtnRef = useRef<any>(null);
+  const { width, height } = useWindowDimensions();
+
+  const isSmallScreen = width < 480 || height < 600;
+  const isLandscape = width > height && height < 550;
+
+  const effectiveVoiceMuted = isVoiceMuted !== undefined ? isVoiceMuted : isMuted;
+  const toggleVoice = onToggleVoiceMute || onToggleMute;
 
   useEffect(() => {
     if (visible) {
@@ -51,12 +70,20 @@ export function PlayerMenuModal({
           {...({ dataSet: { modalBackdrop: 'true' } } as any)}
         />
         <View
-          style={styles.content}
+          style={[
+            styles.content,
+            {
+              width: isSmallScreen ? '94%' : '100%',
+              maxWidth: Math.min(480, width - 24),
+              maxHeight: isLandscape ? '94%' : '88%',
+              padding: isSmallScreen ? 14 : Spacing.four,
+            },
+          ]}
           {...({ dataSet: { modalContainer: 'true' } } as any)}
         >
           <View style={styles.header}>
             <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={styles.title}>⚙️ Options & Lecture</Text>
+              <Text style={styles.title}>⚙️ Options & Menu</Text>
               <Text numberOfLines={1} style={styles.subtitle}>{mediaTitle}</Text>
             </View>
             <Pressable
@@ -70,71 +97,75 @@ export function PlayerMenuModal({
           </View>
 
           <ScrollView
-            style={styles.list}
-            contentContainerStyle={styles.listContent}
+            style={[
+              styles.list,
+              {
+                maxHeight: isLandscape ? Math.max(140, height - 90) : Math.min(480, height - 150),
+              },
+            ]}
+            contentContainerStyle={[
+              styles.listContent,
+              { gap: isSmallScreen ? 6 : 8 },
+            ]}
             showsVerticalScrollIndicator={true}
           >
-            {onToggleMute && (
-              <Pressable
-                ref={firstBtnRef}
-                focusable={true}
-                accessibilityRole="button"
-                onPress={() => { onToggleMute(); onClose(); }}
-                style={({ focused }: any) => [
-                  styles.item,
-                  !isMuted && styles.itemActive,
-                  focused && styles.itemFocused,
-                ]}
-              >
-                <Text style={styles.itemIcon}>{isMuted ? '🔇' : '🎙️'}</Text>
-                <View style={styles.itemMeta}>
-                  <Text style={styles.itemLabel}>
-                    {isMuted ? 'Micro coupé (Mode Silence)' : 'Micro actif (Discussion en direct)'}
-                  </Text>
-                  <Text style={styles.itemDesc}>
-                    {isMuted
-                      ? 'Cliquez pour ouvrir votre micro aux autres spectateurs'
-                      : 'Votre micro transmet votre voix au salon en temps réel'}
-                  </Text>
-                </View>
-                <Text style={!isMuted ? styles.badgeActive : styles.badgeInactive}>
-                  {isMuted ? 'Silence' : 'Actif'}
+            {/* Pistes Audio */}
+            <Pressable
+              ref={firstBtnRef}
+              focusable={true}
+              accessibilityRole="button"
+              onPress={() => { onClose(); onOpenAudio(); }}
+              style={({ focused }: any) => [
+                styles.item,
+                isSmallScreen && styles.itemCompact,
+                focused && styles.itemFocused,
+              ]}
+            >
+              <Text style={styles.itemIcon}>🔊</Text>
+              <View style={styles.itemMeta}>
+                <Text style={styles.itemLabel}>Pistes Audio</Text>
+                <Text numberOfLines={isSmallScreen ? 1 : 2} style={styles.itemDesc}>
+                  Changer de langue ou de piste sonore du média
                 </Text>
-              </Pressable>
-            )}
+              </View>
+              {activeAudioLabel ? (
+                <Text style={styles.badgeActive} numberOfLines={1}>{activeAudioLabel}</Text>
+              ) : null}
+            </Pressable>
 
+            {/* Sous-titres */}
             <Pressable
               focusable={true}
               accessibilityRole="button"
-              onPress={() => { onClose(); onOpenRepost(); }}
-              style={({ focused }: any) => [styles.item, focused && styles.itemFocused]}
+              onPress={() => { onClose(); onOpenSubtitles(); }}
+              style={({ focused }: any) => [
+                styles.item,
+                isSmallScreen && styles.itemCompact,
+                focused && styles.itemFocused,
+              ]}
             >
-              <Text style={styles.itemIcon}>✍️</Text>
+              <Text style={styles.itemIcon}>💬</Text>
               <View style={styles.itemMeta}>
-                <Text style={styles.itemLabel}>Avis & Repost</Text>
-                <Text style={styles.itemDesc}>Partager une critique, noter et recommander ce contenu</Text>
+                <Text style={styles.itemLabel}>Sous-titres</Text>
+                <Text numberOfLines={isSmallScreen ? 1 : 2} style={styles.itemDesc}>
+                  Activer ou changer la langue des sous-titres
+                </Text>
               </View>
+              {activeSubtitleLabel ? (
+                <Text style={activeSubtitleLabel !== 'Désactivé' ? styles.badgeActive : styles.badgeInactive} numberOfLines={1}>
+                  {activeSubtitleLabel}
+                </Text>
+              ) : null}
             </Pressable>
 
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              onPress={() => { onClose(); onOpenShare(); }}
-              style={({ focused }: any) => [styles.item, focused && styles.itemFocused]}
-            >
-              <Text style={styles.itemIcon}>🔗</Text>
-              <View style={styles.itemMeta}>
-                <Text style={styles.itemLabel}>Partager</Text>
-                <Text style={styles.itemDesc}>Lien de visionnage direct ou invitation Watch Party</Text>
-              </View>
-            </Pressable>
-
+            {/* Cast */}
             <Pressable
               focusable={true}
               accessibilityRole="button"
               onPress={() => { onClose(); onOpenCast(); }}
               style={({ focused }: any) => [
                 styles.item,
+                isSmallScreen && styles.itemCompact,
                 activeCastTarget && styles.itemActive,
                 focused && styles.itemFocused,
               ]}
@@ -142,49 +173,102 @@ export function PlayerMenuModal({
               <Text style={styles.itemIcon}>📡</Text>
               <View style={styles.itemMeta}>
                 <Text style={styles.itemLabel}>
-                  {activeCastTarget ? `Cast actif : ${activeCastTarget.name}` : 'Diffuser (Cast)'}
+                  {activeCastTarget ? `Cast : ${activeCastTarget.name}` : 'Diffuser (Cast)'}
                 </Text>
-                <Text style={styles.itemDesc}>Envoyer la vidéo sur Google Cast, AirPlay ou écran distant</Text>
+                <Text numberOfLines={isSmallScreen ? 1 : 2} style={styles.itemDesc}>
+                  Envoyer la vidéo sur Google Cast, AirPlay ou écran distant
+                </Text>
               </View>
               {activeCastTarget ? <Text style={styles.badgeActive}>Connecté</Text> : null}
             </Pressable>
 
+            {/* Salon vocal WebRTC */}
+            {toggleVoice && (
+              <Pressable
+                focusable={true}
+                accessibilityRole="button"
+                onPress={() => { toggleVoice(); }}
+                style={({ focused }: any) => [
+                  styles.item,
+                  isSmallScreen && styles.itemCompact,
+                  !effectiveVoiceMuted && styles.itemActive,
+                  focused && styles.itemFocused,
+                ]}
+              >
+                <Text style={styles.itemIcon}>🎙️</Text>
+                <View style={styles.itemMeta}>
+                  <Text style={styles.itemLabel}>
+                    {effectiveVoiceMuted ? 'Salon vocal : Micro coupé' : 'Salon vocal : En direct'}
+                  </Text>
+                  <Text numberOfLines={isSmallScreen ? 1 : 2} style={styles.itemDesc}>
+                    {effectiveVoiceMuted
+                      ? `Micro silencieux (écoute seule) • ${viewersCount} spectateur(s)`
+                      : `Votre micro transmet au salon • ${viewersCount} spectateur(s)`}
+                  </Text>
+                </View>
+                <Text style={!effectiveVoiceMuted ? styles.badgeActive : styles.badgeInactive}>
+                  {effectiveVoiceMuted ? 'Micro off' : isLiveSpeaking ? 'Parle 🗣️' : 'Micro on'}
+                </Text>
+              </Pressable>
+            )}
+
+            {/* Partager */}
             <Pressable
               focusable={true}
               accessibilityRole="button"
-              onPress={() => { onClose(); onOpenAudio(); }}
-              style={({ focused }: any) => [styles.item, focused && styles.itemFocused]}
+              onPress={() => { onClose(); onOpenShare(); }}
+              style={({ focused }: any) => [
+                styles.item,
+                isSmallScreen && styles.itemCompact,
+                focused && styles.itemFocused,
+              ]}
             >
-              <Text style={styles.itemIcon}>🔊</Text>
+              <Text style={styles.itemIcon}>🔗</Text>
               <View style={styles.itemMeta}>
-                <Text style={styles.itemLabel}>Pistes Audio</Text>
-                <Text style={styles.itemDesc}>Sélectionner la langue audio (VF, VO, VOSTFR, multi)</Text>
+                <Text style={styles.itemLabel}>Partager</Text>
+                <Text numberOfLines={isSmallScreen ? 1 : 2} style={styles.itemDesc}>
+                  Lien de visionnage direct ou invitation Watch Party
+                </Text>
               </View>
             </Pressable>
 
+            {/* Avis & Repost */}
             <Pressable
               focusable={true}
               accessibilityRole="button"
-              onPress={() => { onClose(); onOpenSubtitles(); }}
-              style={({ focused }: any) => [styles.item, focused && styles.itemFocused]}
+              onPress={() => { onClose(); onOpenRepost(); }}
+              style={({ focused }: any) => [
+                styles.item,
+                isSmallScreen && styles.itemCompact,
+                focused && styles.itemFocused,
+              ]}
             >
-              <Text style={styles.itemIcon}>💬</Text>
+              <Text style={styles.itemIcon}>✍️</Text>
               <View style={styles.itemMeta}>
-                <Text style={styles.itemLabel}>Sous-titres (ST)</Text>
-                <Text style={styles.itemDesc}>Activer ou désactiver les sous-titres intégrés</Text>
+                <Text style={styles.itemLabel}>Avis & Repost</Text>
+                <Text numberOfLines={isSmallScreen ? 1 : 2} style={styles.itemDesc}>
+                  Partager une critique, noter et recommander ce contenu
+                </Text>
               </View>
             </Pressable>
 
+            {/* Plein écran */}
             <Pressable
               focusable={true}
               accessibilityRole="button"
               onPress={() => { onClose(); onToggleFullscreen(); }}
-              style={({ focused }: any) => [styles.item, focused && styles.itemFocused]}
+              style={({ focused }: any) => [
+                styles.item,
+                isSmallScreen && styles.itemCompact,
+                focused && styles.itemFocused,
+              ]}
             >
               <Text style={styles.itemIcon}>⛶</Text>
               <View style={styles.itemMeta}>
-                <Text style={styles.itemLabel}>Plein Écran</Text>
-                <Text style={styles.itemDesc}>Basculer en mode immersif plein écran</Text>
+                <Text style={styles.itemLabel}>Plein écran</Text>
+                <Text numberOfLines={isSmallScreen ? 1 : 2} style={styles.itemDesc}>
+                  Basculer en immersion grand écran
+                </Text>
               </View>
             </Pressable>
           </ScrollView>
@@ -196,76 +280,64 @@ export function PlayerMenuModal({
 
 const styles = StyleSheet.create({
   overlay: {
-    position: (Platform.OS === 'web' ? 'fixed' : 'absolute') as any,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: Spacing.three,
-    zIndex: 99999,
-    ...(Platform.OS === 'web' ? { overflowY: 'auto' } : {}),
   },
   content: {
-    width: '100%',
-    maxWidth: 440,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0a0a0a',
     borderRadius: Radius.lg,
-    borderWidth: 1.5,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
-    padding: Spacing.three,
-    maxHeight: (Platform.OS === 'web' ? 'min(86vh, 540px)' : '85%') as any,
-    alignSelf: 'center',
-    zIndex: 2,
-    display: 'flex',
-    flexDirection: 'column',
-    ...(Platform.OS === 'web' ? { margin: 'auto' } : {}),
+    borderWidth: 1,
+    borderColor: '#262626',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.6,
+    shadowOpacity: 0.8,
     shadowRadius: 20,
-    elevation: 25,
+    elevation: 24,
+    overflow: 'hidden',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: Spacing.three,
     paddingBottom: Spacing.two,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+    borderBottomColor: '#1f1f1f',
   },
   title: {
-    color: '#ffffff',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#ffffff',
   },
   subtitle: {
-    color: '#94a3b8',
     fontSize: 12,
+    color: '#888888',
     marginTop: 2,
   },
   closeBtn: {
-    padding: 6,
+    width: 32,
+    height: 32,
     borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#333333',
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   close: {
-    color: '#94a3b8',
     fontSize: 14,
-    lineHeight: 14,
+    color: '#ffffff',
+    fontWeight: '700',
   },
   list: {
     flexGrow: 0,
-    flexShrink: 1,
   },
   listContent: {
-    paddingBottom: 4,
+    paddingVertical: 2,
   },
   item: {
     flexDirection: 'row',
@@ -273,19 +345,23 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: Radius.md,
-    backgroundColor: '#1e293b',
-    marginBottom: 8,
+    backgroundColor: '#141414',
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: '#222222',
     cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
-  itemActive: {
-    borderColor: '#38bdf8',
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+  itemCompact: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   },
   itemFocused: {
-    borderColor: '#38bdf8',
-    backgroundColor: 'rgba(56, 189, 248, 0.2)',
+    borderColor: '#6366f1',
+    backgroundColor: '#1e1b4b',
+    transform: [{ scale: 1.01 }],
+  },
+  itemActive: {
+    borderColor: '#4f46e5',
+    backgroundColor: 'rgba(79, 70, 229, 0.15)',
   },
   itemIcon: {
     fontSize: 20,
@@ -293,33 +369,34 @@ const styles = StyleSheet.create({
   },
   itemMeta: {
     flex: 1,
+    marginRight: 8,
   },
   itemLabel: {
+    fontSize: 13,
+    fontWeight: '700',
     color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
   },
   itemDesc: {
-    color: '#94a3b8',
     fontSize: 11,
-    marginTop: 2,
+    color: '#777777',
+    marginTop: 1,
   },
   badgeActive: {
-    color: '#38bdf8',
-    fontSize: 10,
+    backgroundColor: '#4f46e5',
+    color: '#ffffff',
+    fontSize: 11,
     fontWeight: '700',
-    backgroundColor: 'rgba(56, 189, 248, 0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: Radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
   },
   badgeInactive: {
-    color: '#94a3b8',
-    fontSize: 10,
+    backgroundColor: '#262626',
+    color: '#888888',
+    fontSize: 11,
     fontWeight: '600',
-    backgroundColor: 'rgba(148, 163, 184, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: Radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
   },
 });

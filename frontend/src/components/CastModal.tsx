@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform, StyleSheet, Modal } from 'react-native';
 import {
   fetchCastDevices,
   sendCastCommand,
@@ -101,98 +101,100 @@ export const CastModal: React.FC<CastModalProps> = ({
   };
 
   return (
-    <View style={styles.overlay}>
-      <Pressable
-        focusable={false}
-        style={StyleSheet.absoluteFill}
-        onPress={onClose}
-        {...({ dataSet: { modalBackdrop: 'true' } } as any)}
-      />
-      <View style={styles.modal} {...({ dataSet: { modalContainer: 'true' } } as any)}>
-        <View style={styles.header}>
-          <Text style={styles.title}>📡 Diffuser & Télécommande</Text>
-          <Pressable
-            focusable={true}
-            onPress={onClose}
-            style={styles.closeBtn}
-            {...({ dataSet: { modalClose: 'true' } } as any)}
-          >
-            <Text style={styles.closeText}>✕</Text>
-          </Pressable>
-        </View>
-
-        {/* Message d'information ou avertissement */}
-        {feedbackNotice && (
-          <View style={styles.infoBanner}>
-            <Text style={styles.infoBannerText}>⚠️ {feedbackNotice}</Text>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <Pressable
+          focusable={false}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          {...({ dataSet: { modalBackdrop: 'true' } } as any)}
+        />
+        <View style={styles.modal} {...({ dataSet: { modalContainer: 'true' } } as any)}>
+          <View style={styles.header}>
+            <Text style={styles.title}>📡 Diffuser & Télécommande</Text>
+            <Pressable
+              focusable={true}
+              onPress={onClose}
+              style={styles.closeBtn}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
+            >
+              <Text style={styles.closeText}>✕</Text>
+            </Pressable>
           </View>
-        )}
 
-        {/* Appareil actuellement casté / contrôlé */}
-        {activeCastTarget && (
-          <View style={styles.activeBox}>
-            <View style={styles.activeHeader}>
-              <Text style={styles.activeTitle}>Diffusion en cours</Text>
-              <Text style={styles.activeName}>📺 {activeCastTarget.name}</Text>
+          {/* Message d'information ou avertissement */}
+          {feedbackNotice && (
+            <View style={styles.infoBanner}>
+              <Text style={styles.infoBannerText}>⚠️ {feedbackNotice}</Text>
             </View>
-            <View style={styles.activeActions}>
-              <Pressable focusable={true} style={styles.stopBtn} onPress={handleStopActiveCast}>
-                <Text style={styles.stopBtnTxt}>⏹ Arrêter la lecture TV</Text>
-              </Pressable>
-              <Pressable focusable={true} style={styles.disconnectBtn} onPress={handleDisconnectTarget}>
-                <Text style={styles.disconnectBtnTxt}>Déconnecter</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        {/* Bouton Cast Natif Officiel (Chromecast, Smart TV, Android TV, AirPlay) */}
-        <Pressable ref={nativeBtnRef} focusable={true} style={styles.nativeCastBtn} onPress={handleNativeCast}>
-          <Text style={styles.nativeCastIcon}>📺</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.nativeCastTitle}>Caster sur ma Télévision</Text>
-            <Text style={styles.nativeCastSub}>Détecte votre TV locale via Google Cast / AirPlay (comme YouTube)</Text>
-          </View>
-        </Pressable>
-
-        <View style={styles.localBox}>
-          <View>
-            <Text style={styles.localLabel}>Cet appareil :</Text>
-            <Text style={styles.localName}>{myDeviceName}</Text>
-          </View>
-          <Pressable focusable={true} style={styles.editBtn} onPress={handleRename}>
-            <Text style={styles.editBtnTxt}>✏️ Renommer</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.sectionTitle}>Appareils UMS connectés</Text>
-        <ScrollView style={{ maxHeight: 180 }}>
-          {devices.length === 0 ? (
-            <Text style={styles.emptyText}>Aucun autre écran UMS actif détecté sur le réseau local.</Text>
-          ) : (
-            devices.map((d) => (
-              <View key={d.id} style={styles.deviceRow}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.deviceName} numberOfLines={1}>{d.name}</Text>
-                  <Text style={styles.deviceSub} numberOfLines={1}>
-                    {d.isPlaying ? `🟢 ${d.mediaTitle || 'Lecture'}` : '⚪ En veille'}
-                  </Text>
-                </View>
-                <View style={styles.rowActions}>
-                  {currentMedia && (
-                    <Pressable focusable={true} style={styles.castPill} onPress={() => handleSelect(d, true)}>
-                      <Text style={styles.castText}>Caster</Text>
-                    </Pressable>
-                  )}
-                  <Pressable focusable={true} style={styles.remotePill} onPress={() => handleSelect(d, false)}>
-                    <Text style={styles.castText}>Contrôler</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))
           )}
-        </ScrollView>
+
+          {/* Appareil actuellement casté / contrôlé */}
+          {activeCastTarget && (
+            <View style={styles.activeBox}>
+              <View style={styles.activeHeader}>
+                <Text style={styles.activeTitle}>Diffusion en cours</Text>
+                <Text style={styles.activeName}>📺 {activeCastTarget.name}</Text>
+              </View>
+              <View style={styles.activeActions}>
+                <Pressable focusable={true} style={styles.stopBtn} onPress={handleStopActiveCast}>
+                  <Text style={styles.stopBtnTxt}>⏹ Arrêter la lecture TV</Text>
+                </Pressable>
+                <Pressable focusable={true} style={styles.disconnectBtn} onPress={handleDisconnectTarget}>
+                  <Text style={styles.disconnectBtnTxt}>Déconnecter</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {/* Bouton Cast Natif Officiel (Chromecast, Smart TV, Android TV, AirPlay) */}
+          <Pressable ref={nativeBtnRef} focusable={true} style={styles.nativeCastBtn} onPress={handleNativeCast}>
+            <Text style={styles.nativeCastIcon}>📺</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.nativeCastTitle}>Caster sur ma Télévision</Text>
+              <Text style={styles.nativeCastSub}>Détecte votre TV locale via Google Cast / AirPlay (comme YouTube)</Text>
+            </View>
+          </Pressable>
+
+          <View style={styles.localBox}>
+            <View>
+              <Text style={styles.localLabel}>Cet appareil :</Text>
+              <Text style={styles.localName}>{myDeviceName}</Text>
+            </View>
+            <Pressable focusable={true} style={styles.editBtn} onPress={handleRename}>
+              <Text style={styles.editBtnTxt}>✏️ Renommer</Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.sectionTitle}>Appareils UMS connectés</Text>
+          <ScrollView style={{ maxHeight: 180, flexShrink: 1 }} showsVerticalScrollIndicator={true}>
+            {devices.length === 0 ? (
+              <Text style={styles.emptyText}>Aucun autre écran UMS actif détecté sur le réseau local.</Text>
+            ) : (
+              devices.map((d) => (
+                <View key={d.id} style={styles.deviceRow}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.deviceName} numberOfLines={1}>{d.name}</Text>
+                    <Text style={styles.deviceSub} numberOfLines={1}>
+                      {d.isPlaying ? `🟢 ${d.mediaTitle || 'Lecture'}` : '⚪ En veille'}
+                    </Text>
+                  </View>
+                  <View style={styles.rowActions}>
+                    {currentMedia && (
+                      <Pressable focusable={true} style={styles.castPill} onPress={() => handleSelect(d, true)}>
+                        <Text style={styles.castText}>Caster</Text>
+                      </Pressable>
+                    )}
+                    <Pressable focusable={true} style={styles.remotePill} onPress={() => handleSelect(d, false)}>
+                      <Text style={styles.castText}>Contrôler</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </View>
       </View>
-    </View>
+    </Modal>
   );
 };

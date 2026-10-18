@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, Image, Platform, useWindowDimensions } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
+import Hls from 'hls.js';
 import { playerStore, usePlayerState } from '@/services/playerStore';
 import { useActiveCastTarget, disconnectCastTotally } from '@/services/castState';
 import { sendCastCommand } from '@/services/castService';
@@ -31,22 +32,201 @@ export const FloatingBottomPlayer: React.FC = () => {
   const [showSubModal, setShowSubModal] = useState(false);
   const [showAudioModal, setShowAudioModal] = useState(false);
   const [showCastModal, setShowCastModal] = useState(false);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsInstanceRef = useRef<Hls | null>(null);
 
   const activeMedia = playerState.activeMedia;
   const lastPlayback = playerState.lastPlayback;
 
-  // Si l'utilisateur est déjà sur l'écran /player, ne pas afficher le mini-lecteur flottant
+  // Détection si l'utilisateur est déjà sur l'écran /player
   const isOnPlayerScreen = pathname?.startsWith('/player');
 
-  // Chargement des pistes audio et sous-titres dès qu'un média est actif
+  const isCasting = Boolean(activeCastTarget);
+  const mediaTitle = activeCastTarget?.mediaTitle || activeMedia?.title || 'Média en cours';
+  const pos = isCasting ? (activeCastTarget?.positionSeconds ?? 0) : (activeMedia?.positionSeconds ?? 0);
+  const dur = isCasting ? (activeCastTarget?.durationSeconds ?? 0) : (activeMedia?.durationSeconds ?? 0);
+  const isPlaying = isCasting ? Boolean(activeCastTarget?.isPlaying) : Boolean(activeMedia?.isPlaying);
+  const posterUri = resolveImageUrl(activeMedia?.posterUrl || activeCastTarget?.posterUrl);
+
+  const pct = dur > 0 ? (pos / dur) * 100 : 0;
+
+  // Hook 1 : Chargement des pistes audio et sous-titres dès qu'un média est actif
   useEffect(() => {
     if (activeMedia?.id) {
       fetchMediaTracks(activeMedia.id).then(setTracks).catch(() => {});
     }
   }, [activeMedia?.id]);
+
+  // Hook 2 : Gestion du cycle de vie du flux vidéo dans le mini-lecteur flottant
+  useEffect(() => {
+    // Si on est sur l'écran /player, ou pas sur web, ou pas de stream, ou en mode Cast : détruire Hls et libérer
+    if (isOnPlayerScreen || Platform.OS !== 'web' || !activeMedia?.streamUrl || isCasting) {
+      if (hlsInstanceRef.current) {
+        hlsInstanceRef.current.destroy();
+        hlsInstanceRef.current = null;
+      }
+      return;
+    }
+
+    const v = localVideoRef.current;
+    if (!v) return;
+
+    v.muted = playerState.isMuted;
+    v.volume = playerState.volume;
+
+    const streamUrl = activeMedia.streamUrl;
+    const isLive = Boolean(activeMedia.isLive);
+    const shouldUseHls = Boolean(
+      (streamUrl.includes('.m3u8') || isLive) &&
+      typeof window !== 'undefined' &&
+      Hls.isSupported()
+    );
+
+    if (hlsInstanceRef.current) {
+      hlsInstanceRef.current.destroy();
+      hlsInstanceRef.current = null;
+    }
+
+    if (shouldUseHls) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+      });
+      hlsInstanceRef.current = hls;
+      hls.loadSource(streamUrl);
+      hls.attachMedia(v);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        v.muted = playerState.isMuted;
+        v.volume = playerState.volume;
+        if (activeMedia.positionSeconds > 0 && Math.abs(v.currentTime - activeMedia.positionSeconds) > 1) {
+          v.currentTime = activeMedia.positionSeconds;
+        }
+        if (activeMedia.isPlaying) {
+          v.play().catch(() => {});
+        }
+      });
+    } else {
+      if (v.src !== streamUrl) {
+        v.src = streamUrl;
+      }
+      v.muted = playerState.isMuted;
+      v.volume = playerState.volume;
+      if (activeMedia.positionSeconds > 0 && Math.abs(v.currentTime - activeMedia.positionSeconds) > 1) {
+        v.currentTime = activeMedia.positionSeconds;
+      }
+      if (activeMedia.isPlaying && v.paused) {
+        v.play().catch(() => {});
+      }
+    }
+
+    return () => {
+      if (hlsInstanceRef.current) {
+        hlsInstanceRef.current.destroy();
+        hlsInstanceRef.current = null;
+      }
+    };
+  }, [isOnPlayerScreen, activeMedia?.id, activeMedia?.streamUrl, isCasting]);
+
+  // Hook 3 : Synchronisation de la commande Play/Pause externe
+  useEffect(() => {
+    if (isOnPlayerScreen) return;
+    const v = localVideoRef.current;
+    if (!v || isCasting) return;
+    if (activeMedia?.isPlaying && v.paused) {
+      v.play().catch(() => {});
+    } else if (!activeMedia?.isPlaying && !v.paused) {
+      v.pause();
+    }
+  }, [isOnPlayerScreen, activeMedia?.isPlaying, isCasting]);
+
+  // Hook 4 : Synchronisation volume & mute
+  useEffect(() => {
+    if (isOnPlayerScreen) return;
+    const v = localVideoRef.current;
+    if (!v || isCasting) return;
+    v.muted = playerState.isMuted;
+    v.volume = playerState.volume;
+  }, [isOnPlayerScreen, playerState.isMuted, playerState.volume, isCasting]);
+
+  const handleBarClick = (e: any) => {
+    if (Platform.OS !== 'web' || !dur) return;
+    const rect = e.currentTarget?.getBoundingClientRect?.();
+    if (!rect) return;
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const target = Math.floor(ratio * dur);
+    if (isCasting && activeCastTarget) {
+      sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: target });
+    } else {
+      if (localVideoRef.current) {
+        localVideoRef.current.currentTime = target;
+      }
+      playerStore.seekTo(target);
+    }
+  };
+
+  const handleTogglePlay = () => {
+    if (isCasting && activeCastTarget) {
+      sendCastCommand(activeCastTarget.id, isPlaying ? 'PAUSE' : 'PLAY');
+    } else {
+      const v = localVideoRef.current;
+      if (v) {
+        if (v.paused) {
+          v.play()
+            .then(() => playerStore.setPlaying(true))
+            .catch(() => playerStore.setPlaying(false));
+        } else {
+          v.pause();
+          playerStore.setPlaying(false);
+        }
+      } else {
+        playerStore.togglePlayPause();
+      }
+    }
+  };
+
+  const handleSeekRelative = (offset: number) => {
+    if (isCasting && activeCastTarget) {
+      const nextPos = Math.max(0, Math.min(dur || 7200, pos + offset));
+      sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: nextPos });
+    } else {
+      const v = localVideoRef.current;
+      if (v) {
+        const cur = v.currentTime || 0;
+        const target = Math.max(0, Math.min(v.duration || 7200, cur + offset));
+        v.currentTime = target;
+        playerStore.updateProgress(target, v.duration || 0);
+      } else {
+        playerStore.seekRelative(offset);
+      }
+    }
+  };
+
+  const handleExpand = () => {
+    const targetId = activeMedia?.id || activeCastTarget?.currentMediaId;
+    if (targetId) {
+      const currentPos = localVideoRef.current?.currentTime ?? pos;
+      if (localVideoRef.current) {
+        localVideoRef.current.pause();
+      }
+      router.push({
+        pathname: `/player/${targetId}`,
+        params: { joinTime: String(Math.floor(currentPos)), title: mediaTitle },
+      } as any);
+    }
+  };
+
+  const handleClose = async () => {
+    if (localVideoRef.current) {
+      localVideoRef.current.pause();
+    }
+    if (isCasting) {
+      await disconnectCastTotally(false);
+    }
+    playerStore.closeMedia();
+  };
+
+  // --- CONDITIONS D'AFFICHAGE (EARLY RETURNS PLACÉS APRÈS TOUS LES HOOKS) ---
 
   // Si nous sommes sur /player, masquer player_div pour éviter tout doublon
   if (isOnPlayerScreen) {
@@ -60,7 +240,7 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   // Cas 1 : Aucune lecture en cours, mais reprise disponible (Style YouTube)
   if (!activeMedia && !activeCastTarget && lastPlayback) {
-    const posterUri = resolveImageUrl(lastPlayback.posterUrl);
+    const resumePosterUri = resolveImageUrl(lastPlayback.posterUrl);
     return (
       <View
         nativeID="player_div"
@@ -69,9 +249,9 @@ export const FloatingBottomPlayer: React.FC = () => {
       >
         <View style={styles.resumeBar}>
           <View style={styles.resumeLeft}>
-            {posterUri ? (
+            {resumePosterUri ? (
               <View style={styles.posterThumb}>
-                <Image source={{ uri: posterUri }} style={styles.posterImg} resizeMode="cover" />
+                <Image source={{ uri: resumePosterUri }} style={styles.posterImg} resizeMode="cover" />
               </View>
             ) : (
               <Text style={styles.resumeIcon}>🍿</Text>
@@ -113,62 +293,6 @@ export const FloatingBottomPlayer: React.FC = () => {
   }
 
   // Cas 2 : Un média est en cours de lecture (localement ou en Cast)
-  const isCasting = Boolean(activeCastTarget);
-  const mediaTitle = activeCastTarget?.mediaTitle || activeMedia?.title || 'Média en cours';
-  const pos = isCasting ? (activeCastTarget?.positionSeconds ?? 0) : (activeMedia?.positionSeconds ?? 0);
-  const dur = isCasting ? (activeCastTarget?.durationSeconds ?? 0) : (activeMedia?.durationSeconds ?? 0);
-  const isPlaying = isCasting ? Boolean(activeCastTarget?.isPlaying) : Boolean(activeMedia?.isPlaying);
-  const posterUri = resolveImageUrl(activeMedia?.posterUrl || activeCastTarget?.posterUrl);
-
-  const pct = dur > 0 ? (pos / dur) * 100 : 0;
-
-  const handleBarClick = (e: any) => {
-    if (Platform.OS !== 'web' || !dur) return;
-    const rect = e.currentTarget?.getBoundingClientRect?.();
-    if (!rect) return;
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const target = Math.floor(ratio * dur);
-    if (isCasting && activeCastTarget) {
-      sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: target });
-    } else {
-      playerStore.seekTo(target);
-    }
-  };
-
-  const handleTogglePlay = () => {
-    if (isCasting && activeCastTarget) {
-      sendCastCommand(activeCastTarget.id, isPlaying ? 'PAUSE' : 'PLAY');
-    } else {
-      playerStore.togglePlayPause();
-    }
-  };
-
-  const handleSeekRelative = (offset: number) => {
-    if (isCasting && activeCastTarget) {
-      const nextPos = Math.max(0, Math.min(dur || 7200, pos + offset));
-      sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: nextPos });
-    } else {
-      playerStore.seekRelative(offset);
-    }
-  };
-
-  const handleExpand = () => {
-    const targetId = activeMedia?.id || activeCastTarget?.currentMediaId;
-    if (targetId) {
-      router.push({
-        pathname: `/player/${targetId}`,
-        params: { joinTime: String(Math.floor(pos)), title: mediaTitle },
-      } as any);
-    }
-  };
-
-  const handleClose = async () => {
-    if (isCasting) {
-      await disconnectCastTotally(false);
-    }
-    playerStore.closeMedia();
-  };
-
   return (
     <View
       nativeID="player_div"
@@ -181,7 +305,7 @@ export const FloatingBottomPlayer: React.FC = () => {
       </Pressable>
 
       <View style={styles.mainRow}>
-        {/* Section gauche : Miniature et Titre */}
+        {/* Section gauche : Miniature vidéo active et Titre */}
         <Pressable focusable={true} style={styles.leftSection} onPress={handleExpand}>
           <View style={styles.posterThumb}>
             {posterUri ? (
@@ -191,6 +315,62 @@ export const FloatingBottomPlayer: React.FC = () => {
                 <Text style={styles.posterPlaceholderTxt}>▶</Text>
               </View>
             )}
+
+            {Platform.OS === 'web' && !isCasting && activeMedia?.streamUrl ? (
+              <video
+                ref={localVideoRef}
+                playsInline
+                crossOrigin="anonymous"
+                tabIndex={-1}
+                muted={playerState.isMuted}
+                data-player-div-video="true"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  borderRadius: 6,
+                  backgroundColor: '#000',
+                  zIndex: 2,
+                }}
+                onPlay={() => {
+                  playerStore.setPlaying(true);
+                }}
+                onPause={() => {
+                  playerStore.setPlaying(false);
+                }}
+                onTimeUpdate={() => {
+                  if (localVideoRef.current) {
+                    playerStore.updateProgress(
+                      localVideoRef.current.currentTime,
+                      localVideoRef.current.duration || 0
+                    );
+                  }
+                }}
+                onEnded={() => {
+                  playerStore.closeMedia();
+                }}
+                onLoadedMetadata={() => {
+                  const v = localVideoRef.current;
+                  if (v) {
+                    v.muted = playerState.isMuted;
+                    v.volume = playerState.volume;
+                    if (
+                      activeMedia?.positionSeconds &&
+                      activeMedia.positionSeconds > 0 &&
+                      Math.abs(v.currentTime - activeMedia.positionSeconds) > 1
+                    ) {
+                      v.currentTime = activeMedia.positionSeconds;
+                    }
+                    if (activeMedia?.isPlaying && v.paused) {
+                      v.play().catch(() => {});
+                    }
+                  }
+                }}
+              />
+            ) : null}
           </View>
           <View style={styles.titleCol}>
             <Text style={styles.titleText} numberOfLines={1}>

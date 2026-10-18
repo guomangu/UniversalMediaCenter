@@ -7,9 +7,12 @@ import path from 'node:path';
 import { getSiteParams } from '../config/paramManager.js';
 import type { UserSession } from '../middleware/access.js';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
+import { verifySessionToken } from '../auth/token.js';
 
 const execFileAsync = promisify(execFile);
 export const tracksRouter = new Hono();
+
+const tracksCache = new Map<string, any>();
 
 export const LANG_NAMES: Record<string, string> = {
   fre: 'Français', fra: 'Français', fr: 'Français',
@@ -88,16 +91,23 @@ export interface SubtitleTrackInfo {
 
 const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
+const BROWSER_NATIVE_AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
+
 tracksRouter.get('/:id/tracks', async (c) => {
   const id = c.req.param('id');
-  const user = (c as any).get('user') as UserSession | undefined;
+  let user = (c as any).get('user') as UserSession | undefined;
   const shareToken = c.req.query('share') || c.req.query('share_token');
+  const queryToken = c.req.query('token') || c.req.query('auth');
 
-  const siteParams = getSiteParams();
-  const mediaConfig = siteParams.media || {};
-  const prefAudio = (mediaConfig.defaultAudioLanguage || 'fra').trim();
-  const prefSub = (mediaConfig.defaultSubtitleLanguage || 'fra').trim();
-  const subMode = mediaConfig.subtitleMode || 'fallback_if_audio_missing';
+  // Support transparent du token en paramètre d'URL si le middleware ne l'a pas résolu
+  if (!user && queryToken) {
+    const userId = verifySessionToken(queryToken.trim());
+    if (userId) {
+      user = (await db.query.users.findFirst({
+        where: (t, { eq }) => eq(t.id, userId),
+      })) as any;
+    }
+  }
 
   const media = await db.query.mediaNodes.findFirst({
     where: (t, { or, eq }) => isUuid(id) ? or(eq(t.id, id), eq(t.slug, id)) : eq(t.slug, id),
@@ -107,15 +117,32 @@ tracksRouter.get('/:id/tracks', async (c) => {
     return c.json({ error: 'Média introuvable' }, 404);
   }
 
-  const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
-    videoFilePath: media.videoFilePath,
-    nfoFilePath: media.nfoFilePath,
-    searchVectorText: media.searchVectorText,
-  });
+  // Contrôle d'accès : vérification uniquement si utilisateur explicite ou shareToken fourni
+  // Si anonyme sur un média existant, on autorise l'accès aux métadonnées des pistes (comme /subtitles et /artworks)
+  let isAuthorized = true;
+  if (user) {
+    isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
+      videoFilePath: media.videoFilePath,
+      nfoFilePath: media.nfoFilePath,
+      searchVectorText: media.searchVectorText,
+    });
+  } else if (shareToken) {
+    isAuthorized = checkMediaAccess(null, media.id, shareToken, media.parentId, media.nodeType, {
+      videoFilePath: media.videoFilePath,
+      nfoFilePath: media.nfoFilePath,
+      searchVectorText: media.searchVectorText,
+    });
+  }
 
   if (!isAuthorized) {
     return c.json({ error: 'Accès non autorisé', code: 'FORBIDDEN' }, 403);
   }
+
+  const siteParams = getSiteParams();
+  const mediaConfig = siteParams.media || {};
+  const prefAudio = (mediaConfig.defaultAudioLanguage || 'fra').trim();
+  const prefSub = (mediaConfig.defaultSubtitleLanguage || 'fra').trim();
+  const subMode = mediaConfig.subtitleMode || 'fallback_if_audio_missing';
 
   if (!media.videoFilePath) {
     return c.json({
@@ -132,33 +159,39 @@ tracksRouter.get('/:id/tracks', async (c) => {
     });
   }
 
+  const cacheKey = `${media.id}:${prefAudio}:${prefSub}:${subMode}`;
+  if (tracksCache.has(cacheKey)) {
+    return c.json(tracksCache.get(cacheKey));
+  }
+
   try {
     const { stdout } = await execFileAsync('ffprobe', [
       '-v', 'error', '-show_entries',
       'stream=index,codec_type,codec_name,width,height:stream_tags=language,title:format=duration',
       '-show_chapters', '-of', 'json', media.videoFilePath,
-    ], { timeout: 4000 });
+    ], { timeout: 15000 });
 
     const info = JSON.parse(stdout);
     const streams = info.streams || [];
-    const chapters = info.chapters || [];
     const videoStream = streams.find((s: any) => s.codec_type === 'video');
 
     const audioTracks: AudioTrackInfo[] = streams.filter((s: any) => s.codec_type === 'audio').map((s: any) => {
       const lang = (s.tags?.language || 'und').toLowerCase();
-      const langLabel = LANG_NAMES[lang] || lang.toUpperCase();
+      const norm = normalizeLangCode(lang);
+      const langLabel = LANG_NAMES[norm] || LANG_NAMES[lang] || (lang && lang !== 'und' ? lang.toUpperCase() : `Piste #${s.index}`);
       const title = s.tags?.title ? ` - ${s.tags.title}` : '';
       return {
         index: s.index,
         language: lang,
         codec: s.codec_name || 'aac',
-        label: `${langLabel}${title} (${s.codec_name || 'audio'})`,
+        label: `${langLabel}${title} (${(s.codec_name || 'audio').toUpperCase()})`,
       };
     });
 
     const internalSubtitles: SubtitleTrackInfo[] = streams.filter((s: any) => s.codec_type === 'subtitle').map((s: any) => {
       const lang = (s.tags?.language || 'und').toLowerCase();
-      const langLabel = LANG_NAMES[lang] || lang.toUpperCase();
+      const norm = normalizeLangCode(lang);
+      const langLabel = LANG_NAMES[norm] || LANG_NAMES[lang] || (lang && lang !== 'und' ? lang.toUpperCase() : `Piste #${s.index}`);
       const title = s.tags?.title ? ` - ${s.tags.title}` : '';
       return {
         index: s.index,
@@ -167,18 +200,18 @@ tracksRouter.get('/:id/tracks', async (c) => {
       };
     });
 
-    // Recherche de fichiers de sous-titres externes (.srt, .vtt)
+    // Recherche de fichiers de sous-titres externes (.srt, .vtt) dans le dossier et sous-dossiers Subtitles/
     const externalSubtitles: SubtitleTrackInfo[] = [];
     try {
       const dir = path.dirname(media.videoFilePath);
-      const ext = path.extname(media.videoFilePath);
-      const baseName = path.basename(media.videoFilePath, ext);
-      const files = await fsp.readdir(dir);
+      const dirsToScan = [dir, path.join(dir, 'Subtitles'), path.join(dir, 'Subs')];
 
-      for (const file of files) {
-        const fileExt = path.extname(file).toLowerCase();
-        if (fileExt === '.srt' || fileExt === '.vtt') {
-          if (file.startsWith(baseName) || file.toLowerCase().includes('vostfr') || file.toLowerCase().includes('french')) {
+      for (const d of dirsToScan) {
+        const files = await fsp.readdir(d).catch(() => []);
+        for (const file of files) {
+          const fileExt = path.extname(file).toLowerCase();
+          if (fileExt === '.srt' || fileExt === '.vtt') {
+            const relFileName = d === dir ? file : path.join(path.basename(d), file);
             let subLang = 'fra';
             const lowerFile = file.toLowerCase();
             if (lowerFile.includes('eng') || lowerFile.includes('en.')) subLang = 'eng';
@@ -190,7 +223,7 @@ tracksRouter.get('/:id/tracks', async (c) => {
               index: 100 + externalSubtitles.length,
               language: subLang,
               label: `${langLabel} [Fichier externe: ${path.basename(file)}]`,
-              fileName: file,
+              fileName: relFileName,
             });
           }
         }
@@ -199,17 +232,26 @@ tracksRouter.get('/:id/tracks', async (c) => {
 
     const allSubtitles = [...internalSubtitles, ...externalSubtitles];
 
-    // Détermination de la piste audio préférée
+    // Détermination de la piste audio préférée avec priorité stricte aux codecs compatibles navigateur web
     let defaultAudioTrack = 'auto';
     let isDefaultAudioAvailable = false;
 
     if (audioTracks.length > 0) {
-      const matchedAudio = audioTracks.find((t) => matchesLanguagePreference(t.language, t.label, prefAudio));
+      // 1. Chercher d'abord une piste dans la langue préférée avec un codec nativement supporté par les navigateurs web (AAC, etc.)
+      const matchedNativeAudio = audioTracks.find(
+        (t) => matchesLanguagePreference(t.language, t.label, prefAudio) && BROWSER_NATIVE_AUDIO_CODECS.includes(t.codec.toLowerCase())
+      );
+
+      // 2. Sinon chercher n'importe quelle piste dans la langue préférée
+      const matchedAudio = matchedNativeAudio || audioTracks.find((t) => matchesLanguagePreference(t.language, t.label, prefAudio));
+
       if (matchedAudio) {
         defaultAudioTrack = String(matchedAudio.index);
         isDefaultAudioAvailable = true;
       } else {
-        defaultAudioTrack = String(audioTracks[0].index);
+        // 3. Fallback : chercher une piste native toute langue, sinon la première
+        const fallbackNative = audioTracks.find((t) => BROWSER_NATIVE_AUDIO_CODECS.includes(t.codec.toLowerCase()));
+        defaultAudioTrack = String(fallbackNative ? fallbackNative.index : audioTracks[0].index);
         isDefaultAudioAvailable = false;
       }
     } else {
@@ -253,7 +295,7 @@ tracksRouter.get('/:id/tracks', async (c) => {
       if (height >= 480) qualities.push('SD (480p)');
     }
 
-    return c.json({
+    const result = {
       durationSeconds: Math.round(duration),
       width,
       height,
@@ -267,8 +309,11 @@ tracksRouter.get('/:id/tracks', async (c) => {
       configuredAudioLanguage: prefAudio,
       configuredSubtitleLanguage: prefSub,
       subtitleMode: subMode,
-    });
+    };
+
+    tracksCache.set(cacheKey, result);
+    return c.json(result);
   } catch (err: any) {
-    return c.json({ error: `Erreur d'analyse ffprobe: ${err.message}` }, 500);
+    return c.json({ error: 'Erreur lors de la lecture des pistes du fichier', details: err?.message }, 500);
   }
 });

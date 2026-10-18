@@ -19,6 +19,9 @@ const MIME_MAP: Record<string, string> = {
   '.avi': 'video/x-msvideo', '.mov': 'video/quicktime', '.ts': 'video/mp2t',
 };
 
+const BROWSER_NATIVE_AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
+const inFlightRemuxes = new Map<string, Promise<void>>();
+
 const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
 function setStreamCors(c: any) {
@@ -80,7 +83,7 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
 
   const audio = c.req.query('audio');
   let activeFilePath = media.videoFilePath;
-  const ext = path.extname(activeFilePath).toLowerCase();
+  const originalExt = path.extname(activeFilePath).toLowerCase();
 
   // Vérification de l'intégrité minimale du conteneur (détection des fichiers incomplets ou corrompus avec zéros d'en-tête)
   try {
@@ -90,7 +93,7 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
     await fh.close();
 
     const isAllZero = headerBuf.subarray(0, 4).every((b) => b === 0);
-    const isCorruptMkv = ext === '.mkv' && headerBuf.subarray(0, 4).toString('hex') !== '1a45dfa3';
+    const isCorruptMkv = originalExt === '.mkv' && headerBuf.subarray(0, 4).toString('hex') !== '1a45dfa3';
     if (isAllZero || isCorruptMkv) {
       await db.execute(sql`UPDATE media_nodes SET state = 'ERROR' WHERE id = ${media.id}`);
       return c.json(
@@ -105,19 +108,104 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
     return c.json({ error: 'Fichier vidéo inaccessible ou introuvable sur le disque', code: 'FILE_INACCESSIBLE' }, 404);
   }
 
-  if (audio && audio !== 'auto') {
-    const cacheDir = '/tmp/ums_cache';
-    const cacheFile = path.join(cacheDir, `${media.id}_a${audio}${ext}`);
-    if (!fs.existsSync(cacheFile)) {
-      await fsp.mkdir(cacheDir, { recursive: true });
-      await execFileAsync('ffmpeg', ['-v', 'error', '-i', activeFilePath, '-map', '0:v:0', '-map', `0:${audio}`, '-c', 'copy', cacheFile], { timeout: 15000 }).catch(() => null);
+  // Résolution automatique de la piste audio compatible navigateur
+  let targetAudio = audio;
+  if (!targetAudio || targetAudio === 'auto') {
+    if (originalExt !== '.mp4') {
+      try {
+        const { stdout } = await execFileAsync('ffprobe', [
+          '-v', 'error',
+          '-show_entries', 'stream=index,codec_type,codec_name:stream_tags=language',
+          '-of', 'json',
+          activeFilePath,
+        ], { timeout: 3500 });
+        const info = JSON.parse(stdout);
+        const audioStreams = (info.streams || []).filter((s: any) => s.codec_type === 'audio');
+        if (audioStreams.length > 0) {
+          const firstAudio = audioStreams[0];
+          if (!BROWSER_NATIVE_AUDIO_CODECS.includes(firstAudio.codec_name?.toLowerCase())) {
+            // Trouver une piste native en français ou anglais, sinon la première piste native disponible
+            const nativeTrack = audioStreams.find((s: any) =>
+              BROWSER_NATIVE_AUDIO_CODECS.includes(s.codec_name?.toLowerCase()) &&
+              ['fre', 'fra', 'french'].includes((s.tags?.language || '').toLowerCase())
+            ) || audioStreams.find((s: any) =>
+              BROWSER_NATIVE_AUDIO_CODECS.includes(s.codec_name?.toLowerCase())
+            ) || audioStreams[0];
+            targetAudio = String(nativeTrack.index);
+          }
+        }
+      } catch {}
     }
-    if (fs.existsSync(cacheFile)) activeFilePath = cacheFile;
+  }
+
+  // Traitement sélectif de la piste audio avec garantie de compatibilité navigateur web
+  if (targetAudio && targetAudio !== 'auto') {
+    const cacheDir = '/tmp/ums_cache';
+    const cacheFile = path.join(cacheDir, `${media.id}_a${targetAudio}.mkv`);
+
+    if (!fs.existsSync(cacheFile)) {
+      if (!inFlightRemuxes.has(cacheFile)) {
+        const remuxPromise = (async () => {
+          try {
+            await fsp.mkdir(cacheDir, { recursive: true });
+
+            // Sonde du codec de la piste audio demandée (select_streams avec index pur)
+            let isNativeBrowserAudio = false;
+            try {
+              const { stdout } = await execFileAsync('ffprobe', [
+                '-v', 'error',
+                '-select_streams', String(targetAudio),
+                '-show_entries', 'stream=codec_name',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                activeFilePath,
+              ], { timeout: 3500 });
+              const codec = stdout.trim().toLowerCase();
+              if (BROWSER_NATIVE_AUDIO_CODECS.includes(codec)) {
+                isNativeBrowserAudio = true;
+              }
+            } catch {}
+
+            // Si le codec est nativement pris en charge par le navigateur (AAC/MP3), copie directe instantanée
+            // Sinon (AC3, EAC3, DTS), transcodage vers AAC 192k stéréo compatible avec 100% des navigateurs web
+            const audioArgs = isNativeBrowserAudio
+              ? ['-c:a', 'copy']
+              : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2'];
+
+            const tempFile = `${cacheFile}.tmp_${Date.now()}.mkv`;
+            await execFileAsync('ffmpeg', [
+              '-v', 'error',
+              '-i', activeFilePath,
+              '-map', '0:v:0',
+              '-map', `0:${targetAudio}`,
+              '-c:v', 'copy',
+              ...audioArgs,
+              '-y',
+              tempFile,
+            ], { timeout: 120000 });
+
+            if (fs.existsSync(tempFile)) {
+              await fsp.rename(tempFile, cacheFile);
+            }
+          } catch (err) {
+            console.error('Erreur lors du remux audio:', err);
+          } finally {
+            inFlightRemuxes.delete(cacheFile);
+          }
+        })();
+        inFlightRemuxes.set(cacheFile, remuxPromise);
+      }
+      await inFlightRemuxes.get(cacheFile);
+    }
+
+    if (fs.existsSync(cacheFile)) {
+      activeFilePath = cacheFile;
+    }
   }
 
   const stat = await fsp.stat(activeFilePath);
   const fileSize = stat.size;
-  const mimeType = MIME_MAP[ext] || 'video/mp4';
+  const currentExt = path.extname(activeFilePath).toLowerCase();
+  const mimeType = MIME_MAP[currentExt] || 'video/mp4';
   const range = c.req.header('range');
   const isHead = c.req.method === 'HEAD';
 

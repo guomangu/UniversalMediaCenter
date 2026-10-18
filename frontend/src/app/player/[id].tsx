@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CastModal } from '@/components/CastModal';
@@ -11,8 +11,8 @@ import { MediaRepostModal } from '@/components/MediaRepostModal';
 import { PlayerMenuModal } from '@/components/PlayerMenuModal';
 import { useCastReceiver } from '@/hooks/useCastReceiver';
 import { usePlayerControls } from '@/hooks/usePlayerControls';
-import { useActiveCastTarget, disconnectCastTotally } from '@/services/castState';
-import { playerStore } from '@/services/playerStore';
+import { useActiveCastTarget } from '@/services/castState';
+import { playerStore, usePlayerState } from '@/services/playerStore';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
 import { getVideoStreamUrl, fetchNextMedia, fetchMediaDetail } from '@/services/api';
 import {
@@ -43,9 +43,9 @@ export default function PlayerScreen() {
   const parsedJoinTime = rawJoinTime !== null && !isNaN(rawJoinTime) && rawJoinTime >= 0 ? rawJoinTime : null;
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const isMobile = width < 768;
   const isSmallMobile = width < 480;
 
+  const playerState = usePlayerState();
   const [isPlaying, setIsPlaying] = useState(true);
   const [initialTime, setInitialTime] = useState(parsedJoinTime || 0);
   const [showSkipIntro, setShowSkipIntro] = useState(false);
@@ -90,6 +90,7 @@ export default function PlayerScreen() {
   const savedPosRef = useRef<number>(parsedJoinTime || 0);
   const countdownTimer = useRef<any>(null);
   const isCancelledRef = useRef<boolean>(false);
+  const isLeavingScreenRef = useRef<boolean>(false);
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
 
   const activeCastTarget = useActiveCastTarget();
@@ -103,6 +104,12 @@ export default function PlayerScreen() {
     const timer = setTimeout(() => setToastMessage(null), 3000);
     return () => clearTimeout(timer);
   }, [toastMessage]);
+
+  useEffect(() => {
+    return () => {
+      isLeavingScreenRef.current = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handleFsChange = () => setIsFullscreen(isFullscreenActive());
@@ -202,19 +209,19 @@ export default function PlayerScreen() {
     }
     savedPosRef.current = 0;
     setInitialTime(0);
-    showToast('Lecture recommencée depuis le début ⏪');
+    showToast('Lecture recommencée depuis le début ⏮');
   }, [showToast]);
 
   const mediaTitle = resolvedTitle || title || `Média #${id}`;
 
   const streamUrl = useMemo(() => {
-    if (!id || isForbidden) return "";
+    if (!id || isForbidden) return '';
     const base = getVideoStreamUrl(id, share);
     const p = new URLSearchParams();
-    if (activeAudio && activeAudio !== "auto") p.set("audio", activeAudio);
-    if (share) p.set("share", share);
+    if (activeAudio && activeAudio !== 'auto') p.set('audio', activeAudio);
+    if (share) p.set('share', share);
     const qs = p.toString();
-    return qs ? `${base}${base.includes("?") ? "&" : "?"}${qs}` : base;
+    return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
   }, [id, activeAudio, share, isForbidden]);
 
   useEffect(() => {
@@ -233,15 +240,9 @@ export default function PlayerScreen() {
     }
   }, [id, resolvedTitle, streamUrl, isForbidden, isCorrupted]);
 
-
-
-
-
   useEffect(() => {
     if (id && !isForbidden) {
-      setActiveAudio('auto');
-      setActiveSubtitle('off');
-      fetchMediaTracks(String(id)).then((data) => {
+      fetchMediaTracks(String(id), share).then((data) => {
         setTracks(data);
         if (data.defaultAudioTrack && data.defaultAudioTrack !== 'auto') {
           setActiveAudio(data.defaultAudioTrack);
@@ -252,7 +253,7 @@ export default function PlayerScreen() {
       });
       fetchNextMedia(String(id)).then(setNextNode);
     }
-  }, [id, isForbidden, showToast]);
+  }, [id, isForbidden, share, showToast]);
 
   // Salon vocal unifié pour ce média (ou session active)
   const voiceTopicSlug = activeSession?.topicSlug || (resolvedSlug ? `media-${resolvedSlug}` : `media-${id}`);
@@ -265,11 +266,10 @@ export default function PlayerScreen() {
     showToast,
   });
 
-  // Surveillance de la présence et des séances communautaires (uniquement pour VOD / contenus planifiés)
+  // Surveillance de la présence et des séances communautaires
   useEffect(() => {
     if (!id || isLive || isForbidden) return;
     const updatePresence = async () => {
-      // Signaler la progression en base (uniquement pour films/séries VOD)
       if (savedPosRef.current > 0) {
         reportPlaybackProgress(String(id), savedPosRef.current || 0, 0, true);
       }
@@ -279,7 +279,6 @@ export default function PlayerScreen() {
       if (res.sessions.length > 0) {
         setActiveSession(res.sessions[0]);
         activeSessionRef.current = res.sessions[0];
-        // Ping l'état vocal si une séance existe
         pingSession(res.sessions[0].id, { isMuted });
       } else {
         setActiveSession(null);
@@ -297,7 +296,7 @@ export default function PlayerScreen() {
     };
   }, [id, isLive, isForbidden]);
 
-  // Compte à rebours automatique Netflix
+  // Compte à rebours automatique Next Netflix
   useEffect(() => {
     if (countdown === null || isForbidden) return;
     if (countdown <= 0) {
@@ -329,7 +328,7 @@ export default function PlayerScreen() {
   }, [showToast]);
 
   const handleNearEnd = useCallback((remainingSec: number) => {
-    if (isLive || isForbidden) return; // Pas d'enchaînement de fin sur un flux live
+    if (isLive || isForbidden) return;
     if (nextNode && !isCancelledRef.current && countdown === null) {
       setCountdown(Math.min(remainingSec, 8));
     }
@@ -348,7 +347,9 @@ export default function PlayerScreen() {
   }, []);
   const handlePause = useCallback(() => {
     setIsPlaying(false);
-    playerStore.setPlaying(false);
+    if (!isLeavingScreenRef.current) {
+      playerStore.setPlaying(false);
+    }
   }, []);
   const handleTimeUpdate = useCallback((t: number, d?: number) => {
     if (!isLive) {
@@ -386,15 +387,30 @@ export default function PlayerScreen() {
   const isModalOpen = showAudio || showSubtitles || showShare || showCast || showRepost || showMenuModal;
   usePlayerControls({ videoRef, isPlaying: isForbidden ? false : isPlaying, setIsPlaying, isModalOpen, activeCastTarget, showToast, isFullscreen });
 
-  
+  // Libellés pour le menu d'options
+  const activeAudioLabel = useMemo(() => {
+    if (!activeAudio || activeAudio === 'auto') return 'Auto';
+    const found = tracks.audioTracks.find((t) => String(t.index) === String(activeAudio));
+    return found ? found.label : `Piste #${activeAudio}`;
+  }, [activeAudio, tracks.audioTracks]);
+
+  const activeSubtitleLabel = useMemo(() => {
+    if (!activeSubtitle || activeSubtitle === 'off') return 'Désactivé';
+    const found = tracks.subtitleTracks.find((s) => {
+      const val = s.fileName ? `file:${s.fileName}` : `track:${s.index}`;
+      return val === activeSubtitle;
+    });
+    return found ? found.label : activeSubtitle;
+  }, [activeSubtitle, tracks.subtitleTracks]);
+
   if (isCorrupted) {
     return (
-      <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#090d16' }]}>
+      <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#000000' }]}>
         <View
           style={{
             maxWidth: 500,
             width: '100%',
-            backgroundColor: '#0f172a',
+            backgroundColor: '#0a0a0a',
             borderRadius: 16,
             padding: 24,
             alignItems: 'center',
@@ -434,12 +450,12 @@ export default function PlayerScreen() {
 
   if (isForbidden) {
     return (
-      <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#090d16' }]}>
+      <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#000000' }]}>
         <View
           style={{
             maxWidth: 480,
             width: '100%',
-            backgroundColor: '#0f172a',
+            backgroundColor: '#0a0a0a',
             borderRadius: 16,
             padding: 24,
             alignItems: 'center',
@@ -500,225 +516,78 @@ export default function PlayerScreen() {
         onEnded={handleVideoEnded}
       />
 
-      {/* Barre supérieure ergonomique et contextuelle */}
+      {/* Barre supérieure ergonomique, épurée et rationnelle */}
       <View style={styles.topBar}>
-        <Pressable
-          focusable={true}
-          accessibilityRole="button"
-          accessibilityLabel="Retour"
-          onPress={() => goBackOrFallback(router, '/')}
-          style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-        >
-          <Text style={styles.topBtnText}>{isSmallMobile ? '←' : '← Retour'}</Text>
-        </Pressable>
-        <Pressable
-          focusable={true}
-          accessibilityRole="button"
-          accessibilityLabel="Réduire en bas d'écran"
-          onPress={() => {
-            playerStore.setMinimized(true);
-            goBackOrFallback(router, '/');
-          }}
-          style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-        >
-          <Text style={styles.topBtnText}>{isSmallMobile ? '▼' : '▼ Réduire'}</Text>
-        </Pressable>
-
-
-        {/* Contrôles du mode micro et discussion vocale en direct */}
-        {!isForbidden && (
+        <View style={styles.leftActions}>
           <Pressable
             focusable={true}
             accessibilityRole="button"
-            accessibilityLabel={isMuted ? 'Activer le micro' : 'Couper le micro (Mode Silence)'}
+            accessibilityLabel="Retour"
             onPress={() => {
-              const nextMute = !isMuted;
-              setIsMuted(nextMute);
-              showToast(nextMute ? 'Mode Silence activé (micro coupé) 🔇' : 'Discussion en direct activée (micro actif) 🎙️');
+              isLeavingScreenRef.current = true;
+              const cur = videoRef.current?.currentTime;
+              if (typeof cur === 'number' && cur >= 0) {
+                playerStore.updateProgress(cur, videoRef.current?.duration || 0);
+              }
+              if (isPlaying) {
+                playerStore.setPlaying(true);
+              }
+              goBackOrFallback(router, '/');
             }}
-            style={({ focused }: any) => [
-              styles.voiceBtn,
-              isMuted ? styles.voiceBtnMuted : styles.voiceBtnActive,
-              focused && styles.topBtnFocused,
-            ]}
+            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
           >
-            <Text style={styles.voiceBtnTxt}>
-              {isMuted ? '🔇' : '🎙️'}{' '}
-              {isMobile
-                ? (viewersCount > 1 ? viewersCount : isMuted ? 'Silence' : 'Micro')
-                : isMuted
-                ? `Mode Silence (${viewersCount})`
-                : isLiveSpeaking
-                ? `Micro en direct (${viewersCount})`
-                : `Discussion active (${viewersCount})`}
-            </Text>
+            <Text style={styles.topBtnText}>{isSmallMobile ? '←' : '← Retour'}</Text>
           </Pressable>
-        )}
+
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            accessibilityLabel="Réduire en bas d'écran"
+            onPress={() => {
+              isLeavingScreenRef.current = true;
+              playerStore.setMinimized(true);
+              const cur = videoRef.current?.currentTime;
+              if (typeof cur === 'number' && cur >= 0) {
+                playerStore.updateProgress(cur, videoRef.current?.duration || 0);
+              }
+              if (isPlaying) {
+                playerStore.setPlaying(true);
+              }
+              goBackOrFallback(router, '/');
+            }}
+            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+          >
+            <Text style={styles.topBtnText}>{isSmallMobile ? '▼' : '▼ Réduire'}</Text>
+          </Pressable>
+        </View>
 
         <Text numberOfLines={1} style={styles.headerTitle}>{mediaTitle}</Text>
 
-        {/* Menu d'actions responsive et adaptatif selon la largeur de l'écran */}
-        {isSmallMobile ? (
-          <View style={styles.rightActions}>
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              accessibilityLabel="Plein écran"
-              onPress={() => {
-                const el = typeof document !== 'undefined' ? (document.querySelector('[data-player-container="true"]') as HTMLElement) || document.documentElement : null;
-                const entered = toggleFullscreen(el);
-                showToast(entered ? '⛶ Plein écran' : 'Mode fenêtre');
-              }}
-              style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-            >
-              <Text style={styles.topBtnText}>⛶</Text>
-            </Pressable>
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              accessibilityLabel="Menu Options"
-              onPress={() => setShowMenuModal(true)}
-              style={({ focused }: any) => [styles.menuBtn, focused && styles.menuBtnFocused]}
-            >
-              <Text style={styles.menuBtnText}>⚙️ Options</Text>
-            </Pressable>
-          </View>
-        ) : isMobile ? (
-          <View style={[styles.rightActionsContainer, { maxWidth: Math.max(160, width * 0.62) }]}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.rightActionsScroll}
-            >
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                accessibilityLabel="Menu Options"
-                onPress={() => setShowMenuModal(true)}
-                style={({ focused }: any) => [styles.menuBtn, focused && styles.menuBtnFocused]}
-              >
-                <Text style={styles.menuBtnText}>⚙️ Menu</Text>
-              </Pressable>
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                onPress={() => setShowRepost(true)}
-                style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-              >
-                <Text style={styles.topBtnText}>✍️ Avis</Text>
-              </Pressable>
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                onPress={() => setShowShare(true)}
-                style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-              >
-                <Text style={styles.topBtnText}>🔗 Partager</Text>
-              </Pressable>
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                onPress={() => setShowCast(true)}
-                style={({ focused }: any) => [
-                  styles.topBtn,
-                  activeCastTarget && styles.castActiveBtn,
-                  focused && styles.topBtnFocused,
-                ]}
-              >
-                <Text style={styles.topBtnText}>{activeCastTarget ? `📡 ${activeCastTarget.name}` : '📡 Cast'}</Text>
-              </Pressable>
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                onPress={() => setShowAudio(true)}
-                style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-              >
-                <Text style={styles.topBtnText}>🔊 Audio</Text>
-              </Pressable>
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                onPress={() => setShowSubtitles(true)}
-                style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-              >
-                <Text style={styles.topBtnText}>💬 ST</Text>
-              </Pressable>
-              <Pressable
-                focusable={true}
-                accessibilityRole="button"
-                accessibilityLabel="Plein écran"
-                onPress={() => {
-                  const el = typeof document !== 'undefined' ? (document.querySelector('[data-player-container="true"]') as HTMLElement) || document.documentElement : null;
-                  const entered = toggleFullscreen(el);
-                  showToast(entered ? '⛶ Plein écran' : 'Mode fenêtre');
-                }}
-                style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-              >
-                <Text style={styles.topBtnText}>⛶</Text>
-              </Pressable>
-            </ScrollView>
-          </View>
-        ) : (
-          <View style={styles.rightActions}>
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              onPress={() => setShowRepost(true)}
-              style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-            >
-              <Text style={styles.topBtnText}>✍️ Avis & Repost</Text>
-            </Pressable>
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              onPress={() => setShowShare(true)}
-              style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-            >
-              <Text style={styles.topBtnText}>🔗 Partager</Text>
-            </Pressable>
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              onPress={() => setShowCast(true)}
-              style={({ focused }: any) => [
-                styles.topBtn,
-                activeCastTarget && styles.castActiveBtn,
-                focused && styles.topBtnFocused,
-              ]}
-            >
-              <Text style={styles.topBtnText}>{activeCastTarget ? `📡 ${activeCastTarget.name}` : '📡 Cast'}</Text>
-            </Pressable>
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              onPress={() => setShowAudio(true)}
-              style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-            >
-              <Text style={styles.topBtnText}>🔊 Audio</Text>
-            </Pressable>
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              onPress={() => setShowSubtitles(true)}
-              style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-            >
-              <Text style={styles.topBtnText}>💬 ST</Text>
-            </Pressable>
-            <Pressable
-              focusable={true}
-              accessibilityRole="button"
-              accessibilityLabel="Plein écran"
-              onPress={() => {
-                const el = typeof document !== 'undefined' ? (document.querySelector('[data-player-container="true"]') as HTMLElement) || document.documentElement : null;
-                const entered = toggleFullscreen(el);
-                showToast(entered ? '⛶ Plein écran' : 'Mode fenêtre');
-              }}
-              style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
-            >
-              <Text style={styles.topBtnText}>⛶</Text>
-            </Pressable>
-          </View>
-        )}
+        <View style={styles.rightActions}>
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            accessibilityLabel="Plein écran"
+            onPress={() => {
+              const el = typeof document !== 'undefined' ? (document.querySelector('[data-player-container="true"]') as HTMLElement) || document.documentElement : null;
+              const entered = toggleFullscreen(el);
+              showToast(entered ? '⛶ Plein écran' : 'Mode fenêtre');
+            }}
+            style={({ focused }: any) => [styles.topBtn, focused && styles.topBtnFocused]}
+          >
+            <Text style={styles.topBtnText}>⛶</Text>
+          </Pressable>
+
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            accessibilityLabel="Menu Options"
+            onPress={() => setShowMenuModal(true)}
+            style={({ focused }: any) => [styles.menuBtn, focused && styles.menuBtnFocused]}
+          >
+            <Text style={styles.menuBtnText}>⚙️ Menu</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Toast d'information éphémère */}
@@ -740,7 +609,7 @@ export default function PlayerScreen() {
             focused && styles.restartBtnFocused,
           ]}
         >
-          <Text style={styles.restartBtnIcon}>⏪</Text>
+          <Text style={styles.restartBtnIcon}>⏮</Text>
           <Text style={styles.restartBtnText}>Recommencer</Text>
         </Pressable>
       )}
@@ -797,7 +666,12 @@ export default function PlayerScreen() {
         visible={showAudio}
         tracks={tracks.audioTracks}
         activeAudio={activeAudio}
-        onSelect={(val) => { setActiveAudio(val); setShowAudio(false); }}
+        onSelect={(val) => {
+          setActiveAudio(val);
+          setShowAudio(false);
+          const found = tracks.audioTracks.find((t) => String(t.index) === String(val));
+          showToast(`Piste audio : ${found ? found.label : val === 'auto' ? 'Auto' : val} 🔊`);
+        }}
         onClose={() => setShowAudio(false)}
       />
 
@@ -805,7 +679,12 @@ export default function PlayerScreen() {
         visible={showSubtitles}
         tracks={tracks.subtitleTracks}
         activeSubtitle={activeSubtitle}
-        onSelect={(val) => { setActiveSubtitle(val); setShowSubtitles(false); }}
+        onSelect={(val) => {
+          setActiveSubtitle(val);
+          setShowSubtitles(false);
+          const found = tracks.subtitleTracks.find((s) => (s.fileName ? `file:${s.fileName}` : `track:${s.index}`) === val);
+          showToast(`Sous-titres : ${found ? found.label : val === 'off' ? 'Désactivés' : val} 💬`);
+        }}
         onClose={() => setShowSubtitles(false)}
       />
 
@@ -839,11 +718,15 @@ export default function PlayerScreen() {
         visible={showMenuModal}
         mediaTitle={mediaTitle}
         activeCastTarget={activeCastTarget}
-        isMuted={isMuted}
-        onToggleMute={() => {
+        activeAudioLabel={activeAudioLabel}
+        activeSubtitleLabel={activeSubtitleLabel}
+        isVoiceMuted={isMuted}
+        viewersCount={viewersCount}
+        isLiveSpeaking={isLiveSpeaking}
+        onToggleVoiceMute={() => {
           const next = !isMuted;
           setIsMuted(next);
-          showToast(next ? 'Mode Silence activé (micro coupé) 🔇' : 'Discussion en direct activée (micro actif) 🎙️');
+          showToast(next ? 'Microphone désactivé 🎙️' : 'Discussion vocale activée (micro ouvert) 🎙️');
         }}
         onOpenRepost={() => setShowRepost(true)}
         onOpenShare={() => setShowShare(true)}

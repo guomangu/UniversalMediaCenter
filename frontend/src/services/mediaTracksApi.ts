@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
+import { getAuthHeaders, getAuthToken } from './authStore';
 
 export interface MediaTracksData {
   audioTracks: { index: number; language: string; label: string; codec: string }[];
@@ -15,12 +16,44 @@ export interface MediaTracksData {
   subtitleMode?: string;
 }
 
-export async function fetchMediaTracks(id: string): Promise<MediaTracksData> {
+export async function fetchMediaTracks(id: string, shareToken?: string | null): Promise<MediaTracksData> {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/media/${id}/tracks`);
-    if (!res.ok) return { audioTracks: [], subtitleTracks: [], qualities: [] };
-    return await res.json();
-  } catch {
+    const token = getAuthToken();
+    const p = new URLSearchParams();
+    if (shareToken) p.set('share', shareToken);
+    else if (token) p.set('token', token);
+    const qs = p.toString();
+    const url = `${getApiBaseUrl()}/api/media/${id}/tracks${qs ? `?${qs}` : ''}`;
+
+    const res = await fetch(url, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      console.warn(`[fetchMediaTracks] HTTP ${res.status} on ${url}`);
+      return { audioTracks: [], subtitleTracks: [], qualities: [] };
+    }
+
+    const data = await res.json();
+    return {
+      audioTracks: Array.isArray(data.audioTracks) ? data.audioTracks : [],
+      subtitleTracks: Array.isArray(data.subtitleTracks) ? data.subtitleTracks : [],
+      qualities: Array.isArray(data.qualities) ? data.qualities : [],
+      intro: data.intro,
+      duration: data.duration,
+      defaultAudioTrack: data.defaultAudioTrack,
+      defaultSubtitle: data.defaultSubtitle,
+      isDefaultAudioAvailable: data.isDefaultAudioAvailable,
+      subtitleFallbackTriggered: data.subtitleFallbackTriggered,
+      configuredAudioLanguage: data.configuredAudioLanguage,
+      configuredSubtitleLanguage: data.configuredSubtitleLanguage,
+      subtitleMode: data.subtitleMode,
+    };
+  } catch (err) {
+    console.error('[fetchMediaTracks] Exception:', err);
     return { audioTracks: [], subtitleTracks: [], qualities: [] };
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   registerAsReceiver,
   sendCastHeartbeat,
@@ -30,12 +30,32 @@ export function useCastReceiver({
   onStop,
   onLoad,
 }: UseCastReceiverProps) {
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
+
+  const callbacksRef = useRef({
+    setIsPlaying,
+    setActiveAudio,
+    setActiveSubtitle,
+    onStop,
+    onLoad,
+  });
+  callbacksRef.current = {
+    setIsPlaying,
+    setActiveAudio,
+    setActiveSubtitle,
+    onStop,
+    onLoad,
+  };
+
   useEffect(() => {
+    if (!id) return;
+
     if (typeof registerAsReceiver === 'function') {
       registerAsReceiver(getLocalDeviceName(), {
         currentMediaId: id,
         mediaTitle: mediaTitle || `Média #${id}`,
-        isPlaying,
+        isPlaying: isPlayingRef.current,
         positionSeconds: videoRef.current?.currentTime || 0,
         durationSeconds: videoRef.current?.duration || 0,
       }).catch?.(() => {});
@@ -49,7 +69,7 @@ export function useCastReceiver({
           mediaTitle: mediaTitle || `Média #${id}`,
           positionSeconds: v?.currentTime || 0,
           durationSeconds: v?.duration || 0,
-          isPlaying,
+          isPlaying: isPlayingRef.current,
           volume: v?.volume ?? 1,
           isMuted: v?.muted ?? false,
         }).catch?.(() => {});
@@ -57,11 +77,12 @@ export function useCastReceiver({
 
       if (typeof pollDeviceCommands === 'function') {
         pollDeviceCommands(getLocalDeviceId(), (cmd) => {
+          const cb = callbacksRef.current;
           if (cmd.action === 'PAUSE') {
-            setIsPlaying(false);
+            cb.setIsPlaying(false);
             v?.pause?.();
           } else if (cmd.action === 'PLAY') {
-            setIsPlaying(true);
+            cb.setIsPlaying(true);
             v?.play?.();
           } else if (cmd.action === 'SEEK' && cmd.payload?.positionSeconds !== undefined && v) {
             v.currentTime = cmd.payload.positionSeconds;
@@ -72,26 +93,26 @@ export function useCastReceiver({
           } else if (cmd.action === 'UNMUTE' && v) {
             v.muted = false;
           } else if (cmd.action === 'SET_AUDIO' && cmd.payload?.audio) {
-            setActiveAudio?.(cmd.payload.audio);
+            cb.setActiveAudio?.(cmd.payload.audio);
           } else if (cmd.action === 'SET_SUBTITLE' && cmd.payload?.subtitle) {
-            setActiveSubtitle?.(cmd.payload.subtitle);
+            cb.setActiveSubtitle?.(cmd.payload.subtitle);
           } else if (cmd.action === 'LOAD' && cmd.payload?.mediaId) {
             if (cmd.payload.mediaId === id) {
               if (cmd.payload.positionSeconds !== undefined && v) {
                 v.currentTime = cmd.payload.positionSeconds;
               }
-              setIsPlaying(true);
+              cb.setIsPlaying(true);
               v?.play?.();
             } else {
-              onLoad?.(cmd.payload.mediaId, cmd.payload);
+              cb.onLoad?.(cmd.payload.mediaId, cmd.payload);
             }
           } else if (cmd.action === 'STOP') {
-            onStop();
+            cb.onStop();
           }
         }).catch?.(() => {});
       }
-    }, 1200);
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [id, mediaTitle, isPlaying]);
+  }, [id, mediaTitle]);
 }

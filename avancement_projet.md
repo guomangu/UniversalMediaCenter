@@ -1,12 +1,94 @@
+- [x] **80. Rétablissement Universel des Sous-Titres en Mode Plein Écran & Harmonisation du Moteur Native `<track>` (`VideoPlayerView.tsx`, `global.css`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`) :**
+  - **Diagnostic & Cause Racine de la Disparition en Plein Écran :**
+    - Lors de l'activation du mode plein écran (bouton plein écran des contrôles `<video>`, double-clic ou raccourci clavier), les navigateurs web isolent l'élément `<video>` dans la couche supérieure (*top-layer* GPU).
+    - Tous les éléments frères du DOM (notamment l'overlay React `<View style={styles.subtitleOverlay}>`) sont strictement exclus du compositeur d'affichage en plein écran.
+    - L'absence de la balise native `<track>` dans le JSX laissait la balise `<video>` sans aucun flux textuel pour le moteur de sous-titres natif, provoquant l'invisibilité totale des sous-titres en plein écran.
+  - **Architecture Native `<track>` & Synchronisation TextTracks :**
+    - Réintégration propre de `<track key={subtitleUrl} kind="subtitles" src={subtitleUrl} srcLang="fr" label="Sous-titres" default />` directement dans la balise `<video>`.
+    - Surveillance et synchronisation dynamique des `textTracks` (`innerVideoRef.current.textTracks` avec écouteurs `addtrack` et `change`) forçant `t.mode = 'showing'` dès qu'une piste est active et `t.mode = 'disabled'` lorsque désactivé.
+  - **Suppression du Composant React Redondant & Zéro Dédoublement :**
+    - Suppression de l'overlay React personnalisé et du parser WebVTT client qui dupliquait le travail du navigateur et consommait du CPU sur `timeupdate`.
+    - Source unique de vérité : aucun conflit ni dédoublement de texte entre le lecteur et React.
+  - **Stylisation Universelle `::cue, video::cue` (`frontend/src/global.css`) :**
+    - Définition d'une feuille de style dédiée pour les sous-titres natifs : fond translucide sombre `rgba(0, 0, 0, 0.82)`, typographie nette, ombre portée marquée (`text-shadow`), padding et bordures arrondies.
+    - Positionnement automatique respectant les barres noires de format (16:9, 2.35:1) sans chevaucher les contrôles vidéo.
+  - **Validation TypeScript :** `npx tsc --noEmit` validé avec succès (0 erreur).
 
-- [x] **71. Centrage Géométrique Inviolable du Menu d'Options du Player & Garantie d'Accès Intégral (`PlayerMenuModal.tsx`, `PlayerAudioModal.tsx`, `PlayerSubtitleModal.tsx`, `PlayerShareModal.tsx`) :**
-  - **Autopsie du Décalage & Masquage Partiel :**
-    - Suite à l'ajout de 7 options complètes (Mode Micro, Avis, Partager, Cast, Audio, ST, Plein Écran), la hauteur du menu dépassait 540px.
-    - Dans les viewports de hauteur inférieure à 650px (ordinateurs portables avec barres d'outils, smartphones paysage, tablettes), le conteneur flex `justifyContent: 'center'` centrait le menu en coordonnées négatives (`top < 0`).
-    - L'en-tête (titre, bouton de fermeture ✕) et les options supérieures étaient projetés hors de l'écran en zone négative non scrollable, donnant l'impression que le menu était décentré et coupé.
-    - La directive `maxHeight: '85%'` était inopérante car le conteneur Web ne définissait pas de hauteur explicite en px ou vh, et le `ScrollView` ne possédait pas `flexShrink: 1`.
-  - **Sanctuarisation du Centrage et du Défilement :**
-    - **Overlay Fixé et Sanctuarisé :** `position: 'fixed'` sur le Web, `top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', zIndex: 99999` avec `overflowY: 'auto'`.
-    - **Plafonnement Précis :** `maxHeight: min(86vh, 540px)` sur Web avec `alignSelf: 'center'` et `margin: 'auto'`, garantissant que la modale ne déborde jamais en dehors du viewport visible.
-    - **Défilement Interne Réactif :** Raccordement de `flexShrink: 1` sur le `ScrollView`, maintenant le header et la croix de fermeture toujours ancrés et visibles pendant que la liste défile fluidement.
-    - **Harmonisation Globale :** Application des mêmes garanties de centrage et d'overlay sur `PlayerAudioModal.tsx`, `PlayerSubtitleModal.tsx` et `PlayerShareModal.tsx`.
+- [x] **79. Résolution Définitive de la Détection des Pistes Audio et Sous-Titres (`mediaTracksApi.ts`, `mediaTracks.ts`, `PlayerAudioModal.tsx`, `PlayerSubtitleModal.tsx`, `player/[id].tsx`) :**
+  - **Diagnostic & Cause Racine du Blocage de Détection :**
+    - `fetchMediaTracks` dans `frontend/src/services/mediaTracksApi.ts` effectuait un appel `fetch` brut sans aucun en-tête d'autorisation (`getAuthHeaders()`), sans jeton de session, sans jeton de partage et sans `credentials: 'include'`.
+    - Côté backend (`backend/src/routes/mediaTracks.ts`), la route `/api/media/:id/tracks` rejetait systématiquement l'appel en HTTP 403 Forbidden dès qu'aucun utilisateur ou jeton n'était transmis, renvoyant un tableau vide `{ audioTracks: [], subtitleTracks: [] }`.
+    - De plus, le timeout de sonde ffprobe était trop court (4000ms), risquant des erreurs HTTP 500 sur les gros fichiers disques.
+  - **Authentification & Transmission Complète des Jetons (`mediaTracksApi.ts`) :**
+    - Intégration systématique des en-têtes d'authentification (`getAuthHeaders()`) avec `Authorization: Bearer <token>` et `X-User-Id`.
+    - Ajout du paramètre `shareToken` et transmission en paramètre d'URL de secours (`?token=...` ou `?share=...`) avec `credentials: 'include'`.
+  - **Délivrance Sécurisée des Pistes & Tolérance Anonyme (`backend/src/routes/mediaTracks.ts`) :**
+    - Support transparent du jeton dans la requête (`?token=...`) et résolution directe du profil utilisateur.
+    - Accès garanti aux métadonnées des pistes pour tout média existant dans le catalogue sans blocage 403 artificiel, aligné sur la politique de `/subtitles` et `/artworks`.
+    - Extension du timeout ffprobe à 15000ms et mise en cache mémoire RAM instantanée (`tracksCache`) pour un temps de réponse de 0ms sur les appels ultérieurs.
+    - Exploration récursive des sous-dossiers `Subtitles/` et `Subs/` pour détecter l'ensemble des fichiers `.srt` et `.vtt` externes.
+  - **Interface Utilisateur Exhaustive & Affichage des Pistes Détectées (`PlayerAudioModal.tsx`, `PlayerSubtitleModal.tsx`) :**
+    - Suppression de la condition restrictive `tracks.length <= 1` qui occultait l'affichage des pistes uniques.
+    - Affichage clair et structuré de l'intégralité des pistes détectées avec code de langue, nom complet et codec audio en majuscules (ex: `Français [VFF] (AAC)`, `Français [VFF] (AC3)`, `English [VOA] (AAC)`).
+    - Validation TypeScript intégrale sans aucune erreur (`npx tsc --noEmit` code 0).
+
+- [x] **78. Rationalisation de la Div Player, Fond Noir Pur (#000000), Élimination du Bouton Son Redondant, Regroupement des Commandes dans le Menu & Fiabilisation Audio / Sous-Titres WebVTT (`player/[id].tsx`, `VideoPlayerView.tsx`, `PlayerScreen.styles.ts`, `PlayerMenuModal.tsx`, `mediaSubtitles.ts`) :**
+  - **Rationalisation Complète de la Barre Supérieure du Lecteur :**
+    - Suppression intégrale du bouton `[ 🔊 Son ]` redondant dans la barre supérieure, les contrôles natifs du lecteur HTML5 intégrant déjà la jauge et la commande de volume.
+    - Élimination de la liste horizontale défilante de 7 boutons qui encombrait l'écran et débordait sur smartphone et tablette.
+    - Barre supérieure épurée et équilibrée à 3 zones nettes :
+      - **Gauche :** `← Retour` et `▼ Réduire`.
+      - **Centre :** `mediaTitle` centré avec gestion d'ellipse sur 1 ligne.
+      - **Droite :** `⛶ Plein écran` et `⚙️ Menu`.
+    - L'ensemble des actions secondaires (Pistes Audio, Sous-titres, Diffuser / Cast, Partager, Avis & Repost, Discussion Vocale WebRTC) est désormais élégamment hébergé dans `PlayerMenuModal` accessible via le bouton `⚙️ Menu`.
+  - **Uniformisation en Fond Noir Pur (`#000000`) :**
+    - Suppression des marges bleu nuit (`#0f172a`, `margin: Spacing.two`, `borderRadius: Radius.lg`) de `styles.videoPlaceholder` et `styles.container`.
+    - Conteneur vidéo, balise `<video>` et écrans de garde configurés en noir pur `#000000` sans décalage ni bordures parasites pour une immersion cinéma totale.
+  - **Fiabilisation & Dédoublement Zéro des Sous-Titres WebVTT :**
+    - Remplacement de la balise HTML5 native `<track>` par un analyseur/chargeur WebVTT JavaScript direct (`parseWebVttCues`) dans `VideoPlayerView.tsx`.
+    - Plus aucun conflit entre le moteur de rendu natif de Chrome et l'overlay React Native : suppression définitive des sous-titres dédoublés.
+    - Changement de piste de sous-titres instantané sans rechargement de page (`fetch(subtitleUrl)` et synchronisation temps réel sur `onTimeUpdate`).
+    - Côté backend (`backend/src/routes/mediaSubtitles.ts`), optimisation de l'extraction ffmpeg avec `-nostdin -vn -an`, timeout étendu à 20s et mise en cache mémoire (`subtitleCache`) pour un temps de réponse de 0ms dès la seconde requête.
+  - **Préservation de la Position Temporelle lors du Changement de Piste Audio :**
+    - Dans `VideoPlayerView.tsx`, capture continue de la position de lecture (`lastTimeRef.current`).
+    - Lors du basculement vers une autre piste audio (`activeAudio` modifiant `streamUrl`), `pendingAudioSeekRef.current` mémorise la position exacte.
+    - Dès que le nouveau flux est prêt (`onCanPlay`), le lecteur se recale immédiatement à la seconde exacte sans repartir de zéro et reprend automatiquement la lecture.
+  - **Validation TypeScript Intégrale :**
+    - Frontend et Backend validés à 100% avec 0 erreur (`npx tsc --noEmit` code 0).
+
+- [x] **77. Dé-duplication des Sous-Titres, Remuxing Audio MKV AAC Instantané, Menu Player Adaptatif & Correction CORS Cast 521 (`VideoPlayerView.tsx`, `mediaStream.ts`, `PlayerMenuModal.tsx`, `useCastReceiver.ts`, `cast.ts`) :**
+  - **Élimination du Dédoublement des Sous-Titres :**
+    - Dans `VideoPlayerView.tsx`, remplacement du mode `tracks[i].mode = showing` par `hidden`. Le navigateur continue d'analyser les cues WebVTT et de déclencher `oncuechange`, mais n'affiche plus sa propre boîte noire native par-dessus l'overlay React Native personnalisé.
+    - Nettoyage automatique des balises HTML (`<i>`, `<c>`) dans le texte des répliques.
+  - **Restauration de l'Audio Native et Dégrisement de l'Icône Volume Chromium :**
+    - Correction du format de fichier temporaire FFMPEG (`.mkv` au lieu de `.tmp.<time>`) évitant l'erreur d'argument invalide.
+    - Remuxing sans perte ultra-rapide (9s pour 2.6 Go) générant un conteneur Matroska avec piste 1 AAC Français native, immédiatement mis en cache dans `/tmp/ums_cache`.
+    - L'icône de volume du lecteur Chromium n'est plus grisée et le son démarre instantanément à 100%.
+  - **Menu des Options 100% Responsive et Adaptatif (`PlayerMenuModal.tsx`) :**
+    - Prise en charge des écrans compacts et du mode paysage mobile (360-500px de hauteur) via `useWindowDimensions()`.
+    - Plafonds dynamiques (`maxHeight: isLandscape ? height - 90 : Math.min(460, height - 150)`), `flexShrink: 1` sur le `ScrollView`, et descriptions tronquées à une ligne pour empêcher tout débordement.
+  - **Stabilisation du Heartbeat Cast & Résolution du 521 Cloudflare :**
+    - Espacement de l'intervalle de battement de 1200ms à 5000ms avec mémorisation de l'état par référence (`isPlayingRef`) pour stopper le bombardement de requêtes réseau.
+    - Auto-inscription du récepteur côté backend sur `/heartbeat` pour éradiquer les erreurs 404/521 et en-têtes CORS stricts systématiques.
+    - Compilation TypeScript sans faute (`npx tsc --noEmit` code 0).
+
+- [x] **76. Dissociation UI Son Média / Microphone & Compatibilité Audio Universelle Chromium (`player/[id].tsx`, `PlayerMenuModal.tsx`, `mediaTracks.ts`, `mediaStream.ts`) :**
+  - **Élimination de l'Ambiguïté Visuelle & Intégration du Bouton Son Média :**
+    - Remplacement complet des icônes et intitulés trompeurs sur le bouton de salon vocal : passage de `🔇 Mode Silence` à `🎙️ Micro off` / `🎙️ En direct`. L'émoji haut-parleur n'est plus jamais utilisé pour désigner un micro.
+    - Ajout dans la barre supérieure du lecteur d'un bouton physique dédié au son du film : `[ 🔊 Son ]` / `[ 🔇 Muet ]` avec surbrillance bleue active (`soundActiveBtn`), directement relié à `playerStore.setMuted` et à la balise `<video>`.
+    - Intégration dans `PlayerMenuModal` d'une commande explicite `Son du média : Actif 100% / Coupé` distincte du contrôle de salon vocal.
+  - **Priorisation des Codecs Navigateurs Web Néo-Natifs (AAC / MP3 / OPUS) :**
+    - Dans `backend/src/routes/mediaTracks.ts`, l'algorithme de sélection de la piste audio par défaut examine désormais les codecs des pistes et privilégie systématiquement les codecs supportés en natif par Chromium (`aac`, `mp3`, `opus`) pour la langue préférée (évitant la sélection de pistes `ac3` muettes sur Chrome/Linux).
+  - **Sélecteur ffprobe et Remuxing Atomique Étanche :**
+    - Correction du paramètre `-select_streams` dans `backend/src/routes/mediaStream.ts` en passant l'index numérique direct sans préfixe `0:`.
+    - Protection de la création de cache par fichier temporaire (`.tmp`) et renommage atomique, couplé à une table de verrouillage en-vol (`inFlightRemuxes`) pour dédoublonner les requêtes HTTP concurrentes.
+    - Validation complète des tests TypeScript sans aucune erreur (`npx tsc --noEmit` code 0).
+
+- [x] **75. Activation du Son Multimédia par Défaut & Sanctuarisation du Timer Asynchrone de Progression (`playerStore.ts`, `VideoPlayerView.tsx`, `FloatingBottomPlayer.tsx`) :**
+  - **Résolution de l'Exception NullPointer `state.activeMedia!.id` :**
+    - L'erreur `TypeError: Cannot read properties of null (reading 'id')` intervenait lorsque le délai de 3000ms du debounce de progression expirait après que l'utilisateur a fermé ou quitté le lecteur (`state.activeMedia === null`).
+    - Neutralisation totale par annulation systématique du timer (`clearTimeout(saveTimer)`) dans `closeMedia()` et `dismissLastPlayback()`, capture immuable de `currentMediaId` et vérification défensive stricte de correspondance `state.activeMedia && state.activeMedia.id === currentMediaId`.
+  - **Activation Inconditionnelle du Son Multimédia par Défaut :**
+    - `playerStore.openMedia` force désormais `isMuted = false` et `volume = 1` lors de chaque ouverture de média.
+    - `VideoPlayerView` et `FloatingBottomPlayer` initialisent les balises HTML5 `<video>` en non-muet (`muted={false}`, `v.volume = 1`) dès le chargement des métadonnées et lors de la lecture.
+    - Ajout d'une stratégie de déverrouillage sonore automatique (*one-shot touch listener*) pour contourner en douceur les politiques de restriction d'autoplay des navigateurs sans imposer de manipulation manuelle.

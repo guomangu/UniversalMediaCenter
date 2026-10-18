@@ -4,6 +4,7 @@ import { getAuthHeaders, getAuthToken } from './authStore';
 import { sendCastCommand, CastDevice } from './castService';
 import { getActiveCastTarget } from './castState';
 import { reportPlaybackProgress } from './sessionApi';
+import { getVideoStreamUrl } from './api';
 
 export interface ActivePlayerMedia {
   id: string;
@@ -99,6 +100,10 @@ export const playerStore = {
     };
     state.isMinimized = false;
 
+    // Le son du média doit être activé par défaut (non muet, volume à 100%)
+    state.isMuted = false;
+    state.volume = 1;
+
     // Mise à jour de la dernière lecture mémorisée
     state.lastPlayback = {
       id: media.id,
@@ -109,6 +114,15 @@ export const playerStore = {
       updatedAt: Date.now(),
     };
     saveLastPlayback(state.lastPlayback);
+
+    if (typeof window !== 'undefined') {
+      const videos = document.querySelectorAll('video');
+      videos.forEach((v) => {
+        v.muted = false;
+        v.volume = 1;
+      });
+    }
+
     notify();
   },
 
@@ -143,11 +157,15 @@ export const playerStore = {
       state.lastPlayback.positionSeconds = current;
       if (duration > 0) state.lastPlayback.durationSeconds = duration;
       state.lastPlayback.updatedAt = Date.now();
+      const currentMediaId = state.activeMedia.id;
+      const isLiveMedia = Boolean(state.activeMedia.isLive);
+
       if (!saveTimer) {
         saveTimer = setTimeout(() => {
           saveLastPlayback(state.lastPlayback);
-          if (!state.activeMedia?.isLive && current > 0) {
-            reportPlaybackProgress(state.activeMedia!.id, current, duration, false).catch(() => {});
+          // Protection défensive : vérification que activeMedia existe toujours et correspond au média sauvegardé
+          if (state.activeMedia && state.activeMedia.id === currentMediaId && !isLiveMedia && current > 0) {
+            reportPlaybackProgress(currentMediaId, current, duration, false).catch(() => {});
           }
           saveTimer = null;
         }, 3000);
@@ -167,7 +185,8 @@ export const playerStore = {
     }
 
     if (typeof window !== 'undefined') {
-      const v = document.querySelector('video[data-video-player="true"]') as HTMLVideoElement | null;
+      const v = (document.querySelector('video[data-player-div-video="true"]') ||
+        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
       if (v) v.currentTime = pos;
     }
   },
@@ -183,6 +202,14 @@ export const playerStore = {
   setAudio(audio: string) {
     if (!state.activeMedia) return;
     state.activeMedia.activeAudio = audio;
+    if (state.activeMedia.id) {
+      const base = getVideoStreamUrl(state.activeMedia.id, state.activeMedia.share);
+      const p = new URLSearchParams();
+      if (audio && audio !== 'auto') p.set('audio', audio);
+      if (state.activeMedia.share) p.set('share', state.activeMedia.share);
+      const qs = p.toString();
+      state.activeMedia.streamUrl = qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
+    }
     notify();
 
     const cast = getActiveCastTarget();
@@ -220,7 +247,8 @@ export const playerStore = {
       sendCastCommand(cast.id, muted ? 'MUTE' : 'UNMUTE');
     }
     if (typeof window !== 'undefined') {
-      const v = document.querySelector('video[data-video-player="true"]') as HTMLVideoElement | null;
+      const v = (document.querySelector('video[data-player-div-video="true"]') ||
+        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
       if (v) v.muted = muted;
     }
   },
@@ -233,12 +261,17 @@ export const playerStore = {
       sendCastCommand(cast.id, 'SET_VOLUME', { volume: state.volume });
     }
     if (typeof window !== 'undefined') {
-      const v = document.querySelector('video[data-video-player="true"]') as HTMLVideoElement | null;
+      const v = (document.querySelector('video[data-player-div-video="true"]') ||
+        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
       if (v) v.volume = state.volume;
     }
   },
 
   closeMedia() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     if (state.activeMedia) {
       // Sauvegarde position finale
       if (state.lastPlayback && state.activeMedia.id === state.lastPlayback.id) {
@@ -255,6 +288,10 @@ export const playerStore = {
   },
 
   dismissLastPlayback() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     state.lastPlayback = null;
     saveLastPlayback(null);
     notify();
@@ -287,12 +324,15 @@ export const playerStore = {
 };
 
 export function usePlayerState(): PlayerStoreState {
-  const [s, setS] = useState<PlayerStoreState>(state);
+  const [s, setS] = useState<PlayerStoreState>(playerStore.getState());
+
   useEffect(() => {
-    listeners.add(setS);
+    const update = (next: PlayerStoreState) => setS(next);
+    listeners.add(update);
     return () => {
-      listeners.delete(setS);
+      listeners.delete(update);
     };
   }, []);
+
   return s;
 }
