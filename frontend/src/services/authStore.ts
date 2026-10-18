@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getApiBaseUrl } from './apiConfig';
 import { clearMemoryCache } from './pwaDataCache';
+import { getLocalDeviceId } from './deviceIdentity';
 
 export interface UserProfile {
   id: string;
@@ -111,6 +112,8 @@ export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (memoryToken) headers['Authorization'] = `Bearer ${memoryToken}`;
   if (memoryUser?.id) headers['X-User-Id'] = memoryUser.id;
+  const deviceId = getLocalDeviceId();
+  if (deviceId) headers['X-Device-Id'] = deviceId;
   return headers;
 }
 
@@ -129,8 +132,22 @@ export async function syncSessionWithServer(): Promise<UserProfile | null> {
   if (!memoryToken) return null;
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${memoryToken}` },
+      headers: {
+        Authorization: `Bearer ${memoryToken}`,
+        'X-Device-Id': getLocalDeviceId(),
+      },
     });
+    if (res.status === 401) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData?.error === 'DEVICE_REVOKED') {
+        logout();
+        if (typeof window !== 'undefined') {
+          alert('Votre session sur cet appareil a été déconnectée à distance.');
+          window.location.href = '/login';
+        }
+        return null;
+      }
+    }
     if (res.ok) {
       const data = await res.json();
       if (data.authenticated && data.user) {
@@ -180,20 +197,22 @@ export async function loginWithPassword(
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': getLocalDeviceId(),
+      },
       body: JSON.stringify({ email: email.trim(), password }),
     });
+
     const data = await res.json();
     if (!res.ok || !data.success) {
       return { success: false, error: data.error || 'Email ou mot de passe incorrect' };
     }
-    memoryUser = data.user;
-    memoryToken = data.token;
-    purgeAllMediaCaches();
-    notify();
+
+    setAuthSession(data.user, data.token);
     return { success: true, user: data.user };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Erreur réseau lors de la connexion' };
+    return { success: false, error: err.message || 'Erreur réseau de connexion' };
   }
 }
 
@@ -205,17 +224,17 @@ export async function registerAccount(
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/auth/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': getLocalDeviceId(),
+      },
       body: JSON.stringify({ email: email.trim(), password, displayName: displayName.trim() }),
     });
     const data = await res.json();
     if (!res.ok || !data.success) {
       return { success: false, error: data.error || 'Erreur lors de la création du compte' };
     }
-    memoryUser = data.user;
-    memoryToken = data.token;
-    purgeAllMediaCaches();
-    notify();
+    setAuthSession(data.user, data.token);
     return { success: true, user: data.user };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erreur réseau lors de la création' };
@@ -224,6 +243,7 @@ export async function registerAccount(
 
 export function useCurrentUser(): UserProfile | null {
   const [user, setUser] = useState<UserProfile | null>(memoryUser);
+
   useEffect(() => {
     setUser(memoryUser);
     const listener = (u: UserProfile | null) => setUser(u);
@@ -232,5 +252,6 @@ export function useCurrentUser(): UserProfile | null {
       listeners.delete(listener);
     };
   }, []);
+
   return user;
 }

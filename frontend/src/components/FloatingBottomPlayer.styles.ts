@@ -10,11 +10,9 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.96)',
     borderTopWidth: 1,
     borderTopColor: '#334155',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 20,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 -4px 12px rgba(0, 0, 0, 0.5)' }
+      : { shadowColor: '#000000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.5, shadowRadius: 12, elevation: 20 }),
     ...((Platform.OS === 'web' ? { backdropFilter: 'blur(16px)' } : {}) as any),
   },
   progressBarBg: {

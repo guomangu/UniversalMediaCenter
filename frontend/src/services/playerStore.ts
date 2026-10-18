@@ -2,14 +2,9 @@ import { useState, useEffect } from 'react';
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders, getAuthToken } from './authStore';
 import { sendCastCommand, CastDevice } from './castService';
-import { getActiveCastTarget } from './castState';
+import { getActiveCastTarget, subscribeActiveCastTarget } from './castState';
 import { reportPlaybackProgress } from './sessionApi';
 import { getVideoStreamUrl } from './api';
-import {
-  reportAccountPlayback,
-  stopAccountPlayback,
-  startAccountPlaybackSyncLoop,
-} from './accountSyncService';
 
 export interface ActivePlayerMedia {
   id: string;
@@ -46,31 +41,42 @@ export interface PlayerStoreState {
   volume: number;
 }
 
-const STORAGE_LAST_KEY = 'ums_last_playback';
+export type PlaybackBroadcaster = {
+  report: (payload: any, isAction?: boolean) => Promise<void> | void;
+  stop: () => Promise<void> | void;
+};
+
+let playbackBroadcaster: PlaybackBroadcaster | null = null;
+
+export function registerPlaybackBroadcaster(broadcaster: PlaybackBroadcaster) {
+  playbackBroadcaster = broadcaster;
+}
+
+const STORAGE_LAST_PLAYBACK_KEY = 'ums_last_playback';
 
 function loadLastPlayback(): LastPlaybackInfo | null {
   if (typeof window === 'undefined' || !window.localStorage) return null;
   try {
-    const raw = localStorage.getItem(STORAGE_LAST_KEY);
+    const raw = localStorage.getItem(STORAGE_LAST_PLAYBACK_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.id && parsed.title) return parsed;
-  } catch {}
-  return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 function saveLastPlayback(info: LastPlaybackInfo | null) {
   if (typeof window === 'undefined' || !window.localStorage) return;
   try {
     if (info) {
-      localStorage.setItem(STORAGE_LAST_KEY, JSON.stringify(info));
+      localStorage.setItem(STORAGE_LAST_PLAYBACK_KEY, JSON.stringify(info));
     } else {
-      localStorage.removeItem(STORAGE_LAST_KEY);
+      localStorage.removeItem(STORAGE_LAST_PLAYBACK_KEY);
     }
   } catch {}
 }
 
-let state: PlayerStoreState = {
+const state: PlayerStoreState = {
   activeMedia: null,
   lastPlayback: loadLastPlayback(),
   isMinimized: false,
@@ -80,45 +86,137 @@ let state: PlayerStoreState = {
 };
 
 const listeners = new Set<(s: PlayerStoreState) => void>();
+const remoteAudioListeners = new Set<(audio: string) => void>();
+const remoteSubtitleListeners = new Set<(sub: string) => void>();
 
-function notify() {
-  const s = { ...state };
-  listeners.forEach((fn) => fn(s));
+export function onRemoteAudioChange(fn: (audio: string) => void): () => void {
+  remoteAudioListeners.add(fn);
+  return () => {
+    remoteAudioListeners.delete(fn);
+  };
+}
+
+export function onRemoteSubtitleChange(fn: (sub: string) => void): () => void {
+  remoteSubtitleListeners.add(fn);
+  return () => {
+    remoteSubtitleListeners.delete(fn);
+  };
 }
 
 let saveTimer: any = null;
+let remoteSyncLockDepth = 0;
+
+function notify() {
+  listeners.forEach((fn) => fn(state));
+}
+
+// Maintien du lecteur du site en synchronisation totale avec le média casté
+if (typeof window !== 'undefined') {
+  subscribeActiveCastTarget((live) => {
+    if (live && state.activeMedia) {
+      let changed = false;
+      if (typeof live.positionSeconds === 'number' && Math.abs(state.activeMedia.positionSeconds - live.positionSeconds) > 1.2) {
+        state.activeMedia.positionSeconds = live.positionSeconds;
+        changed = true;
+      }
+      if (typeof live.durationSeconds === 'number' && live.durationSeconds > 0 && state.activeMedia.durationSeconds !== live.durationSeconds) {
+        state.activeMedia.durationSeconds = live.durationSeconds;
+        changed = true;
+      }
+      const isLivePlaying = Boolean(live.isPlaying);
+      if (state.activeMedia.isPlaying !== isLivePlaying) {
+        state.activeMedia.isPlaying = isLivePlaying;
+        changed = true;
+      }
+      if (live.audioTrack && state.activeMedia.activeAudio !== live.audioTrack) {
+        state.activeMedia.activeAudio = live.audioTrack;
+        changed = true;
+        remoteAudioListeners.forEach((fn) => fn(live.audioTrack!));
+      }
+      if (live.subtitleTrack && state.activeMedia.activeSubtitle !== live.subtitleTrack) {
+        state.activeMedia.activeSubtitle = live.subtitleTrack;
+        changed = true;
+        remoteSubtitleListeners.forEach((fn) => fn(live.subtitleTrack!));
+      }
+      if (changed) {
+        notify();
+      }
+    }
+  });
+}
 
 export const playerStore = {
   getState(): PlayerStoreState {
     return state;
   },
 
-  openMedia(media: Omit<ActivePlayerMedia, 'isPlaying' | 'positionSeconds' | 'durationSeconds'> & { initialTime?: number }) {
-    const pos = media.initialTime || 0;
+  isApplyingRemoteSync(): boolean {
+    return remoteSyncLockDepth > 0;
+  },
+
+  beginRemoteSync() {
+    remoteSyncLockDepth++;
+  },
+
+  endRemoteSync() {
+    setTimeout(() => {
+      remoteSyncLockDepth = Math.max(0, remoteSyncLockDepth - 1);
+    }, 450);
+  },
+
+  openMedia(media: {
+    id: string;
+    title: string;
+    slug?: string;
+    posterUrl?: string;
+    streamUrl: string;
+    isLive?: boolean;
+    activeAudio?: string;
+    activeSubtitle?: string;
+    share?: string;
+    initialTime?: number;
+    isCorrupted?: boolean;
+    corruptedReason?: string;
+    isRemoteSync?: boolean; // Si true, l'ouverture est initiée par un leader distant
+  }) {
+    const prevMedia = state.activeMedia;
+    const isSameMedia = Boolean(prevMedia && prevMedia.id === media.id);
+    const pos = isSameMedia && prevMedia ? prevMedia.positionSeconds : (media.initialTime || 0);
+    const dur = isSameMedia && prevMedia ? prevMedia.durationSeconds : 0;
+    const isPlaying = isSameMedia && prevMedia ? prevMedia.isPlaying : true;
+    const audio = media.activeAudio || (isSameMedia && prevMedia ? prevMedia.activeAudio : 'auto');
+    const subtitle = media.activeSubtitle || (isSameMedia && prevMedia ? prevMedia.activeSubtitle : 'off');
+
     state.activeMedia = {
-      ...media,
+      id: media.id,
+      title: media.title,
+      slug: media.slug,
+      posterUrl: media.posterUrl,
+      streamUrl: media.streamUrl,
+      isLive: media.isLive,
       positionSeconds: pos,
-      durationSeconds: 0,
-      isPlaying: true,
-      activeAudio: media.activeAudio || 'auto',
-      activeSubtitle: media.activeSubtitle || 'off',
+      durationSeconds: dur,
+      isPlaying,
+      activeAudio: audio,
+      activeSubtitle: subtitle,
+      share: media.share,
+      isCorrupted: media.isCorrupted,
+      corruptedReason: media.corruptedReason,
     };
-    state.isMinimized = false;
-
-    // Le son du média doit être activé par défaut (non muet, volume à 100%)
-    state.isMuted = false;
-    state.volume = 1;
-
-    // Mise à jour de la dernière lecture mémorisée
     state.lastPlayback = {
       id: media.id,
       title: media.title,
       posterUrl: media.posterUrl,
       positionSeconds: pos,
-      durationSeconds: 0,
+      durationSeconds: dur,
       updatedAt: Date.now(),
     };
     saveLastPlayback(state.lastPlayback);
+
+    if (media.isRemoteSync) {
+      this.beginRemoteSync();
+      this.endRemoteSync();
+    }
 
     if (typeof window !== 'undefined') {
       const videos = document.querySelectorAll('video');
@@ -130,24 +228,26 @@ export const playerStore = {
 
     notify();
 
-    // Signaler au compte multi-écrans la nouvelle lecture
-    reportAccountPlayback({
-      mediaId: media.id,
-      mediaTitle: media.title,
-      posterUrl: media.posterUrl,
-      streamUrl: media.streamUrl,
-      isLive: media.isLive,
-      positionSeconds: pos,
-      durationSeconds: 0,
-      isPlaying: true,
-      activeAudio: media.activeAudio || 'auto',
-      activeSubtitle: media.activeSubtitle || 'off',
-      volume: state.volume,
-      isMuted: state.isMuted,
-    }).catch(() => {});
+    // Si l'ouverture est initiée par une synchronisation distante, ne pas rediffuser pour ne pas écraser le leader
+    if (!media.isRemoteSync) {
+      playbackBroadcaster?.report({
+        mediaId: media.id,
+        mediaTitle: media.title,
+        posterUrl: media.posterUrl,
+        streamUrl: media.streamUrl,
+        isLive: media.isLive,
+        positionSeconds: pos,
+        durationSeconds: dur,
+        isPlaying,
+        activeAudio: audio,
+        activeSubtitle: subtitle,
+        volume: state.volume,
+        isMuted: state.isMuted,
+      }, true); // isAction: true (prise de leadership légitime)
+    }
   },
 
-  setPlaying(isPlaying: boolean, shouldBroadcast = true) {
+  setPlaying(isPlaying: boolean, shouldBroadcast = true, isExplicitAction = false) {
     if (!state.activeMedia) return;
     state.activeMedia.isPlaying = isPlaying;
     notify();
@@ -158,25 +258,12 @@ export const playerStore = {
     }
 
     if (shouldBroadcast) {
-      reportAccountPlayback({
+      playbackBroadcaster?.report({
+        mediaId: state.activeMedia.id,
+        mediaTitle: state.activeMedia.title,
         isPlaying,
         positionSeconds: state.activeMedia.positionSeconds,
-      }).catch(() => {});
-    }
-  },
-
-  syncPlayingFromRemote(isPlaying: boolean) {
-    if (!state.activeMedia) return;
-    state.activeMedia.isPlaying = isPlaying;
-    notify();
-
-    if (typeof window !== 'undefined') {
-      const v = (document.querySelector('video[data-player-div-video="true"]') ||
-        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
-      if (v) {
-        if (isPlaying && v.paused) v.play().catch(() => {});
-        else if (!isPlaying && !v.paused) v.pause();
-      }
+      }, isExplicitAction);
     }
   },
 
@@ -187,16 +274,46 @@ export const playerStore = {
       }
       return;
     }
-    this.setPlaying(!state.activeMedia.isPlaying);
+    this.setPlaying(!state.activeMedia.isPlaying, true, true);
   },
 
   updateProgress(current: number, duration: number) {
+    this.updatePosition(current, duration);
+  },
+
+  syncPlayingFromRemote(isPlaying: boolean) {
     if (!state.activeMedia) return;
+    if (state.activeMedia.isPlaying === isPlaying) return;
+    state.activeMedia.isPlaying = isPlaying;
+    notify();
+
+    if (typeof window !== 'undefined') {
+      const v = (document.querySelector('video[data-player-div-video="true"]') ||
+        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+      if (v) {
+        this.beginRemoteSync();
+        try {
+          if (isPlaying && v.paused) {
+            v.play().catch(() => {});
+          } else if (!isPlaying && !v.paused) {
+            v.pause();
+          }
+        } finally {
+          this.endRemoteSync();
+        }
+      }
+    }
+  },
+
+  updatePosition(current: number, duration: number) {
+    if (!state.activeMedia) return;
+    const prevSec = Math.floor(state.activeMedia.positionSeconds);
+    const newSec = Math.floor(current);
+
     state.activeMedia.positionSeconds = current;
     if (duration > 0) state.activeMedia.durationSeconds = duration;
 
-    // Débounce de la sauvegarde locale et signalement serveur
-    if (state.lastPlayback && state.activeMedia.id === state.lastPlayback.id) {
+    if (state.lastPlayback && state.lastPlayback.id === state.activeMedia.id) {
       state.lastPlayback.positionSeconds = current;
       if (duration > 0) state.lastPlayback.durationSeconds = duration;
       state.lastPlayback.updatedAt = Date.now();
@@ -213,10 +330,14 @@ export const playerStore = {
         }, 3000);
       }
     }
-    notify();
+
+    // N'avertir les composants React via notify() que si la seconde pleine a changé (divise par 4 les re-renders)
+    if (prevSec !== newSec) {
+      notify();
+    }
   },
 
-  seekTo(pos: number, shouldBroadcast = true) {
+  seekTo(pos: number, shouldBroadcast = true, isExplicitAction = false) {
     if (!state.activeMedia) return;
     state.activeMedia.positionSeconds = pos;
     notify();
@@ -226,17 +347,27 @@ export const playerStore = {
       sendCastCommand(cast.id, 'SEEK', { positionSeconds: pos });
     }
 
+    if (!shouldBroadcast) {
+      this.beginRemoteSync();
+    }
+
     if (typeof window !== 'undefined') {
       const v = (document.querySelector('video[data-player-div-video="true"]') ||
         document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
       if (v) v.currentTime = pos;
     }
 
+    if (!shouldBroadcast) {
+      this.endRemoteSync();
+    }
+
     if (shouldBroadcast) {
-      reportAccountPlayback({
+      playbackBroadcaster?.report({
+        mediaId: state.activeMedia.id,
+        mediaTitle: state.activeMedia.title,
         positionSeconds: pos,
         isPlaying: state.activeMedia.isPlaying,
-      }).catch(() => {});
+      }, isExplicitAction);
     }
   },
 
@@ -245,10 +376,10 @@ export const playerStore = {
     const cur = state.activeMedia.positionSeconds || 0;
     const dur = state.activeMedia.durationSeconds || 7200;
     const target = Math.max(0, Math.min(dur, cur + offset));
-    this.seekTo(target);
+    this.seekTo(target, true, true);
   },
 
-  setAudio(audio: string, shouldBroadcast = true) {
+  setAudio(audio: string, shouldBroadcast = true, isExplicitAction = false) {
     if (!state.activeMedia) return;
     state.activeMedia.activeAudio = audio;
     if (state.activeMedia.id) {
@@ -267,18 +398,20 @@ export const playerStore = {
     }
 
     if (shouldBroadcast) {
-      reportAccountPlayback({
+      playbackBroadcaster?.report({
         activeAudio: audio,
         positionSeconds: state.activeMedia.positionSeconds,
-      }).catch(() => {});
+      }, isExplicitAction);
     }
   },
 
   syncAudioFromRemote(audio: string) {
-    this.setAudio(audio, false);
+    if (!state.activeMedia || state.activeMedia.activeAudio === audio) return;
+    this.setAudio(audio, false, false);
+    remoteAudioListeners.forEach((fn) => fn(audio));
   },
 
-  setSubtitle(sub: string, shouldBroadcast = true) {
+  setSubtitle(sub: string, shouldBroadcast = true, isExplicitAction = false) {
     if (!state.activeMedia) return;
     state.activeMedia.activeSubtitle = sub;
     notify();
@@ -289,15 +422,17 @@ export const playerStore = {
     }
 
     if (shouldBroadcast) {
-      reportAccountPlayback({
+      playbackBroadcaster?.report({
         activeSubtitle: sub,
         positionSeconds: state.activeMedia.positionSeconds,
-      }).catch(() => {});
+      }, isExplicitAction);
     }
   },
 
   syncSubtitleFromRemote(sub: string) {
-    this.setSubtitle(sub, false);
+    if (!state.activeMedia || state.activeMedia.activeSubtitle === sub) return;
+    this.setSubtitle(sub, false, false);
+    remoteSubtitleListeners.forEach((fn) => fn(sub));
   },
 
   setMinimized(min: boolean) {
@@ -322,9 +457,9 @@ export const playerStore = {
         document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
       if (v) v.muted = muted;
     }
-    reportAccountPlayback({
+    playbackBroadcaster?.report({
       isMuted: muted,
-    }).catch(() => {});
+    }, true);
   },
 
   setVolume(vol: number) {
@@ -339,9 +474,9 @@ export const playerStore = {
         document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
       if (v) v.volume = state.volume;
     }
-    reportAccountPlayback({
+    playbackBroadcaster?.report({
       volume: state.volume,
-    }).catch(() => {});
+    }, true);
   },
 
   closeMedia() {
@@ -361,7 +496,7 @@ export const playerStore = {
     state.isMinimized = false;
     state.isExpanded = false;
     notify();
-    stopAccountPlayback().catch(() => {});
+    playbackBroadcaster?.stop();
   },
 
   dismissLastPlayback() {
@@ -400,16 +535,11 @@ export const playerStore = {
   },
 };
 
-// Démarrer la synchronisation multi-écrans du compte au chargement de l'app
-if (typeof window !== 'undefined') {
-  startAccountPlaybackSyncLoop();
-}
-
 export function usePlayerState(): PlayerStoreState {
-  const [s, setS] = useState<PlayerStoreState>(playerStore.getState());
+  const [s, setS] = useState<PlayerStoreState>({ ...playerStore.getState() });
 
   useEffect(() => {
-    const update = (next: PlayerStoreState) => setS(next);
+    const update = (next: PlayerStoreState) => setS({ ...next });
     listeners.add(update);
     return () => {
       listeners.delete(update);

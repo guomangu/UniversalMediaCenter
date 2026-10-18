@@ -35,6 +35,7 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsInstanceRef = useRef<Hls | null>(null);
+  const userInitiatedRef = useRef<boolean>(false);
 
   const activeMedia = playerState.activeMedia;
   const lastPlayback = playerState.lastPlayback;
@@ -88,6 +89,21 @@ export const FloatingBottomPlayer: React.FC = () => {
       hlsInstanceRef.current = null;
     }
 
+    const tryAutoplay = () => {
+      if (activeMedia.isPlaying) {
+        const p = v.play();
+        if (p !== undefined) {
+          p.catch((err) => {
+            if (err.name === 'NotAllowedError') {
+              // Si la politique du navigateur bloque la lecture avec son, muter pour afficher le flux
+              v.muted = true;
+              v.play().catch(() => {});
+            }
+          });
+        }
+      }
+    };
+
     if (shouldUseHls) {
       const hls = new Hls({
         enableWorker: true,
@@ -99,12 +115,10 @@ export const FloatingBottomPlayer: React.FC = () => {
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         v.muted = playerState.isMuted;
         v.volume = playerState.volume;
-        if (activeMedia.positionSeconds > 0 && Math.abs(v.currentTime - activeMedia.positionSeconds) > 1) {
+        if (activeMedia.positionSeconds > 0 && Math.abs(v.currentTime - activeMedia.positionSeconds) > 1.5) {
           v.currentTime = activeMedia.positionSeconds;
         }
-        if (activeMedia.isPlaying) {
-          v.play().catch(() => {});
-        }
+        tryAutoplay();
       });
     } else {
       if (v.src !== streamUrl) {
@@ -112,12 +126,10 @@ export const FloatingBottomPlayer: React.FC = () => {
       }
       v.muted = playerState.isMuted;
       v.volume = playerState.volume;
-      if (activeMedia.positionSeconds > 0 && Math.abs(v.currentTime - activeMedia.positionSeconds) > 1) {
+      if (activeMedia.positionSeconds > 0 && Math.abs(v.currentTime - activeMedia.positionSeconds) > 1.5) {
         v.currentTime = activeMedia.positionSeconds;
       }
-      if (activeMedia.isPlaying && v.paused) {
-        v.play().catch(() => {});
-      }
+      tryAutoplay();
     }
 
     return () => {
@@ -161,11 +173,12 @@ export const FloatingBottomPlayer: React.FC = () => {
       if (localVideoRef.current) {
         localVideoRef.current.currentTime = target;
       }
-      playerStore.seekTo(target);
+      playerStore.seekTo(target, true, true);
     }
   };
 
   const handleTogglePlay = () => {
+    userInitiatedRef.current = true;
     if (isCasting && activeCastTarget) {
       sendCastCommand(activeCastTarget.id, isPlaying ? 'PAUSE' : 'PLAY');
     } else {
@@ -173,11 +186,11 @@ export const FloatingBottomPlayer: React.FC = () => {
       if (v) {
         if (v.paused) {
           v.play()
-            .then(() => playerStore.setPlaying(true))
-            .catch(() => playerStore.setPlaying(false));
+            .then(() => playerStore.setPlaying(true, true, true))
+            .catch(() => playerStore.setPlaying(false, true, true));
         } else {
           v.pause();
-          playerStore.setPlaying(false);
+          playerStore.setPlaying(false, true, true);
         }
       } else {
         playerStore.togglePlayPause();
@@ -186,6 +199,7 @@ export const FloatingBottomPlayer: React.FC = () => {
   };
 
   const handleSeekRelative = (offset: number) => {
+    userInitiatedRef.current = true;
     if (isCasting && activeCastTarget) {
       const nextPos = Math.max(0, Math.min(dur || 7200, pos + offset));
       sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: nextPos });
@@ -195,7 +209,7 @@ export const FloatingBottomPlayer: React.FC = () => {
         const cur = v.currentTime || 0;
         const target = Math.max(0, Math.min(v.duration || 7200, cur + offset));
         v.currentTime = target;
-        playerStore.updateProgress(target, v.duration || 0);
+        playerStore.seekTo(target, true, true);
       } else {
         playerStore.seekRelative(offset);
       }
@@ -336,10 +350,16 @@ export const FloatingBottomPlayer: React.FC = () => {
                   zIndex: 2,
                 }}
                 onPlay={() => {
-                  playerStore.setPlaying(true);
+                  if (userInitiatedRef.current) {
+                    playerStore.setPlaying(true, true, true);
+                    userInitiatedRef.current = false;
+                  }
                 }}
                 onPause={() => {
-                  playerStore.setPlaying(false);
+                  if (userInitiatedRef.current) {
+                    playerStore.setPlaying(false, true, true);
+                    userInitiatedRef.current = false;
+                  }
                 }}
                 onTimeUpdate={() => {
                   if (localVideoRef.current) {
@@ -360,7 +380,7 @@ export const FloatingBottomPlayer: React.FC = () => {
                     if (
                       activeMedia?.positionSeconds &&
                       activeMedia.positionSeconds > 0 &&
-                      Math.abs(v.currentTime - activeMedia.positionSeconds) > 1
+                      Math.abs(v.currentTime - activeMedia.positionSeconds) > 1.5
                     ) {
                       v.currentTime = activeMedia.positionSeconds;
                     }
@@ -455,7 +475,7 @@ export const FloatingBottomPlayer: React.FC = () => {
           activeSubtitle={activeMedia?.activeSubtitle || 'off'}
           tracks={tracks.subtitleTracks}
           onSelect={(sub) => {
-            playerStore.setSubtitle(sub);
+            playerStore.setSubtitle(sub, true, true);
           }}
           onClose={() => setShowSubModal(false)}
         />
@@ -467,7 +487,7 @@ export const FloatingBottomPlayer: React.FC = () => {
           activeAudio={activeMedia?.activeAudio || 'auto'}
           tracks={tracks.audioTracks}
           onSelect={(aud) => {
-            playerStore.setAudio(aud);
+            playerStore.setAudio(aud, true, true);
           }}
           onClose={() => setShowAudioModal(false)}
         />

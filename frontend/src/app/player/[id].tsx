@@ -12,7 +12,8 @@ import { PlayerMenuModal } from '@/components/PlayerMenuModal';
 import { useCastReceiver } from '@/hooks/useCastReceiver';
 import { usePlayerControls } from '@/hooks/usePlayerControls';
 import { useActiveCastTarget } from '@/services/castState';
-import { playerStore, usePlayerState } from '@/services/playerStore';
+import { playerStore, onRemoteAudioChange, onRemoteSubtitleChange } from '@/services/playerStore';
+import { fetchAccountPlayback, getLocalDeviceId } from '@/services/accountSyncService';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
 import { getVideoStreamUrl, fetchNextMedia, fetchMediaDetail } from '@/services/api';
 import {
@@ -45,7 +46,6 @@ export default function PlayerScreen() {
   const { width } = useWindowDimensions();
   const isSmallMobile = width < 480;
 
-  const playerState = usePlayerState();
   const [isPlaying, setIsPlaying] = useState(true);
   const [initialTime, setInitialTime] = useState(parsedJoinTime || 0);
   const [showSkipIntro, setShowSkipIntro] = useState(false);
@@ -71,6 +71,10 @@ export default function PlayerScreen() {
 
   // Le mode micro commence systématiquement en silence (isMuted: true)
   const [isMuted, setIsMuted] = useState(true);
+  const isMutedRef = useRef(isMuted);
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   const [activeSession, setActiveSession] = useState<MediaSession | null>(null);
   const [viewersCount, setViewersCount] = useState<number>(1);
@@ -91,6 +95,8 @@ export default function PlayerScreen() {
   const countdownTimer = useRef<any>(null);
   const isCancelledRef = useRef<boolean>(false);
   const isLeavingScreenRef = useRef<boolean>(false);
+  const openedMediaIdRef = useRef<string | null>(null);
+  const isJoiningLiveSyncRef = useRef<boolean>(false);
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
 
   const activeCastTarget = useActiveCastTarget();
@@ -120,6 +126,37 @@ export default function PlayerScreen() {
       document.removeEventListener('webkitfullscreenchange', handleFsChange);
     };
   }, []);
+
+  // Détection proactive d'une session de lecture en cours sur un autre appareil du même compte
+  useEffect(() => {
+    if (id) {
+      fetchAccountPlayback().then((remote) => {
+        if (remote && remote.mediaId === String(id) && remote.deviceId !== getLocalDeviceId()) {
+          const now = Date.now();
+          if (now - remote.updatedAt < 30_000) {
+            isJoiningLiveSyncRef.current = true;
+            if (remote.positionSeconds > 0) {
+              setInitialTime(remote.positionSeconds);
+              savedPosRef.current = remote.positionSeconds;
+              if (videoRef.current && Math.abs(videoRef.current.currentTime - remote.positionSeconds) > 1.5) {
+                videoRef.current.currentTime = remote.positionSeconds;
+              }
+            }
+            if (remote.isPlaying !== undefined) {
+              setIsPlaying(remote.isPlaying);
+            }
+            if (remote.activeAudio && remote.activeAudio !== 'auto') {
+              setActiveAudio(remote.activeAudio);
+            }
+            if (remote.activeSubtitle && remote.activeSubtitle !== 'off') {
+              setActiveSubtitle(remote.activeSubtitle);
+            }
+            showToast(`Synchronisé avec la lecture en cours sur votre compte 🔗`);
+          }
+        }
+      }).catch(() => {});
+    }
+  }, [id, showToast]);
 
   useEffect(() => {
     if (id) {
@@ -158,40 +195,41 @@ export default function PlayerScreen() {
             setShowRestartBtn(false);
           } else {
             const chapters = res.media.chaptersJson || [];
-            const foundIntro = chapters.find((ch: any) => ch.type === 'INTRO');
-            if (foundIntro) {
-              setIntroChapter({ start: foundIntro.startSeconds, end: foundIntro.endSeconds });
-              setShowSkipIntro(true);
-            } else {
-              setIntroChapter(null);
+            const intro = chapters.find(
+              (c: any) =>
+                c.title &&
+                (c.title.toLowerCase().includes('intro') ||
+                  c.title.toLowerCase().includes('opening') ||
+                  c.title.toLowerCase().includes('générique') ||
+                  c.title.toLowerCase().includes('generique'))
+            );
+            if (intro) {
+              setIntroChapter({ start: intro.start, end: intro.end });
             }
 
-            if (parsedJoinTime !== null) {
-              savedPosRef.current = parsedJoinTime;
-              setInitialTime(parsedJoinTime);
-              if (parsedJoinTime > 0) {
+            // Ne pas écraser la position si on a rejoint une synchronisation en direct
+            if (!isJoiningLiveSyncRef.current) {
+              const cur = parsedJoinTime ?? (res.media.progress?.positionSeconds || 0);
+              const dur = res.media.progress?.durationSeconds || res.media.runtimeSeconds || 0;
+              if (cur > 10 && dur > 60 && (dur - cur > 30)) {
+                setInitialTime(cur);
+                savedPosRef.current = cur;
                 setShowRestartBtn(true);
-                const m = Math.floor(parsedJoinTime / 60);
-                const s = Math.floor(parsedJoinTime % 60);
-                showToast(
-                  targetUser
-                    ? `Visionnage synchronisé avec ${targetUser} à ${m}:${String(s).padStart(2, '0')}`
-                    : `Visionnage synchronisé à ${m}:${String(s).padStart(2, '0')}`
-                );
+              } else if (cur >= dur - 30 && dur > 60) {
+                setInitialTime(0);
+                savedPosRef.current = 0;
+                setShowRestartBtn(false);
+              } else {
+                setInitialTime(cur);
+                savedPosRef.current = cur;
+                setShowRestartBtn(false);
               }
-            } else if (res.media.positionSeconds && res.media.positionSeconds > 10 && !res.media.isCompleted) {
-              savedPosRef.current = res.media.positionSeconds;
-              setInitialTime(res.media.positionSeconds);
-              setShowRestartBtn(true);
-              const m = Math.floor(res.media.positionSeconds / 60);
-              const s = Math.floor(res.media.positionSeconds % 60);
-              showToast(`Reprise de la lecture à ${m}:${String(s).padStart(2, '0')}`);
             }
           }
         }
       });
     }
-  }, [id, title, share, joinTime, time, targetUser]);
+  }, [id, share, queryIsLive, parsedJoinTime]);
 
   useEffect(() => {
     if (showRestartBtn) {
@@ -203,16 +241,18 @@ export default function PlayerScreen() {
   }, [showRestartBtn]);
 
   const handleRestartFromBeginning = useCallback(() => {
+    isJoiningLiveSyncRef.current = false;
     setShowRestartBtn(false);
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
     }
     savedPosRef.current = 0;
     setInitialTime(0);
+    playerStore.seekTo(0, true, true);
     showToast('Lecture recommencée depuis le début ⏮');
   }, [showToast]);
 
-  const mediaTitle = resolvedTitle || title || `Média #${id}` ;
+  const mediaTitle = resolvedTitle || title || `Média #${id}`;
 
   // Calcul d'URL de flux dynamique : HLS on-the-fly si format non-natif, ou direct stream
   const streamUrl = useMemo(() => {
@@ -226,48 +266,58 @@ export default function PlayerScreen() {
     return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
   }, [id, activeAudio, share, isForbidden, tracks?.requiresHls]);
 
-  // Synchronisation descendante depuis le playerStore (changement sur Cast ou autre appareil du compte)
+  // Synchronisation descendante univoque depuis les flux distants (Cast ou appareil du compte)
+  // Utilise un canal d'événements sans boucle de dépendances réactives pour éliminer tout risque d'exceeded update depth
   useEffect(() => {
-    if (playerState.activeMedia && playerState.activeMedia.id === String(id)) {
-      if (playerState.activeMedia.activeAudio && playerState.activeMedia.activeAudio !== activeAudio) {
-        setActiveAudio(playerState.activeMedia.activeAudio);
-      }
-      if (playerState.activeMedia.activeSubtitle && playerState.activeMedia.activeSubtitle !== activeSubtitle) {
-        setActiveSubtitle(playerState.activeMedia.activeSubtitle);
-      }
-    }
-  }, [playerState.activeMedia?.activeAudio, playerState.activeMedia?.activeSubtitle, id, activeAudio, activeSubtitle]);
+    const unsubAudio = onRemoteAudioChange((remoteAudio) => {
+      setActiveAudio((cur) => (cur !== remoteAudio ? remoteAudio : cur));
+    });
+    const unsubSub = onRemoteSubtitleChange((remoteSub) => {
+      setActiveSubtitle((cur) => (cur !== remoteSub ? remoteSub : cur));
+    });
+    return () => {
+      unsubAudio();
+      unsubSub();
+    };
+  }, []);
 
+  // Initialisation unique du playerStore pour ce média (zéro ré-ouverture intempestive en boucle)
   useEffect(() => {
-    if (resolvedTitle && streamUrl && !isForbidden && !isCorrupted) {
-      playerStore.openMedia({
-        id: String(id),
-        title: mediaTitle,
-        slug: resolvedSlug,
-        posterUrl: `/api/media/${id}/poster`,
-        streamUrl,
-        isLive,
-        activeAudio,
-        activeSubtitle,
-        initialTime: initialTime || 0,
-      });
+    if (id && resolvedTitle && streamUrl && !isForbidden && !isCorrupted) {
+      if (openedMediaIdRef.current !== String(id)) {
+        openedMediaIdRef.current = String(id);
+        playerStore.openMedia({
+          id: String(id),
+          title: mediaTitle,
+          slug: resolvedSlug,
+          posterUrl: `/api/media/${id}/poster`,
+          streamUrl,
+          isLive,
+          activeAudio,
+          activeSubtitle,
+          initialTime: initialTime || 0,
+          isRemoteSync: isJoiningLiveSyncRef.current,
+        });
+      }
     }
-  }, [id, resolvedTitle, streamUrl, isForbidden, isCorrupted]);
+  }, [id, resolvedTitle, streamUrl, isForbidden, isCorrupted, mediaTitle, resolvedSlug, isLive, activeAudio, activeSubtitle, initialTime]);
 
   useEffect(() => {
     if (id && !isForbidden) {
       fetchMediaTracks(String(id), share).then((data) => {
         setTracks(data);
-        if (data.defaultAudioTrack && data.defaultAudioTrack !== 'auto') {
+        if (data.defaultAudioTrack && data.defaultAudioTrack !== 'auto' && !isJoiningLiveSyncRef.current) {
           setActiveAudio(data.defaultAudioTrack);
+          playerStore.setAudio(data.defaultAudioTrack, false);
         }
-        if (data.defaultSubtitle && data.defaultSubtitle !== 'off') {
+        if (data.defaultSubtitle && data.defaultSubtitle !== 'off' && !isJoiningLiveSyncRef.current) {
           setActiveSubtitle(data.defaultSubtitle);
+          playerStore.setSubtitle(data.defaultSubtitle, false);
         }
       });
       fetchNextMedia(String(id)).then(setNextNode);
     }
-  }, [id, isForbidden, share, showToast]);
+  }, [id, isForbidden, share]);
 
   // Salon vocal unifié pour ce média (ou session active)
   const voiceTopicSlug = activeSession?.topicSlug || (resolvedSlug ? `media-${resolvedSlug}` : `media-${id}`);
@@ -284,23 +334,34 @@ export default function PlayerScreen() {
   useEffect(() => {
     if (!id || isLive || isForbidden) return;
     const updatePresence = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       if (savedPosRef.current > 0) {
         reportPlaybackProgress(String(id), savedPosRef.current || 0, 0, true);
       }
 
       const res = await fetchMediaSessions(String(id));
-      setViewersCount(Math.max(1, res.totalViewers));
+      const nextCount = Math.max(1, res.totalViewers);
+      setViewersCount((prev) => (prev === nextCount ? prev : nextCount));
       if (res.sessions.length > 0) {
-        setActiveSession(res.sessions[0]);
-        activeSessionRef.current = res.sessions[0];
-        pingSession(res.sessions[0].id, { isMuted });
+        const nextSession = res.sessions[0];
+        if (
+          !activeSessionRef.current ||
+          activeSessionRef.current.id !== nextSession.id ||
+          activeSessionRef.current.topicSlug !== nextSession.topicSlug
+        ) {
+          setActiveSession(nextSession);
+        }
+        activeSessionRef.current = nextSession;
+        pingSession(nextSession.id, { isMuted: isMutedRef.current });
       } else {
-        setActiveSession(null);
+        if (activeSessionRef.current !== null) {
+          setActiveSession(null);
+        }
         activeSessionRef.current = null;
       }
     };
     updatePresence();
-    const timer = setInterval(updatePresence, 3000);
+    const timer = setInterval(updatePresence, 5000);
     return () => {
       clearInterval(timer);
       leavePlayback(String(id));
@@ -357,14 +418,24 @@ export default function PlayerScreen() {
 
   const handlePlay = useCallback(() => {
     setIsPlaying(true);
-    playerStore.setPlaying(true);
+    if (playerStore.isApplyingRemoteSync()) {
+      return;
+    }
+    const isPassiveFollower = isJoiningLiveSyncRef.current;
+    playerStore.setPlaying(true, true, !isPassiveFollower);
   }, []);
+
   const handlePause = useCallback(() => {
     setIsPlaying(false);
     if (!isLeavingScreenRef.current) {
-      playerStore.setPlaying(false);
+      if (playerStore.isApplyingRemoteSync()) {
+        return;
+      }
+      const isPassiveFollower = isJoiningLiveSyncRef.current;
+      playerStore.setPlaying(false, true, !isPassiveFollower);
     }
   }, []);
+
   const handleTimeUpdate = useCallback((t: number, d?: number) => {
     if (!isLive) {
       savedPosRef.current = t;
@@ -374,10 +445,12 @@ export default function PlayerScreen() {
 
   const handleSkipIntro = useCallback(() => {
     if (isLive) return;
+    isJoiningLiveSyncRef.current = false;
     const target = introChapter ? introChapter.end : (videoRef.current?.currentTime || 0) + 85;
     if (videoRef.current) videoRef.current.currentTime = target;
     setShowSkipIntro(false);
-    showToast('Générique passé ⏩');
+    playerStore.seekTo(target, true, true);
+    showToast('Générique passé ⏭');
   }, [isLive, introChapter, showToast]);
 
   useCastReceiver({
@@ -386,8 +459,14 @@ export default function PlayerScreen() {
     isPlaying: isForbidden ? false : isPlaying,
     videoRef,
     setIsPlaying,
-    setActiveAudio,
-    setActiveSubtitle,
+    setActiveAudio: (audio) => {
+      setActiveAudio(audio);
+      playerStore.setAudio(audio, false);
+    },
+    setActiveSubtitle: (sub) => {
+      setActiveSubtitle(sub);
+      playerStore.setSubtitle(sub, false);
+    },
     onStop: () => goBackOrFallback(router, '/'),
     onLoad: (newId, payload) => {
       const pos = payload?.positionSeconds ? Math.floor(payload.positionSeconds) : 0;
@@ -408,6 +487,9 @@ export default function PlayerScreen() {
     activeCastTarget,
     setIsPlaying,
     showToast,
+    onUserAction: () => {
+      isJoiningLiveSyncRef.current = false;
+    },
   });
 
   const activeAudioLabel = useMemo(() => {
@@ -419,95 +501,43 @@ export default function PlayerScreen() {
   const activeSubtitleLabel = useMemo(() => {
     if (activeSubtitle === 'off') return 'Désactivés';
     const track = tracks.subtitleTracks.find((s) => (s.fileName ? `file:${s.fileName}` : `track:${s.index}`) === activeSubtitle);
-    return track ? track.label : activeSubtitle;
+    return track ? track.label : `Sous-titre #${activeSubtitle}`;
   }, [activeSubtitle, tracks.subtitleTracks]);
 
-  if (isCorrupted) {
+  if (isForbidden) {
     return (
-      <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#000000' }]}>
-        <View
-          style={{
-            maxWidth: 480,
-            width: '100%',
-            backgroundColor: '#0a0a0a',
-            borderRadius: 16,
-            padding: 24,
-            alignItems: 'center',
-            borderWidth: 1,
-            borderColor: '#ef4444',
-          }}
+      <SafeAreaView style={styles.errorContainer}>
+        <Text style={styles.errorIcon}>🔒</Text>
+        <Text style={styles.errorTitle}>Accès Restreint</Text>
+        <Text style={styles.errorSubtitle}>
+          {forbiddenReason || "Ce média n'est pas autorisé pour votre profil (contrôle parental ou dossier restreint)."}
+        </Text>
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          onPress={() => goBackOrFallback(router, '/')}
+          style={({ focused }: any) => [styles.backBtn, focused && { borderWidth: 2, borderColor: '#ffffff' }]}
         >
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>⚠️</Text>
-          <Text style={{ fontSize: 20, fontWeight: '800', color: '#ffffff', textAlign: 'center', marginBottom: 12 }}>
-            Fichier Incomplet ou Corrompu
-          </Text>
-          <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
-            {corruptedReason || "Ce fichier vidéo est incomplet ou corrompu sur le disque de stockage (téléchargement inachevé ou en-tête manquant)."}
-          </Text>
-          <Pressable
-            focusable={true}
-            onPress={() => goBackOrFallback(router, '/')}
-            style={({ focused }: any) => [
-              {
-                backgroundColor: '#3b82f6',
-                paddingVertical: 12,
-                paddingHorizontal: 24,
-                borderRadius: 8,
-                alignItems: 'center',
-              },
-              focused && { borderWidth: 2, borderColor: '#ffffff' },
-            ]}
-          >
-            <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
-              Retour à l'accueil
-            </Text>
-          </Pressable>
-        </View>
+          <Text style={styles.backBtnText}>← Retour à l'accueil</Text>
+        </Pressable>
       </SafeAreaView>
     );
   }
 
-  if (isForbidden) {
+  if (isCorrupted) {
     return (
-      <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#000000' }]}>
-        <View
-          style={{
-            maxWidth: 480,
-            width: '100%',
-            backgroundColor: '#0a0a0a',
-            borderRadius: 16,
-            padding: 24,
-            alignItems: 'center',
-            borderWidth: 1,
-            borderColor: '#ef4444',
-          }}
+      <SafeAreaView style={styles.errorContainer}>
+        <Text style={styles.errorIcon}>⚠️</Text>
+        <Text style={styles.errorTitle}>Média Non Lisible</Text>
+        <Text style={styles.errorSubtitle}>{corruptedReason}</Text>
+        <Pressable
+          focusable={true}
+          accessibilityRole="button"
+          onPress={() => goBackOrFallback(router, '/')}
+          style={({ focused }: any) => [styles.backBtn, focused && { borderWidth: 2, borderColor: '#ffffff' }]}
         >
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>🚫</Text>
-          <Text style={{ fontSize: 20, fontWeight: '800', color: '#ffffff', textAlign: 'center', marginBottom: 12 }}>
-            Contenu Bloqué
-          </Text>
-          <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
-            {forbiddenReason || 'Ce média est restreint par les règles de contrôle parental ou les autorisations de votre profil.'}
-          </Text>
-          <Pressable
-            focusable={true}
-            onPress={() => goBackOrFallback(router, '/')}
-            style={({ focused }: any) => [
-              {
-                backgroundColor: '#3b82f6',
-                paddingVertical: 12,
-                paddingHorizontal: 24,
-                borderRadius: 8,
-                alignItems: 'center',
-              },
-              focused && { borderWidth: 2, borderColor: '#ffffff' },
-            ]}
-          >
-            <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
-              Retour à l'accueil
-            </Text>
-          </Pressable>
-        </View>
+          <Text style={styles.backBtnText}>← Retour à l'accueil</Text>
+        </Pressable>
       </SafeAreaView>
     );
   }
@@ -638,15 +668,19 @@ export default function PlayerScreen() {
         <Pressable
           focusable={true}
           accessibilityRole="button"
-          accessibilityLabel="Passer le générique d'introduction"
+          accessibilityLabel="Passer le générique"
           onPress={handleSkipIntro}
-          style={({ focused }: any) => [styles.skipBtn, focused && styles.skipBtnFocused]}
+          {...({ 'data-skip-intro': 'true' } as any)}
+          style={({ focused }: any) => [
+            styles.skipIntroBtn,
+            focused && styles.skipIntroBtnFocused,
+          ]}
         >
-          <Text style={styles.skipText}>Passer l'intro ⏩</Text>
+          <Text style={styles.skipIntroText}>Passer l'intro ⏭</Text>
         </Pressable>
       )}
 
-      {/* Compte à rebours automatique Next Netflix */}
+      {/* Overlay Compte à Rebours "Épisode Suivant" Netflix-Style */}
       {countdown !== null && nextNode && (
         <View style={styles.nextOverlay}>
           <View style={styles.nextHeader}>
@@ -687,7 +721,7 @@ export default function PlayerScreen() {
         activeAudio={activeAudio}
         onSelect={(val) => {
           setActiveAudio(val);
-          playerStore.setAudio(val);
+          playerStore.setAudio(val, true, true);
           setShowAudio(false);
           const found = tracks.audioTracks.find((t) => String(t.index) === String(val));
           showToast(`Piste audio : ${found ? found.label : val === 'auto' ? 'Auto' : val} 🔊`);
@@ -701,7 +735,7 @@ export default function PlayerScreen() {
         activeSubtitle={activeSubtitle}
         onSelect={(val) => {
           setActiveSubtitle(val);
-          playerStore.setSubtitle(val);
+          playerStore.setSubtitle(val, true, true);
           setShowSubtitles(false);
           const found = tracks.subtitleTracks.find((s) => (s.fileName ? `file:${s.fileName}` : `track:${s.index}`) === val);
           showToast(`Sous-titres : ${found ? found.label : val === 'off' ? 'Désactivés' : val} 💬`);

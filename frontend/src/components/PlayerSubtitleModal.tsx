@@ -111,11 +111,9 @@ const styles = StyleSheet.create({
     maxWidth: 440,
     borderWidth: 1,
     borderColor: '#262626',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.8,
-    shadowRadius: 20,
-    elevation: 20,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 10px 20px rgba(0, 0, 0, 0.8)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.8, shadowRadius: 20, elevation: 20 }),
   },
   header: {
     flexDirection: 'row',

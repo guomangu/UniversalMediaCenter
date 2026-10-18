@@ -1,5 +1,12 @@
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthToken } from './authStore';
+import {
+  getLocalDeviceId,
+  getLocalDeviceName,
+  setLocalDeviceName,
+} from './deviceIdentity';
+
+export { getLocalDeviceId, getLocalDeviceName, setLocalDeviceName };
 
 export type DeviceType = 'TV' | 'CHROMECAST' | 'AIRPLAY' | 'BROWSER' | 'MOBILE';
 
@@ -39,36 +46,6 @@ export type CastAction =
   | 'UNMUTE'
   | 'SET_AUDIO'
   | 'SET_SUBTITLE';
-
-export function getLocalDeviceId(): string {
-  if (typeof window === 'undefined') return 'server';
-  let id = localStorage.getItem('ums_cast_device_id');
-  if (!id) {
-    id = `dev-${Math.random().toString(36).slice(2, 9)}`;
-    localStorage.setItem('ums_cast_device_id', id);
-  }
-  return id;
-}
-
-export function getLocalDeviceName(): string {
-  if (typeof window === 'undefined') return 'Appareil Web';
-  const custom = localStorage.getItem('ums_cast_device_name');
-  if (custom) return custom;
-  const ua = navigator.userAgent;
-  if (/Android/i.test(ua)) return 'Mobile Android';
-  if (/iPhone|iPad/i.test(ua)) return 'Appareil Apple';
-  if (/Tizen|webOS|SmartTV/i.test(ua)) return 'Télévision Connectée';
-  if (/Windows/i.test(ua)) return 'PC Windows';
-  if (/Macintosh/i.test(ua)) return 'Mac';
-  if (/Linux/i.test(ua)) return 'Linux';
-  return 'Navigateur Web';
-}
-
-export function setLocalDeviceName(name: string): void {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    localStorage.setItem('ums_cast_device_name', name);
-  }
-}
 
 export async function fetchCastServerInfo(): Promise<{ lanIp: string; port: number; gatewayPort: number } | null> {
   try {

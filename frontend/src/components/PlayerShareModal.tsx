@@ -153,11 +153,9 @@ const styles = StyleSheet.create({
     zIndex: 2,
     alignSelf: 'center',
     ...(Platform.OS === 'web' ? { margin: 'auto' } : {}),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 25,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 10px 25px rgba(0, 0, 0, 0.6)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 20, elevation: 25 }),
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.three },
   title: { fontSize: 16, fontWeight: '800', color: '#f8fafc' },

@@ -22,6 +22,9 @@ export interface MediaTracksData {
 }
 
 export async function fetchMediaTracks(id: string, shareToken?: string | null): Promise<MediaTracksData> {
+  if (!id || typeof id !== 'string' || id.trim().length === 0) {
+    return { audioTracks: [], subtitleTracks: [], qualities: [] };
+  }
   try {
     const token = getAuthToken();
     const p = new URLSearchParams();
@@ -63,7 +66,7 @@ export async function fetchMediaTracks(id: string, shareToken?: string | null): 
       subtitleMode: data.subtitleMode,
     };
   } catch (err) {
-    console.error('[fetchMediaTracks] Exception:', err);
+    console.warn('[fetchMediaTracks] Non-fatal tracks fetch warning:', (err as any)?.message || err);
     return { audioTracks: [], subtitleTracks: [], qualities: [] };
   }
 }

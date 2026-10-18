@@ -21,10 +21,18 @@ export default function ExploreScreen() {
   }, []);
 
   useEffect(() => {
-    if (query.trim().length >= 2) {
-      searchCatalog(query).then((d) => { setNodes(d.nodes || []); setTags(d.tags || []); });
+    const trimmed = query.trim();
+    if (trimmed.length >= 2) {
+      const timer = setTimeout(() => {
+        searchCatalog(trimmed).then((d) => {
+          setNodes(d.nodes || []);
+          setTags(d.tags || []);
+        });
+      }, 200);
+      return () => clearTimeout(timer);
     } else {
-      setNodes([]); setTags([]);
+      setNodes([]);
+      setTags([]);
     }
   }, [query]);
 
@@ -72,7 +80,7 @@ export default function ExploreScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', paddingHorizontal: Spacing.three, paddingBottom: 80, paddingTop: Platform.OS === 'web' ? 70 : Spacing.four },
+  content: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', paddingHorizontal: Spacing.three, paddingBottom: 80 },
   heading: { fontSize: 24, fontWeight: '800', color: '#f8fafc', marginBottom: Spacing.three },
   searchBar: { backgroundColor: 'rgba(30, 41, 59, 0.8)', borderWidth: 1, borderColor: 'rgba(71, 85, 105, 0.5)', borderRadius: Radius.pill, paddingHorizontal: Spacing.four, paddingVertical: Spacing.two, color: '#f8fafc', marginBottom: Spacing.three },
   tagSection: { marginBottom: Spacing.four },

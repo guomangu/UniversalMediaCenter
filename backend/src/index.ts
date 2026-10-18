@@ -29,7 +29,7 @@ const app = new Hono();
 app.use('*', cors({
   origin: (origin) => origin || '*',
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowHeaders: ['Authorization', 'Content-Type', 'X-User-Id', 'Cache-Control', 'Accept', 'Origin', '*'],
+  allowHeaders: ['Authorization', 'Content-Type', 'X-User-Id', 'X-Device-Id', 'x-device-id', 'Cache-Control', 'Accept', 'Origin', 'Range', '*'],
   exposeHeaders: ['Content-Length', 'X-Total-Count', 'Content-Range'],
   credentials: true,
   maxAge: 86400,
@@ -43,7 +43,7 @@ app.onError((err, c) => {
   c.header('Access-Control-Allow-Origin', reqOrigin);
   c.header('Access-Control-Allow-Credentials', 'true');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-User-Id, Cache-Control, Accept, Origin, *');
+  c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-User-Id, X-Device-Id, x-device-id, Cache-Control, Accept, Origin, Range, *');
   return c.json({ success: false, error: err.message || 'Internal Server Error' }, 500);
 });
 

@@ -1,18 +1,27 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
-import { TvSearchBar } from '@/components/TvSearchBar';
-import { TvChannelCard } from '@/components/TvChannelCard';
-import { fetchLiveChannels } from '@/services/api';
-import { Spacing, MaxContentWidth } from '@/constants/theme';
+import React, { useState, useEffect, useMemo } from "react";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { SiteHeader, useHeaderHeight } from "@/components/SiteHeader";
+import { TvSearchBar } from "@/components/TvSearchBar";
+import { TvChannelCard } from "@/components/TvChannelCard";
+import { fetchLiveChannels, fetchIptvCategories } from "@/services/api";
+import { Spacing, MaxContentWidth } from "@/constants/theme";
 
 export default function TvScreen() {
   const headerPaddingTop = useHeaderHeight(false);
   const [channels, setChannels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("ALL");
+  const [serverCategories, setServerCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetchIptvCategories()
+      .then((cats) => {
+        if (cats && cats.length > 0) setServerCategories(cats);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -20,14 +29,14 @@ export default function TvScreen() {
       setLoading(true);
       try {
         const data = await fetchLiveChannels({
-          category: activeCategory === 'ALL' ? undefined : activeCategory,
+          category: activeCategory === "ALL" ? undefined : activeCategory,
           q: searchQuery.trim() || undefined,
         });
         if (isMounted) {
           setChannels(data);
         }
       } catch (err) {
-        console.error('Erreur chargement chaînes IPTV:', err);
+        console.error("Erreur chargement chaînes IPTV:", err);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -41,15 +50,16 @@ export default function TvScreen() {
   }, [searchQuery, activeCategory]);
 
   const categories = useMemo(() => {
+    if (serverCategories.length > 0) return serverCategories;
     const set = new Set<string>();
     channels.forEach((c) => {
       if (c.groupTitle) set.add(c.groupTitle);
     });
     return Array.from(set);
-  }, [channels]);
+  }, [serverCategories, channels]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <SiteHeader />
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: headerPaddingTop + 8 }]} showsVerticalScrollIndicator={false}>
         <View style={styles.headerHero}>
@@ -91,50 +101,48 @@ export default function TvScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F1014',
+    backgroundColor: "#0F1014",
   },
   content: {
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.five * 2,
     maxWidth: MaxContentWidth,
-    width: '100%',
-    alignSelf: 'center',
+    width: "100%",
+    alignSelf: "center",
   },
   headerHero: {
     marginBottom: Spacing.three,
   },
   heroTitle: {
     fontSize: 26,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontWeight: "800",
+    color: "#FFFFFF",
     letterSpacing: -0.5,
     marginBottom: 6,
   },
   heroSub: {
     fontSize: 14,
-    color: '#94A3B8',
+    color: "#94A3B8",
     lineHeight: 20,
   },
   loaderCenter: {
     paddingVertical: Spacing.five * 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
   },
   gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
-    marginTop: Spacing.two,
+    display: "flex",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.three,
+    justifyContent: "flex-start",
   },
   emptyState: {
-    width: '100%',
     paddingVertical: Spacing.five * 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "100%",
+    alignItems: "center",
   },
   emptyText: {
+    color: "#64748B",
     fontSize: 15,
-    color: '#64748B',
-    fontStyle: 'italic',
   },
 });

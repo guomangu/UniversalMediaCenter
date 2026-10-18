@@ -11,6 +11,7 @@ interface UsePlayerControlsProps {
   activeCastTarget: any;
   showToast: (msg: string) => void;
   isFullscreen?: boolean;
+  onUserAction?: () => void;
 }
 
 /**
@@ -28,6 +29,7 @@ export function usePlayerControls({
   activeCastTarget,
   showToast,
   isFullscreen = false,
+  onUserAction,
 }: UsePlayerControlsProps) {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -45,8 +47,9 @@ export function usePlayerControls({
         const skipBtn = document.querySelector<HTMLElement>('[data-skip-intro="true"]');
         if (skipBtn) {
           e.preventDefault();
+          onUserAction?.();
           skipBtn.click();
-          showToast('Générique passé ⏩');
+          showToast('Générique passé ⏭');
           return;
         }
       }
@@ -75,6 +78,7 @@ export function usePlayerControls({
       if (e.key === 'ArrowLeft') {
         if (!isFullscreen) return;
         e.preventDefault();
+        onUserAction?.();
         const next = Math.max(0, v.currentTime - 10);
         v.currentTime = next;
         showToast(`⏪ -10s (${Math.floor(next)}s)`);
@@ -82,6 +86,7 @@ export function usePlayerControls({
       } else if (e.key === 'ArrowRight') {
         if (!isFullscreen) return;
         e.preventDefault();
+        onUserAction?.();
         const next = Math.min(v.duration || 7200, v.currentTime + 10);
         v.currentTime = next;
         showToast(`⏩ +10s (${Math.floor(next)}s)`);
@@ -96,6 +101,7 @@ export function usePlayerControls({
           if (isButton) return;
         }
         e.preventDefault();
+        onUserAction?.();
         const next = !isPlaying;
         next ? v.play() : v.pause();
         setIsPlaying(next);
@@ -106,5 +112,5 @@ export function usePlayerControls({
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [videoRef, isPlaying, isModalOpen, activeCastTarget, isFullscreen]);
+  }, [videoRef, isPlaying, isModalOpen, activeCastTarget, isFullscreen, onUserAction]);
 }

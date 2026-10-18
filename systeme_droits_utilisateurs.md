@@ -229,3 +229,29 @@ Ces suites ([`backend/src/test/testFolderAccessSecurity.ts`](file:///var/home/te
 - ✅ L'étanchéité des favoris et la persistance sans fuite mémoire.
 - ✅ La bidirectionnalité déterministe des amitiés et slugs de messagerie directe (`dm-`).
 - ✅ Le cycle de vie des séances Watch Party et l'intégrité des critiques avec notation 1 à 5 étoiles.
+
+---
+
+## 11. Sécurité des Sessions Multi-Écrans & Révocation d'Appareils à Distance (Session Integrity)
+
+Afin d'éviter la persistance de sessions fantômes ou non autorisées sur des appareils partagés (cybercafé, hôtel, télévision d'un ami, smartphone égaré), UMS implémente un contrôle d'intégrité de session matériel et réactif :
+
+### 11.1. L'Empreinte d'Appareil (`X-Device-Id`) & Registre des Sessions
+- Chaque requête HTTP émise par le client embarque l'en-tête `X-Device-Id: <ums_device_id>`.
+- Le serveur associe de façon dynamique chaque session utilisateur à la liste de ses terminaux matériels dans le registre souverain [`userDeviceRegistry.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/devices/userDeviceRegistry.ts).
+
+### 11.2. Révocation Amont dans `authMiddleware`
+Lorsqu'un utilisateur révoque un appareil (soit unitairement via `/api/user/devices/:deviceId/disconnect`, soit en masse via `/api/user/devices/disconnect-all-others`) :
+- L'identifiant de l'appareil est inscrit dans la liste noire mémoire des terminaux révoqués du compte.
+- Le middleware d'accès [`backend/src/middleware/access.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/middleware/access.ts) intercepte immédiatement toute tentative d'appel :
+  ```typescript
+  if (userId && deviceId && userDeviceRegistry.isRevoked(userId, deviceId)) {
+    c.set('user', null);
+    return c.json({
+      error: 'DEVICE_REVOKED',
+      message: 'Cet appareil a été déconnecté à distance de votre compte.',
+    }, 401);
+  }
+  ```
+- **Éradication Immédiate Côté Client :**
+  Dès réception de la réponse 401 `DEVICE_REVOKED` ou de la commande push `REVOKE_SESSION`, l'appareil cible purge ses jetons (`authStore.logout()`), interrompt la lecture en cours (`playerStore.closeMedia()`), vide les caches applicatifs et redirige vers `/login` avec notification d'alerte.

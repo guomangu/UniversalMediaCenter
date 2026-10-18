@@ -30,10 +30,9 @@ export const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'column',
     ...(Platform.OS === 'web' ? { margin: 'auto' } : {}),
-    shadowColor: '#000',
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 25,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.6)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 20, elevation: 25 }),
     zIndex: 2,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },

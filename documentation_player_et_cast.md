@@ -36,6 +36,13 @@ Le lecteur vidéo d'UMS est conçu pour offrir une expérience de lecture fluide
 ```
 
 ### 1.1. Gestion des Flux & Formats
+- **Sanctuaire de l'Instance HLS & Maintien de Position lors de la Pause :**
+  L'initialisation de Hls.js est strictement découplée du statut `isPlaying`. L'instance HLS n'est détruite que si l'URL de flux (`streamUrl`) change. La bascule play/pause s'exécute via un hook univoque dédié sans vider les tampons de segments ni réinitialiser le `currentTime` du lecteur HTML5 `<video>`, éliminant tout retour intempestif à 00:00.
+- **Prise en Charge Sonore Universelle sur Android & Mobile :**
+  - **Bannière d'Activation Audio Réactive :** Lorsque la politique d'Autoplay d'Android Chrome bloque le son (`NotAllowedError`), le lecteur bascule temporairement en muet et affiche une bannière tactile « 🔇 Son désactivé — Appuyez ici pour activer le son 🔊 ». Un toucher n'importe où sur l'écran (`onTouchEnd`, `onPointerDown`) déverrouille instantanément le son à 100%.
+  - **Conteneurs .mkv & Mixage Stéréo AAC Garanti :** Tout fichier en conteneur non-web (`.mkv`, `.avi`) ou doté d'une piste audio multi-canaux (surround 5.1, 7.1, AC3, EAC3, DTS) est automatiquement redirigé vers le flux HLS VOD avec mixage stéréo AAC `-c:a aac -b:a 192k -ac 2`, garantissant des voix intelligibles et un son net sur tous les périphériques mobiles.
+
+### 1.1.bis. Architecture Précédente des Flux
 - **Lecture VOD Locale / Réseau :** Prise en charge des conteneurs MKV, MP4, WebM, AVI, MOV et TS avec requêtes HTTP par plages d'octets (`Range: bytes=start-end`) assurant un démarrage instantané et un saut fluide dans la vidéo (*Zero-CPU streaming*).
 - **Fond Noir Pur (#000000) :** L'intégralité du conteneur du lecteur, de l'élément `<video>` et des écrans d'état adopte une couleur de fond noir absolu `#000000` sans marge latérale ni bordures claires résiduelles, assurant une parfaite intégration esthétique dans le noir complet.
 - **Flux IPTV en Direct :** Prise en charge des flux HLS (`.m3u8`) et proxification de flux distants via Hono et HLS.js avec gestion des erreurs réseau et récupération automatique de buffer (`bufferStalledError`).
@@ -259,15 +266,26 @@ Conformément à la spécification, un compte utilisateur est restreint à **une
   }
   ```
 
-### 5.2. Maintien en Étape Synchronisée (Lockstep Sync)
-- **Signalisation Ascendante (Toutes les 1200ms) :** Dès qu'un média est lancé, l'appareil actif notifie `POST /api/playback/sync`.
-- **Réception Descendante (Polling 1400ms) :** Tous les autres appareils connectés au compte interrogent `GET /api/playback/sync` :
-  - Si un autre appareil joue un média, le média est automatiquement chargé.
-  - La lecture / pause est répercutée instantanément.
-  - La position temporelle est réconciliée si l'écart dépasse 1,5 seconde.
-  - La piste audio (`activeAudio`) et la piste de sous-titres (`activeSubtitle`) sont synchronisées à l'identique.
-- **Synchronisation Symétrique avec le Cast :**  
+### 5.2. Architecture Ordonnée Leader / Follower & Maintien en Étape Synchronisée (Lockstep Sync)
+Afin d'éliminer définitivement les collisions multi-maîtres (*multi-master ping-pong feedback loops*), la synchronisation repose sur une hiérarchie dynamique et inviolable :
+- **Attribution Déterministe du Rôle Leader (`leaderDeviceId`) :**
+  - Le premier appareil qui lance un média devient le **Leader** (`leaderDeviceId = deviceId`).
+  - Le Leader est le **seul** appareil autorisé à émettre des battements de progression temporelle (`positionSeconds`, `isPlaying`).
+  - Les autres appareils connectés au compte basculent automatiquement en mode **Follower** (Miroir Passif).
+- **Prise de Contrôle Légitime par Action Explicite (`isAction: true`) :**
+  - Un appareil Follower ne peut devenir Leader que si son utilisateur effectue une **action utilisateur explicite et authentique** (clic Play/Pause, déplacement manuel du scrubber, saut d'intro, sélection audio/sous-titres, raccourci clavier).
+  - Cette action transmet le flag `{ isAction: true }` au backend (`POST /api/playback/sync` et `POST /api/playback/report`), transférant instantanément le leadership au nouvel appareil.
+- **Verrou Anti-Bouclage Distant (`remoteSyncLockDepth` dans `playerStore.ts`) :**
+  - Lorsque le Follower reçoit une commande de synchronisation (`syncPlayingFromRemote` ou `seekTo(pos, false)`), les appels programmatiques `v.play()`, `v.pause()` ou `v.currentTime = pos` déclenchent les événements natifs du lecteur HTML5 `<video>` (`onplay`, `onpause`, `ontimeupdate`).
+  - Grâce au compteur de réentrance `remoteSyncLockDepth`, le Follower intercepte ces événements synthétiques et **s'abstient formellement de renvoyer une notification au serveur**, empêchant toute revendication indue de leadership.
+- **Protection contre les Politiques Autoplay Navigateurs :**
+  - Sur navigateur web ou mobile, si une reprise de lecture automatique sans interaction préalable est rejetée (`NotAllowedError`), le lecteur passe silencieusement en mode muet ou conserve l'état sans émettre de pause globale vers le Leader.
+- **Détection Proactive à l'Ouverture du Lecteur (`player/[id].tsx`) :**
+  - Dès le montage d'un écran `/player/[id]`, le lecteur interroge immédiatement `fetchAccountPlayback()`. S'il détecte qu'un autre écran du même compte est déjà en cours de lecture sur ce média, il hérite instantanément de la position temporelle exacte, de l'état de lecture, de la langue audio et des sous-titres sans redémarrer à 0.
+- **Synchronisation Symétrique avec le Cast :**
   Lorsqu'un média est casté sur une TV ou un Chromecast, la boucle de surveillance du Cast (`castState.ts`) répercute l'état du média casté directement dans `playerStore` et notifie `reportAccountPlayback`. L'ensemble des écrans du compte suit ainsi la diffusion TV en temps réel.
+- **Validation Automatisée par Tests d'Intégration :**
+  Le scénario complet en 7 étapes est certifié par la suite [`testAccountPlaybackSync.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/test/testAccountPlaybackSync.ts) (prise de leadership, suivi miroir, battements de progression, transfert explicite de leadership, répercussion inverse, isolation standalone et clôture atomique).
 
 ---
 
@@ -286,3 +304,58 @@ Lorsque le frontend est servi en HTTPS sécurisé (`https://cool.sweaw.com`), le
 - **Réécriture Dynamique Complète :** Le proxy de flux Hono `/api/iptv/proxy` télécharge les manifestes `.m3u8`, analyse chaque sous-manifeste et chaque fragment `.ts`, et réécrit l'intégralité des URLs relatives ou absolues sous la forme :
   `/api/iptv/proxy?url=${encodeURIComponent(absoluteChunkUrl)}`
 - **En-têtes CORS Universels :** Toutes les requêtes de fragments et manifestes répondent avec `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Headers: Range, Content-Type, Authorization`, et `Accept-Ranges: bytes`, autorisant un streaming HLS fluide sans aucun blocage navigateur.
+
+---
+
+## 7. Gestion des Appareils Connectés au Compte & Déconnexion à Distance
+
+Le gestionnaire de sessions multi-écrans permet à chaque utilisateur de consulter en temps réel l'ensemble des appareils (ordinateurs, smartphones, tablettes, téléviseurs connectés, récepteurs Cast) reliés à son compte, d'en surveiller l'activité et de révoquer un accès à distance en un clic.
+
+### 7.1. Registre Centralisé des Appareils (`userDeviceRegistry.ts`)
+Chaque client génère et stocke un identifiant d'appareil pérenne (`ums_device_id` unifié) transmis systématiquement au backend via l'en-tête HTTP standard `X-Device-Id`.
+- **Enregistrement & Battement de Cœur (`POST /api/user/devices/heartbeat`) :**
+  Toutes les 2,2 secondes, chaque appareil connecté notifie son statut :
+  - `deviceId` : Empreinte unique de l'appareil.
+  - `name` : Nom de l'écran (modifiable, ex: « TV Salon », « iPhone de Pierre »).
+  - `deviceType` : `BROWSER`, `MOBILE`, `TV`, `DESKTOP`, `CHROMECAST`, `AIRPLAY`.
+  - `currentRoute` : Page en cours de consultation (ex: `/`, `/explore`, `/player/xyz`, `/tv`).
+  - `syncGroupId` : Groupe de synchronisation assigné (`'default'`, `'standalone'`, ou personnalisé).
+  - `currentPlayback` : État précis de la lecture locale (média, position, durée, état play/pause).
+- **Listing Filtré par Utilisateur (`GET /api/user/devices`) :**
+  Fournit la liste des appareils actifs avec indicateur `isOnline` (< 60 secondes d'inactivité) et badge `isCurrentDevice`.
+
+### 7.2. Révocation de Session & Déconnexion à Distance
+- **Déconnexion Ciblée (`POST /api/user/devices/:deviceId/disconnect`) :**
+  L'appareil cible est immédiatement marqué comme révoqué dans la mémoire backend et reçoit une commande prioritaire `{ action: 'REVOKE_SESSION' }`.
+- **Interception Middleware (`access.ts`) :**
+  Dès que l'appareil révoqué tente d'effectuer une requête API ou d'envoyer un heartbeat, le middleware d'accès intercepte son `X-Device-Id` et rejette la requête avec le code HTTP **401 `DEVICE_REVOKED`**.
+- **Nettoyage Côté Client :**
+  À la réception de l'erreur `DEVICE_REVOKED`, le client stoppe immédiatement la lecture vidéo (`playerStore.closeMedia()`), purge les jetons locaux (`logout()`), avertit l'utilisateur (« Votre compte a été déconnecté à distance sur cet appareil ») et redirige vers `/login`.
+- **Sécurité 1-Clic (« Déconnecter tous les autres appareils ») :**
+  L'endpoint `POST /api/user/devices/disconnect-all-others` révoque instantanément toutes les sessions associées au compte à l'exception de l'appareil actuellement utilisé.
+
+---
+
+## 8. Diffusion Flexible Multi-Écrans (Multi-Room) & Synchronisation Modulaire
+
+Pour dépasser la contrainte d'une synchronisation globale rigide, UMS introduit une matrice de diffusion flexible permettant de synchroniser certains appareils entre eux tout en laissant d'autres écrans fonctionner en toute indépendance.
+
+### 8.1. Matrice des Groupes de Synchronisation (`syncGroupId`)
+1. **Mode Synchronisé (`syncGroupId = 'default'` ou nom de groupe) :**
+   Tous les appareils partageant le même `syncGroupId` s'alignent en miroir temps réel (play/pause, dérive temporelle, pistes audio et sous-titres). Un utilisateur peut créer un groupe « Salon + Cuisine » pour une diffusion synchronisée multi-room parfaite.
+2. **Mode Indépendant (`syncGroupId = 'standalone'`) :**
+   L'appareil fonctionne de manière totalement autonome. Il peut visionner un film ou une série différente sans interférer avec les autres écrans du compte. L'appareil continue néanmoins de remonter son statut au registre, permettant aux autres membres de la famille de le visualiser et de le piloter à distance.
+
+### 8.2. Télécommande Universelle & Commandes Distantes (`DeviceAction`)
+Tout appareil connecté au compte peut envoyer des commandes ciblées vers un autre écran via `POST /api/user/devices/command` :
+- `LOAD_MEDIA` : Charge et lance instantanément un film, épisode ou chaîne TV avec calage de position.
+- `NAVIGATE` : Redirige l'écran cible vers une page spécifique (`/tv`, `/explore`, etc.).
+- `PLAY` / `PAUSE` : Contrôle de la lecture.
+- `SEEK` : Saut temporel vers une position exacte.
+- `SET_VOLUME` / `MUTE` / `UNMUTE` : Ajustement sonore.
+- `SET_AUDIO` / `SET_SUBTITLE` : Changement des pistes sonores et sous-titres à distance.
+- `STOP` : Ferme le lecteur vidéo sur l'appareil distant.
+- `SET_SYNC_GROUP` : Lie ou dissocie l'appareil d'un groupe de diffusion.
+
+### 8.3. Diffusion Groupée 1-Clic (Multi-Room Broadcast)
+Depuis l'onglet « Appareils & Diffusions » ou la modale « Cast », l'utilisateur peut cocher plusieurs écrans et cliquer sur « Diffuser en simultané ». L'API assigne le même groupe de synchro à tous les appareils cibles et leur envoie la commande `LOAD_MEDIA`, démarrant le visionnage groupé instantanément.

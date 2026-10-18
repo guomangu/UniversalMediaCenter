@@ -298,13 +298,14 @@ tracksRouter.get('/:id/tracks', async (c) => {
       if (height >= 480) qualities.push('SD (480p)');
     }
 
-    // Détection de la nécessité de transcodage / HLS (non-compatibilité vidéo, audio non-native, ou conteneur .avi)
+    // Détection de la nécessité de transcodage / HLS (non-compatibilité vidéo, conteneur non-web ex: .mkv/.avi, ou audio non-stéréo AAC)
     const videoCodec = (videoStream?.codec_name || '').toLowerCase();
     const ext = path.extname(media.videoFilePath || '').toLowerCase();
-    const isVideoNative = BROWSER_NATIVE_VIDEO_CODECS.includes(videoCodec) && ext !== '.avi';
+    const isContainerNative = ext === '.mp4' || ext === '.webm';
+    const isVideoNative = BROWSER_NATIVE_VIDEO_CODECS.includes(videoCodec) && isContainerNative;
     const selectedTrack = audioTracks.find((t) => String(t.index) === String(defaultAudioTrack)) || audioTracks[0];
-    const isAudioNative = selectedTrack ? BROWSER_NATIVE_AUDIO_CODECS.includes(selectedTrack.codec.toLowerCase()) : true;
-    const requiresHls = !isVideoNative || !isAudioNative || ext === '.avi';
+    const isAudioNative = selectedTrack ? (selectedTrack.codec.toLowerCase() === 'aac') : true;
+    const requiresHls = !isVideoNative || !isAudioNative || !isContainerNative;
 
     const result = {
       durationSeconds: Math.round(duration),

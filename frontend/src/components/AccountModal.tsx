@@ -53,6 +53,11 @@ export function AccountModal({ visible, onClose }: Props) {
     router.push('/user');
   };
 
+  const handleGoToDevices = () => {
+    onClose();
+    router.push({ pathname: '/user', params: { tab: 'DEVICES' } } as any);
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -121,6 +126,10 @@ export function AccountModal({ visible, onClose }: Props) {
               </View>
 
               <View style={styles.actions}>
+                <Pressable focusable={true} style={styles.devicesBtn} onPress={handleGoToDevices}>
+                  <Text style={styles.devicesBtnTxt}>📱 Appareils & Diffusions Connectés</Text>
+                </Pressable>
+
                 <Pressable focusable={true} style={styles.userSpaceBtn} onPress={handleGoToUserSpace}>
                   <Text style={styles.userSpaceBtnTxt}>📊 Mon Espace & Profil</Text>
                 </Pressable>
@@ -280,6 +289,19 @@ const styles = StyleSheet.create({
   actions: {
     gap: 8,
   },
+  devicesBtn: {
+    backgroundColor: '#312e81',
+    borderWidth: 1,
+    borderColor: '#6366f1',
+    paddingVertical: 12,
+    borderRadius: Radius.lg,
+    alignItems: 'center',
+  },
+  devicesBtnTxt: {
+    color: '#e0e7ff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
   userSpaceBtn: {
     backgroundColor: '#4338ca',
     paddingVertical: 12,
@@ -300,28 +322,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoutBtnTxt: {
-    color: '#f87171',
+    color: '#ef4444',
     fontWeight: '800',
     fontSize: 14,
   },
   loggedOutBox: {
     alignItems: 'center',
     paddingVertical: Spacing.four,
+    gap: 12,
   },
   loggedOutTxt: {
     color: '#94a3b8',
     fontSize: 14,
-    marginBottom: Spacing.three,
   },
   loginBtn: {
     backgroundColor: '#6366f1',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: Radius.lg,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: Radius.md,
   },
   loginBtnTxt: {
     color: '#ffffff',
-    fontWeight: '800',
-    fontSize: 14,
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

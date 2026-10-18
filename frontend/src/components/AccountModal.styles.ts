@@ -17,10 +17,9 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.35)',
     padding: Spacing.four,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 12px 24px rgba(0, 0, 0, 0.5)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.5, shadowRadius: 24 }),
   },
   headerRow: {
     flexDirection: 'row',

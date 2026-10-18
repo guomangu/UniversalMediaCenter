@@ -1,3 +1,196 @@
+## 🛑 116. Destruction Récursive de l'Instance HLS au Basculement Play/Pause, Réinitialisation Sauvage de la Progression à 0 et Blocage Audio sur Android (`VideoPlayerView.tsx`, `mediaStream.ts`, `mediaTracks.ts`, `playerStore.ts`, `accountSyncService.ts`)
+
+* **Problème / Symptôme :**
+  1. Lors du visionnage d'un média, dès que l'utilisateur mettait la vidéo en pause, la progression temporelle se remettait immédiatement ou au redémarrage au tout début du média (00:00), effaçant l'avancement déjà parcouru.
+  2. Sur les appareils Android (smartphones, tablettes, Android TV), le son était systématiquement inaudible, muet ou désactivé :
+     - Les fichiers `.mkv` (conteneur non pris en charge nativement par les navigateurs mobiles et Android Chrome) étaient servis en flux direct sans transcodage, provoquant une absence totale de piste audio.
+     - Les pistes audio multi-canaux (surround 5.1/7.1, AC3, EAC3, DTS) étaient recopiées brutes (`-c:a copy`) dans les segments MPEG-TS HLS, alors qu'Android n'a pas de décodeur matériel ou de mixeur stéréo pour ces formats dans le navigateur.
+     - La politique de sécurité Autoplay d'Android Chrome bloquait la lecture automatique avec son (`NotAllowedError`). La vidéo basculait alors en `muted: true` sans possibilité pour l'utilisateur de réactiver le son de manière évidente.
+* **Conséquences :**
+  - Impossibilité pour l'utilisateur de faire une pause sans perdre sa position dans le film ou l'épisode.
+  - Expérience utilisateur dégradée sur Android avec un média muet et l'impression d'un lecteur défectueux.
+* **Causes Racines :**
+  - **`isPlaying` Inclus dans le Tableau de Dépendances de l'Effet HLS (`VideoPlayerView.tsx`) :**
+    L'effet de montage Hls.js contenait `[streamUrl, shouldUseHlsJs, isPlaying]`. À chaque bascule play/pause, `isPlaying` changeait de valeur, provoquant l'exécution immédiate de la fonction de nettoyage `hls.destroy()`. Une nouvelle instance Hls.js était alors instanciée à partir de zéro, réinitialisant l'élément `<video>` et son `currentTime` à 0.
+  - **Absence de Transcodage Automatique pour le Conteneur `.mkv` et l'Audio Multi-Canal :**
+    Dans `mediaStream.ts` et `mediaTracks.ts`, la détection de compatibilité ne vérifiait que l'extension `.avi`. Les fichiers `.mkv` avec H.264 et AAC étaient considérés comme 100% natifs, alors que les navigateurs mobiles ne disposent d'aucun démultiplexeur Matroska natif dans le DOM HTML5.
+  - **Manque de Geste Utilisateur d'Unmute et Absence de Bannière Mobile :**
+    Sur Android, les événements `touchstart` n'activent pas les permissions audio dans Chromium. Seuls les événements `touchend` ou `click` sont des gestes d'activation légitimes (*User Activation*).
+* **Bonnes Pratiques de Remédiation :**
+  - **Sanctuaire de l'Instance HLS :**
+    Retirer formellement `isPlaying` du tableau de dépendances de l'effet HLS (`[streamUrl, shouldUseHlsJs]`). Découpler le pilotage de play/pause dans un `useEffect` univoque dédié qui invoque simplement `v.play()` ou `v.pause()` sans jamais détruire le lecteur ni vider les tampons de segments.
+  - **Garantie Stéréo AAC Universelle sur HLS (`mediaStream.ts`) :**
+    Dans la génération des segments HLS, vérifier que la piste audio sélectionnée est bien du stéréo AAC (`channels <= 2`). Si le flux d'origine est en 5.1, 7.1, AC3, EAC3, DTS, TrueHD ou FLAC, forcer le mixage stéréo AAC `-c:a aac -b:a 192k -ac 2`.
+  - **Redirection 307 Systématique vers HLS pour `.mkv` et Audio Non-Stéréo Web :**
+    Dans `mediaStream.ts`, tout fichier dont le conteneur n'est pas strictement web-natif (`.mp4`, `.webm`) ou dont l'audio n'est pas stéréo AAC est redirigé vers le master HLS.
+  - **Bannière Flottante Réactive d'Activation Audio Android :**
+    En cas de blocage d'autoplay par le navigateur, afficher une bannière explicite « 🔇 Son désactivé — Appuyez ici pour activer le son 🔊 » et attacher l'activation audio sur `onPointerDown` et `onTouchEnd` du conteneur vidéo.
+
+---
+
+## 🛑 115. Collisions Multi-Maîtres (Multi-Master Ping-Pong Loops), Vol Réciproque de Leadership par Événements Vidéo Synthétiques & Échec de Synchronisation de Compte Multi-Écrans (`accountSyncService.ts`, `userPlaybackSync.ts`, `userDeviceRegistry.ts`, `playerStore.ts`, `player/[id].tsx`, `VideoPlayerView.tsx`, `FloatingBottomPlayer.tsx`)
+
+* **Problème / Symptôme :**
+  1. Lorsqu'un utilisateur tentait de regarder des médias de manière synchronisée entre plusieurs appareils ou écrans connectés au même compte (ex: TV et Smartphone, ou deux onglets de navigateur) :
+     - Les deux lecteurs entraient dans une boucle de combat acharné (*tug-of-war*), alternant de manière erratique entre pause et reprise, ou écrasant continuellement la position temporelle à 0.
+     - L'appareil récepteur (Follower) ne parvenait pas à suivre la lecture du premier appareil (Leader), ou bien prenait le contrôle intempestivement dès l'ouverture de la page.
+     - En cas de pause sur l'appareil A, l'appareil B mettait en pause sa vidéo, mais cette pause locale renvoyait immédiatement une commande d'action vers le serveur, volant le rôle de Leader et renvoyant une commande conflictuelle vers A.
+  2. Le registre backend retournait un champ `deviceId` non renseigné ou `undefined` dans `getGroupPlayback()`, provoquant l'évaluation permanente `remote.deviceId !== myDeviceId` à `true` (parce que `undefined !== "dev_xxx"`), piégeant tous les terminaux dans une boucle de suiveurs passifs sans aucun diffuseur actif.
+  3. Lors de l'ouverture directe de `/player/[id]` sur un second appareil, le lecteur repartait du début ou de la progression sauvegardée en base au lieu d'hériter instantanément de la lecture en cours en direct sur le compte.
+* **Conséquences :**
+  - Impossibilité totale de visionner un média de manière synchronisée entre les écrans d'un même compte utilisateur.
+  - Saccades, gels de lecture, redémarrages intempestifs du flux vidéo et frustration extrême de l'utilisateur.
+* **Causes Racines :**
+  - **Absence de Distinction entre Événements Utilisateur Authentiques et Événements Vidéo Synthétiques :**
+    Lorsque le suiveur B recevait une synchronisation distante de play/pause via `syncPlayingFromRemote(isPlaying)` ou de seek via `seekTo(pos)`, le store appelait les méthodes de l'élément HTML5 `<video>` (`v.play()`, `v.pause()`, `v.currentTime = pos`). Le navigateur émettait alors les événements DOM natifs `onplay` et `onpause`. Dans `player/[id].tsx`, les gestionnaires `handlePlay` et `handlePause` appelaient `playerStore.setPlaying(..., true, true)` avec le flag `isExplicitAction = true`, trompant le serveur en lui indiquant qu'une action manuelle de l'utilisateur avait eu lieu sur l'appareil B. L'appareil B volait ainsi le statut de Leader, renvoyant un état erroné à l'appareil A.
+  - **Omission de `deviceId` dans `getGroupPlayback` :**
+    Dans `backend/src/devices/userDeviceRegistry.ts`, la méthode retournait l'objet `playback` brut sans y adjoindre la clé `deviceId`, empêchant les clients frontend d'identifier quel appareil était le véritable émetteur de l'état.
+  - **Absence de Verrou Réentrant de Synchronisation Distante :**
+    Le store `playerStore` ne disposait d'aucun moyen d'indiquer aux composants enfants qu'une modification d'état ou de flux était en cours d'application par un flux descendant, provoquant la ré-émission immédiate d'événements ascendants.
+  - **Rejet Autoplay Navigateur Interprété comme une Pause Voulue :**
+    Sur les navigateurs mobiles et certains ordinateurs, le démarrage automatique de la vidéo sans interaction tactile préalable levait une exception `NotAllowedError`. L'événement `onpause` résultant était propagé comme une pause délibérée de l'utilisateur, figeant la lecture sur l'ensemble des écrans du compte.
+* **Bonnes Pratiques de Remédiation :**
+  - **Architecture Ordonnée Leader / Follower & Flag `isAction` :**
+    - Dans `userPlaybackSync.ts`, la structure de groupe distingue formellement les simples battements de progression (`isAction: false`) des prises de leadership volontaires (`isAction: true`).
+    - Seule une interaction utilisateur authentique et prouvée (clic bouton, barre de progression, saut de générique, raccourci clavier) émet `{ isAction: true }` et transfère le rôle de Leader.
+  - **Verrou Anti-Bouclage Distant `remoteSyncLockDepth` dans `playerStore.ts` :**
+    - Implémentation des méthodes `beginRemoteSync()`, `endRemoteSync()` et `isApplyingRemoteSync()`.
+    - `syncPlayingFromRemote` et `seekTo(..., false)` activent le verrou de synchronisation.
+    - Dans `player/[id].tsx`, `handlePlay` et `handlePause` vérifient `playerStore.isApplyingRemoteSync()` : si le verrou est actif, la mise à jour visuelle locale est appliquée mais **aucun message n'est renvoyé au serveur**.
+  - **Détection Proactive au Montage du Lecteur (`player/[id].tsx`) :**
+    - À l'ouverture de `/player/[id]`, une requête `fetchAccountPlayback()` est exécutée immédiatement pour aligner la position temporelle, la lecture/pause, l'audio et les sous-titres sur la session active du compte.
+  - **Sanctuaire de l'Autoplay (`userInitiatedRef` & `VideoPlayerView.tsx`) :**
+    - Rejet de l'autoplay géré silencieusement (bascule en muet ou attente d'un clic utilisateur) sans notifier d'action de pause vers le Leader.
+  - **Validation Automatisée par Tests d'Intégration :**
+    - Suite de tests complète [`testAccountPlaybackSync.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/test/testAccountPlaybackSync.ts) validant la non-régression à 100%.
+
+---
+
+## 🛑 114. Boucle Infinie de Synchronisation d'État Réactive (Maximum Update Depth Exceeded), Surchauffe par Re-Renders 4Hz et Polling Réseau Redondant (`player/[id].tsx`, `playerStore.ts`, `VideoPlayerView.tsx`, `accountSyncService.ts`, `_layout.tsx`, `userDeviceService.ts`)
+
+* **Problème / Symptôme :**
+  1. Lors de l'accès à la page de visionnage d'un média (`/player/[id]`), une erreur bloquante React était immédiatement levée dans la console web :
+     `Web ERROR Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. Code: [id].tsx:233:9 setActiveAudio(playerState.activeMedia.activeAudio); Call Stack: useEffect (src/app/player/[id].tsx:233:9) RootLayout (src/app/_layout.tsx:80:9)`.
+     L'application plantait et figeait l'écran dans une boucle infinie de re-renders.
+  2. Le site et le lecteur vidéo présentaient une lourdeur et des ralentissements notables lors de la lecture :
+     - Re-rendus massifs et continus du composant lecteur et de tous ses sous-composants à raison de 4 fois par seconde (250 ms), provoquant une surconsommation CPU et des pertes d'images.
+     - Redémarrage intempestif de la lecture ou réinitialisation de `positionSeconds` et `durationSeconds` lors d'un changement de piste audio ou de sous-titre.
+     - Chute de performance due à un flux continu de requêtes de polling réseau concurrentes (battements de cœur Cast toutes les 1.5s, écoute de télécommande, synchronisation de compte toutes les 1.4s, heartbeat appareils toutes les 2.2s), y compris lorsque l'onglet du navigateur était réduit ou en arrière-plan.
+  3. En mode multi-appareils, le basculement d'une langue audio sélectionnée était rétrogradé involontairement vers `'auto'` par des synchronisations distantes concurrentes, et des à-coups temporels (rubber-banding / seek stuttering) survenaient entre deux appareils en lecture miroir.
+* **Conséquences :**
+  - Crash systématique de React Web (« Maximum update depth exceeded ») empêchant tout visionnage sur la page lecteur.
+  - Surchauffe du processeur client et vidage accéléré de la batterie sur ordinateur portable et smartphone.
+  - Expérience utilisateur dégradée (ralentissements, saccades de défilement, désynchronisations audio/sous-titres).
+* **Causes Racines :**
+  - **Double Source de Vérité en Conflit Bidirectionnel (Ping-Pong Loop) :**
+    Dans `player/[id].tsx`, les états `activeAudio` et `activeSubtitle` étaient gérés simultanément en local (`useState`) et dans le store global `playerStore`. Un `useEffect` écoutait `playerState.activeMedia.activeAudio` et appelait `setActiveAudio`. Dès que `setActiveAudio` s'exécutait, `streamUrl` était recalculé, déclenchant un second `useEffect` qui appelait `playerStore.openMedia(...)`, lequel notifiait `playerStore`, réveillant à nouveau le premier `useEffect` dans un cycle synchrone infini.
+  - **Overhead Massif à 4Hz par `updatePosition` & Variable d'État Factice :**
+    - L'événement natif `<video onTimeUpdate>` se déclenche 4 fois par seconde (250 ms). Dans `VideoPlayerView.tsx`, un `useState` inutilisé (`curTime`) était mis à jour 4 fois par seconde, provoquant 4 re-renders inutiles par seconde du composant vidéo.
+    - Dans `playerStore.ts`, chaque appel à `updatePosition` déclenchait inconditionnellement `notify()`, forçant `usePlayerState` à notifier tous ses abonnés (`FloatingBottomPlayer`, etc.) 4 fois par seconde.
+    - Dans `[id].tsx`, `usePlayerState()` était appelé sans utilité réelle au niveau racine, forçant la reconstruction de l'intégralité de l'écran 4 fois par seconde.
+  - **Écrasement de Position dans `openMedia` :**
+    `playerStore.openMedia` écrasait aveuglément `positionSeconds: 0`, `durationSeconds: 0` et `isPlaying: true` même lorsque le média ouvert était identique à celui déjà en cours de lecture.
+  - **Concurrence Réseau Non Modérée (Polling en Arrière-Plan) :**
+    Les boucles de polling (`_layout.tsx`, `userDeviceService.ts`, `accountSyncService.ts`) tournaient à haute fréquence (1.4s à 1.5s) même lorsque l'onglet du navigateur était inactif (`document.hidden`).
+* **Bonnes Pratiques de Remédiation :**
+  - **Canal Événementiel Découplé & Élimination du Ping-Pong Réactif :**
+    - Suppression intégrale de l'effet bidirectionnel surveillant le store dans `player/[id].tsx`.
+    - Création de récepteurs d'événements dédiés univoques : `onRemoteAudioChange((audio) => ...)` et `onRemoteSubtitleChange((sub) => ...)`.
+    - Initialisation unique et sanctuarisée de `playerStore.openMedia` via le ref de contrôle `openedMediaIdRef.current !== String(id)`.
+    - Suppression de la souscription superflue `usePlayerState()` au niveau racine de `[id].tsx`.
+  - **Sanctuarisation de la Position dans `openMedia` :**
+    - Dans `playerStore.openMedia`, si le média en cours correspond déjà à l'identifiant (`isSameMedia`), conserver scrupuleusement `positionSeconds`, `durationSeconds`, `isPlaying` et les pistes déjà choisies.
+  - **Filtrage par Seconde Pleine (Division par 4 des Re-Renders) :**
+    - Dans `playerStore.updatePosition`, `notify()` n'est invoqué que si la seconde entière a progressé (`Math.floor(prevSec) !== Math.floor(current)`).
+    - Suppression de l'état local factice `curTime` dans `VideoPlayerView.tsx`.
+  - **Anti-Downgrade Audio & Anti-Oscillation Temporelle dans `accountSyncService.ts` :**
+    - Interdiction formelle d'écraser une piste audio concrète (`1`, `2`, `fra`) par la valeur générique `'auto'`.
+    - Temporisation des sauts temporels distants (debounce 3000 ms avec dérive minimale de 3.5s) pour éradiquer tout effet de bégaiement miroir.
+  - **Gestion Éco-Énergétique & Pause en Arrière-Plan (`document.hidden`) :**
+    - Mise en veille du polling dans `_layout.tsx`, `userDeviceService.ts` et `accountSyncService.ts` lorsque l'onglet est en arrière-plan (`document.hidden`) et qu'aucun média ne joue.
+
+---
+
+## 🛑 113. Dépendances Circulaires (Require Cycles) dans les Services de Lecture, Rejet CORS sur En-tête X-Device-Id en Preflight et Dépréciation des Styles Shadow/TextShadow sur React Native Web
+
+* **Problème / Symptôme :**
+  1. Lors du chargement de l'application web ou au redémarrage de Metro/Expo, la console affichait 3 avertissements de dépendances circulaires critiques :
+     - `Require cycle: src/services/playerStore.ts -> src/services/castState.ts -> src/services/playerStore.ts`
+     - `Require cycle: src/services/playerStore.ts -> src/services/castState.ts -> src/services/accountSyncService.ts -> src/services/playerStore.ts`
+     - `Require cycle: src/services/castState.ts -> src/services/accountSyncService.ts -> src/services/castState.ts`
+     Ces cycles risquaient d'initialiser des singletons à `undefined` lors de l'exécution initiale, provoquant des erreurs silencieuses de synchronisation ou de lecteur.
+  2. Sur la page lecteur (`/player/[id]`) et dans le mini-lecteur flottant (`FloatingBottomPlayer`), des erreurs `TypeError: Failed to fetch` étaient levées lors de l'appel à `fetchMediaTracks`:
+     - `Web ERROR [fetchMediaTracks] Exception: [TypeError: Failed to fetch]`
+     Le navigateur bloquait la requête réseau dès la phase preflight (CORS).
+  3. Des avertissements de dépréciation continus polluaient la console sous navigateur web :
+     - `Web WARN "shadow*" style props are deprecated. Use "boxShadow".`
+     - `Web WARN "textShadow*" style props are deprecated. Use "textShadow".`
+  4. Sur la page TV en direct (`/tv`), lorsqu'un utilisateur sélectionnait une catégorie de chaînes, toutes les autres catégories disparaissaient de la barre de filtres parce que les catégories étaient calculées sur le tableau filtré plutôt que sur la taxonomie complète de l'API.
+* **Conséquences :**
+  - Risques de variables non initialisées au premier chargement à cause des cycles d'importation.
+  - Échec de récupération des pistes audio et sous-titres (`fetchMediaTracks`) sous navigateur, privant les utilisateurs des options de sélection de langues et forçant le fallback par défaut.
+  - Pollution de la console développeur par des avertissements de dépréciation React Native Web.
+  - Impossibilité pour l'utilisateur de zapper entre différentes catégories IPTV sans recharger la page.
+* **Causes Racines :**
+  - **Couplage Fort Tripartite :** `playerStore.ts` importait directement `accountSyncService.ts` et `castState.ts`, pendant que `castState.ts` importait `playerStore.ts` et `accountSyncService.ts`, et `accountSyncService.ts` importait `playerStore.ts` et `castState.ts`.
+  - **Omission de `X-Device-Id` dans `Access-Control-Allow-Headers` :** Lors de l'envoi de requêtes avec `credentials: 'include'` et l'en-tête personnalisé `X-Device-Id`, les navigateurs vérifient strictement la réponse preflight OPTIONS. Puisque `credentials: true` interdit l'usage du joker `*` pour les en-têtes personnalisés, l'absence de `X-Device-Id` dans `allowHeaders` provoquait un rejet CORS immédiat sans envoi du GET.
+  - **Props de Style Rétro-Compatibles :** React Native Web 0.20+ déprécie formellement `shadowColor`, `shadowOffset`, `shadowOpacity`, `shadowRadius`, `textShadowColor`, `textShadowOffset`, `textShadowRadius` au profit de `boxShadow` et `textShadow`.
+  - **Calcul Local Réducteur :** Dans `tv.tsx`, `categories` était calculé via `useMemo` sur la liste `channels` (qui ne contenait que les chaînes de la catégorie active), au lieu d'utiliser l'endpoint dédié `fetchIptvCategories()`.
+* **Bonnes Pratiques de Remédiation :**
+  - **Architecture DAG Sans Cycle (Directed Acyclic Graph) :**
+    - `castState.ts` ne dépend plus ni de `playerStore` ni de `accountSyncService`. Il gère purement l'état cible du Cast et expose `subscribeActiveCastTarget(fn)`.
+    - `playerStore.ts` importe `castState.ts` (pour l'état local du Cast) et expose `registerPlaybackBroadcaster({ report, stop })` sans jamais importer `accountSyncService.ts`.
+    - `accountSyncService.ts` importe `playerStore` et `castState` et s'enregistre comme diffuseur de compte auprès de `playerStore`.
+    - La chaîne de dépendance devient unidirectionnelle et acyclique : `castState` -> `playerStore` -> `accountSyncService`. 0 require cycle.
+  - **Autorisation Complète des En-têtes CORS en Preflight :**
+    - Ajout explicite de `X-Device-Id`, `x-device-id`, `Range`, `range` dans `cors({ allowHeaders: [...] })` dans `backend/src/index.ts`, `mediaStream.ts` et `cast.ts`.
+  - **Styles Adaptatifs Platform-Aware Zéro Dépréciation :**
+    - Utilisation systématique de `...(Platform.OS === 'web' ? { boxShadow: '...' } : { shadowColor: '...', shadowOffset: ..., elevation: ... })` et `...(Platform.OS === 'web' ? { textShadow: '...' } : { textShadowColor: '...', ... })`. Élimination à 100% des avertissements console.
+  - **Taxonomie Stable des Chaînes TV (`tv.tsx`) :**
+    - Récupération initiale des catégories via `fetchIptvCategories()` pour préserver la totalité des catégories dans la barre de filtre quel que soit le filtrage actif.
+  - **Débouncing de la Recherche d'Exploration (`explore.tsx`) :**
+    - Temporisation de 200ms sur `searchCatalog(query)` pour fluidifier la saisie et éliminer les requêtes réseau superflues en rafale.
+
+---
+
+## 🛑 112. Verrouillage Rigide du Mono-Flux par Compte, Impossibilité de Déconnexion à Distance & Conflit d'Identité Matérielle Multi-Écrans
+
+* **Problème / Symptôme :**
+  1. Lorsqu'un utilisateur souhaitait regarder un programme sur son PC tout en laissant ses enfants ou son conjoint visionner un anime sur la télévision du salon avec le même compte, le système imposait un verrouillage mono-lecture rigide écrasant systématiquement la lecture en cours dès qu'un second écran démarrait une vidéo.
+  2. Impossible pour un utilisateur de voir quels appareils ou navigateurs étaient connectés à son compte, de savoir quelle page ou quel média chaque écran était en train de consulter, ni de fermer une session oubliée à distance (ex: sur la TV d'une location, le PC d'un ami ou un ancien smartphone).
+  3. L'absence d'un identifiant matériel unifié (`ums_device_id`) entraînait la coexistence de doubles identifiants divergents (`ums_cast_device_id` vs `ums_account_device_id`), causant des désynchronisations et empêchant de cibler directement un écran connecté pour lui envoyer un média ou le télécommander.
+* **Conséquences :**
+  - Conflits d'utilisation intempestifs au sein d'un même foyer : batailles de télécommande involontaires où chaque écran forçait son média sur tous les autres.
+  - Faille d'intégrité de session : persistance indéfinie de jetons valides sur des appareils distants sans moyen pour l'utilisateur de révoquer l'accès.
+  - Impossibilité d'effectuer des diffusions multi-room personnalisées (ex: diffuser simultanément sur Salon + Cuisine tout en gardant la Chambre indépendante).
+* **Causes Racines :**
+  - **Stockage d'État Mono-Clé Global par `userId` :** L'état de lecture était stocké dans une `Map<string, AccountPlaybackState>` indexée uniquement par `userId`. Tout appel à `POST /api/playback/sync` écrasait aveuglément l'état de tous les écrans du compte.
+  - **Absence de Registre Matériel & de Liste Noire de Révocation :** Le serveur ne tenait aucun registre des `deviceId` actifs par utilisateur et le middleware d'authentification ne vérifiait que la signature cryptographique du jeton sans contrôle d'empreinte d'appareil.
+  - **Manque de Support des Groupes de Diffusion (`syncGroupId`) :** Aucune notion de groupe de synchronisation n'existait, empêchant de distinguer un visionnage synchronisé (miroir) d'un visionnage autonome (`standalone`).
+* **Bonnes Pratiques de Remédiation :**
+  - **Module d'Identité Matérielle Unifié (`deviceIdentity.ts`) :**
+    - Générer une empreinte unique stable `ums_device_id` conservée dans le stockage local, partagée de manière cohérente entre le Cast, le gestionnaire de compte et la télécommande universelle.
+    - Détecter dynamiquement le type de terminal (`TV`, `MOBILE`, `BROWSER`, `DESKTOP`).
+  - **Registre Centralisé des Appareils Connectés (`userDeviceRegistry.ts`, `userDeviceRoutes.ts`) :**
+    - Enregistrer chaque appareil lors de ses battements de cœur réguliers (2,2s) avec sa route active (`currentRoute`), son média en cours, son groupe de synchro et son horodatage de présence.
+    - Offrir des endpoints de supervision (`GET /api/user/devices`), de renommage personnalisé et de transmission de commandes distantes (`LOAD_MEDIA`, `NAVIGATE`, `PAUSE`, `PLAY`, `SEEK`, `STOP`).
+  - **Contrôle d'Intégrité & Déconnexion à Distance (`access.ts`) :**
+    - Transmettre systématiquement `X-Device-Id: <deviceId>` sur chaque requête API.
+    - Maintenir une liste noire en mémoire vive des appareils révoqués par utilisateur.
+    - Rejeter immédiatement avec HTTP 401 `DEVICE_REVOKED` toute tentative d'accès par un terminal révoqué.
+    - Fournir la sécurité 1-clic `disconnectAllOtherDevices` pour purger toutes les autres sessions actives.
+    - Côté client, intercepter `DEVICE_REVOKED` ou la commande `REVOKE_SESSION` pour fermer le lecteur (`playerStore.closeMedia()`), purger le stockage (`authStore.logout()`) et alerter l'utilisateur.
+  - **Matrice de Synchronisation Flexible (`syncGroupId`) :**
+    - Permettre à chaque appareil de basculer en 1 clic entre le Mode Synchronisé (`syncGroupId = 'default'` ou groupe sur-mesure) et le Mode Autonome (`syncGroupId = 'standalone'`).
+    - En mode autonome, le client ne subit aucun piratage de sa lecture par les autres écrans, tout en restant supervisable à distance.
+    - Permettre la diffusion simultanée multi-room (`broadcastMediaToDevices`) pour grouper plusieurs appareils sélectionnés en miroir parfait.
+  - **Expérience Utilisateur Complète & Transparente :**
+    - Intégrer un onglet dédié « 📱 Appareils & Diffusions » dans Mon Espace (`/user?tab=DEVICES`).
+    - Proposer un raccourci direct dans la modale de profil (`AccountModal.tsx`).
+    - Unifier la modale de Cast (`CastModal.tsx`) pour afficher à la fois les téléviseurs physiques (Google Cast / AirPlay) et l'ensemble des navigateurs et écrans connectés au compte.
+
+---
+
 ## 🛑 111. Blocage de Lecture sur Codecs Non-Natifs (DTS-HD MA, HEVC, AVI), Désynchronisation Multi-Appareils d'un Même Compte & Échec IPTV par Contenu Mixte
 
 * **Problème / Symptôme :**

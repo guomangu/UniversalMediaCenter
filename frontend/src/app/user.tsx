@@ -18,13 +18,13 @@ import { UserStatsCard } from '@/components/user/UserStatsCard';
 import { UserFriendsTab } from '@/components/user/UserFriendsTab';
 import { UserForumsTab } from '@/components/user/UserForumsTab';
 import { UserFeedTab } from '@/components/user/UserFeedTab';
+import { UserDevicesTab } from '@/components/user/UserDevicesTab';
 import { MediaCard } from '@/components/MediaCard';
 import { SiteHeader, useHeaderHeight } from '@/components/SiteHeader';
-import { Platform } from 'react-native';
 import { Radius, Spacing, MaxContentWidth } from '@/constants/theme';
 import { goBackOrFallback } from '@/utils/navigation';
 
-type UserTab = 'CONTINUE' | 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED';
+type UserTab = 'CONTINUE' | 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED' | 'DEVICES';
 type FavFilter = 'ALL' | 'MOVIE' | 'SHOW' | 'EPISODE';
 
 export default function UserScreen() {
@@ -37,7 +37,7 @@ export default function UserScreen() {
   const [favFilter, setFavFilter] = useState<FavFilter>('ALL');
 
   useEffect(() => {
-    if (tab && ['CONTINUE', 'FAVORITES', 'FRIENDS', 'FORUMS', 'FEED'].includes(tab.toUpperCase())) {
+    if (tab && ['CONTINUE', 'FAVORITES', 'FRIENDS', 'FORUMS', 'FEED', 'DEVICES'].includes(tab.toUpperCase())) {
       setActiveTab(tab.toUpperCase() as UserTab);
     }
   }, [tab]);
@@ -141,6 +141,15 @@ export default function UserScreen() {
 
               <Pressable
                 focusable={true}
+                onPress={() => setActiveTab('DEVICES')}
+                style={[styles.tabBtn, activeTab === 'DEVICES' && styles.tabBtnActive]}>
+                <Text style={[styles.tabTxt, activeTab === 'DEVICES' && styles.tabTxtActive]}>
+                  📱 Appareils & Diffusions
+                </Text>
+              </Pressable>
+
+              <Pressable
+                focusable={true}
                 onPress={() => setActiveTab('FRIENDS')}
                 style={[styles.tabBtn, activeTab === 'FRIENDS' && styles.tabBtnActive]}>
                 <Text style={[styles.tabTxt, activeTab === 'FRIENDS' && styles.tabTxtActive]}>
@@ -178,47 +187,34 @@ export default function UserScreen() {
                 ) : (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
                     {continueList.map((item) => (
-                      <MediaCard key={item.id} item={item} styleVariant="POSTER" />
+                      <View key={item.id} style={styles.continueCardWrapper}>
+                        <MediaCard item={item} styleVariant="LANDSCAPE" />
+                      </View>
                     ))}
                   </ScrollView>
                 )}
 
-                <Text style={[styles.subSecTitle, { marginTop: 24 }]}>🕒 Historique de visionnage ({historyList.length})</Text>
+                <Text style={[styles.subSecTitle, { marginTop: Spacing.four }]}>🕒 Historique récent</Text>
                 {historyList.length === 0 ? (
                   <View style={styles.emptyBox}>
-                    <Text style={styles.emptyTxt}>Historique vide pour le moment.</Text>
+                    <Text style={styles.emptyTxt}>Aucun historique récent.</Text>
                   </View>
                 ) : (
-                  <View style={{ gap: 8 }}>
-                    {historyList.map((h) => (
-                      <Pressable
-                        key={h.id}
-                        focusable={true}
-                        onPress={() => router.push(`/player/${h.id}` as any)}
-                        style={styles.historyRow}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.historyTitle}>{h.title}</Text>
-                          {h.displayBadge || h.seasonEpisodeTag ? (
-                            <Text style={styles.historyBadge}>{h.displayBadge || h.seasonEpisodeTag}</Text>
-                          ) : null}
-                        </View>
-                        <Text style={styles.historyProgress}>
-                          {h.isCompleted ? '✅ Terminé' : `${h.progressPercent || 0}%`}
-                        </Text>
-                        <Text style={styles.replayTxt}>▶ Revoir</Text>
-                      </Pressable>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
+                    {historyList.map((item) => (
+                      <View key={item.id} style={styles.continueCardWrapper}>
+                        <MediaCard item={item} styleVariant="LANDSCAPE" />
+                      </View>
                     ))}
-                  </View>
+                  </ScrollView>
                 )}
               </View>
             )}
 
             {activeTab === 'FAVORITES' && (
               <View style={styles.tabBody}>
-                <View style={styles.favHeaderRow}>
-                  <Text style={styles.subSecTitle}>❤️ Mes Médias Favoris ({favoritesList.length})</Text>
-
-                  {/* Filtres par type de média */}
+                <View style={styles.favHeader}>
+                  <Text style={styles.subSecTitle}>❤️ Mes Favoris</Text>
                   <View style={styles.favFilterRow}>
                     <Pressable
                       focusable={true}
@@ -289,6 +285,8 @@ export default function UserScreen() {
               </View>
             )}
 
+            {activeTab === 'DEVICES' && <UserDevicesTab />}
+
             {activeTab === 'FRIENDS' && <UserFriendsTab />}
 
             {activeTab === 'FORUMS' && <UserForumsTab />}
@@ -302,152 +300,177 @@ export default function UserScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { paddingBottom: 60 },
+  container: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  content: {
+    paddingBottom: Spacing.six,
+  },
   topNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(71, 85, 105, 0.3)',
+    marginBottom: Spacing.three,
+    maxWidth: MaxContentWidth,
+    width: '100%',
+    alignSelf: 'center',
   },
-  pageTitle: { fontSize: 18, fontWeight: '900', color: '#f8fafc' },
   navBtn: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: Radius.pill,
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: Radius.md,
   },
-  navBtnTxt: { color: '#f1f5f9', fontWeight: '700', fontSize: 12 },
-  inner: { maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center', padding: Spacing.four },
+  navBtnTxt: {
+    color: '#94a3b8',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  pageTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#f8fafc',
+  },
+  inner: {
+    maxWidth: MaxContentWidth,
+    width: '100%',
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.four,
+    gap: Spacing.four,
+  },
   tabScroll: {
-    marginBottom: 20,
-    ...(Platform.OS === 'web'
-      ? ({
-          overflowX: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        } as any)
-      : {}),
+    marginBottom: Spacing.two,
   },
   tabRow: {
-    flexDirection: 'row',
     gap: 8,
-    alignItems: 'center',
-    paddingVertical: 2,
+    paddingVertical: 4,
   },
   tabBtn: {
     backgroundColor: 'rgba(30, 41, 59, 0.7)',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: Radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.4)',
-    flexShrink: 0,
-    ...(Platform.OS === 'web' ? ({ whiteSpace: 'nowrap', userSelect: 'none' } as any) : {}),
+    borderColor: 'rgba(148, 163, 184, 0.1)',
   },
   tabBtnActive: {
     backgroundColor: '#6366f1',
     borderColor: '#818cf8',
   },
-  tabTxt: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
-  tabTxtActive: { color: '#ffffff', fontWeight: '800' },
-  tabBody: { gap: 14 },
-  subSecTitle: { fontSize: 14, fontWeight: '800', color: '#818cf8', textTransform: 'uppercase', letterSpacing: 0.5 },
-  favHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 6,
-  },
-  favFilterRow: {
-    flexDirection: 'row',
-    gap: 6,
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
-    padding: 4,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.3)',
-  },
-  favFilterPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.pill,
-  },
-  favFilterPillActive: {
-    backgroundColor: '#6366f1',
-  },
-  favFilterPillTxt: {
+  tabTxt: {
     color: '#94a3b8',
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: '700',
   },
-  favFilterPillTxtActive: {
+  tabTxtActive: {
     color: '#ffffff',
+  },
+  tabBody: {
+    gap: Spacing.three,
+  },
+  subSecTitle: {
+    fontSize: 17,
     fontWeight: '800',
+    color: '#f8fafc',
   },
-  horizontalRow: { gap: 12, paddingVertical: 8 },
-  emptyBox: {
-    backgroundColor: 'rgba(30, 41, 59, 0.5)',
-    borderRadius: Radius.lg,
-    padding: 24,
-    alignItems: 'center',
+  horizontalRow: {
     gap: 12,
+    paddingVertical: 4,
   },
-  emptyTxt: { color: '#94a3b8', fontSize: 14, textAlign: 'center' },
+  continueCardWrapper: {
+    width: 260,
+  },
+  emptyBox: {
+    backgroundColor: 'rgba(30, 41, 59, 0.4)',
+    borderRadius: Radius.lg,
+    padding: Spacing.five,
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  emptyTxt: {
+    color: '#94a3b8',
+    fontSize: 14,
+  },
   actionBtn: {
     backgroundColor: '#6366f1',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: Radius.md,
   },
-  actionBtnTxt: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    padding: 12,
-    borderRadius: Radius.md,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(71, 85, 105, 0.3)',
+  actionBtnTxt: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 13,
   },
-  historyTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 14 },
-  historyBadge: { color: '#818cf8', fontSize: 11, fontWeight: '700', marginTop: 2 },
-  historyProgress: { color: '#94a3b8', fontSize: 12, fontWeight: '700' },
-  replayTxt: { color: '#6366f1', fontWeight: '800', fontSize: 13 },
-  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  favoriteItemWrapper: {
+  favHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  favFilterRow: {
+    flexDirection: 'row',
     gap: 6,
+  },
+  favFilterPill: {
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.15)',
+  },
+  favFilterPillActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    borderColor: '#6366f1',
+  },
+  favFilterPillTxt: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  favFilterPillTxtActive: {
+    color: '#818cf8',
+    fontWeight: '700',
+  },
+  mediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  favoriteItemWrapper: {
+    width: 140,
   },
   favActionFooter: {
     flexDirection: 'row',
-    gap: 6,
-    width: '100%',
-    justifyContent: 'center',
+    gap: 4,
+    marginTop: 6,
   },
   favPlayBtn: {
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
-    paddingHorizontal: 8,
+    flex: 1,
+    backgroundColor: '#4f46e5',
     paddingVertical: 4,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
   },
-  favPlayTxt: { color: '#c7d2fe', fontSize: 10, fontWeight: '800' },
+  favPlayTxt: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   favRemoveBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    paddingHorizontal: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    paddingHorizontal: 6,
     paddingVertical: 4,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
   },
-  favRemoveTxt: { color: '#f87171', fontSize: 10, fontWeight: '700' },
+  favRemoveTxt: {
+    color: '#ef4444',
+    fontSize: 10,
+    fontWeight: '700',
+  },
 });

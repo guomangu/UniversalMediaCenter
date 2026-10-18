@@ -1,6 +1,7 @@
 import { db } from '../db/connection.js';
 import { verifySessionToken } from '../auth/token.js';
 import { getSiteParams } from '../config/paramManager.js';
+import { userDeviceRegistry } from '../devices/userDeviceRegistry.js';
 export async function authMiddleware(c, next) {
     if (c.req.method === 'OPTIONS')
         return await next();
@@ -18,6 +19,15 @@ export async function authMiddleware(c, next) {
     }
     if (!userId) {
         userId = c.req.header('x-user-id') || null;
+    }
+    const deviceId = c.req.header('x-device-id') || c.req.query('deviceId') || '';
+    // Vérification de révocation à distance pour cet appareil
+    if (userId && deviceId && userDeviceRegistry.isRevoked(userId, deviceId)) {
+        c.set('user', null);
+        return c.json({
+            error: 'DEVICE_REVOKED',
+            message: 'Cet appareil a été déconnecté à distance de votre compte.',
+        }, 401);
     }
     if (userId) {
         const user = await db.query.users.findFirst({

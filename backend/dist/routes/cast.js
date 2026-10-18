@@ -50,7 +50,7 @@ castRouter.use('*', async (c, next) => {
     const reqOrigin = c.req.header('origin') || '*';
     c.header('Access-Control-Allow-Origin', reqOrigin);
     c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, Accept, Origin, Range, X-Requested-With');
+    c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, Accept, Origin, Range, X-Requested-With, X-Device-Id, x-device-id');
     c.header('Access-Control-Allow-Credentials', 'true');
     if (c.req.method === 'OPTIONS')
         return c.body(null, 204);

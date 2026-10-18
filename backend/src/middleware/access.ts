@@ -2,6 +2,7 @@ import type { Context, Next } from 'hono';
 import { db } from '../db/connection.js';
 import { verifySessionToken } from '../auth/token.js';
 import { getSiteParams } from '../config/paramManager.js';
+import { userDeviceRegistry } from '../devices/userDeviceRegistry.js';
 
 export interface UserSession {
   id: string;
@@ -42,6 +43,20 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
 
   if (!userId) {
     userId = c.req.header('x-user-id') || null;
+  }
+
+  const deviceId = c.req.header('x-device-id') || c.req.query('deviceId') || '';
+
+  // Vérification de révocation à distance pour cet appareil
+  if (userId && deviceId && userDeviceRegistry.isRevoked(userId, deviceId)) {
+    c.set('user', null);
+    return c.json(
+      {
+        error: 'DEVICE_REVOKED',
+        message: 'Cet appareil a été déconnecté à distance de votre compte.',
+      },
+      401
+    );
   }
 
   if (userId) {

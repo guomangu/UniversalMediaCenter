@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, Platform, StyleSheet, Modal } from 'react-native';
+import { useRouter } from 'expo-router';
 import {
   fetchCastDevices,
   sendCastCommand,
@@ -12,6 +13,11 @@ import {
   CastDevice,
   CastMediaPayload,
 } from '@/services/castService';
+import {
+  fetchUserDevices,
+  sendDeviceCommand,
+  UserConnectedDevice,
+} from '@/services/userDeviceService';
 import { useActiveCastTarget, setActiveCastTarget, disconnectCastTotally } from '@/services/castState';
 import { styles } from './CastModal.styles';
 
@@ -30,14 +36,21 @@ export const CastModal: React.FC<CastModalProps> = ({
   onTargetSelected,
   onCastStarted,
 }) => {
+  const router = useRouter();
   const [devices, setDevices] = useState<CastDevice[]>([]);
+  const [accountDevices, setAccountDevices] = useState<UserConnectedDevice[]>([]);
   const [myDeviceName, setMyDeviceName] = useState(getLocalDeviceName());
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
   const localId = getLocalDeviceId();
   const activeCastTarget = useActiveCastTarget();
   const nativeBtnRef = useRef<any>(null);
 
-  const refresh = () => fetchCastDevices().then((d) => setDevices(d.filter((x) => x.id !== localId)));
+  const refresh = () => {
+    fetchCastDevices().then((d) => setDevices(d.filter((x) => x.id !== localId)));
+    fetchUserDevices().then((res) => {
+      setAccountDevices((res.devices || []).filter((x) => x.deviceId !== localId));
+    });
+  };
 
   useEffect(() => {
     if (!visible) {
@@ -74,7 +87,7 @@ export const CastModal: React.FC<CastModalProps> = ({
     }
   };
 
-  const handleSelect = async (device: CastDevice, cast: boolean) => {
+  const handleSelectCastDevice = async (device: CastDevice, cast: boolean) => {
     if (cast && currentMedia) {
       const lanUrl = await resolveLanStreamUrl(currentMedia.streamUrl, currentMedia.id);
       await sendCastCommand(device.id, 'LOAD', {
@@ -90,6 +103,38 @@ export const CastModal: React.FC<CastModalProps> = ({
     onClose();
   };
 
+  const handleSelectAccountDevice = async (dev: UserConnectedDevice, cast: boolean, sync: boolean = false) => {
+    if (cast && currentMedia) {
+      await sendDeviceCommand(dev.deviceId, 'LOAD_MEDIA', {
+        mediaId: currentMedia.id,
+        title: currentMedia.title,
+        streamUrl: currentMedia.streamUrl,
+        posterUrl: currentMedia.posterUrl,
+        positionSeconds: currentMedia.positionSeconds || 0,
+        syncGroupId: sync ? 'default' : 'standalone',
+      });
+      onCastStarted?.();
+    }
+
+    const castAdapter: CastDevice = {
+      id: dev.deviceId,
+      name: dev.customName || dev.name,
+      deviceType: (dev.deviceType as any) || 'BROWSER',
+      currentMediaId: currentMedia?.id || dev.currentPlayback?.mediaId,
+      mediaTitle: currentMedia?.title || dev.currentPlayback?.mediaTitle,
+      posterUrl: currentMedia?.posterUrl || dev.currentPlayback?.posterUrl,
+      positionSeconds: currentMedia?.positionSeconds || dev.currentPlayback?.positionSeconds || 0,
+      durationSeconds: dev.currentPlayback?.durationSeconds || 0,
+      isPlaying: dev.currentPlayback?.isPlaying ?? true,
+      volume: dev.currentPlayback?.volume ?? 1,
+      isMuted: dev.currentPlayback?.isMuted ?? false,
+    };
+
+    setActiveCastTarget(castAdapter);
+    onTargetSelected?.(castAdapter);
+    onClose();
+  };
+
   const handleStopActiveCast = async () => {
     await disconnectCastTotally(true);
     onClose();
@@ -98,6 +143,11 @@ export const CastModal: React.FC<CastModalProps> = ({
   const handleDisconnectTarget = async () => {
     await disconnectCastTotally(false);
     onClose();
+  };
+
+  const handleGoToManageDevices = () => {
+    onClose();
+    router.push({ pathname: '/user', params: { tab: 'DEVICES' } } as any);
   };
 
   return (
@@ -166,31 +216,75 @@ export const CastModal: React.FC<CastModalProps> = ({
             </Pressable>
           </View>
 
-          <Text style={styles.sectionTitle}>Appareils UMS connectés</Text>
-          <ScrollView style={{ maxHeight: 180, flexShrink: 1 }} showsVerticalScrollIndicator={true}>
-            {devices.length === 0 ? (
-              <Text style={styles.emptyText}>Aucun autre écran UMS actif détecté sur le réseau local.</Text>
+          {/* Appareils connectés au compte de l'utilisateur */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 6 }}>
+            <Text style={styles.sectionTitle}>Mes écrans connectés ({accountDevices.length})</Text>
+            <Pressable focusable={true} onPress={handleGoToManageDevices}>
+              <Text style={{ color: '#818cf8', fontSize: 11, fontWeight: '700' }}>Gérer ⚙️</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ maxHeight: 200, flexShrink: 1 }} showsVerticalScrollIndicator={true}>
+            {accountDevices.length === 0 && devices.length === 0 ? (
+              <Text style={styles.emptyText}>Aucun autre écran UMS actif détecté sur le compte ou le réseau local.</Text>
             ) : (
-              devices.map((d) => (
-                <View key={d.id} style={styles.deviceRow}>
-                  <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={styles.deviceName} numberOfLines={1}>{d.name}</Text>
-                    <Text style={styles.deviceSub} numberOfLines={1}>
-                      {d.isPlaying ? `🟢 ${d.mediaTitle || 'Lecture'}` : '⚪ En veille'}
-                    </Text>
-                  </View>
-                  <View style={styles.rowActions}>
-                    {currentMedia && (
-                      <Pressable focusable={true} style={styles.castPill} onPress={() => handleSelect(d, true)}>
-                        <Text style={styles.castText}>Caster</Text>
+              <>
+                {/* Écrans du compte */}
+                {accountDevices.map((dev) => (
+                  <View key={dev.deviceId} style={styles.deviceRow}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.deviceName} numberOfLines={1}>
+                        {dev.customName || dev.name}
+                      </Text>
+                      <Text style={styles.deviceSub} numberOfLines={1}>
+                        {dev.currentPlayback?.isPlaying
+                          ? `🟢 En lecture : ${dev.currentPlayback.mediaTitle}`
+                          : `📍 ${dev.currentRoute || 'En veille'}`}
+                      </Text>
+                    </View>
+                    <View style={styles.rowActions}>
+                      {currentMedia && (
+                        <Pressable
+                          focusable={true}
+                          style={styles.castPill}
+                          onPress={() => handleSelectAccountDevice(dev, true, true)}
+                        >
+                          <Text style={styles.castText}>Diffuser</Text>
+                        </Pressable>
+                      )}
+                      <Pressable
+                        focusable={true}
+                        style={styles.remotePill}
+                        onPress={() => handleSelectAccountDevice(dev, false)}
+                      >
+                        <Text style={styles.castText}>Télécommande</Text>
                       </Pressable>
-                    )}
-                    <Pressable focusable={true} style={styles.remotePill} onPress={() => handleSelect(d, false)}>
-                      <Text style={styles.castText}>Contrôler</Text>
-                    </Pressable>
+                    </View>
                   </View>
-                </View>
-              ))
+                ))}
+
+                {/* Autres récepteurs Cast locaux */}
+                {devices.map((d) => (
+                  <View key={d.id} style={styles.deviceRow}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.deviceName} numberOfLines={1}>{d.name}</Text>
+                      <Text style={styles.deviceSub} numberOfLines={1}>
+                        {d.isPlaying ? `🟢 ${d.mediaTitle || 'Lecture'}` : '⚪ En veille'}
+                      </Text>
+                    </View>
+                    <View style={styles.rowActions}>
+                      {currentMedia && (
+                        <Pressable focusable={true} style={styles.castPill} onPress={() => handleSelectCastDevice(d, true)}>
+                          <Text style={styles.castText}>Caster</Text>
+                        </Pressable>
+                      )}
+                      <Pressable focusable={true} style={styles.remotePill} onPress={() => handleSelectCastDevice(d, false)}>
+                        <Text style={styles.castText}>Contrôler</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </>
             )}
           </ScrollView>
         </View>

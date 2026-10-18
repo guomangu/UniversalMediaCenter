@@ -29,7 +29,7 @@ const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 function setStreamCors(c: any) {
   c.header('Access-Control-Allow-Origin', '*');
   c.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  c.header('Access-Control-Allow-Headers', 'Origin, Range, Content-Type, Accept, Authorization, X-Requested-With');
+  c.header('Access-Control-Allow-Headers', 'Origin, Range, Content-Type, Accept, Authorization, X-Requested-With, X-Device-Id, x-device-id');
   c.header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
 }
 
@@ -49,7 +49,7 @@ interface MediaProbeInfo {
   duration: number;
   videoCodec: string;
   isVideoNative: boolean;
-  audioStreams: Array<{ index: number; codec: string; language?: string }>;
+  audioStreams: Array<{ index: number; codec: string; channels: number; language?: string }>;
 }
 
 const probeCache = new Map<string, MediaProbeInfo>();
@@ -60,7 +60,7 @@ async function getMediaProbe(filePath: string): Promise<MediaProbeInfo> {
 
   const { stdout } = await execFileAsync('ffprobe', [
     '-v', 'error',
-    '-show_entries', 'stream=index,codec_type,codec_name:stream_tags=language:format=duration',
+    '-show_entries', 'stream=index,codec_type,codec_name,channels:stream_tags=language:format=duration',
     '-of', 'json',
     filePath,
   ], { timeout: 10000 });
@@ -71,13 +71,15 @@ async function getMediaProbe(filePath: string): Promise<MediaProbeInfo> {
   const videoStream = streams.find((s: any) => s.codec_type === 'video');
   const videoCodec = (videoStream?.codec_name || '').toLowerCase();
   const ext = path.extname(filePath).toLowerCase();
-  const isVideoNative = BROWSER_NATIVE_VIDEO_CODECS.includes(videoCodec) && ext !== '.avi';
+  const isContainerNative = ext === '.mp4' || ext === '.webm';
+  const isVideoNative = BROWSER_NATIVE_VIDEO_CODECS.includes(videoCodec) && isContainerNative;
 
   const audioStreams = streams
     .filter((s: any) => s.codec_type === 'audio')
     .map((s: any) => ({
       index: s.index,
       codec: (s.codec_name || '').toLowerCase(),
+      channels: typeof s.channels === 'number' ? s.channels : 2,
       language: s.tags?.language,
     }));
 
@@ -182,12 +184,12 @@ streamRouter.get('/:id/hls/:file', async (c) => {
 
           let resolvedAudio = targetAudio;
           if (!resolvedAudio || resolvedAudio === 'auto') {
-            const firstNative = probe.audioStreams.find((s) => BROWSER_NATIVE_AUDIO_CODECS.includes(s.codec));
-            resolvedAudio = String(firstNative ? firstNative.index : (probe.audioStreams[0]?.index ?? 1));
+            const firstStereoAac = probe.audioStreams.find((s) => s.codec === 'aac' && (s.channels ?? 2) <= 2);
+            resolvedAudio = String(firstStereoAac ? firstStereoAac.index : (probe.audioStreams[0]?.index ?? 1));
           }
 
           const selectedAudioStream = probe.audioStreams.find((s) => String(s.index) === String(resolvedAudio));
-          const isAudioNative = selectedAudioStream ? BROWSER_NATIVE_AUDIO_CODECS.includes(selectedAudioStream.codec) : false;
+          const isStereoAac = selectedAudioStream ? (selectedAudioStream.codec === 'aac' && (selectedAudioStream.channels ?? 2) <= 2) : false;
 
           const ffmpegArgs = [
             '-ss', String(startTime),
@@ -198,7 +200,7 @@ streamRouter.get('/:id/hls/:file', async (c) => {
             ...(probe.isVideoNative
               ? ['-c:v', 'copy']
               : ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '23', '-pix_fmt', 'yuv420p']),
-            ...(isAudioNative
+            ...(isStereoAac
               ? ['-c:a', 'copy']
               : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2']),
             '-f', 'mpegts',
@@ -316,18 +318,19 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
     probe = await getMediaProbe(activeFilePath);
   } catch {}
 
-  const isVideoNative = probe ? probe.isVideoNative : (originalExt !== '.avi');
+  const isContainerNative = originalExt === '.mp4' || originalExt === '.webm';
+  const isVideoNative = probe ? (probe.isVideoNative && isContainerNative) : isContainerNative;
   let isAudioNative = true;
   if (probe) {
-    const targetA = audio && audio !== 'auto' ? audio : '0';
+    const targetA = audio && audio !== 'auto' ? audio : String(probe.audioStreams[0]?.index ?? '1');
     const stream = probe.audioStreams.find((s) => String(s.index) === String(targetA)) || probe.audioStreams[0];
     if (stream) {
-      isAudioNative = BROWSER_NATIVE_AUDIO_CODECS.includes(stream.codec);
+      isAudioNative = stream.codec === 'aac' && (stream.channels ?? 2) <= 2;
     }
   }
 
-  // Si le média nécessite un transcodage (ex: .avi, hevc, dts/ac3), rediriger vers le flux HLS on-the-fly
-  if (!isVideoNative || !isAudioNative || originalExt === '.avi') {
+  // Si le média nécessite un transcodage (ex: .mkv, .avi, hevc, dts/ac3/5.1 surround), rediriger vers le flux HLS on-the-fly
+  if (!isVideoNative || !isAudioNative || !isContainerNative) {
     const p = new URLSearchParams();
     if (audio) p.set('audio', audio);
     if (shareToken) p.set('share', shareToken);

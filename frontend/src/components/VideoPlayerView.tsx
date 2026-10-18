@@ -1,19 +1,19 @@
-import Hls from 'hls.js';
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { View, Text, Platform, Pressable } from 'react-native';
+import { View, Text, Pressable, Platform } from 'react-native';
+import Hls from 'hls.js';
 import { styles } from './PlayerScreen.styles';
 import { getApiBaseUrl } from '@/services/apiConfig';
 
 interface Props {
   streamUrl: string;
   initialTime?: number;
+  isPlaying?: boolean;
   intro?: { start: number; end: number } | null;
   activeSubtitle?: string;
   activeQuality?: string;
   activeAudio?: string;
-  isPlaying?: boolean;
   isLive?: boolean;
-  videoRef?: any;
+  videoRef?: React.RefObject<HTMLVideoElement | null> | ((el: HTMLVideoElement | null) => void);
   onLoadedMetadata?: () => void;
   onTimeUpdate?: (current: number, duration: number) => void;
   onEnded?: () => void;
@@ -37,6 +37,7 @@ export const VideoPlayerView: React.FC<Props> = ({
   activeQuality = 'auto',
   activeAudio = 'auto',
   isLive = false,
+  isPlaying = true,
   videoRef: externalVideoRef,
   onLoadedMetadata,
   onTimeUpdate,
@@ -54,10 +55,21 @@ export const VideoPlayerView: React.FC<Props> = ({
 }) => {
   const innerVideoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<any>(null);
-  const userPausedRef = useRef(false);
-  const [curTime, setCurTime] = useState(0);
+  const userPausedRef = useRef(!isPlaying);
   const [mouseActive, setMouseActive] = useState(true);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+
+  const handleUnmuteGesture = () => {
+    const v = innerVideoRef.current;
+    if (v) {
+      if (v.muted) {
+        v.muted = false;
+        v.volume = 1;
+      }
+      setAudioBlocked(false);
+    }
+  };
 
   const mouseTimer = useRef<any>(null);
   const lastTimeRef = useRef<number>(initialTime || 0);
@@ -118,10 +130,13 @@ export const VideoPlayerView: React.FC<Props> = ({
   const resetMouse = () => {
     setMouseActive(true);
     if (mouseTimer.current) clearTimeout(mouseTimer.current);
-    mouseTimer.current = setTimeout(() => setMouseActive(false), 3000);
+    mouseTimer.current = setTimeout(() => {
+      setMouseActive(false);
+    }, 3500);
   };
 
   useEffect(() => {
+    resetMouse();
     return () => {
       if (mouseTimer.current) clearTimeout(mouseTimer.current);
     };
@@ -137,13 +152,11 @@ export const VideoPlayerView: React.FC<Props> = ({
     return Boolean(Hls.isSupported());
   }, [isHlsStream]);
 
-  // Support HLS Live IPTV résilient avec auto-recovery
+  // Initialisation et gestion fine de la lecture HLS.js
   useEffect(() => {
-    if (Platform.OS !== 'web' || !innerVideoRef.current || !streamUrl || !shouldUseHlsJs) return;
-    setPlaybackError(null);
+    if (!shouldUseHlsJs || !streamUrl) return;
     const v = innerVideoRef.current;
-    v.muted = false;
-    v.volume = 1;
+    if (!v) return;
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -171,25 +184,29 @@ export const VideoPlayerView: React.FC<Props> = ({
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         v.muted = false;
         v.volume = 1;
-        if (!userPausedRef.current) {
+        if (!isLive && initialTime && initialTime > 0 && !initialSeekDoneRef.current) {
+          v.currentTime = initialTime;
+          initialSeekDoneRef.current = true;
+        }
+        if (!userPausedRef.current && isPlaying !== false) {
           const playPromise = v.play();
           if (playPromise !== undefined) {
             playPromise.catch((err) => {
               if (err.name === 'NotAllowedError') {
                 v.muted = true;
+                setAudioBlocked(true);
                 v.play().catch(() => {});
                 const enableAudio = () => {
                   if (innerVideoRef.current) {
                     innerVideoRef.current.muted = false;
                     innerVideoRef.current.volume = 1;
                   }
+                  setAudioBlocked(false);
                   window.removeEventListener('click', enableAudio);
-                  window.removeEventListener('keydown', enableAudio);
-                  window.removeEventListener('touchstart', enableAudio);
+                  window.removeEventListener('touchend', enableAudio);
                 };
                 window.addEventListener('click', enableAudio, { once: true });
-                window.addEventListener('keydown', enableAudio, { once: true });
-                window.addEventListener('touchstart', enableAudio, { once: true });
+                window.addEventListener('touchend', enableAudio, { once: true });
               }
             });
           }
@@ -199,7 +216,7 @@ export const VideoPlayerView: React.FC<Props> = ({
       hls.on(Hls.Events.ERROR, (_: any, data: any) => {
         if (!data.fatal) {
           if (data.details === 'bufferStalledError') {
-            if (!userPausedRef.current && v.paused) {
+            if (!userPausedRef.current && v.paused && isPlaying !== false) {
               v.play().catch(() => {});
             }
           }
@@ -211,7 +228,7 @@ export const VideoPlayerView: React.FC<Props> = ({
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
             hls.recoverMediaError();
-            if (!userPausedRef.current && v.paused) {
+            if (!userPausedRef.current && v.paused && isPlaying !== false) {
               v.play().catch(() => {});
             }
             break;
@@ -240,6 +257,19 @@ export const VideoPlayerView: React.FC<Props> = ({
       };
     }
   }, [streamUrl, shouldUseHlsJs]);
+
+  // Synchronisation univoque de Play/Pause sans détruire ni réinitialiser HLS
+  useEffect(() => {
+    const v = innerVideoRef.current;
+    if (!v) return;
+    if (isPlaying && v.paused) {
+      userPausedRef.current = false;
+      v.play().catch(() => {});
+    } else if (!isPlaying && !v.paused) {
+      userPausedRef.current = true;
+      v.pause();
+    }
+  }, [isPlaying]);
 
   const subtitleUrl = useMemo(() => {
     if (!activeSubtitle || activeSubtitle === 'off') return '';
@@ -293,6 +323,9 @@ export const VideoPlayerView: React.FC<Props> = ({
         initialSeekDoneRef.current = true;
       }
     }
+    if (v?.paused && !userPausedRef.current && isPlaying !== false) {
+      v.play().catch(() => {});
+    }
     onLoadedMetadata?.();
   };
 
@@ -312,7 +345,7 @@ export const VideoPlayerView: React.FC<Props> = ({
         initialSeekDoneRef.current = true;
       }
     }
-    if (v?.paused && !userPausedRef.current) {
+    if (v?.paused && !userPausedRef.current && isPlaying !== false) {
       v.play().catch(() => {});
     }
   };
@@ -324,7 +357,6 @@ export const VideoPlayerView: React.FC<Props> = ({
     if (t > 0) {
       lastTimeRef.current = t;
     }
-    setCurTime(t);
 
     onTimeUpdate?.(t, d);
     if (!isLive && Number.isFinite(d) && d > 30 && d - t <= 10) {
@@ -338,6 +370,8 @@ export const VideoPlayerView: React.FC<Props> = ({
       {...({ dataSet: { playerContainer: 'true', focusable: 'false' }, tabIndex: -1 } as any)}
       style={[styles.videoPlaceholder, { backgroundColor: '#000000' }]}
       onPointerMove={resetMouse}
+      onPointerDown={handleUnmuteGesture}
+      onTouchEnd={handleUnmuteGesture}
     >
       {Platform.OS === 'web' ? (
         <video
@@ -360,6 +394,7 @@ export const VideoPlayerView: React.FC<Props> = ({
             if (innerVideoRef.current && innerVideoRef.current.muted) {
               innerVideoRef.current.muted = false;
               innerVideoRef.current.volume = 1;
+              setAudioBlocked(false);
             }
             onPlay?.();
           }}
@@ -376,14 +411,14 @@ export const VideoPlayerView: React.FC<Props> = ({
             handleTimeUpdate();
           }}
           onWaiting={() => {
-            if (isLive && innerVideoRef.current?.paused && !userPausedRef.current) {
+            if (isLive && innerVideoRef.current?.paused && !userPausedRef.current && isPlaying !== false) {
               innerVideoRef.current.play().catch(() => {});
             }
           }}
           onEnded={() => {
             if (!isLive) {
               onEnded?.();
-            } else if (innerVideoRef.current && !userPausedRef.current) {
+            } else if (innerVideoRef.current && !userPausedRef.current && isPlaying !== false) {
               innerVideoRef.current.play().catch(() => {});
             }
           }}
@@ -432,44 +467,42 @@ export const VideoPlayerView: React.FC<Props> = ({
         </View>
       ) : null}
 
-      {statusMessage ? (
-        <View style={styles.statusToast} pointerEvents="none">
-          <Text style={styles.statusText}>{statusMessage}</Text>
-        </View>
-      ) : null}
-
-      {showRestartBtn && !isLive && (
+      {/* Bannière d'activation audio Android / Mobile Autoplay */}
+      {audioBlocked && (
         <Pressable
           focusable={true}
           accessibilityRole="button"
-          accessibilityLabel="Recommencer depuis le début"
-          onPress={onRestartFromBeginning}
-          style={({ focused }: any) => [
-            styles.restartBtn,
-            focused && styles.restartBtnFocused,
-          ]}
+          accessibilityLabel="Activer le son"
+          onPress={handleUnmuteGesture}
+          style={{
+            position: 'absolute',
+            top: 70,
+            alignSelf: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            borderWidth: 1.5,
+            borderColor: '#E5A00D',
+            paddingVertical: 10,
+            paddingHorizontal: 20,
+            borderRadius: 24,
+            zIndex: 99,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}
         >
-          <Text style={styles.restartBtnIcon}>⏮</Text>
-          <Text style={styles.restartBtnText}>Recommencer</Text>
+          <Text style={{ fontSize: 20 }}>🔇</Text>
+          <Text style={{ color: '#f8fafc', fontWeight: '700', fontSize: 13 }}>
+            Son désactivé — Appuyez ici pour activer le son 🔊
+          </Text>
         </Pressable>
       )}
 
-      {showSkipIntro && !isLive && (
-        <Pressable
-          focusable={true}
-          accessibilityRole="button"
-          accessibilityLabel="Passer le générique d'introduction"
-          onPress={onSkipIntro}
-          style={({ focused }: any) => [
-            styles.skipBtn,
-            focused && styles.skipBtnFocused,
-          ]}
-        >
-          <Text style={styles.skipText}>Passer l'intro ⏩</Text>
-        </Pressable>
+      {/* Message de statut optionnel */}
+      {statusMessage && !playbackError && (
+        <View style={styles.statusToast}>
+          <Text style={styles.statusToastText}>{statusMessage}</Text>
+        </View>
       )}
     </View>
   );
 };
-
-export default VideoPlayerView;

@@ -56,9 +56,19 @@ export default function MediaDetailScreen() {
 
   const loadSessions = () => {
     if (!id) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
     fetchMediaSessions(id).then((res) => {
-      setActiveSessions(res.sessions || []);
-      setTotalViewers(res.totalViewers || 0);
+      setActiveSessions((prev) => {
+        const next = res.sessions || [];
+        if (
+          prev.length === next.length &&
+          prev.every((s, i) => s.id === next[i]?.id && s.currentPosition === next[i]?.currentPosition)
+        ) {
+          return prev;
+        }
+        return next;
+      });
+      setTotalViewers((prev) => (prev === (res.totalViewers || 0) ? prev : (res.totalViewers || 0)));
     });
   };
 

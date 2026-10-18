@@ -9,8 +9,10 @@ export const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four, paddingVertical: Spacing.three,
     flexDirection: 'column', gap: 8,
     borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.5)',
-    zIndex: 9999, shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5, shadowRadius: 16, elevation: 12,
+    zIndex: 9999,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 8px 16px rgba(0, 0, 0, 0.5)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 12 }),
   },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   deviceInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },

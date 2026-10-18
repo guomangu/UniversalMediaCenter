@@ -145,11 +145,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.35)',
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.6,
-    shadowRadius: 24,
-    elevation: 20,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 16px 24px rgba(0, 0, 0, 0.6)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.6, shadowRadius: 24, elevation: 20 }),
     flexDirection: 'column',
     zIndex: 1,
   },

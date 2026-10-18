@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { useTvNavigation } from '@/hooks/useTvNavigation';
 import { FloatingBottomPlayer } from '@/components/FloatingBottomPlayer';
-import { useActiveCastTarget, setActiveCastTarget } from '@/services/castState';
+import { useActiveCastTarget } from '@/services/castState';
 import {
   initGoogleCastFramework,
   registerAsReceiver,
@@ -14,6 +14,7 @@ import {
   getLocalDeviceId,
   getLocalDeviceName,
 } from '@/services/castService';
+import { startDeviceHeartbeatLoop } from '@/services/userDeviceService';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { syncSessionWithServer } from '@/services/authStore';
 import { registerPwa } from '@/services/pwaRegistration';
@@ -35,7 +36,7 @@ if (Platform.OS !== 'web') {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const activeCastTarget = useActiveCastTarget();
+  useActiveCastTarget();
   useTvNavigation();
 
   useEffect(() => {
@@ -43,11 +44,15 @@ export default function RootLayout() {
     syncSessionWithServer().catch(() => {});
   }, []);
 
-  // Enregistrement actif de l'écran local comme récepteur Cast & écouteur de télécommande
+  // Enregistrement actif de l'appareil local, battement de cœur et écouteur de télécommande universelle
   useEffect(() => {
     registerAsReceiver(getLocalDeviceName(), { isPlaying: false }).catch(() => {});
+    startDeviceHeartbeatLoop(router);
 
     const interval = setInterval(() => {
+      // Économiser le réseau et la batterie si l'onglet est en arrière-plan
+      if (typeof document !== 'undefined' && document.hidden) return;
+
       sendCastHeartbeat({}).catch(() => {});
 
       // Si nous ne sommes pas sur la page lecteur (qui gère ses propres commandes en direct)
@@ -66,7 +71,7 @@ export default function RootLayout() {
           }
         }).catch(() => {});
       }
-    }, 1500);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, [router]);
