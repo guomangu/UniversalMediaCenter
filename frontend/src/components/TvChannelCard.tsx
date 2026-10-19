@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Radius, Spacing } from '@/constants/theme';
 import { MediaRepostModal } from './MediaRepostModal';
 import { playerStore } from '@/services/playerStore';
+import { getApiBaseUrl } from '@/services/apiConfig';
 
 interface Props {
   channel: any;
@@ -22,12 +23,15 @@ export function TvChannelCard({ channel }: Props) {
   const category = (channel.searchVectorText?.replace(title, '') || '').trim().split(';')[0]?.trim() || 'Direct';
 
 const handlePlay = () => {
+    // Toujours passer par l'URL absolue de l'API : une URL relative `/api/...`
+    // viserait le serveur Expo (404) lorsque le frontend et l'API sont sur des hôtes distincts.
+    const apiBase = getApiBaseUrl();
     playerStore.openMedia({
       id: String(channel.id),
       title,
       streamUrl: channel.streamUrl?.startsWith('http')
-        ? `/api/iptv/proxy?url=${encodeURIComponent(channel.streamUrl)}`
-        : `/api/media/${channel.id}/stream`,
+        ? `${apiBase}/api/iptv/proxy?url=${encodeURIComponent(channel.streamUrl)}`
+        : `${apiBase}/api/media/${channel.id}/stream`,
       posterUrl: logo,
       isLive: true,
       initialTime: 0,

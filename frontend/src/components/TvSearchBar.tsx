@@ -16,6 +16,7 @@ export function TvSearchBar({ searchQuery, onSearchChange, categories, activeCat
       <View style={styles.inputWrap}>
         <TextInput
           style={styles.input}
+          data-search-input="true"
           placeholder="🔍 Rechercher une chaîne TV, une catégorie, un sport..."
           placeholderTextColor="#64748b"
           value={searchQuery}

@@ -445,6 +445,8 @@ export const CastModal: React.FC<CastModalProps> = ({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable
         style={styles.overlay}
+        focusable={false}
+        tabIndex={-1}
         onPress={(e) => {
           if (Platform.OS === 'web') {
             if (e.target === e.currentTarget) {
@@ -458,6 +460,7 @@ export const CastModal: React.FC<CastModalProps> = ({
         <View
           style={styles.modal}
           onStartShouldSetResponder={() => true}
+          {...({ dataSet: { modalContainer: 'true' } } as any)}
         >
           {/* Header */}
           <View style={styles.header}>
@@ -466,6 +469,7 @@ export const CastModal: React.FC<CastModalProps> = ({
               accessibilityRole="button"
               onPress={onClose}
               style={styles.closeBtn}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
             >
               <Text style={styles.closeText} pointerEvents="none">✕</Text>
             </Pressable>

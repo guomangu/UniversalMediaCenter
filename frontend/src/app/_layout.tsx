@@ -7,6 +7,7 @@ import { useTvNavigation } from '@/hooks/useTvNavigation';
 import { FloatingBottomPlayer } from '@/components/FloatingBottomPlayer';
 import { useActiveCastTarget } from '@/services/castState';
 import { playerStore } from '@/services/playerStore';
+import { getVideoStreamUrl } from '@/services/api';
 import {
   initGoogleCastFramework,
   registerAsReceiver,
@@ -126,7 +127,7 @@ export default function RootLayout() {
             playerStore.openMedia({
               id: cmd.payload.mediaId,
               title: cmd.payload.title || 'Média',
-              streamUrl: cmd.payload.streamUrl || `/api/media/${cmd.payload.mediaId}/stream`,
+              streamUrl: cmd.payload.streamUrl || getVideoStreamUrl(cmd.payload.mediaId),
               posterUrl: cmd.payload.posterUrl || `/api/media/${cmd.payload.mediaId}/poster`,
               isLive: Boolean(cmd.payload.isLive),
               activeAudio: cmd.payload.activeAudio || 'auto',

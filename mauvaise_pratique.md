@@ -1,3 +1,54 @@
+## 🛑 137. Navigation Télécommande Hors Lecteur, Modales Invisibles au Focus, Double Navigation `Link asChild` + `onPress`, Hooks Après Retour Anticipé & Flux Relatifs Multi-Pages (`useTvNavigation.ts`, `MediaCard.tsx`, `HeroSpotlight.tsx`, `MediaRail.tsx`, `MediaChildrenRow.tsx`, `FloatingBottomPlayer.tsx`, `AdminCreate*Modal.tsx`, `CastModal.tsx`, `OfflineIndicator.tsx`)
+
+* **Problème / Symptôme :**
+  1. En lecteur déplié, les flèches pouvaient déplacer le focus vers des boutons de la page masquée derrière la vidéo.
+  2. Les modales Admin (invitation/création) et Cast n'étaient ni détectées ni fermées par `Échap` ; le focus restait sur l'arrière-plan.
+  3. Un clic sur une affiche média naviguait deux fois (pile de navigation dupliquée).
+  4. Certaines pages pouvaient crasher avec « Rendered more hooks than during the previous render » quand un rail passait de vide à peuplé.
+  5. La lecture d'un épisode, l'enchaînement automatique ou la reprise live pouvait partir sur le serveur web au lieu de l'API.
+  6. Dans un `TEXTAREA`, les flèches verticales quittaient le champ ; le raccourci `/` pouvait focaliser un input factice invisible.
+  7. La pastille hors-ligne interceptait les clics sur le bas de page.
+
+* **Causes Racines :**
+  - **Portée de focus globale** : `getCandidates()` utilisait toujours `document.body` hors modale, sans tenir compte de l'overlay du lecteur.
+  - **Contrat de modale incomplet** : l'absence de `data-modal-container`/`data-modal-close` empêchait la détection, le confinement et la fermeture télécommande.
+  - **Double source de navigation** : `Link asChild` compose déjà le `onPress` de son enfant ; un `onPress={() => router.push(...)}` supplémentaire provoque deux navigations.
+  - **Hooks conditionnels** : `MediaRail` retournait `null` avant `useState`/`useCallback`.
+  - **URLs relatives** : chemins `/api/...` non préfixés par `getApiBaseUrl()` alors que le frontend et l'API peuvent être sur des hôtes distincts.
+  - **Typage des champs** : `TEXTAREA` traité comme un `INPUT` mono-ligne ; sélecteur de recherche sans filtrage de visibilité.
+  - **Overlay informatif interactif** : pastille fixe sans `pointerEvents="none"`.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Confinement par surface active** : restreindre les candidats de focus à la modale active ou au lecteur déplié avant de revenir au document.
+  - **Standardiser les modales** : `data-modal-container="true"`, `data-modal-close="true"`, focus initial sur le conteneur, `Échap`/`Retour` ferment, CSS sans anneau sur le conteneur.
+  - **Une seule navigation par clic** : ne jamais combiner `Link asChild` et un `onPress` de navigation sur le même enfant.
+  - **Hooks avant tout retour** : tous les hooks doivent précéder le premier `return null`.
+  - **URLs API absolues** partout, y compris les épisodes, le next-play et les commandes distantes.
+  - **Préserver les comportements natifs** : `TEXTAREA` garde ses flèches verticales ; ne jamais focaliser un input masqué.
+
+## 🛑 136. Chaînes TV Muettes (URL Proxy Relative 404), Flèches Télécommande à Double Effet (Focus + Seek Simultanés), Scrubber Inaccessible & Throttle Global des Raccourcis d'Accueil (`TvChannelCard.tsx`, `FloatingBottomPlayer.tsx`, `useTvNavigation.ts`, `SiteHeader.tsx`, `TagCard.tsx`, `CategorySection.tsx`)
+
+* **Problème / Symptôme :**
+  1. Les cartes de chaînes IPTV s'affichaient mais aucune ne se lançait (`404 text/html`).
+  2. Sur télécommande/clavier, se déplacer entre les boutons du lecteur modifiait aussi la position du média (et le volume).
+  3. Les raccourcis d'accueil (Favoris, Amis, Salons, Fil d'avis, TV, profil) devenaient parfois inactifs, et des catégories pouvaient disparaître du header après une erreur réseau.
+
+* **Causes Racines :**
+  - **URL Relative Vers le Mauvais Hôte** : `TvChannelCard` utilisait `/api/iptv/proxy?...` sans `getApiBaseUrl()`. En développement ou avec un frontend et une API sur des domaines distincts, l'URL visait le serveur Expo/Web (404) au lieu du backend Hono.
+  - **Double Écoute d'un Même Événement** : `useTvNavigation` appelait `preventDefault()` en capture mais pas `stopPropagation()`. Le gestionnaire de `FloatingBottomPlayer` traitait le même `keydown` et appliquait un seek (`ArrowLeft/Right`) ou un volume (`ArrowUp/Down`) en plus du déplacement du focus.
+  - **Scrubber Non Focusable** : la barre de progression était un simple `View` sans `tabIndex`, donc inaccessible à la navigation spatiale ; le seek ne pouvait se faire qu'en détournant les flèches globales, d'où les modifications accidentelles.
+  - **Throttle Global Partagé** : `SiteHeader` utilisait un unique `lastActionTimeRef` de 250 ms pour toutes les destinations ; deux clics rapides sur deux raccourcis différents bloquaient le second.
+  - **Verrou de Saut Jamais Relâché** : `fastSmoothScroll` était annulé par les écouteurs `wheel`/`touchstart` sans invoquer son `onDone`. `isJumpingRef.current` restait alors à `true` indéfiniment et la puce active ne suivait plus le défilement. Un re-layout (`onLayoutPos`) pouvait en outre recalculer la catégorie active pendant le saut et écraser le choix de l'utilisateur.
+  - **Confusion « Vide » vs « Erreur Réseau »** : `TagCard` renvoyait un compte `0` dans son `catch`, ce qui faisait passer toutes les catégories pour vides (`CategorySection.isConfirmedEmpty`) et les masquait, ainsi que leurs puces.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Toujours Préfixer les URLs API** : ne jamais utiliser de chemin `/api/...` relatif pour un flux ou un proxy lorsqu'il existe un `getApiBaseUrl()` ; les manifests HLS dérivés doivent rester sur le même hôte API.
+  - **Un Événement, Un Seul Propriétaire** : après `preventDefault()` dans un listener de capture, ajouter `stopPropagation()` (ou vérifier `e.defaultPrevented` côté bulle) pour éviter les doubles actions focus + média.
+  - **Pilotage Direct du Scrubber** : les flèches d'une télécommande ne doivent jamais modifier un média par simple survol de focus. Une fois le scrubber explicitement focalisé, `←/→` pilotent la progression et `↑/↓` sortent de la barre ; aucun seek ne se produit depuis un autre contrôle.
+  - **Throttle par Destination** : indexer les verrous anti-doublon par clé d'action (`nav:FAVORITES`, `nav:TV`), jamais par un compteur global partagé.
+  - **Toujours Libérer un Verrou d'Animation** : lorsqu'une animation programmatique peut être interrompue par une interaction, mémoriser son callback de fin et l'appeler dans la fonction d'annulation. Vérifier aussi le verrou dans les callbacks de layout (`onLayout`) pour ne pas écraser un état choisi par l'utilisateur.
+  - **Distinguer 0 de l'Échec** : utiliser une valeur sentinelle négative (`-1`) ou un flag d'erreur pour les chargements échoués, et ne confirmer une catégorie vide qu'en l'absence totale d'erreur réseau.
+
 ## 🛑 135. Échec OCR Silencieux des Sous-Titres PGS de *Coco* : `pgsrip` Normalise le Code Langue du Fichier de Sortie (`fra` → `fr`, `eng` → `en`) et le Code Cherchait un Nom Impossible (`mediaSubtitles.ts`)
 
 * **Problème / Symptôme :**

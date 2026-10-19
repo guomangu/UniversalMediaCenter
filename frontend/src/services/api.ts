@@ -130,26 +130,22 @@ export async function fetchLiveChannels(
   params?: { q?: string; category?: string; limit?: number },
   options?: { forceRefresh?: boolean; onFreshData?: (fresh: any[]) => void }
 ): Promise<any[]> {
-  const cacheKey = `iptv_channels_${getUserCacheKey()}_${params?.q || ''}_${params?.category || ''}_${params?.limit || 0}`;
+  const cacheKey = `iptv_channels_v2_${getUserCacheKey()}_${params?.q || ''}_${params?.category || ''}_${params?.limit || 0}`;
   return fetchWithCache(
     cacheKey,
     async () => {
-      try {
-        const sp = new URLSearchParams();
-        if (params?.q) sp.set('q', params.q);
-        if (params?.category && params.category !== 'ALL') sp.set('category', params.category);
-        if (params?.limit) sp.set('limit', String(params.limit));
-        const qs = sp.toString();
-        const url = `${getApiBaseUrl()}/api/iptv/channels${qs ? `?${qs}` : ''}`;
-        const res = await fetch(url, {
-          headers: getAuthHeaders(),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        return data.channels || [];
-      } catch {
-        return [];
-      }
+      const sp = new URLSearchParams();
+      if (params?.q) sp.set('q', params.q);
+      if (params?.category && params.category !== 'ALL') sp.set('category', params.category);
+      if (params?.limit) sp.set('limit', String(params.limit));
+      const qs = sp.toString();
+      const url = `${getApiBaseUrl()}/api/iptv/channels${qs ? `?${qs}` : ''}`;
+      const res = await fetch(url, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.channels || [];
     },
     options
   );
@@ -158,20 +154,16 @@ export async function fetchLiveChannels(
 export async function fetchIptvCategories(
   options?: { forceRefresh?: boolean; onFreshData?: (fresh: string[]) => void }
 ): Promise<string[]> {
-  const cacheKey = `iptv_categories_${getUserCacheKey()}`;
+  const cacheKey = `iptv_categories_v2_${getUserCacheKey()}`;
   return fetchWithCache(
     cacheKey,
     async () => {
-      try {
-        const res = await fetch(`${getApiBaseUrl()}/api/iptv/categories`, {
-          headers: getAuthHeaders(),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        return data.categories || [];
-      } catch {
-        return [];
-      }
+      const res = await fetch(`${getApiBaseUrl()}/api/iptv/categories`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.categories || [];
     },
     options
   );

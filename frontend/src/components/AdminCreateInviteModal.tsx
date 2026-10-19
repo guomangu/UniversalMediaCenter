@@ -121,7 +121,7 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
           onPress={onClose}
           {...({ dataSet: { modalBackdrop: 'true' } } as any)}
         />
-        <View style={modalStyles.card}>
+        <View style={modalStyles.card} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <View style={modalStyles.headerRow}>
             <View style={{ flex: 1 }}>
               <Text style={modalStyles.title}>🔗 Créer un lien personnalisé</Text>
@@ -129,7 +129,12 @@ export function AdminCreateInviteModal({ visible, profileTypes = [], onClose, on
                 Lien magique en 1 clic pour WhatsApp, Instagram ou SMS avec identifiant et mot de passe intégrés.
               </Text>
             </View>
-            <Pressable focusable={true} style={modalStyles.closeBtn} onPress={onClose}>
+            <Pressable
+              focusable={true}
+              style={modalStyles.closeBtn}
+              onPress={onClose}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
+            >
               <Text style={modalStyles.closeBtnTxt}>✕</Text>
             </Pressable>
           </View>

@@ -35,7 +35,10 @@ export function OfflineIndicator() {
   if (!offline && !reconnected) return null;
 
   return (
-    <View style={[styles.pill, offline ? styles.pillOffline : styles.pillOnline]}>
+    <View
+      pointerEvents="none"
+      style={[styles.pill, offline ? styles.pillOffline : styles.pillOnline]}
+    >
       <Text style={styles.text}>
         {offline
           ? 'Mode hors ligne • Consultation fluide des données en cache'

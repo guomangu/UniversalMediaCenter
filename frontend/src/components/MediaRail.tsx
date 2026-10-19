@@ -9,18 +9,11 @@ interface MediaRailProps {
 }
 
 export const MediaRail: React.FC<MediaRailProps> = ({ rail }) => {
-  if (!rail.items || rail.items.length === 0) return null;
-
-  const cardStyleVariant =
-    rail.cardStyle === 'LANDSCAPE'
-      ? 'LANDSCAPE'
-      : rail.cardStyle === 'LIVE_CARD'
-      ? 'LIVE_CARD'
-      : 'POSTER';
-
-  // 10 initial, puis +10 (total 20), puis +12
+  // Tous les hooks doivent être appelés AVANT le retour anticipé, sinon l'ordre
+  // des hooks change entre un rail vide et un rail peuplé (crash React).
   const [visibleCount, setVisibleCount] = useState(10);
-  const hasMore = visibleCount < rail.items.length;
+  const items = rail.items || [];
+  const hasMore = visibleCount < items.length;
   const nextIncrement = visibleCount <= 10 ? 10 : 12;
 
   const handleLoadMore = useCallback(() => {
@@ -39,13 +32,22 @@ export const MediaRail: React.FC<MediaRailProps> = ({ rail }) => {
     }
   }, [hasMore, handleLoadMore]);
 
-  const visibleItems = rail.items.slice(0, visibleCount);
+  if (items.length === 0) return null;
+
+  const cardStyleVariant =
+    rail.cardStyle === 'LANDSCAPE'
+      ? 'LANDSCAPE'
+      : rail.cardStyle === 'LIVE_CARD'
+      ? 'LIVE_CARD'
+      : 'POSTER';
+
+  const visibleItems = items.slice(0, visibleCount);
 
   return (
     <View style={styles.railContainer}>
       <View style={styles.header}>
         <Text style={styles.title}>{rail.title}</Text>
-        <Text style={styles.badge}>{rail.items.length}</Text>
+        <Text style={styles.badge}>{items.length}</Text>
       </View>
       <ScrollView
         horizontal

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, Image, useWindowDimensions } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { MediaNode } from '@/services/types';
 import { resolveImageUrl } from '@/services/api';
 import { TagPill } from './TagPill';
@@ -11,7 +11,6 @@ interface HeroSpotlightProps {
 }
 
 export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({ item }) => {
-  const router = useRouter();
   const { width } = useWindowDimensions();
   const isMobile = width < 640;
 
@@ -41,14 +40,12 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({ item }) => {
         <View style={styles.actionRow}>
           <Link href={`/player/${item.id}` as any} asChild>
             <Pressable
-              onPress={() => router.push(`/player/${item.id}` as any)}
               style={({ pressed }) => [styles.playBtn, pressed && styles.btnPressed]}>
               <Text style={styles.playText}>▶ Regarder</Text>
             </Pressable>
           </Link>
           <Link href={`/media/${item.id}` as any} asChild>
             <Pressable
-              onPress={() => router.push(`/media/${item.id}` as any)}
               style={({ pressed }) => [styles.detailBtn, pressed && styles.btnPressed]}>
               <Text style={styles.detailText}>ℹ Détails</Text>
             </Pressable>

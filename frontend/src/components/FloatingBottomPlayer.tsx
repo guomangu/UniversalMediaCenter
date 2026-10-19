@@ -100,6 +100,7 @@ export const FloatingBottomPlayer: React.FC = () => {
   const [nextNode, setNextNode] = useState<{ id: string; title: string; displayBadge?: string } | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [scrubberFocused, setScrubberFocused] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubPos, setScrubPos] = useState<number | null>(null);
   const [hoverPos, setHoverPos] = useState<number | null>(null);
@@ -188,6 +189,23 @@ export const FloatingBottomPlayer: React.FC = () => {
       resetMouseActivity();
     }
   }, [isExpanded, resetMouseActivity]);
+
+  // Au dépliage, retire le focus du bouton d'arrière-plan qui a ouvert le lecteur.
+  // Sans cela, les flèches de la télécommande continuaient à naviguer dans la page
+  // masquée par l'overlay au lieu des contrôles du lecteur.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !isExpanded || typeof document === 'undefined') return;
+    const timer = window.setTimeout(() => {
+      const playerDiv = document.getElementById('player_div');
+      if (!playerDiv) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || active === document.body || !playerDiv.contains(active)) {
+        active?.blur?.();
+        (playerDiv as HTMLElement).focus?.();
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [isExpanded]);
 
   useEffect(() => {
     const handleFsChange = () => setIsFullscreen(isFullscreenActive());
@@ -425,30 +443,48 @@ export const FloatingBottomPlayer: React.FC = () => {
     if (!isExpanded || typeof window === 'undefined') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const activeEl = document.activeElement;
+      const activeEl = document.activeElement as HTMLElement | null;
       if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
 
+      // Garde l'interface visible pendant la navigation télécommande, y compris
+      // lorsque useTvNavigation a déjà traité la touche en phase de capture.
       resetMouseActivity();
+      if (e.defaultPrevented) return;
 
-      if (e.key === ' ' || e.key === 'k') {
+      // Ne jamais court-circuiter l'activation native d'un bouton focalisé
+      // (Espace / Entrée doivent actionner le contrôle sélectionné).
+      const role = activeEl?.getAttribute?.('role');
+      const isInteractiveControl =
+        !!activeEl &&
+        activeEl !== document.body &&
+        (activeEl.tagName === 'BUTTON' ||
+          activeEl.tagName === 'A' ||
+          role === 'button' ||
+          role === 'link' ||
+          role === 'slider' ||
+          activeEl.hasAttribute('data-player-scrubber'));
+
+      if (isInteractiveControl && (e.key === ' ' || e.key === 'Enter')) return;
+
+      if (e.key === ' ' || e.key === 'k' || e.key === 'K') {
         e.preventDefault();
         handleTogglePlay();
-      } else if (e.key === 'ArrowLeft' || e.key === 'j') {
+      } else if (e.key === 'j' || e.key === 'J') {
         e.preventDefault();
         handleSeekRelative(-10);
-      } else if (e.key === 'ArrowRight' || e.key === 'l') {
+      } else if (e.key === 'l' || e.key === 'L') {
         e.preventDefault();
         handleSeekRelative(30);
-      } else if (e.key === 'ArrowUp') {
+      } else if (e.key === '+' || e.key === '=') {
         e.preventDefault();
         playerStore.setVolume(Math.min(1, playerState.volume + 0.1));
-      } else if (e.key === 'ArrowDown') {
+      } else if (e.key === '-' || e.key === '_') {
         e.preventDefault();
         playerStore.setVolume(Math.max(0, playerState.volume - 0.1));
-      } else if (e.key === 'm') {
+      } else if (e.key === 'm' || e.key === 'M') {
         e.preventDefault();
         playerStore.setMuted(!playerState.isMuted);
-      } else if (e.key === 'f') {
+      } else if (e.key === 'f' || e.key === 'F') {
         e.preventDefault();
         toggleFullscreen();
       } else if (e.key === 'Escape') {
@@ -709,6 +745,36 @@ export const FloatingBottomPlayer: React.FC = () => {
     playerStore.closeMedia();
   }, [isCasting]);
 
+  useEffect(() => {
+    if (!isExpanded) {
+      setScrubberFocused(false);
+    }
+  }, [isExpanded]);
+
+  useEffect(() => {
+    setScrubberFocused(false);
+  }, [activeMedia?.id]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const onSeek = (event: Event) => {
+      const offset = (event as CustomEvent).detail?.offset;
+      if (typeof offset === 'number') handleSeekRelative(offset);
+    };
+    const onTogglePlay = () => handleTogglePlay();
+    const onCollapse = () => handleCollapse();
+
+    window.addEventListener('ums-player-seek', onSeek);
+    window.addEventListener('ums-player-toggle-play', onTogglePlay);
+    window.addEventListener('ums-player-collapse', onCollapse);
+    return () => {
+      window.removeEventListener('ums-player-seek', onSeek);
+      window.removeEventListener('ums-player-toggle-play', onTogglePlay);
+      window.removeEventListener('ums-player-collapse', onCollapse);
+    };
+  }, [handleSeekRelative, handleTogglePlay, handleCollapse]);
+
   const handleSkipIntro = () => {
     userInitiatedActionRef.current = 'SEEK';
     const target = introChapter ? introChapter.end : (localVideoRef.current?.currentTime || 0) + 85;
@@ -730,7 +796,7 @@ export const FloatingBottomPlayer: React.FC = () => {
     playerStore.openMedia({
       id: nextNode.id,
       title: nextNode.title,
-      streamUrl: `/api/media/${nextNode.id}/stream`,
+      streamUrl: getVideoStreamUrl(nextNode.id),
       posterUrl: `/api/media/${nextNode.id}/poster`,
       isLive: false,
       initialTime: 0,
@@ -979,6 +1045,7 @@ export const FloatingBottomPlayer: React.FC = () => {
       nativeID="player_div"
       {...({
         id: 'player_div',
+        tabIndex: -1,
         'data-player-div': 'true',
         'data-expanded': isExpanded ? 'true' : 'false',
         onMouseMove: isExpanded ? resetMouseActivity : undefined,
@@ -1154,7 +1221,10 @@ export const FloatingBottomPlayer: React.FC = () => {
       {isExpanded ? (
         <>
           {/* Barre Supérieure Dépliée avec bouton Réduire ▼ et Titre */}
-          <View style={[styles.topBarExpanded, isMobile ? { paddingHorizontal: 8 } : null, { opacity: mouseActive || !isPlaying ? 1 : 0 }]}>
+          <View
+            {...({ 'data-player-topbar': 'true' } as any)}
+            style={[styles.topBarExpanded, isMobile ? { paddingHorizontal: 8 } : null, { opacity: mouseActive || !isPlaying ? 1 : 0 }]}
+          >
             <View style={styles.topBarLeft}>
               <Pressable
                 focusable={true}
@@ -1253,6 +1323,7 @@ export const FloatingBottomPlayer: React.FC = () => {
               focusable={true}
               style={styles.restartBtn}
               onPress={handleRestartFromBeginning}
+              {...({ 'data-player-context': 'true' } as any)}
             >
               <Text style={styles.restartTxt}>⏮ Recommencer</Text>
             </Pressable>
@@ -1264,6 +1335,7 @@ export const FloatingBottomPlayer: React.FC = () => {
               focusable={true}
               style={styles.skipIntroBtn}
               onPress={handleSkipIntro}
+              {...({ 'data-skip-intro': 'true', 'data-player-context': 'true' } as any)}
             >
               <Text style={styles.skipIntroTxt}>⏭ Passer générique</Text>
             </Pressable>
@@ -1271,14 +1343,18 @@ export const FloatingBottomPlayer: React.FC = () => {
 
           {/* Bannière d'activation audio Android */}
           {audioBlocked && (
-            <Pressable style={styles.unmuteBanner} onPress={handleUnmuteGesture}>
+            <Pressable
+              style={styles.unmuteBanner}
+              onPress={handleUnmuteGesture}
+              {...({ 'data-player-context': 'true' } as any)}
+            >
               <Text style={styles.unmuteBannerTxt}>🔇 Son désactivé — Appuyez pour activer 🔊</Text>
             </Pressable>
           )}
 
           {/* Overlay Netflix Épisode Suivant */}
           {countdown !== null && nextNode && (
-            <View style={styles.nextOverlay}>
+            <View style={styles.nextOverlay} {...({ 'data-player-context': 'true' } as any)}>
               <View style={styles.nextHeader}>
                 <Text style={styles.nextCountdown}>Épisode suivant dans {countdown}s</Text>
                 {nextNode.displayBadge && (
@@ -1304,14 +1380,29 @@ export const FloatingBottomPlayer: React.FC = () => {
             style={[
               styles.bottomBarExpanded,
               isMobile ? { paddingHorizontal: 10, paddingBottom: 12 } : null,
-              { opacity: mouseActive || !isPlaying ? 1 : 0 },
+              { opacity: mouseActive || !isPlaying || scrubberFocused ? 1 : 0 },
             ]}
           >
             {/* Scrubber haute précision avec glisser-déplacer (drag), hit-box 26px et infobulle */}
             <View
               ref={scrubberExpandedRef}
-              style={styles.scrubberExpandedContainer}
+              style={[
+                styles.scrubberExpandedContainer,
+                scrubberFocused && styles.scrubberExpandedFocused,
+              ]}
               {...({
+                tabIndex: 0,
+                role: 'slider',
+                'aria-label': 'Barre de progression du média',
+                'aria-valuemin': 0,
+                'aria-valuemax': Math.max(0, Math.round(currentDur)),
+                'aria-valuenow': Math.max(0, Math.round(currentPos)),
+                'data-player-scrubber': 'true',
+                onFocus: () => {
+                  setScrubberFocused(true);
+                  resetMouseActivity();
+                },
+                onBlur: () => setScrubberFocused(false),
                 onPointerDown: (e: any) => handleScrubberPointerDown(e, true),
                 onPointerMove: (e: any) => handleScrubberPointerMove(e, true),
                 onPointerLeave: handleScrubberPointerLeave,
@@ -1328,7 +1419,13 @@ export const FloatingBottomPlayer: React.FC = () => {
               </View>
             </View>
 
-            <View style={styles.bottomControlsRow}>
+            {scrubberFocused && (
+              <Text style={styles.seekModeHint} pointerEvents="none">
+                ◀ -10s · ▶ +10s · ▲ ▼ quitter la barre · OK lecture/pause
+              </Text>
+            )}
+
+            <View style={styles.bottomControlsRow} {...({ 'data-player-controls': 'true' } as any)}>
               <View style={styles.bottomLeftControls}>
                 <Pressable focusable={true} style={styles.controlBtnExpanded} onPress={() => handleSeekRelative(-10)}>
                   <Text style={styles.controlBtnExpandedTxt}>{isMobile ? '⏪ 10' : '⏪ 10s'}</Text>
@@ -1383,8 +1480,20 @@ export const FloatingBottomPlayer: React.FC = () => {
           {/* Barre de progression scrubber interactive repliée avec hit-box confortable */}
           <View
             ref={scrubberCollapsedRef}
-            style={styles.progressBarContainer}
+            style={[
+              styles.progressBarContainer,
+              scrubberFocused && styles.progressBarContainerFocused,
+            ]}
             {...({
+              tabIndex: 0,
+              role: 'slider',
+              'aria-label': 'Barre de progression du média',
+              'aria-valuemin': 0,
+              'aria-valuemax': Math.max(0, Math.round(currentDur)),
+              'aria-valuenow': Math.max(0, Math.round(currentPos)),
+              'data-player-scrubber': 'true',
+              onFocus: () => setScrubberFocused(true),
+              onBlur: () => setScrubberFocused(false),
               onPointerDown: (e: any) => handleScrubberPointerDown(e, false),
             } as any)}
           >
@@ -1394,7 +1503,7 @@ export const FloatingBottomPlayer: React.FC = () => {
             <View style={[styles.progressBarThumb, { left: `${pct}%` }]} pointerEvents="none" />
           </View>
 
-          <View style={styles.mainRow}>
+          <View style={styles.mainRow} {...({ 'data-player-controls': 'true' } as any)}>
             {/* Section gauche : Miniature vidéo et Titre (cliquable pour déplier) */}
             <Pressable focusable={true} style={styles.leftSection} onPress={handleExpand}>
               <View style={posterThumbStyle}>

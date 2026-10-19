@@ -71,6 +71,7 @@ export const CastControlBar: React.FC<{ target: CastDevice; onDisconnect?: () =>
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) return;
       if (window.location.pathname.includes('/player')) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); seekRelative(-10); }

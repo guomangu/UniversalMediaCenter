@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, Image, useWindowDimensions, Platform } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { MediaNode } from '@/services/types';
 import { resolveImageUrl } from '@/services/api';
 import { useActiveSessionsMap } from '@/services/sessionStore';
@@ -12,7 +12,6 @@ interface MediaCardProps {
 }
 
 export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POSTER' }) => {
-  const router = useRouter();
   const { width } = useWindowDimensions();
   const isMobile = width < 640;
   const isLandscape = styleVariant === 'LANDSCAPE';
@@ -46,7 +45,6 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
   return (
     <Link href={targetHref as any} asChild>
       <Pressable
-        onPress={() => router.push(targetHref as any)}
         style={({ pressed }) => [
           styles.cardContainer,
           { width: cardWidth },

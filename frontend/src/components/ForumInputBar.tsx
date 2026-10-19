@@ -207,6 +207,7 @@ export function ForumInputBar({
         <TextInput
           ref={inputRef}
           style={styles.input}
+          data-search-input="true"
           placeholder="Écrire un message... (Entrée pour envoyer)"
           placeholderTextColor="#7c8797"
           value={text}

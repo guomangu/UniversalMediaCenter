@@ -402,3 +402,71 @@ ightarrow$ dans *"Mes écrans connectés"* avec action `[Déconnecter]`.
     *   Ne jamais présupposer le nom exact d'un fichier produit par un outil externe. `pgsrip` normalise le code langue de sortie (`fra` → `fr`, `eng` → `en`) : utiliser un identifiant temporaire unique et scanner le répertoire (`readdir` + `startsWith(tempId)` + extension) pour retrouver le SRT réellement généré.
     *   Valider le contenu avant conversion : un SRT vide ou sans `-->` ne doit jamais devenir un WebVTT vide mis en cache.
     *   Nettoyer tous les fichiers portant le préfixe temporaire, et tester l'OCR sur un média dont le cache L2 est vide pour ne pas confondre succès du cache et succès de l'extraction.
+
+---
+
+## 24. Navigation Télécommande Non Destructive, Scrubber Direct & Fiabilité des Raccourcis de Navigation
+
+*   **Une Touche, Un Seul Effet :**
+    *   Dans un listener `keydown` en phase de capture, après `preventDefault()`, appeler systématiquement `stopPropagation()` si l'action est consommée. Côté bulle, ignorer tout événement `e.defaultPrevented` pour empêcher un second traitement (seek + déplacement de focus, plein écran appliqué deux fois, etc.).
+    *   Ne jamais laisser les flèches d'une télécommande modifier implicitement un média. Elles servent d'abord et toujours à déplacer le focus entre les contrôles.
+
+*   **Scrubber Accessible et Pilotage Direct :**
+    *   Rendre la barre de progression focusable (`tabIndex=0`, `role="slider"`, `data-player-scrubber="true"`, `aria-valuenow`) avec un indicateur visuel de focus.
+    *   Une fois sur le scrubber, `←/→` pilotent directement la progression (±10s) et `↑/↓` en sortent pour rejoindre les boutons au-dessus/en dessous. `OK`/`Entrée` bascule lecture/pause.
+    *   Ancrer la sortie verticale sur la position réelle de la tête de lecture (`aria-valuenow / aria-valuemax`) pour choisir le contrôle le plus aligné visuellement.
+    *   Transmettre les demandes du hook de navigation au lecteur via des événements applicatifs (`ums-player-seek`, `ums-player-toggle-play`, `ums-player-collapse`) plutôt que par des événements clavier synthétiques ambigus.
+
+*   **URLs API Absolues :**
+    *   Tout accès à `/api/...` côté client doit être préfixé par `getApiBaseUrl()`, en particulier pour les proxys de flux (IPTV, HLS) dont les playlists réécrites contiennent des URLs relatives. Une URL relative peut viser le serveur web (404) lorsque frontend et API sont sur des hôtes distincts.
+
+*   **Throttle, Verrous d'Animation et États Vides :**
+    *   Indexer les protections anti-double-clic par clé de destination (`nav:FAVORITES`, `nav:TV`, etc.), jamais par un timestamp global partagé entre tous les boutons.
+    *   Toute animation de défilement programmatique interruptible doit mémoriser son callback de fin et l'invoquer lors de l'annulation (`wheel`, `touchstart`, nouveau saut). Un verrou `isJumpingRef` oublié à `true` gèle la synchronisation de la puce active avec la section visible.
+    *   Dans les callbacks `onLayout`, mettre à jour les positions mais ne jamais recalculer l'élément actif pendant un saut ou une restauration.
+    *   Distinguer explicitement un résultat vide (`0`) d'un échec réseau (`-1` ou flag d'erreur). Une catégorie ne doit être déclarée vide et masquée que si tous ses chargements ont réussi et retourné zéro média.
+
+---
+
+## 25. Confinement du Focus par Surface Active, Contrat des Modales & Navigation Sans Doublon
+
+*   **Portée du Focus Spatial :**
+    *   `getCandidates()` doit toujours rester dans la surface active : la modale la plus récente si elle existe, sinon le conteneur du lecteur déplié, sinon le document. Sinon, les flèches peuvent sélectionner des contrôles masqués derrière un overlay plein écran.
+    *   Exclure les contrôles `disabled`, `aria-disabled="true"` et ceux dont `tabIndex < 0` pour éviter un focus bloqué sur une cible non activable.
+
+*   **Contrat Universel des Modales Télécommande :**
+    *   Chaque conteneur de modale porte `data-modal-container="true"` et chaque bouton de fermeture `data-modal-close="true"` (ou un `aria-label` explicite).
+    *   À l'ouverture, retirer le focus de l'arrière-plan et le poser sur le conteneur (`tabIndex=-1`) plutôt que sur le premier bouton : le premier appui sur une flèche entre dans la modale sans activer un contrôle.
+    *   `Échap` / `Retour` doit fermer la modale en priorité, puis le plein écran, puis replier le lecteur, puis naviguer en arrière.
+    *   Neutraliser l'anneau de focus sur le conteneur lui-même, pas sur ses contrôles internes.
+
+*   **Une Seule Navigation par Interaction :**
+    *   Avec Expo Router, `<Link asChild>` injecte déjà `onPress` (natif) et `onClick` (web) sur son enfant. Ne jamais ajouter un `onPress={() => router.push(...)}` sur cet enfant : cela produit deux navigations et duplique la pile.
+
+*   **Ordre des Hooks et URLs :**
+    *   Aucun hook ne doit être placé après un `return` conditionnel, même dans un composant de rail susceptible d'être vide.
+    *   Toute URL de flux (`épisode`, enchaînement, live, commande distante) doit passer par `getVideoStreamUrl()` ou `getApiBaseUrl()`, jamais par un chemin `/api/...` relatif.
+
+*   **Préserver les Comportements Natifs des Champs :**
+    *   Ne pas détourner `↑/↓` dans un `TEXTAREA` : elles déplacent le curseur entre les lignes. Réserver la sortie de champ aux `INPUT` mono-ligne et à `Échap`/`Retour`.
+    *   Le raccourci `/` doit choisir un input visible dans la portée active, jamais un input factice ou masqué.
+
+*   **Overlays Purement Informatifs :**
+    *   Une pastille de statut (hors-ligne, notification) doit porter `pointerEvents="none"` pour ne jamais bloquer les clics du contenu situé dessous.
+
+---
+
+## 26. Navigation par Zones Visuelles du Lecteur & Scrubber Direct
+
+*   **Découper le Lecteur en Zones Stables :**
+    *   Annoter explicitement les zones avec `data-player-topbar`, `data-player-scrubber`, `data-player-controls` et `data-player-context`. La navigation verticale suit ces zones plutôt que des distances géométriques approximatives.
+    *   Les déplacements horizontaux doivent rester confinés à la rangée visuelle active : gauche/droite ne doivent jamais sauter vers un autre étage du lecteur.
+    *   Une barre de progression pleine largeur est un contrôle vertical : l'exclure des cibles de `←/→` depuis les autres boutons.
+
+*   **Scrubber Direct :**
+    *   `←/→` sur le scrubber pilotent immédiatement la progression ; `↑/↓` en sortent vers les contrôles adjacents. `OK`/`Entrée` bascule lecture/pause.
+    *   Pour les sorties verticales, utiliser la position réelle de la tête de lecture (`aria-valuenow / aria-valuemax`) comme ancre horizontale : le bouton choisi correspond à la colonne visuelle du curseur.
+    *   Appliquer le même comportement au scrubber déplié et replié.
+
+*   **Entrée dans le Lecteur :**
+    *   Au dépliage, retirer le focus de l'arrière-plan. `↓` doit rejoindre directement le scrubber ; les autres directions rejoignent la barre supérieure la plus alignée avec le centre de l'écran.

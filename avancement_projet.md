@@ -1,3 +1,58 @@
+- [x] **110. Navigation Télécommande par Zones Visuelles du Lecteur & Scrubber Direct (`useTvNavigation.ts`, `FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `global.css`, `documentation_player_et_cast.md`, `bonne_pratique.md`, `mauvaise_pratique.md`, `sommaire.md`) :**
+  - **Objectif Ergonomique :**
+    - Rendre les correspondances haut/bas/gauche/droite naturelles par rapport à la disposition visuelle réelle du lecteur.
+    - Sur la barre de progression : `←`/`→` pilotent directement le média, `↑`/`↓` sortent de la barre vers les autres boutons.
+  - **Modèle de Zones :**
+    - Trois zones visuelles : **barre supérieure** (`data-player-topbar`), **scrubber** (`data-player-scrubber`), **contrôles du bas** (`data-player-controls`), plus les **boutons contextuels** (`data-player-context` : passer l'intro, recommencer, activer le son, épisode suivant).
+    - `↓` depuis la barre supérieure rejoint le bouton contextuel aligné, sinon le scrubber. `↑` depuis les contrôles du bas rejoint le scrubber. `↓` depuis un bouton contextuel rejoint le scrubber ; `↑` rejoint la barre supérieure la plus alignée.
+    - Les déplacements `←/→` sont strictement confinés à la rangée visuelle active (barre supérieure, contrôles ou contexte) ; une barre de progression n'est jamais sélectionnée par un déplacement horizontal.
+  - **Scrubber Direct :**
+    - Suppression du mode de réglage explicite (`data-seek-adjusting`, halo jaune, événement `ums-player-seek-adjust`).
+    - `←/→` : seek immédiat de ±10 s via `ums-player-seek`.
+    - `↑/↓` : sortie de la barre via `moveFocusFromScrubber`, avec ancre horizontale calculée sur la position réelle de la tête de lecture (`aria-valuenow / aria-valuemax`) pour choisir le bouton le plus naturellement aligné.
+    - `OK/Entrée` : bascule lecture/pause via `ums-player-toggle-play`.
+    - Le scrubber du mode replié devient également focusable, avec le même comportement.
+  - **Navigation Initiale :**
+    - À l'ouverture du lecteur, `↓` rejoint directement le scrubber ; `↑`/`←`/`→` rejoignent la barre supérieure la plus alignée avec le centre de l'écran.
+  - **Validation :** `npx tsc --noEmit` frontend : 0 erreur ; `git diff --check` : OK.
+
+- [x] **109. Audit Transversal du Mode Télécommande & Correction des Fonctionnalités Multi-Pages (`useTvNavigation.ts`, `global.css`, `AdminCreateInviteModal.tsx`, `AdminCreateUserModal.tsx`, `CastModal.tsx`, `MediaCard.tsx`, `HeroSpotlight.tsx`, `MediaRail.tsx`, `MediaChildrenRow.tsx`, `FloatingBottomPlayer.tsx`, `_layout.tsx`, `media/[id].tsx`, `OfflineIndicator.tsx`, `TvSearchBar.tsx`, `ForumInputBar.tsx`, `explore.tsx`, `documentation_player_et_cast.md`) :**
+  - **Problèmes Détectés :**
+    1. **Focus hors du lecteur plein écran** : `getCandidates()` parcourait tout `document.body`; les flèches pouvaient donc sélectionner des boutons de la page masquée derrière l'overlay vidéo.
+    2. **Modales non reconnues** : `AdminCreateInviteModal`, `AdminCreateUserModal` et `CastModal` n'exposaient pas `data-modal-container`/`data-modal-close`. La navigation restait sur l'arrière-plan et `Échap` naviguait dans l'historique au lieu de fermer.
+    3. **Double navigation `Link asChild` + `onPress`** : `MediaCard` et `HeroSpotlight` déclenchaient deux `router.push` pour un seul clic (Expo Router compose déjà le `onPress` du Link), créant des entrées de pile dupliquées.
+    4. **Ordre des hooks** : `MediaRail` appelait `useState`/`useCallback` après un `return null`, risquant un crash React lorsque le rail passait de vide à peuplé.
+    5. **Flux relatifs** : `MediaChildrenRow`, `handlePlayNext`, la lecture live de `media/[id]` et le repli `LOAD` de `_layout.tsx` construisaient des URLs `/api/media/...` relatives, donc hors de l'hôte API.
+    6. **TEXTAREA** : `↑/↓` quittaient le champ au lieu de déplacer le curseur entre les lignes.
+    7. **Éléments désactivés/input factices** : les candidats incluaient des contrôles `disabled` et le raccourci `/` pouvait focaliser un input masqué (decoy autofill).
+    8. **Pastille hors-ligne** : `OfflineIndicator` (z-index 9999) interceptait les clics sur le bas de page. Bouton « Passer générique » sans `data-skip-intro`.
+  - **Solutions d'Ingénierie Mises en Œuvre :**
+    - **Confinement du focus** : `getCandidates()` limite désormais la portée à la modale active, sinon au `player_div` déplié, sinon au document.
+    - **Modales télécommande** : ajout des attributs `data-modal-container`/`data-modal-close` manquants, focus automatique sur le conteneur à l'ouverture (MutationObserver + vérification à chaque touche), CSS sans anneau sur le conteneur, `Échap`/`Retour` fermant la modale.
+    - **Navigation & hooks** : suppression des `onPress` redondants sous `Link asChild` ; déplacement de tous les hooks de `MediaRail` avant le retour anticipé ; ajout de `data-skip-intro` au bouton du lecteur.
+    - **URLs API absolues** : `getVideoStreamUrl(...)`/`getApiBaseUrl()` utilisés pour les épisodes, l'enchaînement automatique, la lecture live de la fiche média et les commandes distantes.
+    - **Clavier/télécommande** : `TEXTAREA` conserve ses flèches verticales ; les contrôles `disabled` sont exclus ; le raccourci `/` choisit un input réellement visible dans la portée active ; `data-search-input` ajouté aux recherches TV/Explorer/Forum.
+    - **UI** : `OfflineIndicator` devient purement informatif (`pointerEvents="none"`).
+  - **Validation :** `npx tsc --noEmit` frontend : 0 erreur ; `git diff --check` : OK.
+
+- [x] **108. Rétablissement des Chaînes TV, Mode Télécommande du Lecteur (Première Itération) & Fiabilisation des Raccourcis d'Accueil (`TvChannelCard.tsx`, `FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `useTvNavigation.ts`, `SiteHeader.tsx`, `TagCard.tsx`, `CategorySection.tsx`, `global.css`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic des Anomalies Rapportées :**
+    - *Les chaînes TV ne fonctionnent plus* : `TvChannelCard` construisait une URL relative `/api/iptv/proxy?url=...`. Lorsque le frontend (Expo) et l'API sont sur des hôtes distincts (`EXPO_PUBLIC_API_URL=https://api.cool.sweaw.com`), la requête partait vers le serveur web sur `/api/iptv/proxy` et recevait un `404 text/html` ; le proxy backend n'était jamais atteint. Vérification : `http://localhost:8081/api/iptv/proxy?...` → 404 ; `http://localhost:3000/api/iptv/proxy?...` → 200 `#EXTM3U`.
+    - *Le mode télécommande modifiait la progression sans le vouloir* : `useTvNavigation` interceptait les flèches en phase de capture et déplaçait le focus, mais ne stoppait pas la propagation. Le gestionnaire de `FloatingBottomPlayer` recevait donc le même événement et appliquait simultanément un seek (`← -10s`, `→ +30s`) ou un changement de volume. Le scrubber n'était d'ailleurs pas focusable, rendant le seek télécommande imprévisible.
+    - *Les raccourcis d'accueil devenaient inactifs* : un throttle global de 250 ms dans `SiteHeader` était partagé par toutes les destinations (Favoris, Amis, Salons, Fil d'avis, TV, Profil, Admin), si bien qu'un clic rapide sur un second raccourci était ignoré. De plus, un échec réseau de `TagCard` publiait un compte `0`, faisant croire à `CategorySection` que toutes les catégories étaient vides et masquant leurs puces du header.
+    - *La puce active se figeait* : `fastSmoothScroll` pouvait être annulé par `wheel`/`touchstart` sans jamais appeler son callback `onDone`, laissant `isJumpingRef.current` bloqué à `true` ; `updateActiveCategory` n'était alors plus exécuté au défilement. Par ailleurs, `onLayoutPos` recalculait la catégorie active pendant un saut, écrasant la puce choisie par l'utilisateur.
+  - **Solutions d'Ingénierie Mises en Œuvre :**
+    - **IPTV** : `TvChannelCard` préfixe désormais le proxy par `getApiBaseUrl()` (et le flux VOD de secours), garantissant que les manifests HLS et leurs segments passent toujours par l'API.
+    - **Télécommande (première itération, remplacée par l'entrée 110)** : les flèches ne déclenchaient plus de seek implicite ; le scrubber devenait focusable (`tabIndex=0`, `role=slider`, `data-player-scrubber`) et un mode réglage explicite séparait navigation et seek. Cette approche a ensuite été remplacée par le pilotage direct `←/→` + sortie `↑/↓` décrit dans l'entrée 110.
+    - **Anti-double traitement** : `FloatingBottomPlayer` ignore désormais tout événement déjà consommé (`e.defaultPrevented`), n'usurpe plus `Espace/Entrée` d'un bouton focalisé, et le raccourci `F`/`Échap` n'est plus exécuté deux fois.
+    - **Navigation lecteur** : ajout de `data-player-topbar` à la barre supérieure, descente générique vers le scrubber quand aucun bouton d'intro n'existe, prise de focus du conteneur `player_div` au dépliage (les flèches ne naviguent plus dans la page masquée) et touche Retour qui replie le lecteur avant toute navigation (`ums-player-collapse`).
+    - **Raccourcis d'accueil** : throttle par destination (`nav:FAVORITES`, `nav:TV`, etc.) au lieu d'un verrou global ; `TagCard` signale désormais une erreur réseau par `-1`, et `CategorySection` ne confirme une catégorie vide qu'en l'absence d'erreur (`hasLoadError`).
+    - **Défilement d'ancre** : `cancelFastScroll` mémorise et notifie le callback `onDone` lors d'une interruption réelle, `releaseRestore` remet `isJumpingRef` à `false`, et `onLayoutPos` ne recalcule plus la puce active pendant un saut ou une restauration.
+  - **Validation :**
+    - `npx tsc --noEmit` frontend : 0 erreur.
+    - `npx tsc --noEmit` backend : 0 erreur.
+    - API `/api/iptv/channels` (admin) : 197 chaînes, liste et catégories correctement retournées ; proxy HLS vérifié en 200.
+
 - [x] **107. Résolution de l'Échec OCR des Sous-Titres PGS de *Coco* : Normalisation du Nom de Fichier SRT par `pgsrip` (`fra` → `fr`, `eng` → `en`) (`backend/src/routes/mediaSubtitles.ts`, `avancement_projet.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
   - **Diagnostic de l'Anomalie Rapportée :**
     - Signalement : *Les sous-titres de James Bond fonctionnent parfaitement alors que ceux de Coco (Pixar) ne fonctionnent pas du tout.*

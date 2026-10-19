@@ -67,13 +67,14 @@ export function AdminCreateUserModal({ visible, profileTypes = [], onClose, onCr
           onPress={onClose}
           {...({ dataSet: { modalBackdrop: 'true' } } as any)}
         />
-        <View style={modalStyles.card}>
+        <View style={modalStyles.card} {...({ dataSet: { modalContainer: 'true' } } as any)}>
           <View style={modalStyles.headerRow}>
             <Text style={modalStyles.title}>👤 Nouveau Compte Utilisateur</Text>
             <Pressable
               focusable={true}
               style={modalStyles.closeBtn}
               onPress={onClose}
+              {...({ dataSet: { modalClose: 'true' } } as any)}
             >
               <Text style={modalStyles.closeBtnTxt}>✕</Text>
             </Pressable>

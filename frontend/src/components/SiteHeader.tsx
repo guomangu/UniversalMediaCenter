@@ -38,14 +38,17 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
   const [favoritesCount, setFavoritesCount] = useState<number>(0);
   const currentUser = useCurrentUser();
   const categoryScrollRef = useRef<ScrollView>(null);
-  const lastActionTimeRef = useRef<number>(0);
+  // Throttle par destination : cliquer sur « Favoris » puis immédiatement sur « Amis »
+  // ne doit jamais bloquer la seconde destination (l'ancien throttle global de 250 ms
+  // rendait les raccourcis mutuellement inactifs lors de clics rapides).
+  const lastActionTimeRef = useRef<Record<string, number>>({});
   const lastSelectedCategoryRef = useRef<{ id: string; timestamp: number }>({ id: '', timestamp: 0 });
   const lastLogoPressRef = useRef<number>(0);
 
-  const handleDebouncedAction = (fn: () => void) => {
+  const handleDebouncedAction = (key: string, fn: () => void, delay = 250) => {
     const now = Date.now();
-    if (now - lastActionTimeRef.current < 250) return;
-    lastActionTimeRef.current = now;
+    if (now - (lastActionTimeRef.current[key] || 0) < delay) return;
+    lastActionTimeRef.current[key] = now;
     fn();
   };
 
@@ -94,7 +97,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
   }, [activeCategoryId]);
 
   const navigateUserTab = (tab: 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED') => {
-    handleDebouncedAction(() => {
+    handleDebouncedAction(`nav:${tab}`, () => {
       if (!currentUser) {
         router.push({
           pathname: '/login',
@@ -122,8 +125,9 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
 
   const handleSelectCategory = (id: string) => {
     const now = Date.now();
-    // Ignore synthetic duplicate events for the exact same category chip within 100ms
-    if (lastSelectedCategoryRef.current.id === id && now - lastSelectedCategoryRef.current.timestamp < 100) {
+    // Les écouteurs onPress (RNW) et onClick natif peuvent émettre deux fois le même
+    // clic sur une puce. Ignorer le doublon pendant 350 ms, sans bloquer les autres puces.
+    if (lastSelectedCategoryRef.current.id === id && now - lastSelectedCategoryRef.current.timestamp < 350) {
       return;
     }
     lastSelectedCategoryRef.current = { id, timestamp: now };
@@ -223,12 +227,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
             <Pressable
               focusable={true}
               style={styles.tvBtn}
-              onPress={() => handleDebouncedAction(() => router.push('/tv' as any))}
+              onPress={() => handleDebouncedAction('nav:tv', () => router.push('/tv' as any))}
               {...(Platform.OS === 'web'
                 ? ({
                     onClick: (e: any) => {
                       e?.stopPropagation?.();
-                      handleDebouncedAction(() => router.push('/tv' as any));
+                      handleDebouncedAction('nav:tv', () => router.push('/tv' as any));
                     },
                   } as any)
                 : {})}
@@ -240,12 +244,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               <Pressable
                 focusable={true}
                 style={styles.profileBtn}
-                onPress={() => handleDebouncedAction(() => router.push('/user' as any))}
+                onPress={() => handleDebouncedAction('nav:profile', () => router.push('/user' as any))}
                 {...(Platform.OS === 'web'
                   ? ({
                       onClick: (e: any) => {
                         e?.stopPropagation?.();
-                        handleDebouncedAction(() => router.push('/user' as any));
+                        handleDebouncedAction('nav:profile', () => router.push('/user' as any));
                       },
                     } as any)
                   : {})}
@@ -258,12 +262,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               <Pressable
                 focusable={true}
                 style={styles.loginBtn}
-                onPress={() => handleDebouncedAction(() => router.push('/login' as any))}
+                onPress={() => handleDebouncedAction('nav:login', () => router.push('/login' as any))}
                 {...(Platform.OS === 'web'
                   ? ({
                       onClick: (e: any) => {
                         e?.stopPropagation?.();
-                        handleDebouncedAction(() => router.push('/login' as any));
+                        handleDebouncedAction('nav:login', () => router.push('/login' as any));
                       },
                     } as any)
                   : {})}
@@ -276,12 +280,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               <Pressable
                 focusable={true}
                 style={styles.adminBtn}
-                onPress={() => handleDebouncedAction(() => router.push('/admin' as any))}
+                onPress={() => handleDebouncedAction('nav:admin', () => router.push('/admin' as any))}
                 {...(Platform.OS === 'web'
                   ? ({
                       onClick: (e: any) => {
                         e?.stopPropagation?.();
-                        handleDebouncedAction(() => router.push('/admin' as any));
+                        handleDebouncedAction('nav:admin', () => router.push('/admin' as any));
                       },
                     } as any)
                   : {})}

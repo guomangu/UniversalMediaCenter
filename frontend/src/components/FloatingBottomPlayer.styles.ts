@@ -399,6 +399,26 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     cursor: 'pointer' as any,
     position: 'relative',
+    borderRadius: 8,
+  },
+  scrubberExpandedFocused: {
+    backgroundColor: 'rgba(59, 130, 246, 0.16)',
+    ...((Platform.OS === 'web'
+      ? { boxShadow: '0 0 0 2px rgba(96, 165, 250, 0.55)' }
+      : {}) as any),
+  },
+  progressBarContainerFocused: {
+    backgroundColor: 'rgba(59, 130, 246, 0.16)',
+    ...((Platform.OS === 'web'
+      ? { boxShadow: '0 0 0 2px rgba(96, 165, 250, 0.55)' }
+      : {}) as any),
+  },
+  seekModeHint: {
+    color: '#fde68a',
+    fontSize: 11.5,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 6,
   },
   scrubberExpandedBg: {
     width: '100%',

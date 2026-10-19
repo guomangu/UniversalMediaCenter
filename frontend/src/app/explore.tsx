@@ -47,6 +47,7 @@ export default function ExploreScreen() {
         <Text style={styles.heading}>Exploration du Catalogue</Text>
         <TextInput
           style={styles.searchBar}
+          data-search-input="true"
           placeholder="Rechercher par titre, genre, acteur..."
           placeholderTextColor="#64748b"
           value={query}

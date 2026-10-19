@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, Image, Pressable, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { resolveImageUrl } from '@/services/api';
+import { resolveImageUrl, getVideoStreamUrl } from '@/services/api';
 import { Radius } from '@/constants/theme';
 import { buildMediaHierarchy, type EpisodeSectionGroup, type ParsedChildNode } from '@/utils/mediaHierarchy';
 import { playerStore } from '@/services/playerStore';
@@ -117,7 +117,7 @@ function renderEpisodeCard(item: ParsedChildNode, parentPoster: string | undefin
           id: String(node.id),
           title: node.title || displayTitle,
           posterUrl: node.thumbPath || node.posterPath || parentPoster,
-          streamUrl: `/api/media/${node.id}/stream`,
+          streamUrl: getVideoStreamUrl(String(node.id)),
           initialTime: node.progress?.positionSeconds || 0,
           expand: true,
         });

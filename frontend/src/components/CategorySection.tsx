@@ -98,11 +98,12 @@ export function CategorySection({
 
   const hasAnyCount = category.tags.some((t) => Number(t.count) > 0);
   const allVisibleLoaded = visibleTags.length > 0 && visibleTags.every((t) => counts[t.slug] !== undefined);
+  const hasLoadError = Object.values(counts).some((c) => c < 0);
   const totalCount = Object.values(counts).reduce((s, c) => s + c, 0);
 
   // Une catégorie n'est confirmée vide que lorsque TOUS ses tags visibles ont terminé
-  // leur chargement et que le total de médias retournés est égal à 0.
-  const isConfirmedEmpty = allVisibleLoaded && totalCount === 0;
+  // leur chargement, sans erreur réseau, et que le total de médias est égal à 0.
+  const isConfirmedEmpty = allVisibleLoaded && !hasLoadError && totalCount === 0;
 
   // La catégorie est visible tant qu'elle n'est pas confirmée vide (pendant le chargement
   // ou si des médias ont été confirmés par le serveur ou par les rails).
@@ -113,12 +114,12 @@ export function CategorySection({
 
   // Notification réactive au parent (HomeScreen) pour mise à jour synchronisée des raccourcis SiteHeader
   useEffect(() => {
-    if (allVisibleLoaded) {
+    if (allVisibleLoaded && !hasLoadError) {
       onVisibilityChange?.(category.id, isVisible);
-    } else if (totalCount > 0 || hasAnyCount) {
+    } else if (hasLoadError || totalCount > 0 || hasAnyCount) {
       onVisibilityChange?.(category.id, true);
     }
-  }, [category.id, isVisible, allVisibleLoaded, totalCount, hasAnyCount, onVisibilityChange]);
+  }, [category.id, isVisible, allVisibleLoaded, hasLoadError, totalCount, hasAnyCount, onVisibilityChange]);
 
   if (isConfirmedEmpty) {
     return null;

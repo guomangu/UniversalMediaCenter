@@ -31,6 +31,31 @@ input:focus {
   z-index: 50 !important;
 }
 
+/* Conteneur de modale focalisé pour la télécommande : pas d'anneau sur le
+   conteneur lui-même, les contrôles internes conservent leur anneau. */
+[data-modal-container="true"]:focus,
+[role="dialog"]:focus,
+[aria-modal="true"]:focus {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Le scrubber possède son propre indicateur de focus (halo bleu) :
+   neutraliser le scale global qui décalerait la barre de progression. */
+[data-player-scrubber="true"],
+[data-player-scrubber="true"]:focus {
+  outline: none !important;
+  outline-offset: 0 !important;
+  transform: none !important;
+}
+
+[data-player-scrubber="true"]:focus {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.65) !important;
+}
+
+
 /* Éradication absolue de toute bordure/ligne blanche ou anneau de focus sur l'écran vidéo et ses conteneurs */
 video,
 video:focus,
@@ -50,6 +75,9 @@ video:focus-visible,
 #player_video_container > *,
 #player_video_container > *:focus,
 #player_video_container > *:focus-visible,
+[data-player-div="true"],
+[data-player-div="true"]:focus,
+[data-player-div="true"]:focus-visible,
 [data-player-overlay="true"],
 [data-player-overlay="true"]:focus,
 [data-player-overlay="true"]:focus-visible {

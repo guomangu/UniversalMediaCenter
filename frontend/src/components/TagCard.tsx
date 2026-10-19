@@ -72,7 +72,10 @@ export function TagCard({
       })
       .catch(() => {
         setLoading(false);
-        onCountChange?.(tag.slug, 0);
+        // -1 signale une erreur réseau, à distinguer d'un résultat réellement vide (0).
+        // Sans cette distinction, une coupure API momentanée faisait disparaître toutes
+        // les catégories et leurs raccourcis du header d'accueil.
+        onCountChange?.(tag.slug, -1);
       });
   }, [categoryId, tag.slug, activeFilter, searchQuery, limit, excludeKey]);
 

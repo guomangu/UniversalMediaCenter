@@ -76,14 +76,21 @@ Le lecteur vidéo d'UMS est conçu pour offrir une expérience cinématographiqu
 ### 1.5. Barre de Progression Haute Précision & Glisser-Déplacer Tactile (Scrubbing Drag & Drop)
 - Support complet du glisser-déplacer tactile sur smartphone et souris sur ordinateur.
 - Calcul en temps réel du pourcentage et du temps ciblé avec prévisualisation des chapitres lorsque disponibles.
+- **Scrubber focusable à la télécommande** : le halo bleu signale le focus. Une fois sur la barre, `←` / `→` reculent ou avancent immédiatement de 10 secondes, tandis que `↑` / `↓` quittent la barre pour rejoindre les boutons situés au-dessus ou en dessous. `OK` / `Entrée` bascule lecture/pause. Aucune flèche horizontale ne peut donc modifier la progression par accident depuis un autre bouton.
 
 ### 1.6. Commandes & Raccourcis Clavier / Télécommande
+- `↑` `↓` `←` `→` / D-pad : déplacement du focus entre les contrôles (jamais de seek implicite).
+- `OK` / `Entrée` : active le contrôle sélectionné ; sur le scrubber, bascule lecture/pause.
+- Sur le scrubber : `←` / `→` ajustent la progression de ±10 s ; `↑` / `↓` sortent de la barre vers les boutons adjacents (barre supérieure, boutons contextuels ou contrôles du bas).
+- `Retour` / `Échap` : ferme la modale, replie le lecteur, puis navigue en arrière.
+- `J` : Recul de 10 secondes. `L` : Avance de 30 secondes.
+- `+` / `-` : Réglage du volume sonore.
 - `Espace` / `K` : Bascule Lecture / Pause.
-- `Flèche Gauche` / `J` : Recul de 10 secondes.
-- `Flèche Droite` / `L` : Avance de 10 secondes.
-- `Flèche Haut` / `Flèche Bas` : Réglage du volume sonore.
 - `M` : Coupure du son (Mute).
-- `F` : Bascule en mode Plein Écran.
+- `F` : Bascule en mode Plein Écran (appliqué au conteneur du lecteur pour conserver les contrôles et le scrubber accessibles à la télécommande).
+- Tant que le lecteur est déplié, la navigation de focus est **confinée à son overlay** : les flèches ne peuvent plus atteindre les boutons de la page masquée derrière la vidéo.
+- **Zones visuelles** : `barre supérieure ↔ scrubber ↔ contrôles du bas`. `↓` depuis la barre supérieure rejoint le bouton contextuel aligné ou le scrubber ; `↑` depuis les contrôles rejoint le scrubber ; les déplacements horizontaux restent confinés à la rangée visuelle active.
+- Depuis le scrubber, l'ancrage vertical suit la position réelle du curseur de lecture : `↑`/`↓` choisissent le bouton le plus aligné avec la tête de lecture.
 
 ---
 
@@ -109,6 +116,8 @@ Le lecteur vidéo persistant réside dans le composant racine `FloatingBottomPla
 
 ### 2.4. Fenêtres Modales Isolées (`PlayerMenuModal`, `CastModal`) & Protection Flexbox
 - Les modales sont encapsulées dans des conteneurs isolés avec z-index prioritaire (`99999`), protégeant la géométrie du lecteur sous-jacent contre tout débordement flexbox.
+- **Contrat de navigation télécommande des modales :** chaque conteneur porte `data-modal-container="true"` et chaque bouton de fermeture `data-modal-close="true"`. À l'ouverture, le focus est retiré de l'arrière-plan et posé sur le conteneur (sans anneau visuel) ; les flèches restent confinées aux contrôles de la modale ; `Échap`/`Retour` actionne le bouton de fermeture au lieu de naviguer.
+- Les champs `TEXTAREA` conservent leurs flèches verticales pour déplacer le curseur entre les lignes ; seuls les `INPUT` mono-ligne utilisent `↑/↓` pour sortir vers le contrôle suivant.
 
 ---
 

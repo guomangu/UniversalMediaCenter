@@ -29,17 +29,23 @@ import { Spacing, MaxContentWidth, Radius } from '@/constants/theme';
 
 let savedHomeScrollY = 0;
 let currentScrollAnimId: number | null = null;
+let currentScrollOnDone: (() => void) | null = null;
 
-function cancelFastScroll() {
+function cancelFastScroll(notifyDone = true) {
   if (currentScrollAnimId !== null) {
     cancelAnimationFrame(currentScrollAnimId);
     currentScrollAnimId = null;
   }
+  if (notifyDone && currentScrollOnDone) {
+    const done = currentScrollOnDone;
+    currentScrollOnDone = null;
+    done();
+  }
 }
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('wheel', cancelFastScroll, { passive: true });
-  window.addEventListener('touchstart', cancelFastScroll, { passive: true });
+  window.addEventListener('wheel', () => cancelFastScroll(), { passive: true });
+  window.addEventListener('touchstart', () => cancelFastScroll(), { passive: true });
 }
 
 function getHomeScrollNode(scrollRef?: React.RefObject<any>): HTMLElement | null {
@@ -73,11 +79,15 @@ function getHomeScrollNode(scrollRef?: React.RefObject<any>): HTMLElement | null
 }
 
 function fastSmoothScroll(container: HTMLElement, targetY: number, duration: number = 200, onDone?: () => void) {
-  cancelFastScroll();
+  // Annule une éventuelle animation précédente sans notifier son callback :
+  // le nouveau saut reste propriétaire du verrou isJumpingRef.
+  cancelFastScroll(false);
+  currentScrollOnDone = onDone || null;
   const startY = container.scrollTop;
   const diff = targetY - startY;
   if (Math.abs(diff) < 2) {
     container.scrollTop = targetY;
+    currentScrollOnDone = null;
     onDone?.();
     return;
   }
@@ -95,6 +105,7 @@ function fastSmoothScroll(container: HTMLElement, targetY: number, duration: num
     } else {
       container.scrollTop = targetY;
       currentScrollAnimId = null;
+      currentScrollOnDone = null;
       onDone?.();
     }
   }
@@ -268,6 +279,10 @@ export default function HomeScreen() {
     const releaseRestore = () => {
       isRestoringScroll.current = false;
       scrollRestoredRef.current = true;
+      // Une interaction réelle annule aussi tout saut de catégorie en cours ;
+      // sans cela, isJumpingRef restait bloqué à true et les puces du header
+      // cessaient de refléter la section réellement visible.
+      isJumpingRef.current = false;
     };
 
     window.addEventListener('wheel', releaseRestore, { passive: true });
@@ -437,7 +452,10 @@ export default function HomeScreen() {
                 onVisibilityChange={handleVisibilityChange}
                 onLayoutPos={(id, y) => {
                   catPositions.current[id] = y;
-                  if (savedHomeScrollY > 0) {
+                  // Ne jamais recalculer la puce active pendant un saut de catégorie
+                  // ou une restauration : un re-layout de vignettes écraserait le
+                  // raccourci choisi par l'utilisateur.
+                  if (savedHomeScrollY > 0 && !isJumpingRef.current && !isRestoringScroll.current) {
                     updateActiveCategory(savedHomeScrollY);
                   }
                 }}
