@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import crypto from 'node:crypto';
 import { db } from '../db/connection.js';
 import { users, userInvitations, mediaNodes } from '../db/schema/index.js';
 import { eq, desc } from 'drizzle-orm';
@@ -7,6 +8,33 @@ import { hashPassword } from '../auth/password.js';
 import { createSessionToken } from '../auth/token.js';
 import { getSiteParams } from '../config/paramManager.js';
 export const inviteRouter = new Hono();
+const INVITATION_TTL_DAYS = 30;
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+/** Sérialisation JSON sûre pour une injection dans une balise <script>. */
+function safeJsonForScript(value) {
+    return JSON.stringify(value)
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e')
+        .replace(/&/g, '\\u0026')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+}
+function isInvitationExpired(invite) {
+    const expiresAt = invite.expiresAt
+        ? new Date(invite.expiresAt).getTime()
+        : new Date(invite.createdAt).getTime() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000;
+    return Number.isFinite(expiresAt) && Date.now() > expiresAt;
+}
+function generateSecurePassword() {
+    return crypto.randomBytes(9).toString('base64url');
+}
 /**
  * Retourne l'URL de base absolue de l'interface web (cool.sweaw.com)
  */
@@ -19,11 +47,15 @@ function getInterfaceBaseUrl(c) {
             .replace('http://api.cool.sweaw.com', 'https://cool.sweaw.com')
             .replace(/\/+$/, '');
     }
-    const host = c.req.header('host') || '';
+    // L'en-tête Host est contrôlé par le client : on le filtre pour éviter
+    // l'injection d'URL (host header poisoning) dans les liens d'invitation.
+    const rawHost = c.req.header('host') || '';
+    const host = rawHost.replace(/[^a-zA-Z0-9.\-:\[\]]/g, '');
     if (host.includes('sweaw.com')) {
         return 'https://cool.sweaw.com';
     }
-    const proto = c.req.header('x-forwarded-proto') || 'http';
+    const forwardedProto = (c.req.header('x-forwarded-proto') || 'http').toLowerCase();
+    const proto = forwardedProto === 'https' ? 'https' : 'http';
     return `${proto}://${host || 'localhost:8080'}`;
 }
 /**
@@ -31,17 +63,25 @@ function getInterfaceBaseUrl(c) {
  */
 function generateTokenSlug(name, custom) {
     if (custom && custom.trim().length >= 3) {
-        return custom
+        const sanitized = custom
             .trim()
             .toLowerCase()
-            .replace(/[^a-z0-9_-]/g, '-');
+            .replace(/[^a-z0-9_-]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 48);
+        if (sanitized.length >= 3)
+            return sanitized;
     }
     const cleanName = name
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]/g, '');
-    const randomSuffix = Math.random().toString(36).substring(2, 6);
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 24);
+    // Suffixe cryptographiquement sûr (48 bits d'entropie) : le token est
+    // l'équivalent d'un mot de passe et ne doit pas être devinable.
+    const randomSuffix = crypto.randomBytes(6).toString('base64url').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
     return `${cleanName || 'membre'}-${randomSuffix}`;
 }
 /**
@@ -75,7 +115,7 @@ inviteRouter.post('/api/admin/invitations', requireAdmin, async (c) => {
         // 2. Détermination du mot de passe
         const rawPassword = password && typeof password === 'string' && password.trim().length >= 4
             ? password.trim()
-            : `pass${Math.floor(1000 + Math.random() * 9000)}`;
+            : generateSecurePassword();
         const passwordHash = hashPassword(rawPassword);
         // 3. Recherche ou création du compte utilisateur
         let targetUser = await db.query.users.findFirst({
@@ -114,13 +154,15 @@ inviteRouter.post('/api/admin/invitations', requireAdmin, async (c) => {
             })
                 .where(eq(users.id, targetUser.id));
         }
-        // 4. Génération du token unique
+        // 4. Génération du token unique (collision improbable mais gérée)
         let token = generateTokenSlug(cleanName, customToken);
-        const existingInvite = await db.query.userInvitations.findFirst({
-            where: (t, { eq: eqOp }) => eqOp(t.token, token),
-        });
-        if (existingInvite) {
-            token = `${token}-${Math.random().toString(36).substring(2, 5)}`;
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const existingInvite = await db.query.userInvitations.findFirst({
+                where: (t, { eq: eqOp }) => eqOp(t.token, token),
+            });
+            if (!existingInvite)
+                break;
+            token = `${generateTokenSlug(cleanName)}-${crypto.randomBytes(3).toString('hex')}`;
         }
         // 5. Enregistrement de l'invitation en base
         const [invitation] = await db
@@ -133,6 +175,7 @@ inviteRouter.post('/api/admin/invitations', requireAdmin, async (c) => {
             rawPassword,
             profileRole: cleanRole,
             clicksCount: 0,
+            expiresAt: new Date(Date.now() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000),
         })
             .returning();
         // 6. Construction des URLs et du message vers l'interface cool.sweaw.com
@@ -232,9 +275,13 @@ inviteRouter.get('/api/invite/:token/data', async (c) => {
     const invite = await db.query.userInvitations.findFirst({
         where: (t, { eq: eqOp }) => eqOp(t.token, token),
     });
-    if (!invite) {
+    if (!invite || isInvitationExpired(invite)) {
         return c.json({ success: false, error: 'Invitation introuvable ou expirée' }, 404);
     }
+    await db
+        .update(userInvitations)
+        .set({ lastUsedAt: new Date(), clicksCount: (invite.clicksCount || 0) + 1 })
+        .where(eq(userInvitations.id, invite.id));
     const user = await db.query.users.findFirst({
         where: (t, { eq: eqOp }) => eqOp(t.id, invite.userId),
     });
@@ -280,12 +327,12 @@ inviteRouter.get('/invite/:token', async (c) => {
     const invite = await db.query.userInvitations.findFirst({
         where: (t, { eq: eqOp }) => eqOp(t.token, token),
     });
-    if (!invite) {
+    if (!invite || isInvitationExpired(invite)) {
         return c.html(`<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <title>Lien d'invitation expiré - ${siteName}</title>
+  <title>Lien d'invitation expiré - ${escapeHtml(siteName)}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { background: #0b0f19; color: #f8fafc; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
@@ -300,7 +347,7 @@ inviteRouter.get('/invite/:token', async (c) => {
     <div style="font-size: 40px; margin-bottom: 10px;">⚠️</div>
     <h1>Lien d'invitation introuvable</h1>
     <p>Ce lien d'accès personnalisé n'existe plus ou a été révoqué par l'administrateur.</p>
-    <a href="${interfaceUrl}/login">Accéder à la page de connexion</a>
+    <a href="${escapeHtml(interfaceUrl)}/login">Accéder à la page de connexion</a>
   </div>
 </body>
 </html>`, 404);
@@ -344,9 +391,13 @@ inviteRouter.get('/invite/:token', async (c) => {
         : `${interfaceUrl}/icons/icon-512x512.png`;
     const inviteUrl = `${interfaceUrl}/invite/${token}`;
     const directInterfaceTarget = `${interfaceUrl}/?token=${encodeURIComponent(sessionToken)}`;
-    // Métadonnées riches pour les messageries
-    const ogTitle = `🎬 Invitation pour ${invite.displayName} sur ${siteName}`;
-    const ogDescription = `Votre accès est prêt ! Identifiant : ${invite.email} | Mot de passe : ${invite.rawPassword}. Cliquez pour accéder directement à la médiathèque !`;
+    // Métadonnées riches pour les messageries.
+    // Ne jamais exposer le mot de passe dans les aperçus Open Graph : ceux-ci sont
+    // mis en cache par les messageries et les robots d'indexation.
+    const safeDisplayName = escapeHtml(invite.displayName);
+    const safeSiteName = escapeHtml(siteName);
+    const ogTitle = `🎬 Invitation pour ${safeDisplayName} sur ${safeSiteName}`;
+    const ogDescription = `Votre accès personnel à ${safeSiteName} est prêt. Cliquez pour accéder directement à la médiathèque !`;
     const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -356,17 +407,17 @@ inviteRouter.get('/invite/:token', async (c) => {
 
   <!-- Balises Open Graph / WhatsApp / Instagram / Messages / Facebook -->
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="${siteName}">
+  <meta property="og:site_name" content="${safeSiteName}">
   <meta property="og:title" content="${ogTitle}">
   <meta property="og:description" content="${ogDescription}">
-  <meta property="og:image" content="${ogImageUrl}">
-  <meta property="og:url" content="${inviteUrl}">
+  <meta property="og:image" content="${escapeHtml(ogImageUrl)}">
+  <meta property="og:url" content="${escapeHtml(inviteUrl)}">
 
   <!-- Balises Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${ogTitle}">
   <meta name="twitter:description" content="${ogDescription}">
-  <meta name="twitter:image" content="${ogImageUrl}">
+  <meta name="twitter:image" content="${escapeHtml(ogImageUrl)}">
 
   <style>
     * { box-sizing: border-box; }
@@ -466,22 +517,22 @@ inviteRouter.get('/invite/:token', async (c) => {
 </head>
 <body>
   <div class="card">
-    <div class="badge">🎬 ${siteName}</div>
-    <h1>Bienvenue, ${invite.displayName} !</h1>
+    <div class="badge">🎬 ${safeSiteName}</div>
+    <h1>Bienvenue, ${safeDisplayName} !</h1>
     <p class="sub">Votre accès personnel a été configuré avec succès.</p>
 
     <div class="creds-box">
       <div class="cred-row">
         <span class="cred-label">👤 Identifiant</span>
-        <span class="cred-val">${invite.email}</span>
+        <span class="cred-val">${escapeHtml(invite.email)}</span>
       </div>
       <div class="cred-row">
         <span class="cred-label">🔑 Mot de passe</span>
-        <span class="cred-val">${invite.rawPassword}</span>
+        <span class="cred-val">${escapeHtml(invite.rawPassword)}</span>
       </div>
       <div class="cred-row">
         <span class="cred-label">🏷️ Pack Profil</span>
-        <span class="cred-val" style="color: #a7f3d0;">${invite.profileRole}</span>
+        <span class="cred-val" style="color: #a7f3d0;">${escapeHtml(invite.profileRole)}</span>
       </div>
     </div>
 
@@ -490,7 +541,7 @@ inviteRouter.get('/invite/:token', async (c) => {
       Connexion automatique vers l'interface en cours...
     </div>
 
-    <a href="${directInterfaceTarget}" class="btn" id="directBtn">Accéder directement à l'interface →</a>
+    <a href="${escapeHtml(directInterfaceTarget)}" class="btn" id="directBtn">Accéder directement à l'interface →</a>
   </div>
 
   <script>
@@ -498,15 +549,15 @@ inviteRouter.get('/invite/:token', async (c) => {
     (function() {
       try {
         var authData = {
-          user: ${JSON.stringify(sessionUser)},
-          token: ${JSON.stringify(sessionToken)}
+          user: ${safeJsonForScript(sessionUser)},
+          token: ${safeJsonForScript(sessionToken)}
         };
         localStorage.setItem('ums_auth_session_v2', JSON.stringify(authData));
       } catch (err) {
         console.error('Erreur injection session:', err);
       }
 
-      var destination = "${directInterfaceTarget}";
+      var destination = ${safeJsonForScript(directInterfaceTarget)};
       setTimeout(function() {
         window.location.replace(destination);
       }, 300);

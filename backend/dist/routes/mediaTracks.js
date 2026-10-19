@@ -10,6 +10,7 @@ import { verifySessionToken } from '../auth/token.js';
 const execFileAsync = promisify(execFile);
 export const tracksRouter = new Hono();
 const tracksCache = new Map();
+const MAX_TRACKS_CACHE_ENTRIES = 500;
 export const LANG_NAMES = {
     fre: 'Français', fra: 'Français', fr: 'Français',
     eng: 'English', en: 'English',
@@ -94,8 +95,9 @@ tracksRouter.get('/:id/tracks', async (c) => {
     if (!media) {
         return c.json({ error: 'Média introuvable' }, 404);
     }
-    // Contrôle d'accès : vérification uniquement si utilisateur explicite ou shareToken fourni
-    let isAuthorized = true;
+    // Contrôle d'accès : sans session ni jeton de partage valide, aucune
+    // métadonnée de pistes n'est exposée (cohérent avec le flux vidéo).
+    let isAuthorized = false;
     if (user) {
         isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
             videoFilePath: media.videoFilePath,
@@ -135,7 +137,8 @@ tracksRouter.get('/:id/tracks', async (c) => {
             subtitleMode: subMode,
         });
     }
-    const cacheKey = `${media.id}:${prefAudio}:${prefSub}:${subMode}`;
+    const fileStat = await fsp.stat(media.videoFilePath).catch(() => null);
+    const cacheKey = `${media.id}:${fileStat?.mtimeMs || 0}:${fileStat?.size || 0}:${prefAudio}:${prefSub}:${subMode}`;
     if (tracksCache.has(cacheKey)) {
         return c.json(tracksCache.get(cacheKey));
     }
@@ -293,6 +296,11 @@ tracksRouter.get('/:id/tracks', async (c) => {
             configuredSubtitleLanguage: prefSub,
             subtitleMode: subMode,
         };
+        if (tracksCache.size >= MAX_TRACKS_CACHE_ENTRIES) {
+            const oldest = tracksCache.keys().next().value;
+            if (oldest !== undefined)
+                tracksCache.delete(oldest);
+        }
         tracksCache.set(cacheKey, result);
         return c.json(result);
     }

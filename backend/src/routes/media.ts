@@ -17,7 +17,8 @@ import { linkTagToNode } from '../watcher/tagExtractor.js';
 import { createShareToken } from '../auth/shareToken.js';
 import { checkMediaAccess, isMediaAllowedForUser } from '../auth/mediaAccess.js';
 import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
-import { requireAuth } from '../middleware/access.js';
+import { requireAuth, requireAdmin } from '../middleware/access.js';
+import crypto from 'node:crypto';
 import type { UserSession } from '../middleware/access.js';
 import { recordActivePlayback, removeActivePlayback } from '../watcher/presenceStore.js';
 import { removeUserFromMediaSessions } from './sessionRoutes.js';
@@ -46,6 +47,24 @@ async function findMediaByIdOrSlug(idOrSlug?: string) {
 }
 
 mediaRouter.post('/webhook/tmm', async (c) => {
+  // Le webhook TMM ne peut pas porter de jeton de session. Il doit donc être
+  // protégé soit par un secret partagé, soit par une session administrateur.
+  // Sans secret configuré, on refuse les appels anonymes.
+  const webhookSecret = process.env.TMM_WEBHOOK_SECRET || '';
+  const providedSecret = c.req.header('x-webhook-secret') || c.req.query('secret') || '';
+  const user = (c as any).get('user') as UserSession | undefined;
+
+  let isAuthorized = Boolean(user?.isAdmin);
+  if (!isAuthorized && webhookSecret && providedSecret) {
+    const a = Buffer.from(providedSecret, 'utf8');
+    const b = Buffer.from(webhookSecret, 'utf8');
+    isAuthorized = a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+
+  if (!isAuthorized) {
+    return c.json({ error: 'Webhook non autorisé', code: 'UNAUTHORIZED' }, 401);
+  }
+
   const body = await c.req.json().catch(() => ({}));
   const filePath = body.path || body.filePath;
   if (filePath && typeof filePath === 'string' && filePath.endsWith('.nfo')) {
@@ -55,7 +74,7 @@ mediaRouter.post('/webhook/tmm', async (c) => {
   return c.json({ error: 'Chemin de fichier .nfo invalide' }, 400);
 });
 
-mediaRouter.post('/:id/reindex', requireAuth, async (c) => {
+mediaRouter.post('/:id/reindex', requireAdmin, async (c) => {
   const id = c.req.param('id');
   const media = await findMediaByIdOrSlug(id);
 
@@ -67,16 +86,16 @@ mediaRouter.post('/:id/reindex', requireAuth, async (c) => {
   return c.json({ success: true, node: updatedNode });
 });
 
-mediaRouter.post('/:id/progress', async (c) => {
+mediaRouter.post('/:id/progress', requireAuth, async (c) => {
   const id = c.req.param('id');
-  const user = (c as any).get('user') as UserSession | undefined;
+  const user = (c as any).get('user') as UserSession;
   const body = await c.req.json().catch(() => ({}));
-  const userId = user?.id || body.userId;
-  const positionSeconds = Number(body.positionSeconds || 0);
-  const durationSeconds = Number(body.durationSeconds || 0);
+  // L'identité provient exclusivement du jeton signé : un client ne peut pas
+  // écrire la progression d'un autre utilisateur via body.userId.
+  const userId = user.id;
+  const positionSeconds = Math.max(0, Number(body.positionSeconds) || 0);
+  const durationSeconds = Math.max(0, Number(body.durationSeconds) || 0);
   const isPlaying = body.isPlaying !== false;
-
-  if (!userId) return c.json({ error: 'User ID requis' }, 400);
 
   const media = await findMediaByIdOrSlug(id);
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
@@ -140,11 +159,10 @@ mediaRouter.get('/:id/progress', requireAuth, async (c) => {
   });
 });
 
-mediaRouter.delete('/:id/playback', async (c) => {
+mediaRouter.delete('/:id/playback', requireAuth, async (c) => {
   const id = c.req.param('id');
-  const user = (c as any).get('user') as UserSession | undefined;
-  const body = await c.req.json().catch(() => ({}));
-  const userId = user?.id || body.userId;
+  const user = (c as any).get('user') as UserSession;
+  const userId = user.id;
   if (userId) {
     const media = await findMediaByIdOrSlug(id);
     if (media) {
@@ -157,9 +175,21 @@ mediaRouter.delete('/:id/playback', async (c) => {
 
 mediaRouter.post('/:id/share-token', requireAuth, async (c) => {
   const id = c.req.param('id');
+  const user = (c as any).get('user') as UserSession;
   const media = await findMediaByIdOrSlug(id);
 
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
+
+  // Un utilisateur ne peut générer un lien de partage que pour un média
+  // auquel il a lui-même accès (sinon le partage contournerait le contrôle parental).
+  const isAuthorized = checkMediaAccess(user, media.id, null, media.parentId, media.nodeType, {
+    videoFilePath: media.videoFilePath,
+    nfoFilePath: media.nfoFilePath,
+    searchVectorText: media.searchVectorText,
+  });
+  if (!isAuthorized) {
+    return c.json({ error: 'Accès non autorisé à ce média', code: 'FORBIDDEN' }, 403);
+  }
 
   const token = createShareToken(media.id, 7);
   return c.json({
@@ -173,7 +203,7 @@ mediaRouter.post('/:id/share-token', requireAuth, async (c) => {
 mediaRouter.get('/:id/extras', async (c) => {
   const id = c.req.param('id');
   const user = (c as any).get('user') as UserSession | undefined;
-  const shareToken = c.req.query('share_token');
+  const shareToken = c.req.query('share') || c.req.query('share_token');
   const media = await findMediaByIdOrSlug(id);
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
 
@@ -201,7 +231,7 @@ mediaRouter.get('/:id/extras', async (c) => {
   );
 });
 
-mediaRouter.post('/:id/match', requireAuth, async (c) => {
+mediaRouter.post('/:id/match', requireAdmin, async (c) => {
   const id = c.req.param('id');
   const media = await findMediaByIdOrSlug(id);
   if (!media) return c.json({ error: 'Média introuvable' }, 404);
@@ -240,7 +270,7 @@ mediaRouter.post('/:id/match', requireAuth, async (c) => {
 
 mediaRouter.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const shareToken = c.req.query('share_token');
+  const shareToken = c.req.query('share') || c.req.query('share_token');
   const user = (c as any).get('user') as UserSession | undefined;
   const userLang = extractRequestLanguage(c);
 

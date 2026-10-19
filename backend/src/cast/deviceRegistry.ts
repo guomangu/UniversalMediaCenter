@@ -1,11 +1,25 @@
+import crypto from 'node:crypto';
 import type { CastDevice, CastCommand } from './types.js';
+
+const MAX_QUEUED_COMMANDS = 100;
 
 class CastDeviceRegistry {
   private devices = new Map<string, CastDevice>();
   private commandQueues = new Map<string, CastCommand[]>();
   private readonly DEVICE_TTL_MS = 35_000;
+  private readonly MAX_DEVICES = 500;
 
   public register(device: Omit<CastDevice, 'lastSeenAt'>): CastDevice {
+    // Purge les appareils expirés avant d'enregistrer, puis borne la taille du registre.
+    this.listActive();
+    if (!this.devices.has(device.id) && this.devices.size >= this.MAX_DEVICES) {
+      const oldestId = this.devices.keys().next().value;
+      if (oldestId !== undefined) {
+        this.devices.delete(oldestId);
+        this.commandQueues.delete(oldestId);
+      }
+    }
+
     const fullDevice: CastDevice = { ...device, lastSeenAt: Date.now() };
     this.devices.set(device.id, fullDevice);
     if (!this.commandQueues.has(device.id)) {
@@ -43,11 +57,15 @@ class CastDeviceRegistry {
   public queueCommand(cmd: Omit<CastCommand, 'id' | 'createdAt'>): CastCommand {
     const fullCmd: CastCommand = {
       ...cmd,
-      id: Math.random().toString(36).substring(2, 9),
+      id: crypto.randomUUID(),
       createdAt: Date.now(),
     };
     const queue = this.commandQueues.get(cmd.targetDeviceId) || [];
     queue.push(fullCmd);
+    // Éviter qu'un appareil qui ne poll plus accumule indéfiniment des commandes.
+    if (queue.length > MAX_QUEUED_COMMANDS) {
+      queue.splice(0, queue.length - MAX_QUEUED_COMMANDS);
+    }
     this.commandQueues.set(cmd.targetDeviceId, queue);
     return fullCmd;
   }

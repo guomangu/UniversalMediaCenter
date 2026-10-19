@@ -5,6 +5,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { MediaRepostModal } from './MediaRepostModal';
 import { playerStore } from '@/services/playerStore';
 import { getApiBaseUrl } from '@/services/apiConfig';
+import { getAuthToken } from '@/services/authStore';
 
 interface Props {
   channel: any;
@@ -26,12 +27,18 @@ const handlePlay = () => {
     // Toujours passer par l'URL absolue de l'API : une URL relative `/api/...`
     // viserait le serveur Expo (404) lorsque le frontend et l'API sont sur des hôtes distincts.
     const apiBase = getApiBaseUrl();
+    // Le proxy IPTV et le flux média sont protégés : le jeton doit être porté
+    // par l'URL, car les balises <video>/HLS n'envoient pas d'en-tête Authorization.
+    const token = getAuthToken();
+    const tokenQuery = token ? `&token=${encodeURIComponent(token)}` : '';
+    const streamUrl = channel.streamUrl?.startsWith('http')
+      ? `${apiBase}/api/iptv/proxy?url=${encodeURIComponent(channel.streamUrl)}${tokenQuery}`
+      : `${apiBase}/api/media/${channel.id}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+
     playerStore.openMedia({
       id: String(channel.id),
       title,
-      streamUrl: channel.streamUrl?.startsWith('http')
-        ? `${apiBase}/api/iptv/proxy?url=${encodeURIComponent(channel.streamUrl)}`
-        : `${apiBase}/api/media/${channel.id}/stream`,
+      streamUrl,
       posterUrl: logo,
       isLive: true,
       initialTime: 0,

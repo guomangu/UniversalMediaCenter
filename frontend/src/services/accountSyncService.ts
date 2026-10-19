@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
-import { getAuthHeaders, getCurrentUser } from './authStore';
+import { getAuthHeaders, getAuthToken, getCurrentUser } from './authStore';
 import { playerStore, registerPlaybackBroadcaster } from './playerStore';
 import { getActiveCastTarget, subscribeActiveCastTarget } from './castState';
 import {
@@ -10,6 +10,24 @@ import {
 } from './deviceIdentity';
 
 export { getLocalDeviceId, getLocalPlaybackDeviceId, getLocalSyncGroupId, setLocalSyncGroupId };
+
+/**
+ * Remplace le jeton présent dans une URL distante par celui de l'appareil local.
+ * Chaque appareil doit présenter SON jeton : sinon un appareil révoqué pourrait
+ * réutiliser le jeton d'un autre appareil du même compte via la synchronisation.
+ */
+function withLocalAuthToken(url: string): string {
+  const token = getAuthToken();
+  if (!token) return url;
+  try {
+    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    parsed.searchParams.delete('auth');
+    parsed.searchParams.set('token', token);
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
 
 export interface RemoteAccountPlayback {
   userId: string;
@@ -261,11 +279,13 @@ function applyRemoteOrder(remote: RemoteAccountPlayback) {
 
   // A) Média différent : aligner le lecteur local sur le média en cours du compte
   if (!activeLocal || activeLocal.id !== remote.mediaId) {
+    const token = getAuthToken();
+    const fallbackStreamUrl = `${getApiBaseUrl()}/api/media/${remote.mediaId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
     playerStore.openMedia({
       id: remote.mediaId,
       title: remote.mediaTitle,
       posterUrl: remote.posterUrl,
-      streamUrl: remote.streamUrl || `${getApiBaseUrl()}/api/media/${remote.mediaId}/stream`,
+      streamUrl: withLocalAuthToken(remote.streamUrl || fallbackStreamUrl),
       isLive: remote.isLive,
       activeAudio: remote.activeAudio,
       activeSubtitle: remote.activeSubtitle,

@@ -1,7 +1,15 @@
 import { Hono } from 'hono';
 import { castRegistry } from '../cast/deviceRegistry.js';
+import { requireAuth } from '../middleware/access.js';
 import os from 'node:os';
 export const castRouter = new Hono();
+const ALLOWED_CAST_ACTIONS = new Set([
+    'LOAD', 'PLAY', 'PAUSE', 'SEEK', 'STOP', 'SET_VOLUME', 'MUTE', 'UNMUTE',
+    'SET_AUDIO', 'SET_SUBTITLE',
+]);
+function isValidDeviceId(value) {
+    return typeof value === 'string' && value.trim().length >= 6 && value.trim().length <= 160;
+}
 function getLanIp(clientHost) {
     // 1. Si une variable d'environnement explicite est fournie
     if (process.env.HOST_IP && process.env.HOST_IP.trim()) {
@@ -64,16 +72,18 @@ castRouter.get('/info', (c) => {
         gatewayPort: 8080,
     });
 });
-castRouter.get('/devices', (c) => c.json({ devices: castRegistry.listActive() }));
-castRouter.get('/device/:id', (c) => {
-    const dev = castRegistry.getDevice(c.req.param('id'));
+// La liste et le détail des appareils exposent des titres de médias et des URLs
+// de flux : ils exigent donc une session authentifiée.
+castRouter.get('/devices', requireAuth, (c) => c.json({ devices: castRegistry.listActive() }));
+castRouter.get('/device/:id', requireAuth, (c) => {
+    const dev = castRegistry.getDevice(c.req.param('id') || '');
     if (!dev)
         return c.json({ error: 'Device not found' }, 404);
     return c.json({ device: dev });
 });
 castRouter.post('/register', async (c) => {
     const b = await c.req.json().catch(() => ({}));
-    if (!b.id || !b.name)
+    if (!isValidDeviceId(b.id) || !b.name)
         return c.json({ error: 'id and name required' }, 400);
     const device = castRegistry.register({
         id: b.id,
@@ -94,7 +104,7 @@ castRouter.post('/register', async (c) => {
 });
 castRouter.post('/heartbeat', async (c) => {
     const { id, ...updates } = await c.req.json().catch(() => ({}));
-    if (!id)
+    if (!isValidDeviceId(id))
         return c.json({ error: 'id is required' }, 400);
     let updated = castRegistry.updateHeartbeat(id, updates);
     if (!updated) {
@@ -107,15 +117,24 @@ castRouter.post('/heartbeat', async (c) => {
     }
     return c.json({ success: true, device: updated });
 });
-castRouter.post('/command', async (c) => {
+castRouter.post('/command', requireAuth, async (c) => {
     const { targetDeviceId, action, payload } = await c.req.json().catch(() => ({}));
-    if (!targetDeviceId || !action)
+    if (!isValidDeviceId(targetDeviceId) || !action) {
         return c.json({ error: 'targetDeviceId and action required' }, 400);
-    const cmd = castRegistry.queueCommand({ targetDeviceId, action, payload });
+    }
+    if (!ALLOWED_CAST_ACTIONS.has(String(action))) {
+        return c.json({ error: 'Action de diffusion non supportée' }, 400);
+    }
+    if (!castRegistry.getDevice(String(targetDeviceId))) {
+        return c.json({ error: 'Appareil cible introuvable ou hors ligne' }, 404);
+    }
+    const cmd = castRegistry.queueCommand({ targetDeviceId: String(targetDeviceId), action, payload });
     return c.json({ success: true, command: cmd });
 });
 castRouter.get('/poll/:deviceId', (c) => {
     const deviceId = c.req.param('deviceId');
+    if (!isValidDeviceId(deviceId))
+        return c.json({ error: 'deviceId invalide' }, 400);
     const commands = castRegistry.popCommands(deviceId);
     castRegistry.updateHeartbeat(deviceId, {});
     return c.json({ commands });

@@ -3,6 +3,7 @@ import { View, Text, Pressable, Platform } from 'react-native';
 import Hls from 'hls.js';
 import { styles } from './PlayerScreen.styles';
 import { getApiBaseUrl } from '@/services/apiConfig';
+import { getAuthToken } from '@/services/authStore';
 
 interface Props {
   streamUrl: string;
@@ -27,6 +28,7 @@ interface Props {
   statusMessage?: string;
   id?: string;
   isFullscreen?: boolean;
+  shareToken?: string | null;
 }
 
 export const VideoPlayerView: React.FC<Props> = ({
@@ -52,6 +54,7 @@ export const VideoPlayerView: React.FC<Props> = ({
   statusMessage,
   id = '',
   isFullscreen = false,
+  shareToken = null,
 }) => {
   const innerVideoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<any>(null);
@@ -273,10 +276,17 @@ export const VideoPlayerView: React.FC<Props> = ({
 
   const subtitleUrl = useMemo(() => {
     if (!activeSubtitle || activeSubtitle === 'off') return '';
-    if (activeSubtitle.startsWith('file:')) return `${getApiBaseUrl()}/api/media/${id}/subtitles?fileName=${encodeURIComponent(activeSubtitle.slice(5))}`;
-    if (activeSubtitle.startsWith('track:')) return `${getApiBaseUrl()}/api/media/${id}/subtitles?trackIndex=${encodeURIComponent(activeSubtitle.slice(6))}`;
-    return `${getApiBaseUrl()}/api/media/${id}/subtitles?lang=${encodeURIComponent(activeSubtitle)}`;
-  }, [id, activeSubtitle]);
+    const params = new URLSearchParams();
+    const token = getAuthToken();
+    if (token) params.set('token', token);
+    if (shareToken) params.set('share', shareToken);
+
+    if (activeSubtitle.startsWith('file:')) params.set('fileName', activeSubtitle.slice(5));
+    else if (activeSubtitle.startsWith('track:')) params.set('trackIndex', activeSubtitle.slice(6));
+    else params.set('lang', activeSubtitle);
+
+    return `${getApiBaseUrl()}/api/media/${id}/subtitles?${params.toString()}`;
+  }, [id, activeSubtitle, shareToken]);
 
   // Synchronisation stricte de la piste de sous-titres native (mode 'showing' en fenêtre et plein écran)
   useEffect(() => {

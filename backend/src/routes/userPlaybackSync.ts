@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/access.js';
 import type { UserSession } from '../middleware/access.js';
 import { userDeviceRegistry } from '../devices/userDeviceRegistry.js';
 import type { DevicePlaybackState } from '../devices/userDeviceRegistry.js';
+import { canUserAccessMediaNodeId } from '../auth/mediaAccess.js';
 
 export interface AccountPlaybackState {
   userId: string;
@@ -36,6 +37,27 @@ export interface AccountPlaybackState {
 const groupPlaybackMap = new Map<string, AccountPlaybackState>(); // key: `${userId}:${syncGroupId}`
 const accountPlaybackMap = new Map<string, AccountPlaybackState>(); // key: userId (fallback rétro-compatible)
 const lastDbSaveMap = new Map<string, number>();
+
+// Cache court du contrôle d'accès : la synchronisation peut émettre plusieurs
+// requêtes par seconde et on ne veut pas interroger la base à chaque battement.
+const mediaAccessCache = new Map<string, { allowed: boolean; expiresAt: number }>();
+const MEDIA_ACCESS_CACHE_TTL_MS = 60_000;
+
+async function canSyncMedia(user: UserSession, mediaId: string): Promise<boolean> {
+  if (user.isAdmin) return true;
+  const key = `${user.id}:${mediaId}`;
+  const now = Date.now();
+  const cached = mediaAccessCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.allowed;
+
+  const allowed = await canUserAccessMediaNodeId(user, mediaId);
+  if (mediaAccessCache.size > 2000) {
+    const oldest = mediaAccessCache.keys().next().value;
+    if (oldest !== undefined) mediaAccessCache.delete(oldest);
+  }
+  mediaAccessCache.set(key, { allowed, expiresAt: now + MEDIA_ACCESS_CACHE_TTL_MS });
+  return allowed;
+}
 
 function isMatchingDevice(idA?: string, idB?: string): boolean {
   if (!idA || !idB) return false;
@@ -157,6 +179,12 @@ playbackSyncRouter.post('/sync', async (c) => {
 
   if (!deviceId || !mediaId) {
     return c.json({ error: 'deviceId et mediaId sont requis' }, 400);
+  }
+
+  // Ne jamais diffuser ni enregistrer la progression d'un média auquel
+  // l'utilisateur n'a pas droit (contrôle parental / PBAC).
+  if (!(await canSyncMedia(user, String(mediaId)))) {
+    return c.json({ error: 'Accès non autorisé à ce média', code: 'FORBIDDEN' }, 403);
   }
 
   const now = Date.now();

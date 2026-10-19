@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import crypto from 'node:crypto';
 import { db } from '../db/connection.js';
 import { users } from '../db/schema/index.js';
 import { count } from 'drizzle-orm';
@@ -46,15 +47,32 @@ authRegisterRouter.post('/register-on-the-fly', async (c) => {
   const isFirstUser = (userCountResult[0]?.val ?? 0) === 0;
 
   const cleanName = displayName.trim();
-  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const randomSuffix = crypto.randomBytes(4).toString('hex');
   const userEmail = email && email.includes('@')
     ? email.trim().toLowerCase()
     : `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${randomSuffix}@ums.local`;
 
+  // Refuser explicitement les doublons plutôt que de laisser la contrainte SQL
+  // remonter une erreur 500 opaque.
+  const existingUser = await db.query.users.findFirst({
+    where: (t, { eq }) => eq(t.email, userEmail),
+  });
+  if (existingUser) {
+    return c.json({ error: 'Cette adresse e-mail est déjà utilisée' }, 409);
+  }
+
   const rawSecret = (password && typeof password === 'string' && password.length >= 4)
     ? password
     : (pin ? String(pin) : null);
-  const passwordHash = rawSecret ? hashPassword(rawSecret) : null;
+
+  // Un compte sans secret serait inconsultable après expiration de la session.
+  if (!rawSecret) {
+    return c.json({ error: 'Un mot de passe ou un code PIN est requis pour créer un profil.' }, 400);
+  }
+
+  const passwordHash = hashPassword(rawSecret);
+  // Le PIN est désormais haché (scrypt), plus jamais stocké en clair.
+  const pinHash = rawSecret ? hashPassword(String(rawSecret).trim()) : null;
 
   const [newUser] = await db
     .insert(users)
@@ -62,7 +80,7 @@ authRegisterRouter.post('/register-on-the-fly', async (c) => {
       email: userEmail,
       displayName: cleanName,
       passwordHash,
-      pinHash: rawSecret ? String(rawSecret).trim() : null,
+      pinHash,
       isAdmin: isFirstUser,
       profileRole: isFirstUser ? 'ADMIN' : (params.profiles?.defaultRole || 'STANDARD'),
       canDownload: params.profiles?.defaultCanDownload ?? true,
@@ -71,11 +89,12 @@ authRegisterRouter.post('/register-on-the-fly', async (c) => {
       maxCsaAgeLimit: isFirstUser ? null : (params.profiles?.defaultMaxCsaAge ?? params.security.defaultMaxCsaAge ?? null),
       allowedTags: params.profiles?.defaultAllowedTags ?? [],
       blockedTags: params.profiles?.defaultBlockedTags ?? [],
+      allowedFolders: params.profiles?.defaultAllowedFolders ?? [],
       blockedFolders: params.profiles?.defaultBlockedFolders ?? [],
     })
     .returning();
 
-  const token = createSessionToken(newUser.id);
+  const token = createSessionToken(newUser.id, c.req.header('x-device-id') || undefined);
 
   return c.json({
     success: true,

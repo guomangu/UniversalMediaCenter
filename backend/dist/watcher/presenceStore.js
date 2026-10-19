@@ -175,6 +175,10 @@ export function joinVoiceCall(topicSlug, userId, displayName, isMuted = false) {
     const slug = topicSlug.toLowerCase().trim();
     let room = voiceCallRooms.get(slug);
     if (!room) {
+        // Borne le nombre de salons vocaux simultanés pour éviter une croissance
+        // mémoire illimitée via des slugs arbitraires.
+        if (voiceCallRooms.size >= 500)
+            return;
         room = new Map();
         voiceCallRooms.set(slug, room);
     }
@@ -226,6 +230,11 @@ export function getVoiceCallParticipants(topicSlug) {
         if (now - p.lastPing > 15000) {
             room.delete(uid);
         }
+    }
+    if (room.size === 0) {
+        voiceCallRooms.delete(slug);
+        voiceCallAudioChunks.delete(slug);
+        return [];
     }
     return Array.from(room.values());
 }

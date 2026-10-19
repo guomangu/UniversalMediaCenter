@@ -323,6 +323,19 @@ class UserDeviceRegistry {
     return count;
   }
 
+  /** Recharge les révocations persistées au démarrage du serveur. */
+  public hydrateRevocations(rows: Array<{ userId: string; deviceId: string }>): void {
+    for (const row of rows) {
+      if (!row.userId || !row.deviceId) continue;
+      let userRevocations = this.revokedDevices.get(row.userId);
+      if (!userRevocations) {
+        userRevocations = new Set();
+        this.revokedDevices.set(row.userId, userRevocations);
+      }
+      userRevocations.add(row.deviceId);
+    }
+  }
+
   public isRevoked(userId: string, deviceId: string): boolean {
     const userRevocations = this.revokedDevices.get(userId);
     if (!userRevocations || userRevocations.size === 0) return false;
@@ -339,10 +352,11 @@ class UserDeviceRegistry {
   }
 
   public unrevokeDevice(userId: string, deviceId?: string): void {
-    if (!deviceId) {
-      this.revokedDevices.delete(userId);
-      return;
-    }
+    // Sans identifiant d'appareil précis, on ne lève AUCUNE révocation :
+    // sinon une simple requête de login sans X-Device-Id réautoriserait tous
+    // les appareils précédemment déconnectés.
+    if (!deviceId) return;
+
     const userRevocations = this.revokedDevices.get(userId);
     if (!userRevocations) return;
 

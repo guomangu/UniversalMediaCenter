@@ -30,3 +30,27 @@ export function verifyPassword(password: string, storedHash: string): boolean {
     return false;
   }
 }
+
+/**
+ * Vérifie un code PIN.
+ *
+ * Les nouvelles installations stockent le PIN avec le même format scrypt que
+ * les mots de passe. Les anciennes installations pouvaient stocker le PIN en
+ * clair : on continue à les accepter en comparaison à temps constant, mais
+ * tout nouveau PIN est haché.
+ */
+export function verifyPin(pin: string | null | undefined, storedPin: string | null | undefined): boolean {
+  if (!pin || !storedPin) return false;
+  const normalizedPin = String(pin).trim();
+  if (!normalizedPin) return false;
+
+  if (storedPin.includes(':')) {
+    return verifyPassword(normalizedPin, storedPin);
+  }
+
+  // Compatibilité ascendante : ancien PIN stocké en clair.
+  const provided = Buffer.from(normalizedPin, 'utf8');
+  const stored = Buffer.from(storedPin, 'utf8');
+  if (provided.length !== stored.length) return false;
+  return crypto.timingSafeEqual(provided, stored);
+}

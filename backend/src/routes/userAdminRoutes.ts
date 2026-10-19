@@ -70,9 +70,13 @@ userAdminRouter.post('/', async (c) => {
     return c.json({ error: 'Cette adresse email est déjà utilisée' }, 400);
   }
 
-  const passwordHash = password && typeof password === 'string' && password.length >= 4
-    ? hashPassword(password)
-    : hashPassword('ums2026');
+  // Ne jamais créer de compte avec un mot de passe par défaut public :
+  // l'administrateur doit fournir un secret, ou utiliser le flux d'invitation
+  // qui génère un mot de passe aléatoire.
+  if (!password || typeof password !== 'string' || password.length < 6) {
+    return c.json({ error: 'Un mot de passe de 6 caractères minimum est requis' }, 400);
+  }
+  const passwordHash = hashPassword(password);
 
   const isRoleAdmin = String(profileRole).toUpperCase() === 'ADMINISTRATEUR';
 
@@ -149,7 +153,19 @@ userAdminRouter.patch('/:id', async (c) => {
 
   const updatePayload: Record<string, any> = {};
   if (displayName !== undefined) updatePayload.displayName = displayName;
-  if (email !== undefined) updatePayload.email = email.trim().toLowerCase();
+  if (email !== undefined) {
+    const cleanEmail = String(email).trim().toLowerCase();
+    if (!cleanEmail.includes('@')) {
+      return c.json({ error: 'Adresse e-mail invalide' }, 400);
+    }
+    const duplicate = await db.query.users.findFirst({
+      where: (t, { and, eq, ne }) => and(eq(t.email, cleanEmail), ne(t.id, id)),
+    });
+    if (duplicate) {
+      return c.json({ error: 'Cette adresse email est déjà utilisée' }, 409);
+    }
+    updatePayload.email = cleanEmail;
+  }
   if (password && typeof password === 'string' && password.length >= 4) {
     updatePayload.passwordHash = hashPassword(password);
   }

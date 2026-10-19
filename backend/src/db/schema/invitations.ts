@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   integer,
+  boolean,
   timestamp,
 } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
@@ -19,5 +20,7 @@ export const userInvitations = pgTable('user_invitations', {
   profileRole: text('profile_role').default('STANDARD').notNull(),
   clicksCount: integer('clicks_count').default(0).notNull(),
   lastUsedAt: timestamp('last_used_at'),
+  expiresAt: timestamp('expires_at'),
+  isUsed: boolean('is_used').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

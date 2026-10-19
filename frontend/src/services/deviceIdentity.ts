@@ -5,19 +5,34 @@ const STORAGE_DEVICE_NAME = 'ums_device_name';
 const STORAGE_SYNC_GROUP = 'ums_sync_group_id';
 const STORAGE_TAB_SESSION_ID = 'ums_tab_session_id';
 
+/** Identifiant aléatoire cryptographiquement sûr (avec repli si l'API manque). */
+function secureRandomId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch {}
+  return Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+}
+
 /**
  * Identifiant matériel unique et persistant de l'appareil
  */
 export function getLocalDeviceId(): string {
   if (typeof window === 'undefined' || !window.localStorage) {
-    return 'device_srv_' + Math.random().toString(36).substring(2, 9);
+    return 'device_srv_' + secureRandomId();
   }
   let id = localStorage.getItem(STORAGE_DEVICE_ID);
   if (!id) {
     // Migration rétro-compatible si un ancien identifiant cast ou account existait
     const legacyAccount = localStorage.getItem('ums_account_device_id');
     const legacyCast = localStorage.getItem('ums_cast_device_id');
-    id = legacyAccount || legacyCast || 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+    id = legacyAccount || legacyCast || 'dev_' + secureRandomId();
     localStorage.setItem(STORAGE_DEVICE_ID, id);
     localStorage.setItem('ums_account_device_id', id);
     localStorage.setItem('ums_cast_device_id', id);
@@ -32,12 +47,12 @@ export function getLocalDeviceId(): string {
  */
 export function getLocalPlaybackDeviceId(): string {
   if (typeof window === 'undefined') {
-    return 'device_srv_' + Math.random().toString(36).substring(2, 9);
+    return 'device_srv_' + secureRandomId();
   }
   try {
     let tabId = sessionStorage.getItem(STORAGE_TAB_SESSION_ID);
     if (!tabId) {
-      tabId = 'tab_' + Math.random().toString(36).substring(2, 8);
+      tabId = 'tab_' + secureRandomId().slice(0, 12);
       sessionStorage.setItem(STORAGE_TAB_SESSION_ID, tabId);
     }
     const baseId = getLocalDeviceId();

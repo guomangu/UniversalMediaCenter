@@ -5,8 +5,30 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { isTaintedArtwork } from '../watcher/kaiPaceResolver.js';
+import { getSafeOutboundUrl, safeFetch } from '../utils/safeUrl.js';
 
 const execFileAsync = promisify(execFile);
+const MAX_REMOTE_ARTWORK_BYTES = 15 * 1024 * 1024;
+const thumbInFlight = new Map<string, Promise<boolean>>();
+
+const MAX_CONCURRENT_THUMB_JOBS = 2;
+let activeThumbJobs = 0;
+const thumbWaiters: Array<() => void> = [];
+
+async function withThumbSlot<T>(task: () => Promise<T>): Promise<T | null> {
+  if (activeThumbJobs >= MAX_CONCURRENT_THUMB_JOBS) {
+    if (thumbWaiters.length >= 60) return null;
+    await new Promise<void>((resolve) => thumbWaiters.push(resolve));
+  }
+  activeThumbJobs++;
+  try {
+    return await task();
+  } finally {
+    activeThumbJobs--;
+    const next = thumbWaiters.shift();
+    if (next) next();
+  }
+}
 
 export const artworkRouter = new Hono();
 
@@ -83,12 +105,14 @@ function generateFallbackSvgLandscape(title: string, nodeType?: string): Respons
 async function extractThumbnailWithFfmpeg(videoPath: string, targetPath: string): Promise<boolean> {
   try {
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
-    await execFileAsync(
-      'ffmpeg',
-      ['-ss', '00:02:30', '-i', videoPath, '-vframes', '1', '-q:v', '2', targetPath, '-y'],
-      { timeout: 8000 }
+    const result = await withThumbSlot(() =>
+      execFileAsync(
+        'ffmpeg',
+        ['-ss', '00:02:30', '-i', videoPath, '-vframes', '1', '-q:v', '2', targetPath, '-y'],
+        { timeout: 8000 }
+      )
     );
-    return true;
+    return result !== null;
   } catch {
     return false;
   }
@@ -97,13 +121,32 @@ async function extractThumbnailWithFfmpeg(videoPath: string, targetPath: string)
 async function sendArtworkFile(filePath: string, c: any) {
   if (!filePath || typeof filePath !== 'string') return null;
 
-  // 1. Image distante (TMDb, TVmaze, etc.) : Proxy transparent avec en-têtes CORS universels
+  // 1. Image distante (TMDb, TVmaze, etc.) : Proxy transparent avec en-têtes CORS universels.
+  // Les URLs provenant des NFO/métadonnées ne doivent jamais permettre d'atteindre
+  // un service interne (SSRF).
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
     try {
-      const upstream = await fetch(filePath, { signal: AbortSignal.timeout(5000) });
+      const safeUrl = getSafeOutboundUrl(filePath, { allowPrivate: false, allowHttp: true });
+      if (!safeUrl) return null;
+
+      const upstream = await safeFetch(
+        safeUrl.toString(),
+        { allowPrivate: false, allowHttp: true },
+        { signal: AbortSignal.timeout(8000) }
+      );
       if (!upstream.ok) return null;
+
       const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+      // Pas de SVG distant : un SVG peut contenir du script et serait servi
+      // depuis l'origine de l'API.
+      if (!/^image\/(jpeg|jpg|png|webp|gif|avif)/i.test(contentType)) return null;
+
+      const announcedLength = parseInt(upstream.headers.get('content-length') || '0', 10);
+      if (announcedLength > MAX_REMOTE_ARTWORK_BYTES) return null;
+
       const arrayBuf = await upstream.arrayBuffer();
+      if (arrayBuf.byteLength > MAX_REMOTE_ARTWORK_BYTES) return null;
+
       return new Response(arrayBuf, {
         headers: {
           'Content-Type': contentType,
@@ -127,10 +170,17 @@ async function sendArtworkFile(filePath: string, c: any) {
 
   for (const p of candidatePaths) {
     try {
+      const fileStat = await fs.stat(p);
+      if (!fileStat.isFile() || fileStat.size > MAX_REMOTE_ARTWORK_BYTES) continue;
+
       const data = await fs.readFile(p);
       const ext = path.extname(p).toLowerCase();
       const contentType =
-        ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+        ext === '.png' ? 'image/png'
+        : ext === '.webp' ? 'image/webp'
+        : ext === '.gif' ? 'image/gif'
+        : ext === '.avif' ? 'image/avif'
+        : 'image/jpeg';
       return new Response(data, {
         headers: {
           'Content-Type': contentType,
@@ -304,7 +354,15 @@ artworkRouter.get('/:id/thumb', async (c) => {
       const res = await sendArtworkFile(cachedThumb, c);
       if (res) return res;
     } catch {
-      const extracted = await extractThumbnailWithFfmpeg(media.videoFilePath, cachedThumb);
+      // Dédupliquer les extractions concurrentes pour un même média : sans cela,
+      // plusieurs vignettes simultanées lancent autant de processus FFmpeg.
+      let extraction = thumbInFlight.get(media.id);
+      if (!extraction) {
+        extraction = extractThumbnailWithFfmpeg(media.videoFilePath, cachedThumb)
+          .finally(() => thumbInFlight.delete(media.id));
+        thumbInFlight.set(media.id, extraction);
+      }
+      const extracted = await extraction;
       if (extracted) {
         const res = await sendArtworkFile(cachedThumb, c);
         if (res) return res;

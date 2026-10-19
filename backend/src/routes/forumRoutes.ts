@@ -21,6 +21,19 @@ export const forumRouter = new Hono();
 // Uploads et téléchargements de médias forum
 forumRouter.route('/', forumUploadRouter);
 
+/**
+ * N'accepte que les pièces jointes internes ou des URLs HTTP(S).
+ * Empêche notamment les URL `javascript:` / `data:` d'être stockées puis rendues.
+ */
+function sanitizeForumMediaUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const clean = value.trim();
+  if (!clean) return null;
+  if (clean.startsWith('/api/forum/attachments/')) return clean.slice(0, 2048);
+  if (/^https?:\/\//i.test(clean)) return clean.slice(0, 2048);
+  return null;
+}
+
 async function canAccessPrivateForum(userId: string, ownerId: string): Promise<boolean> {
   if (userId === ownerId) return true;
   const friendship = await db.query.userFriends.findFirst({
@@ -217,17 +230,22 @@ forumRouter.post('/topics/:slug/messages', async (c) => {
 
   const finalTitle = access.topicTitle || topicTitle || slug;
 
+  // L'identité de l'auteur ne doit JAMAIS provenir du corps de la requête :
+  // sinon n'importe quel visiteur pourrait poster au nom d'un autre membre.
+  const authorId = user?.id || null;
+  const authorName = user?.displayName || 'Invité';
+
   const [newMessage] = await db
     .insert(forumMessages)
     .values({
       topicSlug: slug,
       topicTitle: finalTitle,
-      content: content || '',
-      authorName: user?.displayName || body.authorName || 'Utilisateur',
-      authorId: user?.id || body.authorId || null,
+      content: typeof content === 'string' ? content.slice(0, 10000) : '',
+      authorName,
+      authorId,
       mediaType,
-      mediaUrl: mediaUrl || null,
-      fileName: fileName || null,
+      mediaUrl: sanitizeForumMediaUrl(mediaUrl),
+      fileName: typeof fileName === 'string' ? fileName.slice(0, 255) : null,
       replyToId: replyToId || null,
       replyToText: replyToText || null,
       replyToAuthor: replyToAuthor || null,
@@ -298,8 +316,12 @@ forumRouter.post('/messages/:id/vote', requireAuth, async (c) => {
 function resolveVoiceUser(c: any) {
   const user = c.get('user');
   if (user) return user;
-  const headerId = c.req.header('x-user-id') || c.req.header('x-device-id');
-  const anonId = headerId || 'guest-' + Math.random().toString(36).slice(2, 8);
+  // L'en-tête X-User-Id n'est pas authentifié : on ne l'utilise jamais comme
+  // identité. Seul l'identifiant d'appareil, préfixé, sert d'identité éphémère.
+  const deviceId = c.req.header('x-device-id') || '';
+  const anonId = deviceId
+    ? `guest:${deviceId}`
+    : 'guest-' + Math.random().toString(36).slice(2, 10);
   return {
     id: anonId,
     displayName: 'Spectateur',
@@ -342,13 +364,23 @@ forumRouter.post('/topics/:slug/call/ping', async (c) => {
   const user = resolveVoiceUser(c);
   const body = await c.req.json().catch(() => ({}));
 
+  const access = await canAccessPrivateTopic(user, slug);
+  if (!access.allowed) {
+    return c.json({ error: access.error }, 403);
+  }
+
   const participants = pingVoiceCall(slug, user.id, body.isMuted);
   return c.json({ success: true, participants });
 });
 
-// Obtenir le statut de l'appel (Accessible publiquement)
+// Obtenir le statut de l'appel (réservé aux participants autorisés du salon)
 forumRouter.get('/topics/:slug/call/status', async (c) => {
   const slug = (c.req.param('slug') || '').toLowerCase();
+  const user = resolveVoiceUser(c);
+  const access = await canAccessPrivateTopic(user, slug);
+  if (!access.allowed) {
+    return c.json({ error: access.error }, 403);
+  }
   const participants = getVoiceCallParticipants(slug);
   return c.json({ success: true, participants });
 });
@@ -360,8 +392,13 @@ async function handleVoiceChunkPost(c: any) {
   const body = await c.req.json().catch(() => ({}));
   const { audioBase64, mimeType = 'audio/webm' } = body;
 
-  if (!audioBase64) {
+  if (typeof audioBase64 !== 'string' || !audioBase64) {
     return c.json({ error: 'Données audio manquantes' }, 400);
+  }
+  // Un fragment vocal est éphémère : borner sa taille évite de saturer la RAM.
+  // 512 Ko laisse largement la place à plusieurs secondes d'Opus/WebM.
+  if (audioBase64.length > 512 * 1024) {
+    return c.json({ error: 'Fragment audio trop volumineux' }, 413);
   }
 
   const access = await canAccessPrivateTopic(user, slug);
@@ -374,7 +411,7 @@ async function handleVoiceChunkPost(c: any) {
     user.id,
     user.displayName || 'Participant',
     audioBase64,
-    mimeType
+    typeof mimeType === 'string' && mimeType.startsWith('audio/') ? mimeType : 'audio/webm'
   );
 
   return c.json({ success: true, chunkId: chunk.id });
@@ -383,8 +420,15 @@ async function handleVoiceChunkPost(c: any) {
 // Handler commun pour la récupération des fragments audio
 async function handleVoiceChunksGet(c: any) {
   const slug = (c.req.param('slug') || '').toLowerCase();
-  const since = Number(c.req.query('since') || 0);
+  const since = Math.max(0, Number(c.req.query('since') || 0) || 0);
   const user = resolveVoiceUser(c);
+
+  // Les fragments audio d'un salon privé ne doivent pas être lisibles par un
+  // visiteur qui ne participe pas à la conversation.
+  const access = await canAccessPrivateTopic(user, slug);
+  if (!access.allowed) {
+    return c.json({ error: access.error }, 403);
+  }
 
   const chunks = getVoiceAudioChunks(slug, since, user?.id);
   return c.json({ success: true, chunks });

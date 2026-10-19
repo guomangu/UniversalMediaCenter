@@ -240,7 +240,7 @@ export const FloatingBottomPlayer: React.FC = () => {
   // Hook 1 : Chargement des métadonnées enrichies (pistes audio, sous-titres, chapitres intro, next épisode)
   useEffect(() => {
     if (activeMedia?.id) {
-      fetchMediaTracks(activeMedia.id).then((t) => {
+      fetchMediaTracks(activeMedia.id, activeMedia.share).then((t) => {
         setTracks(t);
         if (t?.requiresHls && activeMedia?.streamUrl && !activeMedia.streamUrl.includes('.m3u8') && !activeMedia.isLive) {
           const hlsUrl = getVideoStreamUrl(activeMedia.id, activeMedia.share, true);

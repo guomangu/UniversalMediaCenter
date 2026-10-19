@@ -17,11 +17,17 @@
         reverse_proxy backend:3000
     }
 
-    # 3. Service direct des Artworks et médias locaux
+    # 3. Service direct des artworks.
+    # Restreint aux images : sans ce filtre, /artworks/<chemin> pouvait servir
+    # n'importe quel fichier présent sous /media (vidéos, NFO, etc.) sans auth.
     handle_path /artworks/* {
-        root * /media
-        header Cache-Control "public, max-age=31536000, immutable"
-        file_server
+        @image path *.jpg *.jpeg *.png *.webp *.avif *.gif
+        handle @image {
+            root * /media
+            header Cache-Control "public, max-age=31536000, immutable"
+            file_server
+        }
+        respond 404
     }
 
     # 4. Interface Web Universelle Expo

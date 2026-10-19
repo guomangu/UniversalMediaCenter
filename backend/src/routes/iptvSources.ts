@@ -4,8 +4,9 @@ import { iptvSources, mediaNodes, eavValues, nodeEavLinks, eavAttributes } from 
 import { parseM3uContent } from '../iptv/m3uParser.js';
 import { ingestIptvChannels } from '../iptv/channelIngester.js';
 import { testSourceChannelsAvailability } from '../iptv/streamTester.js';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, inArray } from 'drizzle-orm';
 import { requireAdmin } from '../middleware/access.js';
+import { getSafeOutboundUrl, safeFetch } from '../utils/safeUrl.js';
 
 export const iptvSourcesRouter = new Hono();
 iptvSourcesRouter.use('*', requireAdmin);
@@ -32,9 +33,17 @@ iptvSourcesRouter.post('/', async (c) => {
     .returning();
 
   try {
-    const res = await fetch(m3uUrl, {
-      headers: { 'User-Agent': source.userAgent || 'UniversalMediaStack/3.0' },
-    });
+    const safeM3uUrl = getSafeOutboundUrl(m3uUrl, { allowPrivate: true, allowHttp: true });
+    if (!safeM3uUrl) throw new Error('URL M3U refusée par la politique de sécurité');
+    const res = await safeFetch(
+      safeM3uUrl.toString(),
+      { allowPrivate: true, allowHttp: true },
+      {
+        headers: { 'User-Agent': source.userAgent || 'UniversalMediaStack/3.0' },
+        signal: AbortSignal.timeout(20000),
+      }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const content = await res.text();
     const channels = parseM3uContent(content);
     const importedCount = await ingestIptvChannels(channels, source.id);
@@ -70,8 +79,13 @@ iptvSourcesRouter.post('/cleanup-orphans', async (c) => {
 
   let deletedChannelsCount = 0;
   if (activeIds.length === 0) {
-    const del = await db.delete(mediaNodes).where(eq(mediaNodes.nodeType, 'LIVE_CHANNEL')).returning();
-    deletedChannelsCount = del.length;
+    // Aucune source active : ne rien supprimer. Une désactivation temporaire de
+    // toutes les sources ne doit pas détruire la bibliothèque de chaînes.
+    return c.json({
+      success: true,
+      deletedChannelsCount: 0,
+      message: 'Aucune source active : nettoyage ignoré pour préserver les chaînes.',
+    });
   } else {
     // Supprimer les chaînes dont le sourceId est null ou n'est plus dans activeIds
     const allChannels = await db
@@ -85,7 +99,11 @@ iptvSourcesRouter.post('/cleanup-orphans', async (c) => {
 
     for (let i = 0; i < orphanIds.length; i += 200) {
       const batch = orphanIds.slice(i, i + 200);
-      const del = await db.delete(mediaNodes).where(and(eq(mediaNodes.nodeType, 'LIVE_CHANNEL'))).returning();
+      if (batch.length === 0) continue;
+      const del = await db
+        .delete(mediaNodes)
+        .where(and(eq(mediaNodes.nodeType, 'LIVE_CHANNEL'), inArray(mediaNodes.id, batch)))
+        .returning();
       deletedChannelsCount += del.length;
     }
   }
@@ -102,9 +120,16 @@ iptvSourcesRouter.post('/:id/sync', async (c) => {
   if (!source) return c.json({ error: 'Source IPTV introuvable' }, 404);
 
   try {
-    const res = await fetch(source.m3uUrl, {
-      headers: { 'User-Agent': source.userAgent || 'UniversalMediaStack/3.0' },
-    });
+    const safeM3uUrl = getSafeOutboundUrl(source.m3uUrl, { allowPrivate: true, allowHttp: true });
+    if (!safeM3uUrl) throw new Error('URL M3U refusée par la politique de sécurité');
+    const res = await safeFetch(
+      safeM3uUrl.toString(),
+      { allowPrivate: true, allowHttp: true },
+      {
+        headers: { 'User-Agent': source.userAgent || 'UniversalMediaStack/3.0' },
+        signal: AbortSignal.timeout(20000),
+      }
+    );
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const content = await res.text();
     const channels = parseM3uContent(content);

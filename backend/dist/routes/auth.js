@@ -3,10 +3,56 @@ import { db } from '../db/connection.js';
 import { users } from '../db/schema/index.js';
 import { sql, count, eq } from 'drizzle-orm';
 import { createSessionToken } from '../auth/token.js';
-import { hashPassword, verifyPassword } from '../auth/password.js';
+import { hashPassword, verifyPassword, verifyPin } from '../auth/password.js';
 import { getSiteParams, validateInvitationCode } from '../config/paramManager.js';
+import { requireAuth } from '../middleware/access.js';
 import { userDeviceRegistry } from '../devices/userDeviceRegistry.js';
+import { persistDeviceRevocation, removeDeviceRevocation } from '../devices/revocationStore.js';
 export const authRouter = new Hono();
+// ---------------------------------------------------------------------------
+// Limitation de débit sur la connexion (anti brute-force)
+// ---------------------------------------------------------------------------
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 12;
+const loginAttempts = new Map();
+function loginRateKey(c, identifier) {
+    const forwarded = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || '';
+    const ip = forwarded.split(',')[0].trim() || c.req.header('remote-addr') || 'unknown';
+    return `${ip}:${identifier.toLowerCase()}`;
+}
+function isLoginRateLimited(key) {
+    const now = Date.now();
+    const entry = loginAttempts.get(key);
+    if (!entry)
+        return false;
+    if (entry.resetAt <= now) {
+        loginAttempts.delete(key);
+        return false;
+    }
+    return entry.count >= LOGIN_MAX_ATTEMPTS;
+}
+function recordLoginFailure(key) {
+    const now = Date.now();
+    const entry = loginAttempts.get(key);
+    if (!entry || entry.resetAt <= now) {
+        loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+        return;
+    }
+    entry.count += 1;
+}
+function clearLoginFailures(key) {
+    loginAttempts.delete(key);
+}
+// Nettoyage périodique pour éviter une croissance illimitée de la Map.
+const loginCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of loginAttempts.entries()) {
+        if (entry.resetAt <= now)
+            loginAttempts.delete(key);
+    }
+}, 5 * 60 * 1000);
+if (typeof loginCleanupTimer.unref === 'function')
+    loginCleanupTimer.unref();
 // Configuration publique accessible pour le frontend (/api/auth/config)
 authRouter.get('/config', (c) => {
     const params = getSiteParams();
@@ -79,12 +125,28 @@ authRouter.get('/me', async (c) => {
         },
     });
 });
+// Déconnexion explicite : révoque le jeton de cet appareil côté serveur.
+// Sans cela, un jeton copié restait valide jusqu'à son expiration (30 jours).
+authRouter.post('/logout', requireAuth, async (c) => {
+    const user = c.get('user');
+    const deviceId = c.get('deviceId');
+    if (user?.id && deviceId) {
+        userDeviceRegistry.revokeDevice(user.id, deviceId);
+        await persistDeviceRevocation(user.id, deviceId);
+    }
+    return c.json({ success: true });
+});
 // Connexion standard (Email + Mot de passe)
 authRouter.post('/login', async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { email, password, userId, pin } = body;
     const cleanEmail = email ? String(email).trim().toLowerCase() : '';
     const cleanPass = password ? String(password) : '';
+    const cleanPin = pin !== undefined && pin !== null ? String(pin).trim() : '';
+    const rateKey = loginRateKey(c, cleanEmail || String(userId || 'unknown'));
+    if (isLoginRateLimited(rateKey)) {
+        return c.json({ error: 'Trop de tentatives de connexion. Réessayez dans quelques minutes.' }, 429);
+    }
     let user = cleanEmail
         ? await db.query.users.findFirst({
             where: (t, { eq }) => eq(sql `lower(${t.email})`, cleanEmail),
@@ -96,22 +158,32 @@ authRouter.post('/login', async (c) => {
         });
     }
     if (!user) {
+        recordLoginFailure(rateKey);
         return c.json({ error: 'Adresse e-mail ou mot de passe incorrect' }, 401);
     }
-    // Vérification mot de passe
+    // Vérification du secret.
+    // Un compte sans mot de passe ET sans PIN ne doit jamais pouvoir être ouvert
+    // en fournissant simplement son adresse e-mail.
+    let authenticated = false;
     if (user.passwordHash) {
-        if (!verifyPassword(cleanPass, user.passwordHash)) {
-            return c.json({ error: 'Adresse e-mail ou mot de passe incorrect' }, 401);
-        }
+        authenticated = verifyPassword(cleanPass, user.passwordHash);
     }
-    else if (user.pinHash && pin) {
-        if (user.pinHash !== String(pin).trim()) {
-            return c.json({ error: 'Mot de passe ou code incorrect' }, 401);
-        }
+    else if (user.pinHash) {
+        authenticated = verifyPin(cleanPin, user.pinHash);
     }
+    if (!authenticated) {
+        recordLoginFailure(rateKey);
+        return c.json({ error: 'Adresse e-mail ou mot de passe incorrect' }, 401);
+    }
+    clearLoginFailures(rateKey);
     const reqDeviceId = c.req.header('x-device-id') || '';
-    userDeviceRegistry.unrevokeDevice(user.id, reqDeviceId);
-    const token = createSessionToken(user.id);
+    // Une connexion explicite est le seul moyen de lever la révocation de CET
+    // appareil. Sans identifiant d'appareil, on ne touche à aucune révocation.
+    if (reqDeviceId) {
+        userDeviceRegistry.unrevokeDevice(user.id, reqDeviceId);
+        await removeDeviceRevocation(user.id, reqDeviceId);
+    }
+    const token = createSessionToken(user.id, reqDeviceId || undefined);
     return c.json({
         success: true,
         token,
@@ -166,7 +238,7 @@ authRouter.post('/register', async (c) => {
             return c.json({ error: 'Code d\'invitation invalide ou expiré' }, 403);
         }
     }
-    const passwordHash = await hashPassword(password);
+    const passwordHash = hashPassword(password);
     const makeAdmin = isFirstUser;
     const [newUser] = await db
         .insert(users)
@@ -187,7 +259,7 @@ authRouter.post('/register', async (c) => {
         blockedFolders: params.profiles?.defaultBlockedFolders ?? [],
     })
         .returning();
-    const token = createSessionToken(newUser.id);
+    const token = createSessionToken(newUser.id, c.req.header('x-device-id') || undefined);
     return c.json({
         success: true,
         token,

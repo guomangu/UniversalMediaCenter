@@ -63,7 +63,9 @@ export async function fetchCastServerInfo(): Promise<{ lanIp: string; port: numb
 
 export async function fetchCastDevices(): Promise<CastDevice[]> {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/cast/devices`).catch(() => null);
+    const res = await fetch(`${getApiBaseUrl()}/api/cast/devices`, {
+      headers: getAuthHeaders(),
+    }).catch(() => null);
     if (!res || !res.ok) return [];
     const data = await res.json().catch(() => ({}));
     return (data.devices || []).filter((d: CastDevice) => d.id !== getLocalDeviceId());
@@ -74,7 +76,9 @@ export async function fetchCastDevices(): Promise<CastDevice[]> {
 
 export async function fetchDeviceStatus(deviceId: string): Promise<CastDevice | null> {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/cast/device/${deviceId}`).catch(() => null);
+    const res = await fetch(`${getApiBaseUrl()}/api/cast/device/${deviceId}`, {
+      headers: getAuthHeaders(),
+    }).catch(() => null);
     if (res && res.ok) {
       const data = await res.json().catch(() => ({}));
       return data.device || null;
@@ -357,7 +361,7 @@ export async function sendCastCommand(targetDeviceId: string, action: CastAction
 
     const p1 = fetch(`${getApiBaseUrl()}/api/cast/command`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ targetDeviceId, action, payload }),
     }).catch(() => null);
 

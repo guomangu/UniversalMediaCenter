@@ -24,10 +24,19 @@ import { ratingRouter } from './routes/ratingRoutes.js';
 import { taxonomyRouter } from './routes/taxonomyRoutes.js';
 import { inviteRouter } from './routes/inviteRoutes.js';
 import { playbackSyncRouter } from './routes/userPlaybackSync.js';
+import { userDeviceRegistry } from './devices/userDeviceRegistry.js';
+import { loadDeviceRevocations, pruneDeviceRevocations } from './devices/revocationStore.js';
 
 const app = new Hono();
 
 app.use("*", compress());
+
+// En-têtes de sécurité de base, appliqués à toutes les réponses de l'API.
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Referrer-Policy', 'no-referrer');
+});
 
 app.use('*', cors({
   origin: (origin) => origin || '*',
@@ -47,7 +56,13 @@ app.onError((err, c) => {
   c.header('Access-Control-Allow-Credentials', 'true');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-User-Id, X-Device-Id, x-device-id, Cache-Control, Accept, Origin, Range, *');
-  return c.json({ success: false, error: err.message || 'Internal Server Error' }, 500);
+
+  // Ne jamais exposer les détails internes (chemins, requêtes SQL, secrets)
+  // au client en production.
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Internal Server Error'
+    : (err.message || 'Internal Server Error');
+  return c.json({ success: false, error: message }, 500);
 });
 
 app.get('/api/health', (c) => c.json({ status: 'ok', stack: 'Universal Media Stack v3.0' }));
@@ -77,6 +92,13 @@ async function startServer() {
     if (process.env.AUTO_SEED_KYOO_PRESET !== 'false') {
       await seedKyooPreset();
     }
+
+    // Restaurer les révocations d'appareils persistées : une déconnexion à
+    // distance doit survivre à un redémarrage du conteneur.
+    const storedRevocations = await loadDeviceRevocations();
+    userDeviceRegistry.hydrateRevocations(storedRevocations);
+    await pruneDeviceRevocations();
+
     startMultiRootNfoWatcher(chaosRoots);
     runBootMediaScan(chaosRoots).catch((err) => {
       console.warn('Boot scan warning:', err);

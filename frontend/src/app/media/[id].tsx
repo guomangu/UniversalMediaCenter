@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform } from '
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchMediaDetail, resolveImageUrl, getVideoStreamUrl } from '@/services/api';
+import { getAuthToken } from '@/services/authStore';
 import { getApiBaseUrl } from '@/services/apiConfig';
 import { playerStore } from '@/services/playerStore';
 import { checkFavorite, toggleFavorite } from '@/services/userApi';
@@ -268,9 +269,10 @@ export default function MediaDetailScreen() {
     const isNonNativeContainer = !filePath.endsWith('.mp4') && !filePath.endsWith('.webm');
     const useHls = Boolean(media.requiresHls || (media.nodeType !== 'LIVE_CHANNEL' && (!filePath || isNonNativeContainer)));
     const apiBase = getApiBaseUrl();
+    const authToken = getAuthToken();
     const streamUrl = isChannel && media.streamUrl
       ? (media.streamUrl.startsWith("http")
-          ? `${apiBase}/api/iptv/proxy?url=${encodeURIComponent(media.streamUrl)}`
+          ? `${apiBase}/api/iptv/proxy?url=${encodeURIComponent(media.streamUrl)}${authToken ? `&token=${encodeURIComponent(authToken)}` : ''}`
           : getVideoStreamUrl(playId, share))
       : getVideoStreamUrl(playId, share, useHls);
 

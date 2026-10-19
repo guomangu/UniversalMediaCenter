@@ -11,11 +11,20 @@ export function registerPwa(): void {
     document.cookie = 'ums_cache_version=3; path=/; max-age=31536000; SameSite=Lax';
   } catch {}
 
-  // 2. Nettoyage proactif des caches de données obsolètes
+  // 2. Nettoyage proactif des caches obsolètes.
+  // ⚠️ Ne jamais supprimer les caches courants `ums-images-cache-v1` et
+  // `ums-data-cache-v1` : ils portent le suffixe v1 mais sont bien la version
+  // active. L'ancien filtre `includes('v1')` vidait tout le cache hors-ligne
+  // à chaque démarrage.
   if ('caches' in window) {
+    const currentCaches = new Set([
+      'ums-static-ums-pwa-v3',
+      'ums-images-cache-v1',
+      'ums-data-cache-v1',
+    ]);
     window.caches.keys().then((keys) => {
       keys.forEach((key) => {
-        if (key.includes('v1') || key.includes('v2')) {
+        if (key.startsWith('ums-') && !currentCaches.has(key)) {
           window.caches.delete(key).catch(() => {});
         }
       });

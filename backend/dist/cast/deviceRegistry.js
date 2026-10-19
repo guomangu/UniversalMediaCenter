@@ -1,8 +1,20 @@
+import crypto from 'node:crypto';
+const MAX_QUEUED_COMMANDS = 100;
 class CastDeviceRegistry {
     devices = new Map();
     commandQueues = new Map();
     DEVICE_TTL_MS = 35_000;
+    MAX_DEVICES = 500;
     register(device) {
+        // Purge les appareils expirés avant d'enregistrer, puis borne la taille du registre.
+        this.listActive();
+        if (!this.devices.has(device.id) && this.devices.size >= this.MAX_DEVICES) {
+            const oldestId = this.devices.keys().next().value;
+            if (oldestId !== undefined) {
+                this.devices.delete(oldestId);
+                this.commandQueues.delete(oldestId);
+            }
+        }
         const fullDevice = { ...device, lastSeenAt: Date.now() };
         this.devices.set(device.id, fullDevice);
         if (!this.commandQueues.has(device.id)) {
@@ -38,11 +50,15 @@ class CastDeviceRegistry {
     queueCommand(cmd) {
         const fullCmd = {
             ...cmd,
-            id: Math.random().toString(36).substring(2, 9),
+            id: crypto.randomUUID(),
             createdAt: Date.now(),
         };
         const queue = this.commandQueues.get(cmd.targetDeviceId) || [];
         queue.push(fullCmd);
+        // Éviter qu'un appareil qui ne poll plus accumule indéfiniment des commandes.
+        if (queue.length > MAX_QUEUED_COMMANDS) {
+            queue.splice(0, queue.length - MAX_QUEUED_COMMANDS);
+        }
         this.commandQueues.set(cmd.targetDeviceId, queue);
         return fullCmd;
     }

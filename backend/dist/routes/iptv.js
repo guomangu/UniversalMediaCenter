@@ -2,11 +2,15 @@ import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import { mediaNodes, iptvSources, eavValues, eavAttributes, nodeEavLinks } from '../db/schema/index.js';
 import { eq, and, or, ilike, asc, not } from 'drizzle-orm';
-import { requireAuth } from '../middleware/access.js';
+import { requireAdmin, requireAuth } from '../middleware/access.js';
 import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 import { iptvSourcesRouter } from './iptvSources.js';
 import { proxyLiveStream } from '../iptv/liveProxyService.js';
+import { getSafeOutboundUrl, safeFetch } from '../utils/safeUrl.js';
 export const iptvRouter = new Hono();
+// Toutes les routes IPTV exigent une session valide (y compris le proxy).
+// Les sous-routes d'administration appliquent ensuite requireAdmin.
+iptvRouter.use('*', requireAuth);
 // Déléguer la gestion des sources IPTV (Admin)
 iptvRouter.route('/sources', iptvSourcesRouter);
 // Proxy de flux en direct universel (HLS manifest, audio, ts chunks) sans blocage d'en-tête XHR
@@ -18,12 +22,18 @@ iptvRouter.options('/proxy', (c) => {
 });
 iptvRouter.get('/proxy', async (c) => {
     const url = c.req.query('url');
-    if (!url || !url.startsWith('http')) {
+    if (!url) {
         return c.text('URL param required', 400);
     }
-    return await proxyLiveStream(c, url);
+    // Anti-SSRF : on refuse les protocoles non HTTP(S), le loopback, le link-local
+    // et les endpoints de métadonnées cloud. Les plages LAN restent autorisées
+    // pour les installations IPTV domestiques.
+    const safeUrl = getSafeOutboundUrl(url, { allowPrivate: true, allowHttp: true });
+    if (!safeUrl) {
+        return c.json({ error: 'URL de flux refusée par la politique de sécurité', code: 'UNSAFE_URL' }, 400);
+    }
+    return await proxyLiveStream(c, safeUrl.toString());
 });
-iptvRouter.use('*', requireAuth);
 iptvRouter.get('/channels', async (c) => {
     const user = c.get('user');
     // Contrôle RBAC : si l'utilisateur n'a pas le droit de regarder l'IPTV
@@ -84,7 +94,7 @@ iptvRouter.get('/categories', async (c) => {
         return c.json({ categories: [] });
     }
 });
-iptvRouter.post('/sync-epg', async (c) => {
+iptvRouter.post('/sync-epg', requireAdmin, async (c) => {
     const sources = await db.query.iptvSources.findMany({
         where: (t, { eq }) => eq(t.isActive, true),
     });
@@ -92,8 +102,11 @@ iptvRouter.post('/sync-epg', async (c) => {
     for (const src of sources) {
         if (!src.epgXmltvUrl)
             continue;
+        const safeEpgUrl = getSafeOutboundUrl(src.epgXmltvUrl, { allowPrivate: true, allowHttp: true });
+        if (!safeEpgUrl)
+            continue;
         try {
-            const res = await fetch(src.epgXmltvUrl);
+            const res = await safeFetch(safeEpgUrl.toString(), { allowPrivate: true, allowHttp: true }, { signal: AbortSignal.timeout(15000) });
             if (res.ok) {
                 await db.update(iptvSources).set({ lastSyncedAt: new Date() }).where(eq(iptvSources.id, src.id));
                 syncedSources++;

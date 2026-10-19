@@ -1,7 +1,12 @@
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/access.js';
 import { userDeviceRegistry } from '../devices/userDeviceRegistry.js';
+import { persistDeviceRevocation } from '../devices/revocationStore.js';
 export const userDeviceRouter = new Hono();
+const ALLOWED_DEVICE_ACTIONS = new Set([
+    'PLAY', 'PAUSE', 'SEEK', 'STOP', 'SET_VOLUME', 'MUTE', 'UNMUTE',
+    'LOAD_MEDIA', 'NAVIGATE', 'SET_SYNC_GROUP', 'REVOKE_SESSION', 'PING',
+]);
 userDeviceRouter.use('*', requireAuth);
 // Lister tous les appareils connectés au compte de l'utilisateur
 userDeviceRouter.get('/devices', async (c) => {
@@ -31,9 +36,9 @@ userDeviceRouter.post('/devices/heartbeat', async (c) => {
     if (!deviceId) {
         return c.json({ error: 'deviceId requis' }, 400);
     }
-    // Vérifier si l'appareil a été révoqué
+    // Vérifier si l'appareil a été révoqué. La révocation reste active tant que
+    // l'utilisateur ne se reconnecte pas explicitement.
     if (userDeviceRegistry.isRevoked(user.id, deviceId)) {
-        userDeviceRegistry.consumeRevocation(user.id, deviceId);
         return c.json({
             error: 'DEVICE_REVOKED',
             message: 'Cet appareil a été déconnecté à distance de votre compte.',
@@ -56,7 +61,6 @@ userDeviceRouter.post('/devices/heartbeat', async (c) => {
         currentPlayback: body.currentPlayback,
     });
     if (isRevoked) {
-        userDeviceRegistry.consumeRevocation(user.id, deviceId);
         return c.json({
             error: 'DEVICE_REVOKED',
             message: 'Cet appareil a été déconnecté à distance de votre compte.',
@@ -103,6 +107,7 @@ userDeviceRouter.post('/devices/:deviceId/disconnect', async (c) => {
     if (!deviceId)
         return c.json({ error: 'deviceId requis' }, 400);
     userDeviceRegistry.revokeDevice(user.id, deviceId);
+    await persistDeviceRevocation(user.id, deviceId);
     return c.json({ success: true, message: 'Appareil déconnecté avec succès' });
 });
 // Déconnecter tous les autres appareils connectés au compte
@@ -111,7 +116,14 @@ userDeviceRouter.post('/devices/disconnect-all-others', async (c) => {
     if (!user?.id)
         return c.json({ error: 'Non authentifié' }, 401);
     const currentDeviceId = c.req.header('x-device-id') || '';
-    const count = userDeviceRegistry.revokeAllOtherDevices(user.id, currentDeviceId);
+    const otherDevices = userDeviceRegistry
+        .getDevicesForUser(user.id)
+        .filter((d) => !currentDeviceId || !userDeviceRegistry.isMatchingDevice(d.deviceId, currentDeviceId));
+    for (const device of otherDevices) {
+        userDeviceRegistry.revokeDevice(user.id, device.deviceId);
+        await persistDeviceRevocation(user.id, device.deviceId);
+    }
+    const count = otherDevices.length;
     return c.json({
         success: true,
         revokedCount: count,
@@ -127,6 +139,9 @@ userDeviceRouter.post('/devices/command', async (c) => {
     const { targetDeviceId, action, payload } = body;
     if (!targetDeviceId || !action) {
         return c.json({ error: 'targetDeviceId et action sont requis' }, 400);
+    }
+    if (!ALLOWED_DEVICE_ACTIONS.has(action)) {
+        return c.json({ error: 'Action non supportée' }, 400);
     }
     // Vérifier que l'appareil cible appartient bien à l'utilisateur
     const targetDev = userDeviceRegistry.getDevice(String(targetDeviceId));
@@ -147,6 +162,11 @@ userDeviceRouter.get('/devices/poll/:deviceId', async (c) => {
     if (!user?.id)
         return c.json({ error: 'Non authentifié' }, 401);
     const deviceId = c.req.param('deviceId');
+    // Un utilisateur ne peut dépiler que les commandes de SES appareils.
+    const targetDevice = userDeviceRegistry.getDevice(deviceId);
+    if (!targetDevice || targetDevice.userId !== user.id) {
+        return c.json({ error: 'Appareil introuvable ou non associé à ce compte' }, 404);
+    }
     if (userDeviceRegistry.isRevoked(user.id, deviceId)) {
         return c.json({
             error: 'DEVICE_REVOKED',

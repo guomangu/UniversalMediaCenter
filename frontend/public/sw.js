@@ -7,6 +7,8 @@ const CACHE_VERSION = 'ums-pwa-v3';
 const STATIC_CACHE = `ums-static-${CACHE_VERSION}`;
 const IMAGE_CACHE = 'ums-images-cache-v1';
 const DATA_CACHE = 'ums-data-cache-v1';
+const MAX_IMAGE_CACHE_ENTRIES = 1200;
+const MAX_DATA_CACHE_ENTRIES = 400;
 
 const STATIC_ASSETS = [
   '/',
@@ -70,7 +72,32 @@ function isCacheableApiRequest(request) {
   // Exclure strictement tous les flux live, segments vidéo, sessions et progressions
   if (isLiveOrStreamRequest(url)) return false;
   if (url.includes('/api/user/') || url.includes('/api/auth/')) return false;
+
+  // ⚠️ Ne jamais mettre en cache une réponse dépendante de l'utilisateur.
+  // Le cache HTTP du Service Worker est indexé par URL, pas par jeton :
+  // sans cette exclusion, les données d'un profil adulte pourraient être
+  // resservies à un profil enfant après changement de compte.
+  if (request.headers.get('authorization')) return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.searchParams.has('token') || parsed.searchParams.has('auth') || parsed.searchParams.has('share')) {
+      return false;
+    }
+  } catch {}
+
   return url.includes('/api/ui/') || url.includes('/api/media/') || url.includes('/api/iptv/');
+}
+
+async function trimCache(cacheName, maxEntries) {
+  try {
+    const cache = await caches.open(cacheName);
+    const keys = await cache.keys();
+    if (keys.length <= maxEntries) return;
+    const excess = keys.length - maxEntries;
+    for (let i = 0; i < excess; i++) {
+      await cache.delete(keys[i]);
+    }
+  } catch {}
 }
 
 self.addEventListener('fetch', (event) => {
@@ -92,10 +119,11 @@ self.addEventListener('fetch', (event) => {
           const res = await fetch(request);
           if (res && (res.status === 200 || res.type === 'opaque')) {
             cache.put(request, res.clone());
+            trimCache(IMAGE_CACHE, MAX_IMAGE_CACHE_ENTRIES);
           }
           return res;
         } catch {
-          return cached || fetch(request).catch(() => new Response('', { status: 404 }));
+          return cached || new Response('', { status: 404 });
         }
       })
     );
@@ -111,6 +139,7 @@ self.addEventListener('fetch', (event) => {
           .then((res) => {
             if (res && res.status === 200) {
               cache.put(request, res.clone());
+              trimCache(DATA_CACHE, MAX_DATA_CACHE_ENTRIES);
             }
             return res;
           })

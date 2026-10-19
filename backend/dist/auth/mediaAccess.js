@@ -160,8 +160,19 @@ export function isMediaAllowedForUser(user, media) {
 }
 export function checkMediaAccess(user, mediaId, shareToken, parentId, nodeType, mediaData) {
     if (nodeType === 'LIVE_CHANNEL') {
-        if (user && user.canWatchIptv === false)
+        // Une chaîne en direct reste un média : sans session ni jeton de partage
+        // valide, elle ne doit pas être diffusée.
+        if (!user) {
+            if (!shareToken)
+                return false;
+            return verifyShareToken(shareToken, mediaId) || Boolean(parentId && verifyShareToken(shareToken, parentId));
+        }
+        if (user.canWatchIptv === false)
             return false;
+        if (user.isAdmin)
+            return true;
+        if (mediaData)
+            return isMediaAllowedForUser(user, { ...mediaData, nodeType });
         return true;
     }
     if (!user) {

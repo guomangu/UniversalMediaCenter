@@ -15,7 +15,15 @@ export function getCachedData<T>(key: string): T | null {
   const fullKey = CACHE_PREFIX + key;
   // 1. Niveau 1 : Mémoire vive ultra-rapide (0 ms absolu)
   const mem = memoryStore.get(fullKey);
-  if (mem) return mem.data;
+  if (mem) {
+    // La TTL dure s'applique aussi à la RAM : sans cela, un onglet resté
+    // ouvert très longtemps pouvait afficher indéfiniment des données périmées.
+    if (Date.now() - mem.timestamp > (mem.ttl || DEFAULT_TTL)) {
+      memoryStore.delete(fullKey);
+      return null;
+    }
+    return mem.data;
+  }
 
   // 2. Niveau 2 : LocalStorage persistant
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {

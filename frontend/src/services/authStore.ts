@@ -35,6 +35,19 @@ export function purgeAllMediaCaches(): void {
   // Purge de la mémoire vive instantanée
   clearMemoryCache();
 
+  // Purge des caches du Service Worker : les réponses API et les artworks mis
+  // en cache ne sont pas indexés par utilisateur. Sans cette purge, un profil
+  // enfant pourrait voir les données mises en cache d'un profil adulte.
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try {
+      window.caches.keys().then((keys) => {
+        keys
+          .filter((key) => key.startsWith('ums-data-cache') || key.startsWith('ums-images-cache'))
+          .forEach((key) => window.caches.delete(key).catch(() => {}));
+      }).catch(() => {});
+    } catch {}
+  }
+
   // Purge du LocalStorage persistant
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
@@ -111,13 +124,30 @@ export function updateCurrentUser(partial: Partial<UserProfile>): void {
 export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (memoryToken) headers['Authorization'] = `Bearer ${memoryToken}`;
-  if (memoryUser?.id) headers['X-User-Id'] = memoryUser.id;
+  // X-User-Id n'est plus envoyé : le serveur ne l'utilise pas comme preuve
+  // d'identité, et il ne doit jamais être considéré comme tel.
   const deviceId = getLocalDeviceId();
   if (deviceId) headers['X-Device-Id'] = deviceId;
   return headers;
 }
 
 export function logout(): void {
+  // Révoquer le jeton côté serveur avant de l'oublier localement : un jeton
+  // copié ne doit pas rester valide 30 jours après une déconnexion explicite.
+  const tokenToRevoke = memoryToken;
+  const deviceId = getLocalDeviceId();
+  if (tokenToRevoke && typeof window !== 'undefined') {
+    try {
+      fetch(`${getApiBaseUrl()}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${tokenToRevoke}`,
+          'X-Device-Id': deviceId,
+        },
+      }).catch(() => {});
+    } catch {}
+  }
+
   memoryUser = null;
   memoryToken = null;
   purgeAllMediaCaches();

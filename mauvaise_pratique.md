@@ -1,3 +1,37 @@
+## 🛑 138. Usurpation d'Identité par `X-User-Id`, Proxy IPTV Ouvert (SSRF), Traversée de Chemin des Sous-Titres, Écritures Non Authentifiées & Fuite de Cache PWA Inter-Profils (`access.ts`, `token.ts`, `password.ts`, `auth.ts`, `authRegister.ts`, `inviteRoutes.ts`, `iptv.ts`, `iptvSources.ts`, `liveProxyService.ts`, `safeUrl.ts`, `mediaStream.ts`, `mediaSubtitles.ts`, `mediaArtworks.ts`, `media.ts`, `forumRoutes.ts`, `forumUpload.ts`, `cast.ts`, `userDeviceRoutes.ts`, `revocationStore.ts`, `sw.js`, `authStore.ts`, `pwaRegistration.ts`, `TvChannelCard.tsx`, `Caddyfile`)
+
+* **Problème / Symptôme :**
+  1. N'importe quel client pouvait envoyer `X-User-Id: <uuid-admin>` et obtenir les droits administrateur sans jeton.
+  2. `/api/iptv/proxy` acceptait des URLs arbitraires sans authentification (SSRF vers loopback, réseau interne et métadonnées cloud), y compris via redirections.
+  3. `/api/media/:id/subtitles?fileName=../../...` permettait de lire n'importe quel fichier `.srt`/`.vtt` du disque, sans contrôle d'accès.
+  4. La progression de lecture, la suppression de playback et le webhook TMM acceptaient des écritures anonymes ou au nom d'un autre utilisateur.
+  5. Un compte sans mot de passe ni PIN pouvait être ouvert avec la seule adresse e-mail ; les PIN étaient stockés en clair.
+  6. Les jetons d'invitation étaient générés avec `Math.random`, sans expiration, et les champs utilisateur étaient injectés sans échappement dans la page HTML (XSS stockée).
+  7. Le cache CacheStorage du Service Worker indexait les réponses API par URL seulement : après changement de compte, un profil pouvait recevoir les données mises en cache d'un autre profil. Le nettoyage PWA supprimait aussi les caches actifs `v1` à chaque démarrage.
+  8. Le nettoyage des chaînes IPTV orphelines supprimait en réalité **toutes** les chaînes LIVE.
+  9. La route Caddy `/artworks/*` pouvait servir n'importe quel fichier sous `/media` (vidéos comprises) sans authentification.
+
+* **Causes Racines :**
+  - Confiance accordée à un en-tête client (`X-User-Id`) comme preuve d'identité.
+  - Proxy sortant sans liste de destinations autorisées ni validation des redirections ; `fetch` suit les redirections automatiquement.
+  - Concaténation de `fileName` utilisateur avec `path.join` sans vérifier que le chemin résolu reste sous le dossier du média.
+  - Routes de mutation sans `requireAuth`/`requireAdmin` et identité déduite du corps de requête.
+  - Absence de secret obligatoire et de comparaison à temps constant pour les PIN hérités.
+  - Interpolation directe de données utilisateur dans du HTML et génération de tokens non cryptographique.
+  - Cache HTTP non partitionné par utilisateur et filtre de version trop large (`includes('v1')`).
+  - `where` de suppression ne réutilisait pas le lot d'IDs orphelins calculé.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Une seule source d'identité :** jeton HMAC signé (`Authorization: Bearer` ou `?token=` en lecture seule), jamais `X-User-Id`. Inclure `deviceId` dans le jeton v2 pour que la révocation survive à l'omission de l'en-tête.
+  - **Moindre privilège :** `requireAuth` sur toute mutation, `requireAdmin` sur la réindexation/le matching/les sources IPTV, et contrôle d'accès métier avant de créer un lien de partage ou de lire un sous-titre.
+  - **Validation sortante systématique :** `getSafeOutboundUrl` + `safeFetch` (redirections validées une à une, loopback/link-local/métadonnées bloqués, LAN autorisé uniquement pour l'IPTV).
+  - **Chemins confinés :** `path.resolve` puis vérification du préfixe du dossier autorisé ; liste blanche d'extensions.
+  - **Secrets :** scrypt pour mots de passe et PIN, comparaison à temps constant, refus des comptes sans secret, avertissement si `AUTH_SECRET` est faible.
+  - **HTML sûr :** échappement de tous les champs et sérialisation JSON anti-`</script>` ; tokens via `crypto.randomBytes` avec expiration.
+  - **Cache partitionné :** ne jamais mettre en cache une réponse portant `Authorization` ou un token ; purger `ums-data-cache`/`ums-images-cache` au logout.
+  - **Suppressions ciblées :** toujours réutiliser le lot d'IDs calculé dans le `WHERE` et ne jamais supprimer massivement sur un simple type.
+  - **Surface statique minimale :** restreindre `/artworks/*` aux extensions d'image.
+
 ## 🛑 137. Navigation Télécommande Hors Lecteur, Modales Invisibles au Focus, Double Navigation `Link asChild` + `onPress`, Hooks Après Retour Anticipé & Flux Relatifs Multi-Pages (`useTvNavigation.ts`, `MediaCard.tsx`, `HeroSpotlight.tsx`, `MediaRail.tsx`, `MediaChildrenRow.tsx`, `FloatingBottomPlayer.tsx`, `AdminCreate*Modal.tsx`, `CastModal.tsx`, `OfflineIndicator.tsx`)
 
 * **Problème / Symptôme :**

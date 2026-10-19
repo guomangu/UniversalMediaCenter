@@ -181,8 +181,19 @@ export async function createSecondaryTables(): Promise<void> {
       profile_role TEXT DEFAULT 'STANDARD' NOT NULL,
       clicks_count INTEGER DEFAULT 0 NOT NULL,
       last_used_at TIMESTAMP,
+      expires_at TIMESTAMP,
+      is_used BOOLEAN DEFAULT FALSE NOT NULL,
       created_at TIMESTAMP DEFAULT NOW() NOT NULL
     );
+    ALTER TABLE user_invitations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
+    ALTER TABLE user_invitations ADD COLUMN IF NOT EXISTS is_used BOOLEAN DEFAULT FALSE NOT NULL;
+    CREATE TABLE IF NOT EXISTS device_revocations (
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_id TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      PRIMARY KEY (user_id, device_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_device_revocations_user ON device_revocations (user_id);
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS confidence_score DOUBLE PRECISION DEFAULT 1.0 NOT NULL;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS oshash TEXT;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS crc32 TEXT;

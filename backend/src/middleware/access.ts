@@ -1,6 +1,6 @@
 import type { Context, Next } from 'hono';
 import { db } from '../db/connection.js';
-import { verifySessionToken } from '../auth/token.js';
+import { verifySessionTokenDetails } from '../auth/token.js';
 import { getSiteParams } from '../config/paramManager.js';
 import { userDeviceRegistry } from '../devices/userDeviceRegistry.js';
 
@@ -28,28 +28,39 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
   if (c.req.method === 'OPTIONS') return await next();
   const authHeader = c.req.header('authorization');
   let userId: string | null = null;
+  let tokenDeviceId: string | undefined;
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    userId = verifySessionToken(authHeader.slice(7).trim());
+    const details = verifySessionTokenDetails(authHeader.slice(7).trim());
+    userId = details?.userId ?? null;
+    tokenDeviceId = details?.deviceId;
   }
 
-  // Support des balises vidéo HTML5 (<video src="...">) qui ne peuvent pas envoyer d'en-tête Authorization
-  if (!userId) {
+  // Support des balises vidéo HTML5 (<video src="...">) qui ne peuvent pas envoyer d'en-tête Authorization.
+  // Le jeton en query string n'est accepté que sur les requêtes de lecture, jamais sur les mutations.
+  if (!userId && (c.req.method === 'GET' || c.req.method === 'HEAD')) {
     const queryToken = c.req.query('token') || c.req.query('auth');
     if (queryToken) {
-      userId = verifySessionToken(queryToken.trim());
+      const details = verifySessionTokenDetails(queryToken.trim());
+      userId = details?.userId ?? null;
+      tokenDeviceId = details?.deviceId;
     }
   }
 
-  if (!userId) {
-    userId = c.req.header('x-user-id') || null;
-  }
+  // ⚠️ Sécurité : l'en-tête X-User-Id n'est JAMAIS une preuve d'authentification.
+  // Il est fourni à titre informatif par certains clients, mais seul un jeton signé
+  // (Authorization: Bearer ... ou ?token= sur une lecture) peut établir l'identité.
 
-  const deviceId = c.req.header('x-device-id') || c.req.query('deviceId') || '';
+  // L'appareil signé dans le jeton prime sur l'en-tête client : un appareil
+  // révoqué ne peut pas contourner le contrôle en omettant X-Device-Id.
+  const deviceId = tokenDeviceId || c.req.header('x-device-id') || c.req.query('deviceId') || '';
+  c.set('deviceId', deviceId);
 
   // Vérification de révocation à distance pour cet appareil
   if (userId && deviceId && userDeviceRegistry.isRevoked(userId, deviceId)) {
-    userDeviceRegistry.consumeRevocation(userId, deviceId);
+    // Ne PAS consommer la révocation ici : sinon un appareil révoqué pourrait
+    // simplement rejouer sa requête pour retrouver l'accès. Seule une
+    // authentification explicite (login) peut lever la révocation.
     c.set('user', null);
     return c.json(
       {

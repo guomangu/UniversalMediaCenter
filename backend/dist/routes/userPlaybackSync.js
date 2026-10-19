@@ -4,9 +4,31 @@ import { watchProgress } from '../db/schema/index.js';
 import { sql } from 'drizzle-orm';
 import { requireAuth } from '../middleware/access.js';
 import { userDeviceRegistry } from '../devices/userDeviceRegistry.js';
+import { canUserAccessMediaNodeId } from '../auth/mediaAccess.js';
 const groupPlaybackMap = new Map(); // key: `${userId}:${syncGroupId}`
 const accountPlaybackMap = new Map(); // key: userId (fallback rétro-compatible)
 const lastDbSaveMap = new Map();
+// Cache court du contrôle d'accès : la synchronisation peut émettre plusieurs
+// requêtes par seconde et on ne veut pas interroger la base à chaque battement.
+const mediaAccessCache = new Map();
+const MEDIA_ACCESS_CACHE_TTL_MS = 60_000;
+async function canSyncMedia(user, mediaId) {
+    if (user.isAdmin)
+        return true;
+    const key = `${user.id}:${mediaId}`;
+    const now = Date.now();
+    const cached = mediaAccessCache.get(key);
+    if (cached && cached.expiresAt > now)
+        return cached.allowed;
+    const allowed = await canUserAccessMediaNodeId(user, mediaId);
+    if (mediaAccessCache.size > 2000) {
+        const oldest = mediaAccessCache.keys().next().value;
+        if (oldest !== undefined)
+            mediaAccessCache.delete(oldest);
+    }
+    mediaAccessCache.set(key, { allowed, expiresAt: now + MEDIA_ACCESS_CACHE_TTL_MS });
+    return allowed;
+}
 function isMatchingDevice(idA, idB) {
     if (!idA || !idB)
         return false;
@@ -98,6 +120,11 @@ playbackSyncRouter.post('/sync', async (c) => {
     const syncGroupId = String(bodySyncGroup || 'default').trim();
     if (!deviceId || !mediaId) {
         return c.json({ error: 'deviceId et mediaId sont requis' }, 400);
+    }
+    // Ne jamais diffuser ni enregistrer la progression d'un média auquel
+    // l'utilisateur n'a pas droit (contrôle parental / PBAC).
+    if (!(await canSyncMedia(user, String(mediaId)))) {
+        return c.json({ error: 'Accès non autorisé à ce média', code: 'FORBIDDEN' }, 403);
     }
     const now = Date.now();
     const groupKey = `${user.id}:${syncGroupId}`;

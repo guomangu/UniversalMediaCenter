@@ -38,8 +38,13 @@ async function findMediaByIdOrSlug(idOrSlug) {
     });
 }
 const probeCache = new Map();
+const MAX_PROBE_CACHE_ENTRIES = 500;
 async function getMediaProbe(filePath) {
-    const cached = probeCache.get(filePath);
+    const stat = await fsp.stat(filePath);
+    // La clé inclut mtime + taille : si un fichier est remplacé sur disque, le
+    // cache est automatiquement invalidé au lieu de servir des métadonnées périmées.
+    const cacheKey = `${filePath}:${stat.mtimeMs}:${stat.size}`;
+    const cached = probeCache.get(cacheKey);
     if (cached)
         return cached;
     const { stdout } = await execFileAsync('ffprobe', [
@@ -68,10 +73,106 @@ async function getMediaProbe(filePath) {
         duration,
         videoCodec,
         isVideoNative,
+        mtimeMs: Math.floor(stat.mtimeMs),
         audioStreams,
     };
-    probeCache.set(filePath, probe);
+    if (probeCache.size >= MAX_PROBE_CACHE_ENTRIES) {
+        const oldest = probeCache.keys().next().value;
+        if (oldest !== undefined)
+            probeCache.delete(oldest);
+    }
+    probeCache.set(cacheKey, probe);
     return probe;
+}
+// ---------------------------------------------------------------------------
+// Limitation de la concurrence FFmpeg & entretien du cache de segments
+// ---------------------------------------------------------------------------
+const parsedFfmpegConcurrency = parseInt(process.env.FFMPEG_MAX_CONCURRENCY || '4', 10);
+const MAX_CONCURRENT_FFMPEG = Number.isFinite(parsedFfmpegConcurrency) && parsedFfmpegConcurrency > 0
+    ? parsedFfmpegConcurrency
+    : 4;
+const MAX_QUEUED_FFMPEG = 64;
+let activeFfmpeg = 0;
+const ffmpegWaiters = [];
+let segmentsSincePrune = 0;
+const SEGMENTS_BEFORE_PRUNE = 250;
+const MAX_CACHED_SEGMENTS = 3000;
+const MAX_SEGMENT_AGE_MS = 12 * 60 * 60 * 1000;
+async function withFfmpegSlot(task) {
+    if (activeFfmpeg >= MAX_CONCURRENT_FFMPEG) {
+        if (ffmpegWaiters.length >= MAX_QUEUED_FFMPEG) {
+            throw new Error('Trop de transcodages simultanés, réessayez dans un instant.');
+        }
+        await new Promise((resolve) => ffmpegWaiters.push(resolve));
+    }
+    activeFfmpeg++;
+    try {
+        return await task();
+    }
+    finally {
+        activeFfmpeg--;
+        const next = ffmpegWaiters.shift();
+        if (next)
+            next();
+    }
+}
+async function pruneSegmentCache(rootDir) {
+    if (segmentsSincePrune < SEGMENTS_BEFORE_PRUNE)
+        return;
+    segmentsSincePrune = 0;
+    try {
+        const entries = await fsp.readdir(rootDir, { withFileTypes: true }).catch(() => []);
+        const now = Date.now();
+        const files = [];
+        for (const entry of entries) {
+            if (!entry.isFile() || !entry.name.endsWith('.ts'))
+                continue;
+            const fullPath = path.join(rootDir, entry.name);
+            const s = await fsp.stat(fullPath).catch(() => null);
+            if (!s)
+                continue;
+            if (now - s.mtimeMs > MAX_SEGMENT_AGE_MS) {
+                await fsp.unlink(fullPath).catch(() => { });
+            }
+            else {
+                files.push({ path: fullPath, mtimeMs: s.mtimeMs });
+            }
+        }
+        if (files.length > MAX_CACHED_SEGMENTS) {
+            files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+            const excess = files.length - MAX_CACHED_SEGMENTS;
+            for (let i = 0; i < excess; i++) {
+                await fsp.unlink(files[i].path).catch(() => { });
+            }
+        }
+    }
+    catch (err) {
+        console.warn('Nettoyage du cache de segments impossible:', err);
+    }
+}
+/** Analyse fiable d'un en-tête Range (y compris les suffixes « bytes=-N »). */
+function parseByteRange(header, fileSize) {
+    if (!header || fileSize <= 0)
+        return null;
+    const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+    if (!match)
+        return null;
+    const [, rawStart, rawEnd] = match;
+    if (rawStart === '' && rawEnd === '')
+        return null;
+    if (rawStart === '') {
+        const suffixLength = parseInt(rawEnd, 10);
+        if (!Number.isFinite(suffixLength) || suffixLength <= 0)
+            return null;
+        return { start: Math.max(0, fileSize - suffixLength), end: fileSize - 1 };
+    }
+    const start = parseInt(rawStart, 10);
+    const end = rawEnd === '' ? fileSize - 1 : parseInt(rawEnd, 10);
+    if (!Number.isFinite(start) || !Number.isFinite(end))
+        return null;
+    if (start < 0 || start >= fileSize || end < start)
+        return null;
+    return { start, end: Math.min(end, fileSize - 1) };
 }
 // ---------------------------------------------------------------------------
 // HLS VOD Streaming Routes (Zero-latency on-the-fly transcoding for any media)
@@ -85,16 +186,15 @@ streamRouter.get('/:id/hls/:file', async (c) => {
     const id = c.req.param('id');
     const file = c.req.param('file') || '';
     const user = c.get('user');
-    const shareToken = c.req.query('share');
+    const shareToken = c.req.query('share') || c.req.query('share_token');
     const queryToken = c.req.query('token') || c.req.query('auth');
-    const targetAudio = c.req.query('audio') || 'auto';
+    // L'index audio provient du client : on n'accepte qu'un entier positif.
+    // Cela empêche toute injection dans le nom de fichier du cache ou dans -map.
+    const rawAudio = (c.req.query('audio') || 'auto').trim();
+    const targetAudio = /^\d{1,3}$/.test(rawAudio) ? rawAudio : 'auto';
     const media = await findMediaByIdOrSlug(id);
     if (!media)
         return c.json({ error: 'Média introuvable' }, 404);
-    // Chaînes TV en direct
-    if (media.nodeType === 'LIVE_CHANNEL' && media.streamUrl) {
-        return await proxyLiveStream(c, media.streamUrl);
-    }
     const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
         videoFilePath: media.videoFilePath,
         nfoFilePath: media.nfoFilePath,
@@ -105,6 +205,10 @@ streamRouter.get('/:id/hls/:file', async (c) => {
             error: user ? "Accès refusé pour votre profil" : 'Connexion requise',
             code: user ? 'FORBIDDEN' : 'UNAUTHORIZED',
         }, user ? 403 : 401);
+    }
+    // Chaînes TV en direct (après contrôle d'accès)
+    if (media.nodeType === 'LIVE_CHANNEL' && media.streamUrl) {
+        return await proxyLiveStream(c, media.streamUrl);
     }
     if (!media.videoFilePath || !fs.existsSync(media.videoFilePath)) {
         return c.json({ error: 'Fichier vidéo introuvable sur le disque', code: 'FILE_INACCESSIBLE' }, 404);
@@ -147,10 +251,13 @@ streamRouter.get('/:id/hls/:file', async (c) => {
         const totalSegments = Math.max(1, Math.ceil(probe.duration / segmentDuration));
         if (index >= totalSegments)
             return c.text('Segment index out of range', 404);
-        const cacheDir = '/tmp/ums_cache/segments';
-        await fsp.mkdir(cacheDir, { recursive: true });
+        // La version du fichier source fait partie du nom de chaque segment : si le
+        // média est remplacé, les anciens segments ne sont jamais resservis.
+        const cacheRoot = '/tmp/ums_cache/segments';
+        await fsp.mkdir(cacheRoot, { recursive: true });
+        await pruneSegmentCache(cacheRoot);
         const generateSegment = async (segIdx) => {
-            const segFile = path.join(cacheDir, `${media.id}_a${targetAudio}_seg${segIdx}.ts`);
+            const segFile = path.join(cacheRoot, `${media.id}_${probe.mtimeMs}_a${targetAudio}_seg${segIdx}.ts`);
             if (fs.existsSync(segFile))
                 return segFile;
             if (!inFlightSegments.has(segFile)) {
@@ -159,10 +266,12 @@ streamRouter.get('/:id/hls/:file', async (c) => {
                     const startTime = segIdx * segmentDuration;
                     const isLastSeg = segIdx === totalSegments - 1;
                     const segDur = isLastSeg ? Math.max(0.1, Number((probe.duration - segIdx * segmentDuration).toFixed(3))) : segmentDuration;
+                    const hasAudio = probe.audioStreams.length > 0;
                     let resolvedAudio = targetAudio;
-                    if (!resolvedAudio || resolvedAudio === 'auto') {
+                    const requestedAudioExists = probe.audioStreams.some((s) => String(s.index) === String(resolvedAudio));
+                    if (hasAudio && (!resolvedAudio || resolvedAudio === 'auto' || !requestedAudioExists)) {
                         const firstStereoAac = probe.audioStreams.find((s) => s.codec === 'aac' && (s.channels ?? 2) <= 2);
-                        resolvedAudio = String(firstStereoAac ? firstStereoAac.index : (probe.audioStreams[0]?.index ?? 1));
+                        resolvedAudio = String(firstStereoAac ? firstStereoAac.index : probe.audioStreams[0].index);
                     }
                     const selectedAudioStream = probe.audioStreams.find((s) => String(s.index) === String(resolvedAudio));
                     const isStereoAac = selectedAudioStream ? (selectedAudioStream.codec === 'aac' && (selectedAudioStream.channels ?? 2) <= 2) : false;
@@ -174,13 +283,15 @@ streamRouter.get('/:id/hls/:file', async (c) => {
                         ...(postSeek > 0 ? ['-ss', String(postSeek)] : []),
                         '-t', String(segDur),
                         '-map', '0:v:0',
-                        '-map', `0:${resolvedAudio}`,
+                        ...(hasAudio ? ['-map', `0:${resolvedAudio}`] : ['-an']),
                         ...(probe.isVideoNative
                             ? ['-c:v', 'copy']
                             : ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '23', '-pix_fmt', 'yuv420p']),
-                        ...(isStereoAac
-                            ? ['-c:a', 'copy']
-                            : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2']),
+                        ...(!hasAudio
+                            ? []
+                            : isStereoAac
+                                ? ['-c:a', 'copy']
+                                : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2']),
                         '-muxpreload', '0',
                         '-muxdelay', '0',
                         '-output_ts_offset', String(startTime),
@@ -189,9 +300,10 @@ streamRouter.get('/:id/hls/:file', async (c) => {
                         tempSeg,
                     ];
                     try {
-                        await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 25000 });
+                        await withFfmpegSlot(() => execFileAsync('ffmpeg', ffmpegArgs, { timeout: 25000 }));
                         if (fs.existsSync(tempSeg)) {
                             await fsp.rename(tempSeg, segFile);
+                            segmentsSincePrune++;
                         }
                     }
                     catch (err) {
@@ -241,15 +353,11 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
     setStreamCors(c);
     const id = c.req.param('id');
     const user = c.get('user');
-    const shareToken = c.req.query('share');
+    const shareToken = c.req.query('share') || c.req.query('share_token');
     const audio = c.req.query('audio');
     const media = await findMediaByIdOrSlug(id);
     if (!media)
         return c.json({ error: 'Média introuvable' }, 404);
-    // Chaînes TV en direct ou flux externes
-    if (media.nodeType === 'LIVE_CHANNEL' && media.streamUrl) {
-        return await proxyLiveStream(c, media.streamUrl);
-    }
     const isAuthorized = checkMediaAccess(user, media.id, shareToken, media.parentId, media.nodeType, {
         videoFilePath: media.videoFilePath,
         nfoFilePath: media.nfoFilePath,
@@ -332,13 +440,13 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
         const stream = fs.createReadStream(activeFilePath);
         return c.body(Readable.toWeb(stream), 200);
     }
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    if (start >= fileSize || end >= fileSize) {
+    const byteRange = parseByteRange(range, fileSize);
+    if (!byteRange) {
         c.header('Content-Range', `bytes */${fileSize}`);
+        c.header('Accept-Ranges', 'bytes');
         return c.body(null, 416);
     }
+    const { start, end } = byteRange;
     const chunksize = end - start + 1;
     c.header('Content-Range', `bytes ${start}-${end}/${fileSize}`);
     c.header('Accept-Ranges', 'bytes');

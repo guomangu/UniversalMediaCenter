@@ -1,8 +1,23 @@
 import { Hono } from 'hono';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { requireAuth } from '../middleware/access.js';
 export const forumUploadRouter = new Hono();
+const parsedMaxUpload = parseInt(process.env.FORUM_MAX_UPLOAD_BYTES || String(100 * 1024 * 1024), 10);
+const MAX_UPLOAD_BYTES = Number.isFinite(parsedMaxUpload) && parsedMaxUpload > 0
+    ? parsedMaxUpload
+    : 100 * 1024 * 1024;
+function mediaTypeForExtension(ext) {
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext))
+        return 'IMAGE';
+    if (['.mp4', '.webm'].includes(ext))
+        return 'VIDEO';
+    if (['.mp3', '.wav', '.ogg'].includes(ext))
+        return 'AUDIO';
+    return 'DOCUMENT';
+}
 const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads/forum');
 if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -20,9 +35,14 @@ const MIME_MAP = {
     '.ogg': 'audio/ogg',
     '.pdf': 'application/pdf',
 };
+const ALLOWED_UPLOAD_EXTENSIONS = new Set(Object.keys(MIME_MAP));
 // Envoi d'un fichier média (image, vidéo, audio, document)
-forumUploadRouter.post('/upload', async (c) => {
+forumUploadRouter.post('/upload', requireAuth, async (c) => {
     try {
+        const announcedLength = parseInt(c.req.header('content-length') || '0', 10);
+        if (Number.isFinite(announcedLength) && announcedLength > MAX_UPLOAD_BYTES) {
+            return c.json({ error: 'Fichier trop volumineux' }, 413);
+        }
         const contentType = c.req.header('content-type') || '';
         let buffer;
         let fileName = 'media';
@@ -32,10 +52,17 @@ forumUploadRouter.post('/upload', async (c) => {
             const body = await c.req.json();
             fileName = body.fileName || 'media';
             const fileData = body.fileData || '';
-            ext = path.extname(fileName) || '.jpg';
-            mediaType = body.mediaType || 'IMAGE';
+            ext = path.extname(fileName).toLowerCase() || '.jpg';
             const base64Str = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+            // Estimation de la taille décodée sans allouer un buffer démesuré.
+            if (base64Str.length > Math.ceil(MAX_UPLOAD_BYTES * 4 / 3) + 8) {
+                return c.json({ error: 'Fichier trop volumineux' }, 413);
+            }
             buffer = Buffer.from(base64Str, 'base64');
+            if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+                return c.json({ error: 'Fichier trop volumineux' }, 413);
+            }
+            mediaType = mediaTypeForExtension(ext);
         }
         else {
             const body = await c.req.parseBody();
@@ -45,21 +72,22 @@ forumUploadRouter.post('/upload', async (c) => {
             }
             const rawFile = file;
             fileName = rawFile.name || 'media';
-            ext = path.extname(fileName) || '.jpg';
+            ext = path.extname(fileName).toLowerCase() || '.jpg';
             const arrayBuffer = await rawFile.arrayBuffer();
             buffer = Buffer.from(arrayBuffer);
-            if (rawFile.type.startsWith('image/'))
-                mediaType = 'IMAGE';
-            else if (rawFile.type.startsWith('video/'))
-                mediaType = 'VIDEO';
-            else if (rawFile.type.startsWith('audio/'))
-                mediaType = 'AUDIO';
-            else
-                mediaType = 'DOCUMENT';
+            if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+                return c.json({ error: 'Fichier trop volumineux' }, 413);
+            }
+            mediaType = mediaTypeForExtension(ext);
+        }
+        // Liste blanche stricte : l'extension contrôle le Content-Type servi plus tard.
+        // Sans cela, un fichier .html/.svg pouvait être déposé puis servi depuis l'origine de l'API.
+        if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) {
+            return c.json({ error: 'Type de fichier non autorisé' }, 415);
         }
         const randomName = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`;
         const targetPath = path.join(UPLOADS_DIR, randomName);
-        fs.writeFileSync(targetPath, buffer);
+        await fsp.writeFile(targetPath, buffer, { flag: 'wx' });
         return c.json({
             success: true,
             url: `/api/forum/attachments/${randomName}`,
@@ -83,6 +111,9 @@ forumUploadRouter.get('/attachments/:filename', (c) => {
     c.header('Content-Type', mime);
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    c.header('X-Content-Type-Options', 'nosniff');
+    const safeHeaderFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    c.header('Content-Disposition', `inline; filename="${safeHeaderFilename}"`);
     const fileStream = fs.createReadStream(filePath);
     return c.body(fileStream);
 });

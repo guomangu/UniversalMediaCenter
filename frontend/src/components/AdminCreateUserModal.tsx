@@ -35,7 +35,7 @@ export function AdminCreateUserModal({ visible, profileTypes = [], onClose, onCr
   const handleCreate = async () => {
     if (!name.trim()) return setErr('Le nom d’affichage est requis');
     if (!email.trim() || !email.includes('@')) return setErr('Une adresse email valide est requise');
-    if (password && password.length < 6) return setErr('Le mot de passe doit faire au moins 6 caractères');
+    if (!password || password.length < 6) return setErr('Le mot de passe doit faire au moins 6 caractères');
 
     setLoading(true);
     setErr('');
@@ -43,7 +43,7 @@ export function AdminCreateUserModal({ visible, profileTypes = [], onClose, onCr
     const res = await createAdminUser({
       displayName: name.trim(),
       email: email.trim().toLowerCase(),
-      password: password.trim() || undefined,
+      password: password.trim(),
       profileRole: selectedRole,
       isAdmin: isAdminSelected,
     });
