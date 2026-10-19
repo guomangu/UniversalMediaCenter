@@ -3,9 +3,19 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
 import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 import { buildMediaAccessConditions } from '../auth/mediaAccessSql.js';
+const taxonomyServerCache = new Map();
+const TAXONOMY_SERVER_TTL = 60 * 1000; // 60 secondes de rétention en RAM
+export function invalidateServerTaxonomyCache() {
+    taxonomyServerCache.clear();
+}
 export const taxonomyRouter = new Hono();
 taxonomyRouter.get('/', async (c) => {
     const user = c.get('user');
+    const cacheKey = user ? `${user.id}_${user.isAdmin ? 'admin' : user.profileRole || 'user'}_${user.maxCsaAgeLimit ?? 'all'}` : 'anon';
+    const cached = taxonomyServerCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < TAXONOMY_SERVER_TTL) {
+        return c.json(cached.data);
+    }
     const accessConds = buildMediaAccessConditions(user, 'n');
     const hasAccessLimits = accessConds.length > 0;
     // 1. Sagas & Collections
@@ -324,9 +334,11 @@ taxonomyRouter.get('/', async (c) => {
         { id: 'qualities', title: 'Qualité', tags: Array.from(qualitiesRes).filter((t) => Number(t.count) > 0) },
         { id: 'countries', title: 'Pays', tags: Array.from(countriesRes).filter((t) => Number(t.count) > 0) },
     ];
-    return c.json({
+    const result = {
         categories: rawCategories.filter((cat) => cat.tags.length > 0),
-    });
+    };
+    taxonomyServerCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return c.json(result);
 });
 taxonomyRouter.get('/medias', async (c) => {
     const user = c.get('user');

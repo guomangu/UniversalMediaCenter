@@ -4,11 +4,12 @@ import { playerStore, registerPlaybackBroadcaster } from './playerStore';
 import { getActiveCastTarget, subscribeActiveCastTarget } from './castState';
 import {
   getLocalDeviceId,
+  getLocalPlaybackDeviceId,
   getLocalSyncGroupId,
   setLocalSyncGroupId,
 } from './deviceIdentity';
 
-export { getLocalDeviceId, getLocalSyncGroupId, setLocalSyncGroupId };
+export { getLocalDeviceId, getLocalPlaybackDeviceId, getLocalSyncGroupId, setLocalSyncGroupId };
 
 export interface RemoteAccountPlayback {
   userId: string;
@@ -29,13 +30,41 @@ export interface RemoteAccountPlayback {
   isMuted: boolean;
   isCastActive?: boolean;
   castTargetId?: string;
+  orderSeq?: number;
+  originDeviceId?: string;
+  actionType?: string;
+  actionTimestamp?: number;
   updatedAt: number;
 }
 
 let syncTimer: any = null;
 let isPublishing = false;
+let pendingReport: { payload: Partial<RemoteAccountPlayback>; isAction: boolean } | null = null;
 let lastReportedTime = 0;
 let lastRemoteSeekTime = 0;
+let lastAppliedOrderSeq = 0;
+
+// Canal de communication instantané entre onglets/fenêtres du même navigateur (0 ms latency)
+let localBroadcastChannel: BroadcastChannel | null = null;
+if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+  try {
+    localBroadcastChannel = new BroadcastChannel('ums_playback_sync_channel');
+    localBroadcastChannel.onmessage = (event) => {
+      const { type, payload, senderDeviceId } = event.data || {};
+      const myDeviceId = getLocalPlaybackDeviceId();
+      if (!payload || senderDeviceId === myDeviceId) return;
+
+      const mySyncGroup = getLocalSyncGroupId();
+      if (mySyncGroup === 'standalone' || (payload.syncGroupId && payload.syncGroupId !== mySyncGroup)) {
+        return;
+      }
+
+      if (type === 'PLAYBACK_ACTION') {
+        applyRemoteOrder(payload);
+      }
+    };
+  } catch {}
+}
 
 export async function fetchAccountPlayback(): Promise<RemoteAccountPlayback | null> {
   const user = getCurrentUser();
@@ -46,7 +75,7 @@ export async function fetchAccountPlayback(): Promise<RemoteAccountPlayback | nu
   if (syncGroupId === 'standalone') return null;
 
   try {
-    const deviceId = getLocalDeviceId();
+    const deviceId = getLocalPlaybackDeviceId();
     const res = await fetch(
       `${getApiBaseUrl()}/api/playback/sync?syncGroupId=${encodeURIComponent(syncGroupId)}&deviceId=${encodeURIComponent(deviceId)}`,
       {
@@ -63,16 +92,50 @@ export async function fetchAccountPlayback(): Promise<RemoteAccountPlayback | nu
 
 export async function reportAccountPlayback(payload: Partial<RemoteAccountPlayback>, isAction = false): Promise<void> {
   const user = getCurrentUser();
-  if (!user || isPublishing) return;
+  if (!user) return;
+
+  // Si une publication est déjà en vol, mettre en file d'attente pour ne JAMAIS perdre l'action utilisateur
+  if (isPublishing) {
+    pendingReport = {
+      payload: { ...(pendingReport?.payload || {}), ...payload },
+      isAction: Boolean(isAction || pendingReport?.isAction),
+    };
+    return;
+  }
 
   const localState = playerStore.getState();
   const currentMediaId = payload.mediaId || localState.activeMedia?.id;
   if (!currentMediaId) return;
 
-  const deviceId = getLocalDeviceId();
+  const deviceId = getLocalPlaybackDeviceId();
   const syncGroupId = getLocalSyncGroupId();
   const cast = getActiveCastTarget();
   const isCastActive = Boolean(cast);
+
+  // Diffusion instantanée en local pour les autres onglets du même navigateur
+  if (isAction && localBroadcastChannel) {
+    try {
+      localBroadcastChannel.postMessage({
+        type: 'PLAYBACK_ACTION',
+        senderDeviceId: deviceId,
+        payload: {
+          mediaId: currentMediaId,
+          mediaTitle: payload.mediaTitle || localState.activeMedia?.title,
+          posterUrl: payload.posterUrl || localState.activeMedia?.posterUrl,
+          streamUrl: payload.streamUrl || localState.activeMedia?.streamUrl,
+          isLive: payload.isLive ?? localState.activeMedia?.isLive,
+          positionSeconds: payload.positionSeconds ?? localState.activeMedia?.positionSeconds ?? 0,
+          durationSeconds: payload.durationSeconds ?? localState.activeMedia?.durationSeconds ?? 0,
+          isPlaying: payload.isPlaying ?? localState.activeMedia?.isPlaying ?? false,
+          activeAudio: payload.activeAudio || localState.activeMedia?.activeAudio || 'auto',
+          activeSubtitle: payload.activeSubtitle || localState.activeMedia?.activeSubtitle || 'off',
+          syncGroupId,
+          originDeviceId: deviceId,
+          updatedAt: Date.now(),
+        },
+      });
+    } catch {}
+  }
 
   isPublishing = true;
   try {
@@ -81,6 +144,7 @@ export async function reportAccountPlayback(payload: Partial<RemoteAccountPlayba
       headers: {
         ...getAuthHeaders(),
         'Content-Type': 'application/json',
+        'x-device-id': deviceId,
       },
       body: JSON.stringify({
         deviceId,
@@ -95,18 +159,37 @@ export async function reportAccountPlayback(payload: Partial<RemoteAccountPlayba
     });
   } catch {} finally {
     isPublishing = false;
+    if (pendingReport) {
+      const next = pendingReport;
+      pendingReport = null;
+      reportAccountPlayback(next.payload, next.isAction).catch(() => {});
+    }
   }
 }
 
 export async function stopAccountPlayback(): Promise<void> {
   const user = getCurrentUser();
   if (!user) return;
-  const deviceId = getLocalDeviceId();
+  const deviceId = getLocalPlaybackDeviceId();
   const syncGroupId = getLocalSyncGroupId();
+
+  if (localBroadcastChannel) {
+    try {
+      localBroadcastChannel.postMessage({
+        type: 'PLAYBACK_STOP',
+        senderDeviceId: deviceId,
+        syncGroupId,
+      });
+    } catch {}
+  }
+
   try {
     await fetch(`${getApiBaseUrl()}/api/playback/stop`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: {
+        ...getAuthHeaders(),
+        'x-device-id': deviceId,
+      },
       body: JSON.stringify({ deviceId, syncGroupId }),
     });
   } catch {}
@@ -137,135 +220,126 @@ subscribeActiveCastTarget((live) => {
 });
 
 /**
+ * Applique de manière autoritaire un ordre officiel provenant du serveur ou du BroadcastChannel.
+ * Ne ré-émet aucun événement synthétique vers le réseau (élimine la boucle infinie ping-pong).
+ */
+function applyRemoteOrder(remote: RemoteAccountPlayback) {
+  // RÈGLE ABSOLUE : En aucun cas une synchronisation distante avec son propre et même appareil !
+  const myDeviceId = getLocalPlaybackDeviceId();
+  const myBaseId = getLocalDeviceId();
+  const remoteOrigin = remote.originDeviceId || remote.leaderDeviceId || remote.deviceId || "";
+
+  const isSelf =
+    remoteOrigin === myDeviceId ||
+    remoteOrigin === myBaseId ||
+    remoteOrigin.startsWith(myBaseId + "_") ||
+    myDeviceId.startsWith(remoteOrigin + "_") ||
+    (remote.deviceId && (remote.deviceId === myDeviceId || remote.deviceId === myBaseId || remote.deviceId.startsWith(myBaseId + "_")));
+
+  if (isSelf) {
+    return;
+  }
+
+  const localState = playerStore.getState();
+  const activeLocal = localState.activeMedia;
+  const now = Date.now();
+
+  if (remote.orderSeq && remote.orderSeq > lastAppliedOrderSeq) {
+    lastAppliedOrderSeq = remote.orderSeq;
+  }
+
+  // A) Média différent : aligner le lecteur local sur le média en cours du compte
+  if (!activeLocal || activeLocal.id !== remote.mediaId) {
+    playerStore.openMedia({
+      id: remote.mediaId,
+      title: remote.mediaTitle,
+      posterUrl: remote.posterUrl,
+      streamUrl: remote.streamUrl || `${getApiBaseUrl()}/api/media/${remote.mediaId}/stream`,
+      isLive: remote.isLive,
+      activeAudio: remote.activeAudio,
+      activeSubtitle: remote.activeSubtitle,
+      initialTime: remote.positionSeconds,
+      isRemoteSync: true, // IMPORTANT: Ne pas re-diffuser en écrasant l'ordre !
+    });
+    return;
+  }
+
+  // B) Même média : réconcilier Play/Pause, position temporelle, langues et sous-titres
+  if (activeLocal && activeLocal.id === remote.mediaId) {
+    // Play / Pause
+    if (activeLocal.isPlaying !== remote.isPlaying) {
+      playerStore.syncPlayingFromRemote(remote.isPlaying);
+    }
+
+    // Calcul de la position théorique attendue avec l'écoulement naturel du temps
+    const elapsed = remote.isPlaying ? Math.max(0, (now - (remote.updatedAt || now)) / 1000) : 0;
+    const expectedPosition = (Number(remote.positionSeconds) || 0) + elapsed;
+
+    // Dérive temporelle > 2.5 secondes avec temporisation
+    if (Math.abs(activeLocal.positionSeconds - expectedPosition) > 2.5) {
+      if (now - lastRemoteSeekTime > 2000) {
+        lastRemoteSeekTime = now;
+        playerStore.seekTo(expectedPosition, false, false);
+      }
+    }
+
+    // Langue audio
+    if (remote.activeAudio && remote.activeAudio !== 'auto' && activeLocal.activeAudio !== remote.activeAudio) {
+      playerStore.syncAudioFromRemote(remote.activeAudio);
+    }
+
+    // Sous-titre
+    if (remote.activeSubtitle && activeLocal.activeSubtitle !== remote.activeSubtitle) {
+      playerStore.syncSubtitleFromRemote(remote.activeSubtitle);
+    }
+  }
+}
+
+/**
  * Démarrer la boucle de synchronisation globale multi-appareils pour le compte.
- * Tous les lecteurs (web, mobile, Cast) connectés au même compte et partageant le même syncGroupId restent en miroir temps réel :
- * - Synchronisation ordonnée Leader / Follower (élimine définitivement les boucles de feedback et écrasements mutuels)
- * - Synchronisation bidirectionnelle de position, état play/pause, pistes audio (langues) et sous-titres
- * - Mode autonome (standalone) respecté pour autoriser plusieurs flux indépendants
+ * Architecture : Appareil 1 ou 2 interagissant avec le player → Serveur → Appareils 1 et 2 synchronisés recevant le nouvel ordre.
  */
 export function startAccountPlaybackSyncLoop() {
   if (syncTimer) return;
 
-  syncTimer = setInterval(async () => {
+  const checkRemoteChanges = async () => {
     const user = getCurrentUser();
     if (!user) return;
 
-    const localState = playerStore.getState();
-    const activeLocal = localState.activeMedia;
-
-    // Si le document est en arrière-plan et qu'aucun média ne joue localement, ralentir la boucle
-    if (typeof document !== 'undefined' && document.hidden && !activeLocal?.isPlaying) {
-      return;
-    }
-
-    const myDeviceId = getLocalDeviceId();
     const mySyncGroup = getLocalSyncGroupId();
+    if (mySyncGroup === 'standalone') return;
+
+    // Si l'utilisateur local manipule actuellement le lecteur, ne pas perturber
+    if (playerStore.isWithinUserGracePeriod(2500)) return;
 
     try {
-      // Si l'appareil est en mode solo (standalone), il ne suit pas d'autres flux mais continue d'envoyer son statut
-      if (mySyncGroup === 'standalone') {
-        if (activeLocal) {
-          const now = Date.now();
-          if (now - lastReportedTime > 2500) {
-            lastReportedTime = now;
-            reportAccountPlayback({
-              mediaId: activeLocal.id,
-              mediaTitle: activeLocal.title,
-              posterUrl: activeLocal.posterUrl,
-              streamUrl: activeLocal.streamUrl,
-              isLive: activeLocal.isLive,
-              positionSeconds: activeLocal.positionSeconds,
-              durationSeconds: activeLocal.durationSeconds,
-              isPlaying: activeLocal.isPlaying,
-              activeAudio: activeLocal.activeAudio,
-              activeSubtitle: activeLocal.activeSubtitle,
-              volume: localState.volume,
-              isMuted: localState.isMuted,
-            }, false).catch(() => {});
-          }
-        }
-        return;
-      }
-
       const remote = await fetchAccountPlayback();
       const now = Date.now();
+      if (!remote || !remote.mediaId || now - remote.updatedAt > 60_000) return;
 
-      // Déterminer qui est le leader de la lecture
-      const leaderId = remote?.leaderDeviceId || remote?.deviceId || '';
-      const isRemoteActive = Boolean(remote && remote.mediaId && now - remote.updatedAt < 30_000);
-      const isMeLeader = isRemoteActive && leaderId === myDeviceId;
-      const isOtherLeader = isRemoteActive && leaderId !== myDeviceId;
+      const orderOrigin = remote.originDeviceId || remote.leaderDeviceId || remote.deviceId || '';
+      const myDeviceId = getLocalPlaybackDeviceId();
 
-      // 1. CAS LEADER : Cet appareil est le leader du groupe (ou diffuse en premier sans leader distant)
-      if (isMeLeader || (activeLocal && !isOtherLeader)) {
-        if (activeLocal) {
-          if (now - lastReportedTime > 2200) {
-            lastReportedTime = now;
-            reportAccountPlayback({
-              mediaId: activeLocal.id,
-              mediaTitle: activeLocal.title,
-              posterUrl: activeLocal.posterUrl,
-              streamUrl: activeLocal.streamUrl,
-              isLive: activeLocal.isLive,
-              positionSeconds: activeLocal.positionSeconds,
-              durationSeconds: activeLocal.durationSeconds,
-              isPlaying: activeLocal.isPlaying,
-              activeAudio: activeLocal.activeAudio,
-              activeSubtitle: activeLocal.activeSubtitle,
-              volume: localState.volume,
-              isMuted: localState.isMuted,
-            }, false).catch(() => {});
-          }
-        }
-        return;
-      }
+      // Si l'ordre vient de cet appareil lui-même, aucun besoin de s'écraser soi-même
+      if (orderOrigin === myDeviceId) return;
 
-      // 2. CAS FOLLOWER : Un AUTRE appareil est le leader actif du groupe
-      if (isOtherLeader && remote) {
-        // A) Média différent : aligner le lecteur local sur le média en cours du compte
-        if (!activeLocal || activeLocal.id !== remote.mediaId) {
-          playerStore.openMedia({
-            id: remote.mediaId,
-            title: remote.mediaTitle,
-            posterUrl: remote.posterUrl,
-            streamUrl: remote.streamUrl || `${getApiBaseUrl()}/api/media/${remote.mediaId}/stream`,
-            isLive: remote.isLive,
-            activeAudio: remote.activeAudio,
-            activeSubtitle: remote.activeSubtitle,
-            initialTime: remote.positionSeconds,
-            isRemoteSync: true, // IMPORTANT: Ne pas re-diffuser en écrasant le leader !
-          });
-          return;
-        }
-
-        // B) Même média : réconcilier play/pause, position temporelle, langues et sous-titres
-        if (activeLocal && activeLocal.id === remote.mediaId) {
-          // Play / Pause
-          if (activeLocal.isPlaying !== remote.isPlaying) {
-            playerStore.syncPlayingFromRemote(remote.isPlaying);
-          }
-
-          // Dérive temporelle > 2.0 secondes avec temporisation
-          if (Math.abs(activeLocal.positionSeconds - remote.positionSeconds) > 2.0) {
-            if (now - lastRemoteSeekTime > 2500) {
-              lastRemoteSeekTime = now;
-              playerStore.seekTo(remote.positionSeconds, false);
-            }
-          }
-
-          // Langue audio
-          if (remote.activeAudio && remote.activeAudio !== 'auto' && activeLocal.activeAudio !== remote.activeAudio) {
-            playerStore.syncAudioFromRemote(remote.activeAudio);
-          }
-
-          // Sous-titre
-          if (remote.activeSubtitle && activeLocal.activeSubtitle !== remote.activeSubtitle) {
-            playerStore.syncSubtitleFromRemote(remote.activeSubtitle);
-          }
-        }
-      }
+      // Un autre appareil a émis un ordre ou un changement : s'aligner
+      applyRemoteOrder(remote);
     } catch {}
-  }, 1800);
+  };
+
+  // Fréquence douce au repos (10s) pour détecter les changements initiés sur d'autres appareils du compte
+  syncTimer = setInterval(checkRemoteChanges, 10_000);
+
+  // Vérification instantanée lors du retour sur l'onglet ou au focus de la fenêtre
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', checkRemoteChanges);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        checkRemoteChanges();
+      }
+    });
+  }
 }
 
 if (typeof window !== 'undefined') {

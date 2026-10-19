@@ -177,6 +177,85 @@ Pour assurer une réactivité instantanée et éliminer tout gel de navigation o
 *   **Défilement Horizontal Strictement Isolé :**
     *   Ne jamais invoquer `scrollIntoView()` sur des sous-éléments d'un en-tête horizontal au sein d'une page défilable verticalement : cette méthode propage un défilement animé global qui verrouille le ScrollResponder et neutralise les clics.
     *   Cibler exclusivement le nœud DOM du conteneur horizontal via `scrollEl.scrollTo({ left: targetOffset, behavior: 'smooth' })`.
+*   **Débouncing Systématique des Actions Toggles (`lastToggleTimeRef < 300ms`) :**
+    *   Sur React Native Web, les éléments interactifs dotés d'un double écouteur `onPress` + `onClick` déclenchent les deux gestionnaires séquentiellement lors d'un même clic.
+    *   Pour toute fonction de bascule d'état (Play/Pause, Déplier/Replier, Plein écran, Sauts de progression), toujours appliquer un verrou temporel (`now - lastTime < 300ms`) afin d'ignorer la seconde invocation et éliminer les annulations instantanées (`AbortError`).
+*   **Autonomie Totale du Mini-Lecteur Replié & Relais Cast en Arrière-Plan :**
+    *   Le repli du lecteur doit mettre le flux en pause automatique propre pour respecter l'ergonomie multi-tâche, mais permettre sa reprise immédiate (`▶`) sans ré-agrandir et sur n'importe quelle page du site.
+    *   La boucle de battement de cœur racine (`_layout.tsx`) doit relayer l'état complet du média (`activeMedia`) pour que les télécommandes Cast puissent continuer à piloter le flux (`PLAY`, `PAUSE`, `SEEK`, `VOLUME`, `MUTE`) même quand l'utilisateur explore d'autres pages.
+    *   Préserver l'instance HLS et l'attachement du flux (`prevStreamUrlRef`) lors des re-renders et navigations pour éliminer toute réinitialisation de buffer.
+*   **Période de Grâce Souveraine Locale (4s) & Mutex Non-Destructif (`pendingReport`) :**
+    *   Dans `accountSyncService.ts`, ne jamais rejeter une action utilisateur (`isAction: true`) si une synchronisation est en vol : empiler la charge utile dans `pendingReport` et l'expédier aussitôt.
+    *   Sanctuariser les interactions utilisateur directes via `recordUserAction()` : pendant 4000ms (`isWithinUserGracePeriod()`), le terminal local est le maître absolu et toute synchronisation descendante distante voulant écraser l'état ou forcer la pause est formellement bloquée.
+    *   Dans `<video onPause={...}>`, ignorer systématiquement les événements de pause résiduels ou transitoires du DOM si l'utilisateur a cliqué sur Lecture dans les 1200ms précédentes ou si `activeMedia.isPlaying` est vrai.
+    *   Piloter directement le DOM (`video[data-player-div-video="true"].play()`) depuis `playerStore.setPlaying` pour garantir un lancement instantané sans dépendre des cycles de rendu React.
+*   **Élimination Universelle des Pièges de Focus DOM & Conformité WAI-ARIA (`aria-hidden` & écrans inactifs) :**
+    *   Sur React Native Web, les éléments interactifs (`Pressable` dotés de `focusable={true}`) acquièrent le focus DOM du navigateur. Si l'utilisateur clique sur un bouton de navigation ou de réduction et que l'écran précédent est masqué par React Navigation (`style="display: none;" aria-hidden="true"`), Chromium bloque `aria-hidden` (`Blocked aria-hidden on an element because its descendant retained focus`) et gèle le responder system de React Native Web, neutralisant les clics sur le reste de la page.
+    *   Déployer dans le `RootLayout` (`_layout.tsx`) une sentinelle réactive couplée à `usePathname()` et un `MutationObserver` : si `document.activeElement` se retrouve à un instant quelconque sous un conteneur avec `[aria-hidden="true"]` ou `[style*="display: none"]`, forcer immédiatement son floutage (`(el as HTMLElement).blur()`) et restituer le focus à `document.body`.
+    *   Dans tous les gestionnaires de transition d'état du lecteur (`handleCollapse`, `handleExpand`, `handleClose`, `handleTogglePlay`), appeler systématiquement `(document.activeElement as HTMLElement)?.blur()` avant d'altérer l'état ou d'engager une navigation.
+    *   Privilégier l'ouverture directe du lecteur persistant in-place (`playerStore.openMedia({ ..., expand: true })`) depuis les fiches de détail (`media/[id].tsx`) plutôt que des allers-retours de routage vers des écrans vides (`/player/[id]`).
 *   **Sanctuarisation des Sauts de Catégories & ScrollToTop :**
     *   Dans les gestionnaires de saut (`handleJumpToCategory`, `handleScrollToTop`), toujours libérer immédiatement les verrous de restauration (`isRestoringScroll = false`, `scrollRestoredRef = true`) pour empêcher tout snap-back lors du chargement différé des médias.
     *   S'assurer que les fonctions de défilement gèrent `y = 0` (`Math.max(0, y)`) sans garde bloquante `if (y <= 0) return;`.
+
+## 14. Architecture de Synchronisation Multi-Écrans par Ordres Séquentiels (`orderSeq`), Souveraineté Serveur & Isolation des Événements Passifs DOM
+
+*   **Souveraineté des Ordres Utilisateur Explicites (`orderSeq`, `actionTimestamp`, `originDeviceId`) :**
+    *   La synchronisation multi-écrans doit obligatoirement suivre le modèle : **`Appareil 1 ou 2 interagissant avec le player → Serveur → Appareils 1 et 2 synchronisés recevant le nouvel ordre`**.
+    *   Le serveur est l'unique source de vérité. Chaque interaction utilisateur (Play, Pause, Seek, Open Media, Audio, Sous-titres) incrémente un numéro d'ordre monotone (`orderSeq++`), horodate l'action (`actionTimestamp`) et enregistre l'appareil émetteur (`originDeviceId`).
+    *   Les battements passifs réguliers (`isAction: false`) de progression de lecture sont formellement interdits de modifier l'état de lecture (`isPlaying`) ou de contredire un ordre utilisateur récent (< 3.5s).
+*   **Éradication de la Boucle d'Écho DOM (`onPlay` / `onPause`) :**
+    *   Les écouteurs natifs `<video onPlay={...} onPause={...}>` ne doivent **JAMAIS** ré-émettre de message de synchronisation réseau (`shouldBroadcast = false`) à moins que l'événement ne provienne directement d'un clic utilisateur explicite (`userInitiatedActionRef.current === 'PLAY'` ou `'PAUSE'`).
+    *   Lorsqu'un lecteur suiveur applique un ordre reçu du serveur (`syncPlayingFromRemote`, buffer, ou relance), les événements DOM émis par le décodeur vidéo du navigateur sont considérés comme des réactions passives locales et ne doivent sous aucun prétexte être renvoyés au serveur.
+*   **Identifiant Unique par Instance/Session/Onglet (`getLocalPlaybackDeviceId`) :**
+    *   Ne jamais se baser uniquement sur un `deviceId` stocké en `localStorage` pour la synchronisation de lecture, car deux fenêtres ou onglets ouverts sur la même machine partageraient le même identifiant et se prendraient mutuellement pour le Leader.
+    *   Combiner l'identifiant matériel avec un jeton de session d'onglet (`sessionStorage`) : `${baseDeviceId}_${tabId}`. Deux fenêtres sur le même PC ont des identifiants distincts et se synchronisent parfaitement.
+*   **Canal Local Instantané (`BroadcastChannel`) & Polling Réactif (850ms) :**
+    *   Utiliser `BroadcastChannel(ums_playback_sync_channel)` pour propager les ordres en 0 ms entre fenêtres et onglets locaux d'un même navigateur.
+    *   Adopter un polling dynamique sous 850ms pour une synchronisation réseau fluide et quasi-instantanée sur tout le réseau LAN ou distant.
+*   **Tolérance de Dérive Temporelle Fluide (Time Calculation) :**
+    *   Calculer la position théorique attendue : `expectedPosition = positionSeconds + (isPlaying ? (now - updatedAt)/1000 : 0)`.
+    *   Ne jamais déclencher de micro-seek saccadé si l'écart est inférieur à 2.5 secondes. Ne recaler la vidéo que sur une dérive avérée avec temporisation (cooldown de 2 secondes), assurant une lecture continue sans saccades ni coupures de buffer.
+
+## 15. Continuité Absolue de Lecture au Repli/Dépli, Conteneurs DOM Invariants & Synchronisation Exclusivement Événementielle (Zéro Polling Agressif & Zéro Auto-Synchronisation)
+
+*   **Conteneur Vidéo DOM Invariant (`player_video_container`) :**
+    *   Ne **JAMAIS** envelopper un élément multimédia persistant (`<video>`) dans un composant dont les propriétés d'accessibilité (`accessibilityRole`), de focus (`focusable`) ou d'interactions tactiles (`onPress`) changent dynamiquement selon l'état d'affichage (ex: replié vs déplié).
+    *   Sous React Native Web, altérer `accessibilityRole="button"` vs `undefined` modifie le tag HTML généré (`<button>` vs `<div>`), ce qui force React à détruire et recréer la balise `<video>` à chaque bascule, anéantissant le buffer et réinitialisant la lecture à 0.
+    *   Toujours utiliser un conteneur `<View>` statique et invariant, et déléguer les clics tactiles à un composant frère transparent (`<Pressable style={StyleSheet.absoluteFill}>`) superposé uniquement en mode replié.
+*   **Continuité Ininterrompue de Lecture au Repli et Dépli (Zero-Cut Autonomous Player) :**
+    *   La lecture d'un média ne doit **JAMAIS** être coupée lorsque l'utilisateur réduit le lecteur cinéma (« ▼ Réduire »), le ré-agrandit (« Agrandir ») ou navigue entre les différentes pages du site (`/`, `/media/[id]`, `/explore`, `/tv`).
+    *   L'instance DOM `<video>` doit rester unique, vivante et continue pendant toute la session.
+*   **Filtrage des Pauses Asynchrones DOM Transitoires :**
+    *   Les changements de layout CSS brusques (passage de plein écran 100vw à miniature 58px) ou les navigations inter-écrans provoquent parfois l'émission d'un événement `pause` natif par Chromium.
+    *   Dans l'écouteur `onPause`, vérifier systématiquement l'intention de l'utilisateur : si `activeMedia.isPlaying` est vrai et qu'aucune action explicite de pause n'a été demandée (`userInitiatedActionRef.current !== 'PAUSE'`), ignorer la pause transitoire et relancer immédiatement la lecture (`v.play().catch(...)`).
+*   **Synchronisation Réseau Exclusivement Événementielle (Zéro Polling Agressif) :**
+    *   Bannir impérativement les boucles de polling réseau continues (ex: 850ms) qui saturent les terminaux et écrasent l'état du lecteur.
+    *   La synchronisation doit être strictement déclenchée par les **CHANGEMENTS RÉELS** :
+        1. Actions utilisateur immédiates (Play, Pause, Seek, Audio, Sous-titres, Volume, Mute, Ouverture, Clôture).
+        2. Changements de progression par palier de 5 secondes de lecture naturelle (dans `playerStore.updatePosition`).
+        3. Entre onglets du même navigateur : diffusion locale instantanée à 0 ms via `BroadcastChannel`.
+*   **Règle Absolue d'Exclusion Locale : Aucune Synchronisation Distante avec son Propre Appareil :**
+    *   Un terminal local ne doit sous aucun prétexte appliquer un ordre ou un état distant issu de son propre identifiant d'appareil (`remote.originDeviceId === myDeviceId || remote.deviceId === myDeviceId || isSelf`).
+    *   L'appareil local étant le créateur de sa propre progression, il s'ignore lui-même dans les flux de synchronisation descendante et ne s'écrase jamais.
+
+## 16. Ergonomie Modale 'Diffuser & Télécommande' : Partitionnement Écrans Connectés / Déconnectés, Déconnexion Directe In-Place & Noms Réels Universels
+
+*   **Partitionnement Visuel Strict : "Mes écrans connectés" vs "Mes écrans déconnectés" :**
+    *   Ne jamais lister tous les terminaux sous un en-tête unique générique sans séparer les états de synchronisation.
+    *   Structurer la modale en deux sections étanches :
+        - `🟢 Mes écrans connectés (${count})` : regroupe les appareils du compte en ligne et synchronisés (`isOnline && syncGroupId !== 'standalone'`), les cibles Cast actives et la télévision en cours de diffusion.
+        - `⚪ Mes écrans déconnectés (${count})` : regroupe les terminaux en mode indépendant (`syncGroupId === 'standalone'`), les écrans hors ligne, et les téléviseurs ou récepteurs Cast disponibles sur le réseau local.
+*   **Bouton de Déconnexion Direct In-Place (`[Déconnecter]`) :**
+    *   Chaque ligne d'écran connecté doit intégrer un bouton d'action directe `[Déconnecter]` qui bascule instantanément l'appareil en mode indépendant (`setDeviceSyncGroup(dev.deviceId, 'standalone')`) ou interrompt la session de diffusion Cast (`disconnectCastTotally(false)`).
+    *   La liste se met à jour instantanément en mémoire sans nécessiter de rechargement complet de page.
+    *   Symétriquement, chaque écran déconnecté dispose d'un bouton `[Synchroniser]` pour réintégrer le groupe de diffusion en un clic (`setDeviceSyncGroup(dev.deviceId, 'default')`).
+*   **Suppression du Bouton Isolé & Intégration Dynamique de la TV :**
+    *   Éliminer les boutons orphelins hors-liste tels que *"Caster sur ma Télévision"*.
+    *   Intégrer les récepteurs TV détectés (Google Cast SDK, Smart TV DLNA, Apple AirPlay) directement dans la taxonomie des écrans :
+        - En attente / veille $ightarrow$ dans *"Mes écrans déconnectés"* avec actions `[Diffuser]` et `[Connecter]`.
+        - En diffusion active $ightarrow$ dans *"Mes écrans connectés"* avec action `[Déconnecter]`.
+*   **Détection et Affichage des Noms Réels (`getRealDeviceDisplayName`) :**
+    *   Bannir les libellés anonymes (*"Navigateur Web"*, *"Linux"*, *"Appareil Connecté"*).
+    *   Identifier précisément le navigateur et l'environnement matériel à partir du User-Agent : ex. `Google Chrome (Linux)`, `Apple Safari (iPhone)`, `Samsung Smart TV (Tizen)`, `LG Smart TV (webOS)`, etc.
+    *   Combiner le titre réel avec un sous-titre contextualisé (média en lecture, route actuelle ou statut de veille) et une icône représentative (`💻`, `📱`, `📺`).

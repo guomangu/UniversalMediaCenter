@@ -26,6 +26,10 @@ export interface AccountPlaybackState {
   isMuted: boolean;
   isCastActive?: boolean;
   castTargetId?: string;
+  orderSeq: number; // Numéro d'ordre séquentiel incrémenté à chaque interaction utilisateur
+  originDeviceId: string; // Appareil ayant émis le dernier ordre
+  actionType?: string; // 'OPEN' | 'PLAY' | 'PAUSE' | 'SEEK' | 'AUDIO' | 'SUBTITLE' | 'PROGRESS'
+  actionTimestamp: number; // Horodatage serveur de l'ordre
   updatedAt: number;
 }
 
@@ -90,6 +94,9 @@ playbackSyncRouter.get('/sync', async (c) => {
       syncGroupId,
       deviceId: leaderDeviceId,
       leaderDeviceId,
+      orderSeq: 1,
+      originDeviceId: leaderDeviceId,
+      actionTimestamp: now,
     };
     groupPlaybackMap.set(groupKey, reconstructed);
     return c.json({
@@ -108,8 +115,7 @@ playbackSyncRouter.get('/sync', async (c) => {
 });
 
 // Publier / mettre à jour l'état de lecture synchronisé du compte
-// Règle d'or : "Le dernier appareil touchant le player a raison (c'est la dernière modif qui compte)"
-// Appareils interagissant avec le player → Serveurs → Appareil synchronisé recevant
+// Architecture : Appareil 1 ou 2 interagissant avec le player → Serveur → Appareils 1 et 2 synchronisés recevant le nouvel ordre
 playbackSyncRouter.post('/sync', async (c) => {
   const user = (c as any).get('user') as UserSession;
   if (!user?.id) return c.json({ error: 'Non authentifié' }, 401);
@@ -134,6 +140,7 @@ playbackSyncRouter.post('/sync', async (c) => {
     isCastActive,
     castTargetId,
     isAction, // true si l'utilisateur a touché le player (play, pause, seek, audio, sub, openMedia)
+    actionType,
   } = body;
 
   const deviceId = String(bodyDeviceId || headerDeviceId || '').trim();
@@ -147,17 +154,27 @@ playbackSyncRouter.post('/sync', async (c) => {
   const groupKey = `${user.id}:${syncGroupId}`;
   const existingGroupState = groupPlaybackMap.get(groupKey);
 
-  // Règle d'or : "Le dernier appareil touchant le player a raison"
-  // Si isAction est vrai (l'utilisateur a interagi avec les contrôles), cet appareil prend le contrôle immédiat
+  // Règle d'or : "Le dernier appareil touchant le player a raison (c'est la dernière modif qui compte)"
+  // Si isAction est vrai (l'utilisateur a interagi avec les contrôles), cet appareil émet un nouvel ordre officiel
   let leaderDeviceId = deviceId;
   let isSenderAuthoritative = false;
+  let nextOrderSeq = existingGroupState?.orderSeq || 1;
+  let actionTimestamp = existingGroupState?.actionTimestamp || now;
 
   if (isAction) {
     leaderDeviceId = deviceId;
     isSenderAuthoritative = true;
+    nextOrderSeq = (existingGroupState?.orderSeq || 0) + 1;
+    actionTimestamp = now;
   } else if (existingGroupState) {
+    // Si un ordre explicite vient d'avoir lieu (< 3.5s), un simple battement passif suiveur ne peut pas le renverser
+    const isRecentActionLock = now - (existingGroupState.actionTimestamp || 0) < 3500;
     const isOldLeaderAlive = now - existingGroupState.updatedAt < 15_000;
-    if (isOldLeaderAlive && existingGroupState.leaderDeviceId) {
+
+    if (isRecentActionLock) {
+      leaderDeviceId = existingGroupState.leaderDeviceId;
+      isSenderAuthoritative = (deviceId === existingGroupState.leaderDeviceId);
+    } else if (isOldLeaderAlive && existingGroupState.leaderDeviceId) {
       leaderDeviceId = existingGroupState.leaderDeviceId;
       isSenderAuthoritative = (deviceId === existingGroupState.leaderDeviceId);
     } else {
@@ -181,7 +198,7 @@ playbackSyncRouter.post('/sync', async (c) => {
       isLive: Boolean(isLive),
       positionSeconds: Number(positionSeconds) || 0,
       durationSeconds: Number(durationSeconds) || 0,
-      isPlaying: Boolean(isPlaying),
+      isPlaying: Boolean(existingGroupState.isPlaying), // Forcer l'alignement sur l'ordre officiel
       activeAudio: String(activeAudio || 'auto'),
       activeSubtitle: String(activeSubtitle || 'off'),
       volume: typeof volume === 'number' ? Math.max(0, Math.min(1, volume)) : 1,
@@ -190,9 +207,16 @@ playbackSyncRouter.post('/sync', async (c) => {
     };
     userDeviceRegistry.updatePlayback(user.id, deviceId, followerPlayback, syncGroupId);
 
-    // Retourner l'état officiel du leader à ce terminal pour qu'il s'aligne
+    // Retourner l'état officiel à ce terminal pour qu'il s'aligne immédiatement
     return c.json({ success: true, playback: existingGroupState, isFollower: true });
   }
+
+  // Déterminer isPlaying officiel :
+  // Si action explicite, la nouvelle valeur prévaut immédiatement.
+  // Si battement passif et ordre récent, conserver la valeur officielle de l'ordre.
+  const officialPlaying = isAction
+    ? Boolean(isPlaying)
+    : (existingGroupState ? existingGroupState.isPlaying : Boolean(isPlaying));
 
   const state: AccountPlaybackState = {
     userId: user.id,
@@ -206,13 +230,17 @@ playbackSyncRouter.post('/sync', async (c) => {
     isLive: Boolean(isLive),
     positionSeconds: Number(positionSeconds) || 0,
     durationSeconds: Number(durationSeconds) || 0,
-    isPlaying: Boolean(isPlaying),
+    isPlaying: officialPlaying,
     activeAudio: String(activeAudio || 'auto'),
     activeSubtitle: String(activeSubtitle || 'off'),
     volume: typeof volume === 'number' ? Math.max(0, Math.min(1, volume)) : 1,
     isMuted: Boolean(isMuted),
     isCastActive: Boolean(isCastActive),
     castTargetId: castTargetId ? String(castTargetId) : undefined,
+    orderSeq: nextOrderSeq,
+    originDeviceId: isAction ? deviceId : (existingGroupState?.originDeviceId || deviceId),
+    actionType: isAction ? (actionType || 'INTERACTION') : (existingGroupState?.actionType || 'PROGRESS'),
+    actionTimestamp,
     updatedAt: now,
   };
 
@@ -324,20 +352,21 @@ playbackSyncRouter.post('/broadcast', async (c) => {
     activeSubtitle: 'off',
     volume: 1,
     isMuted: false,
+    orderSeq: 1,
+    originDeviceId: String(leaderDeviceId),
+    actionType: 'BROADCAST',
+    actionTimestamp: now,
     updatedAt: now,
   };
 
   groupPlaybackMap.set(`${user.id}:${syncGroupId}`, state);
-  if (syncGroupId === 'default') {
-    accountPlaybackMap.set(user.id, state);
-  }
+  accountPlaybackMap.set(user.id, state);
 
-  // Envoyer la commande de chargement et assigner le groupe aux appareils cibles
-  const results = targetDeviceIds.map((targetId: string) => {
-    userDeviceRegistry.setSyncGroup(user.id, targetId, syncGroupId);
+  // Émettre des commandes directes vers les appareils cibles pour leur forcer l'ouverture immédiate
+  for (const tid of targetDeviceIds) {
     userDeviceRegistry.queueCommand({
+      targetDeviceId: String(tid),
       userId: user.id,
-      targetDeviceId: targetId,
       action: 'LOAD_MEDIA',
       payload: {
         mediaId,
@@ -349,13 +378,7 @@ playbackSyncRouter.post('/broadcast', async (c) => {
         syncGroupId,
       },
     });
-    return { targetId, status: 'dispatched' };
-  });
+  }
 
-  return c.json({
-    success: true,
-    syncGroupId,
-    dispatchedCount: results.length,
-    results,
-  });
+  return c.json({ success: true, count: targetDeviceIds.length, playback: state });
 });

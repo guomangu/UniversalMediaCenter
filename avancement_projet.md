@@ -1,3 +1,129 @@
+- [x] **98. Refonte du Menu 'Diffuser & Télécommande' (`CastModal.tsx`) : Partitionnement Visuel Strict 'Mes écrans connectés' vs 'Mes écrans déconnectés', Bouton Direct Déconnecter In-Place, Intégration Dynamique de la TV Locale & Détection des Noms Réels (`CastModal.tsx`, `CastModal.styles.ts`, `deviceIdentity.ts`, `userDeviceRegistry.ts`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic & Besoins Utilisateur :**
+    - Demande utilisateur : *Retravaille le menu Diffuser & Télécommande : Ajoute un bouton de deconnection directement dans les appareil connecter et il faut ajouter "Mes écrans deconnectés" en plus de "Mes écrans connectés" pour bien separer les ecrans en syncro et hors syncro. De plus tu enlevera "Caster sur ma Télévision" pour interger les appareils detecté dans "Mes écrans deconnectés" ou "Mes écrans connectés" en fonctions de leurs etats, de plus affiche les vrais nom des appareils.*
+  - **Mise en Œuvre & Innovations Apportées :**
+    - **Partitionnement Visuel Strict en 2 Sections Hermétiques :**
+      1. `🟢 Mes écrans connectés (X)` : Regroupe exclusivement les écrans du compte en ligne et synchronisés (`isOnline && syncGroupId !== 'standalone'`), les cibles Cast/TV actives et la télévision en cours de diffusion.
+      2. `⚪ Mes écrans déconnectés (Y)` : Regroupe les écrans en mode indépendant (`standalone`), les écrans hors-ligne, et les cibles TV/Cast disponibles sur le réseau local prêtes pour une diffusion.
+    - **Bouton Direct de Déconnexion In-Place (`[Déconnecter]`) :**
+      - Intégration d'un bouton direct de déconnexion sur chaque ligne d'appareil connecté (`styles.disconnectPill`).
+      - Pour les écrans du compte : bascule instantanée vers `syncGroupId = 'standalone'` via `setDeviceSyncGroup(dev.deviceId, 'standalone')`, déplaçant l'écran en temps réel vers "Mes écrans déconnectés" avec bannière informative immédiate.
+      - Pour les cibles Cast / Smart TV : coupure propre de la diffusion sans fil via `disconnectCastTotally(false)`.
+      - Symétriquement, dans "Mes écrans déconnectés", chaque écran dispose d'un bouton `[Synchroniser]` ou `[Connecter]` pour réintégrer le groupe de diffusion en un clic (`setDeviceSyncGroup(dev.deviceId, 'default')`).
+    - **Suppression du Bouton Isolé "Caster sur ma Télévision" & Intégration Dynamique :**
+      - Élimination définitive du composant isolé `styles.nativeCastBtn`.
+      - Intégration harmonieuse des cibles TV (Chromecast, Android TV, Smart TV, AirPlay) au sein des listes selon leur statut réel :
+        - En veille / disponible sur le LAN $ightarrow$ dans "Mes écrans déconnectés" avec boutons `[Diffuser]` et `[Connecter]`.
+        - En cours de diffusion $ightarrow$ dans "Mes écrans connectés" avec badge actif et bouton direct `[Déconnecter]`.
+    - **Résolution Automatique et Affichage des Noms Réels Universels :**
+      - Dérivation précise du modèle de matériel et du navigateur via `getRealDeviceDisplayName` et `parseRealDeviceName` (ex: `Google Chrome (Linux)`, `Apple Safari (iPhone)`, `Samsung Smart TV (Tizen)`, `LG Smart TV (webOS)`, `Chromecast Salon`, etc.) au lieu des étiquettes génériques anonymes (*"Navigateur Web"*, *"Linux"*, *"Appareil Connecté"*).
+      - Association d'icônes contextualisées (`💻`, `📱`, `📺`) et de sous-titres dynamiques (média en cours de lecture, route active ou veille).
+  - **Validation & Conformité :**
+    - Compilation TypeScript frontend & backend (`tsc --noEmit`) : 0 erreur.
+    - Tests multi-écrans automatisés (`testOrderBasedSync.ts`, `testAccountPlaybackSync.ts`) : 100% de réussite.
+
+- [x] **97. Éradication de la Coupure de Lecture au Repli du Lecteur Vidéo, Pérennité Invariante du Conteneur DOM (`player_video_container`), Synchronisation Exclusivement Événementielle (Fin du Polling Agressif) & Exclusion Totale d'Auto-Synchronisation Locale (`FloatingBottomPlayer.tsx`, `accountSyncService.ts`, `playerStore.ts`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic Approfondi de la Coupure de Lecture au Repli :**
+    - Problème utilisateur : *La lecture du média se coupe quand je replie la div player alors qu'il faut que la lecture du média continue quand je déplie ou replie la div player et même en changeant de page la lecture doit continuer car la div player est autonome pour le meilleur UX possible. En fait il ne faut pas synchroniser constamment, on synchronise quand il y a un changement (de progression ou play/pause ou ...). De plus c'est évident mais il ne faut en aucun cas une synchronisation distante avec son propre et même appareil.*
+    - Découvertes instrumentées via Chrome CDP (`Runtime.evaluate` & traçage DOM de cycle de vie) :
+      1. **Destruction & Remontage DOM par `<Pressable>` Dynamique :** Dans `FloatingBottomPlayer.tsx`, la balise `<video>` était logée dans un `<Pressable>` dont les attributs d'accessibilité `accessibilityRole={!isExpanded ? "button" : undefined}` et `focusable={!isExpanded}` changeaient dynamiquement. Sous React Native Web, basculer le rôle vers `button` modifie le tag racine (`<button>` / `<div role="button">` vs `<div>`), forçant React à démonter complètement l'élément `<video>` : la balise était détruite, son buffer vidé et son `currentTime` retombait à 0.
+      2. **Événement `pause` Asynchrone lors du Layout Shift Chromium :** Lors du recalcul brutal de texture vidéo lors du passage de 100vw à 58px, Chromium émettait un événement `pause` natif. Dans `onPause`, le code interprétait cet événement comme une volonté utilisateur et appelait `setPlaying(false)`.
+      3. **Surcharge Réseau par Polling Incessant à 850ms :** `startAccountPlaybackSyncLoop` interrogeait le serveur toutes les 850ms en continu sans qu'aucun changement ne soit survenu.
+      4. **Auto-Synchronisation Réflexive avec son Propre Appareil :** Le filtre d'expiration temporelle considérait son propre état renvoyé par le serveur comme un ordre distant après 3 secondes, provoquant l'écrasement de la lecture par le terminal lui-même.
+  - **Mise en Œuvre des Solutions d'Excellence :**
+    - **Conteneur DOM Statique et Invariant (`player_video_container`) :** Remplacement du conteneur `<Pressable>` dynamique par un conteneur `<View>` invariant dont le composant et les props ne changent jamais. L'interactivité de clic en mode replié est assurée par un calque transparent frère `<Pressable style={StyleSheet.absoluteFill}>`. La balise DOM `<video>` conserve la même instance (`V_1`) du début à la fin de la session (0 coupure, 0 rebuffering).
+    - **Filtrage Résilient des Pauses DOM Asynchrones :** Dans `onPause`, si l'action n'est pas expressément demandée par l'utilisateur (`userInitiatedActionRef.current !== "PAUSE"`) et que `activeMedia.isPlaying` est vrai, la pause est ignorée et la lecture est immédiatement relancée via `v.play().catch(...)`.
+    - **Continuité Absolue au Repli (`handleCollapse`), Dépli (`handleExpand`) & Navigation :** Maintien actif et ininterrompu de la lecture lors de chaque transition d'état et lors des navigations sur toutes les pages (`/`, `/media/[id]`, `/explore`, `/tv`).
+    - **Synchronisation Exclusivement Événementielle (Fin du Polling Agressif) :**
+      - Suppression intégrale de la boucle de polling à 850ms.
+      - Synchronisation émise UNIQUEMENT lors des changements réels : interaction utilisateur immédiate (Play, Pause, Seek, Audio, Sous-titre, Volume, Mute, Ouverture, Clôture) et progression par palier de 5 secondes de lecture naturelle.
+      - Propagation locale instantanée à 0 ms via `BroadcastChannel`.
+    - **Règle d'Exclusion Locale : Aucune Synchronisation Distante avec son Propre Appareil :**
+      - Dans `applyRemoteOrder`, vérification stricte `isSelf` basée sur `getLocalDeviceId()` : si l'ordre provient de cet appareil, il est immédiatement ignoré.
+  - **Validation Expérimentale & Tests E2E :**
+    - Test CDP Chrome automatisé : validation de la survie de l'instance DOM `<video>` (`V_1`), de la continuité temporelle (`currentTime`) et de l'état `paused: false` lors du repli, du dépli et des navigations inter-pages.
+    - Tests multi-écrans `testOrderBasedSync.ts` et `testAccountPlaybackSync.ts` : 100% de succès.
+    - Compilation TypeScript frontend & backend (`tsc --noEmit`) : 0 erreur.
+
+- [x] **96. Refonte de la Synchronisation Multi-Écrans en Architecture d'Ordres Séquentiels (`orderSeq`), Éradication des Boucles d'Écho DOM (`onPlay`/`onPause`), Isolation Multi-Onglets (`getLocalPlaybackDeviceId`) & Canal Local Instantané (`userPlaybackSync.ts`, `accountSyncService.ts`, `deviceIdentity.ts`, `FloatingBottomPlayer.tsx`, `playerStore.ts`, `testOrderBasedSync.ts`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic Approfondi du Blocage Mutuel en Mode Synchro :**
+    - Symptôme utilisateur : *Les 2 players arrivent à se connecter mais la lecture ne fonctionne pas, ils se bloquent mutuellement car ils se répondent la même chose en boucle au lieu de suivre le flux : Appareil 1 ou 2 interagissant avec le player → Serveurs → Appareil 1 et 2 synchronisé recevant le nouvel ordre.*
+    - Identification des 4 causes racines :
+      1. **Boucle d'Écho DOM Vidéo (`FloatingBottomPlayer.tsx`) :** Les gestionnaires d'événements HTML5 `<video onPlay={...} onPause={...}>` appelaient `playerStore.setPlaying(..., true)` avec `shouldBroadcast = true`. Dès qu'un appareil recevait un ordre distant et lançait `v.play()`, le navigateur émettait l'événement `onPlay` qui ré-émettait une requête réseau POST `/sync` vers le serveur. En cas de buffering ou d'autoplay temporaire, l'événement `onPause` ré-émettait `isPlaying: false`, créant une boucle infinie de contre-ordres ping-pong.
+      2. **Collision d'Identifiants Multi-Onglets (`deviceIdentity.ts`) :** L'identifiant d'appareil était lu uniquement dans `localStorage`. Deux onglets ou fenêtres du même navigateur partageaient le même `deviceId`. Chacun se croyait le Leader (`originDeviceId === myDeviceId`) et ignorait l'ordre de l'autre, bloquant tout alignement.
+      3. **Absence d'Ordre Séquentiel Monotone Côté Backend (`userPlaybackSync.ts`) :** Le serveur ne possédait pas de numéro d'ordre monotone (`orderSeq`). Les battements passifs de progression (`isAction: false`) pouvaient interférer avec un ordre récent de pause ou de reprise.
+      4. **Délai de Polling Trop Lent (1800ms) & Absence de Canal Local :** Les 1800ms de polling créaient un décalage propice aux collisions de requêtes asynchrones en vol, et les onglets d'une même machine ne communiquaient pas en local.
+  - **Mise en Œuvre des Correctifs & Architecture d'Ordres Séquentiels :**
+    - **Souveraineté des Ordres Serveur (`orderSeq`, `actionTimestamp`, `originDeviceId`) :**
+      - Le serveur (`backend/src/routes/userPlaybackSync.ts`) est l'unique source de vérité. Toute interaction utilisateur incrémente `orderSeq++` et horodate l'action. Tout battement passif suiveur (`isAction: false`) est formellement interdit d'écraser un ordre récent (< 3.5s).
+    - **Éradication Totale des Émissions Synthétiques DOM (`FloatingBottomPlayer.tsx`) :**
+      - `onPlay` et `onPause` ne diffusent au réseau (`shouldBroadcast = true`) **que si l'action provient explicitement d'un clic utilisateur** (`userInitiatedActionRef.current === 'PLAY'` ou `'PAUSE'`). Les réactions passives du moteur vidéo (buffer, play distant, reprise silencieuse) sont appliquées localement sans JAMAIS envoyer de requête de ré-écho au serveur.
+    - **Identifiant Unique de Session de Lecture (`getLocalPlaybackDeviceId` dans `deviceIdentity.ts`) :**
+      - Combinaison de l'identifiant persistant avec un jeton de session d'onglet (`sessionStorage`) : `${baseDeviceId}_${tabId}`. Deux fenêtres ou onglets ouverts sur la même machine possèdent des identifiants distincts et se synchronisent parfaitement.
+    - **Canal Local Instantané (`BroadcastChannel`) & Polling Réactif (850ms) (`accountSyncService.ts`) :**
+      - Utilisation de `BroadcastChannel(ums_playback_sync_channel)` pour propager les ordres en 0 ms entre onglets locaux d'un même navigateur.
+      - Polling dynamique sous 850ms pour une synchronisation réseau fluide sur les appareils distants.
+    - **Rattrapage d'Autoplay Policy Navigateur :**
+      - En cas de blocage `NotAllowedError` sur un terminal distant suiveur, bascule automatique en sourdine temporaire (`v.muted = true`) avec pastille "🔇 Activer son" pour continuer la lecture sans interruption.
+    - **Calcul Dynamique de Position Sans Micro-Seeks Saccadés :**
+      - Calcul de la position officielle attendue : `expectedPosition = positionSeconds + (isPlaying ? (now - updatedAt)/1000 : 0)`. Tolérance fluide de 2.5 secondes éliminant les micro-sauts et préservant le buffer.
+  - **Validation & Intégration :**
+    - Nouveau test d'intégration automatisé dédié [`testOrderBasedSync.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/test/testOrderBasedSync.ts) : 100% de succès en 10 étapes (Device 1/2 -> Server -> Devices 1/2).
+    - Suite de régression de compte [`testAccountPlaybackSync.ts`](file:///var/home/tele/Documents/theuniversalmediastack/backend/src/test/testAccountPlaybackSync.ts) : 100% de succès.
+    - Compilation TypeScript frontend & backend (`tsc --noEmit`) : 0 erreur.
+
+- [x] **95. Éradication Définitive des Pièges de Focus DOM & Violation WAI-ARIA `Blocked aria-hidden on an element because its descendant retained focus`, Rétablissement de la Lecture Repliée & Expansion Autonome In-Place (`_layout.tsx`, `media/[id].tsx`, `player/[id].tsx`, `FloatingBottomPlayer.tsx`, `playerStore.ts`, `mauvaise_pratique.md`, `bonne_pratique.md`, `documentation_player_et_cast.md`, `sommaire.md`) :**
+  - **Diagnostic Approfondi du Blocage de Lecture Repliée & de l'Erreur WAI-ARIA :**
+    - Message navigateur : `Blocked aria-hidden on an element because its descendant retained focus. The focus must not be hidden from assistive technology users. Avoid using aria-hidden on a focused element or its ancestor...`
+    - Analyse des causes racines :
+      1. **Piège de focus DOM WAI-ARIA sous React Native Web :** Lorsqu'un utilisateur clique sur un bouton interactif (`playBtn` "Regarder", `backBtn` ou `collapseBtn` "▼ Réduire"), ce composant acquiert le focus DOM (`tabIndex="0"`). Lorsque React Navigation bascule d'écran (ex: de `/media/[id]` vers `/player/[id]` ou l'inverse), l'écran précédent est masqué avec `style="display: none;" aria-hidden="true"`. Chromium détecte qu'un descendant focalisé se retrouve enfermé dans un ancêtre marqué `aria-hidden="true"`, rejette l'opération et verrouille le responder system de React Native Web.
+      2. **Neutralisation des clics du Mini-Lecteur Replié :** Avec le responder system gelé par le piège de focus, les clics souris et taps sur le bouton Play (`▶`) de la barre flottante n'atteignaient plus le gestionnaire d'action ou étaient bloqués avant dispatch.
+      3. **Va-et-vient d'écrans redondant :** Sur la fiche `media/[id].tsx`, le bouton "Regarder" déclenchait `router.push(/player/ + id)` vers un écran vide qui ne servait qu'à commander l'ouverture du lecteur, puis "▼ Réduire" déclenchait `router.replace(/media/ + id)`. Ces transitions superposées provoquaient des masquages d'écrans en série sans libération du focus.
+      4. **Hooks résiduels avec `videoRef` nulle dans `player/[id].tsx` :** L'ancien écran `/player` exécutait encore `useCastReceiver` avec une `videoRef` nulle, envoyant un battement périodique `0s, isPlaying: false` qui interférait avec le battement persistant de `_layout.tsx`.
+  - **Mise en Œuvre des Correctifs & Architecture Définitive :**
+    - **Sentinelle Anti-Focus-Trap Universelle dans `_layout.tsx` :**
+      - Déploiement d'un écouteur réactif sur `pathname` (`usePathname()`) pour flouter systématiquement `document.activeElement` à chaque changement de route.
+      - Déploiement d'un `MutationObserver` et d'écouteurs globaux `focusin` et `pointerdown` : dès qu'un élément focalisé se retrouve descendant d'un conteneur avec `[aria-hidden="true"]` ou `[style*="display: none"]`, il est immédiatement flouté (`blur()`) et le focus sain est rendu à `document.body`.
+    - **Ouverture Directe In-Place sur les Fiches Médias (`media/[id].tsx`) :**
+      - Le bouton "Regarder" et les cartes d'extras appellent directement `playerStore.openMedia({ ..., expand: true })` en place, sans forcer de navigation d'écran inutile. Le lecteur autonome cinématique se déploie instantanément sur la page courante, et son repli ("▼ Réduire") s'effectue sans aucune bascule de route ni masquage d'écran conflictuel.
+    - **Floutage Systématique aux Transitions du Lecteur (`FloatingBottomPlayer.tsx`) :**
+      - `handleCollapse`, `handleExpand`, `handleClose`, `handleTogglePlay` et le bouton `collapseBtn` appellent désormais explicitement `(document.activeElement as HTMLElement)?.blur()` avant toute mise à jour d'état ou navigation.
+    - **Assainissement Radical de `player/[id].tsx` :**
+      - Élimination des hooks superflus `useCastReceiver` et `usePlayerControls` avec `videoRef` nulle. La gestion des commandes et du Cast est 100% unifiée dans `_layout.tsx` et `FloatingBottomPlayer`.
+    - **Résilience Autoplay Policy dans `playerStore.ts` & `FloatingBottomPlayer.tsx` :**
+      - Interception systématique de `NotAllowedError` lors de l'appel `v.play()` pour basculer automatiquement en sourdine (`v.muted = true`) et poursuivre la lecture sans blocage du navigateur.
+  - **Validation & Intégrité :**
+    - `npx tsc --noEmit` : 0 erreur TypeScript.
+    - Tests de sécurité et tests sociaux : 100% de succès.
+    - Documentation synchronisée (`mauvaise_pratique.md`, `bonne_pratique.md`, `documentation_player_et_cast.md`, `sommaire.md`).
+
+- [x] **94. Rétablissement de la Reprise de Lecture en Mode Replié / Caché, Période de Grâce Souveraine Locale (4s), Mutex Non-Destructif (`accountSyncService.ts`) & Pilotage Cast Arrière-Plan (`_layout.tsx`, `FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `playerStore.ts`, `accountSyncService.ts`, `player/[id].tsx`, `mauvaise_pratique.md`, `bonne_pratique.md`, `documentation_player_et_cast.md`, `sommaire.md`) :**
+  - **Reprise de Lecture Immédiate en Mode Replié / Caché & Sanctuarisation de l'Intention Utilisateur :**
+    - Diagnostic : Cliquer sur le bouton Play (`▶`) en mode replié ne relançait pas la lecture pour 4 causes majeures :
+      1. Dans `accountSyncService.ts`, `reportAccountPlayback` contenait la garde `if (!user || isPublishing) return;`. Lorsque le battement périodique (~2.2s) était en vol, l'action explicite (`isAction: true`) était jetée. Le serveur conservait `isPlaying: false`.
+      2. La boucle de polling de compte (`startAccountPlaybackSyncLoop`) interrogeait le serveur toutes les 1800ms, recevait `remote.isPlaying === false` et forçait localement `playerStore.syncPlayingFromRemote(false)`, mettant la vidéo en pause 0 à 1,8s après le clic utilisateur.
+      3. Dans `FloatingBottomPlayer.tsx`, l'événement DOM `onPause` de la balise `<video>` capturait les pauses transitoires ou résiduelles du navigateur lors du démarrage de `v.play()` et réécrasait `playerStore.setPlaying(false)`, provoquant l'erreur `AbortError: The play() request was interrupted by a call to pause()`.
+      4. En mode Cast replié, `handleTogglePlay` envoyait la commande sans mise à jour optimiste de `activeCastTarget.isPlaying` ni appel à `playerStore.setPlaying`, laissant le bouton bloqué sur `▶`.
+    - Résolution :
+      - File d'Attente Mutex (`pendingReport`) : `reportAccountPlayback` empile les requêtes arrivées pendant qu'une requête est en vol, garantissant qu'aucune action (`isAction: true`) n'est jamais perdue.
+      - Période de Grâce Souveraine de 4s (`isWithinUserGracePeriod()`) : Dès qu'une action locale (Play, Pause, Seek) a lieu, le terminal local est décrété autoritaire absolu. Toute synchronisation distante descendante est bloquée pendant 4000ms, et le terminal réaffirme son leadership au serveur.
+      - Intention Typée (`userInitiatedActionRef`) & Filtrage des `onPause` DOM : Différenciation de `'PLAY' | 'PAUSE' | 'SEEK'`. Si l'utilisateur a ordonné `PLAY` dans les 1200ms précédentes ou si `activeMedia.isPlaying` est vrai, l'événement DOM `onPause` résiduel est purement ignoré.
+      - Pilotage Direct du DOM dans `playerStore.setPlaying` : Exécution synchrone immédiate de `v.play()` / `v.pause()` sur `video[data-player-div-video="true"]` sans attendre les re-renders React.
+      - Mise à Jour Optimiste Instantanée du Cast : Bascule immédiate de `activeCastTarget.isPlaying` et synchronisation dans `playerStore.setPlaying` dès le clic sur le bouton replié.
+  - **Pause Automatique Propre au Repli du Lecteur (`handleCollapse`) :**
+    - Diagnostic : La réduction du lecteur cinéma ("▼ Réduire") ne déclenchait pas de pause explicite, laissant l'état indécis.
+    - Résolution : Mise en pause délibérée et propre du média local (`v.pause()`) et du Cast (`sendCastCommand('PAUSE')`) avec bascule du store `playerStore.setPlaying(false, true, true)` dès le repli, tout en autorisant sa reprise immédiate en 1-clic (`▶`) depuis la barre flottante sans ré-agrandir.
+  - **Relais Global Cast & Télécommande Universelle en Arrière-Plan (`_layout.tsx`) :**
+    - Diagnostic : Dès que l'utilisateur naviguait hors de `/player`, `sendCastHeartbeat({})` envoyait un objet vide, et `pollDeviceCommands` ne traitait que `cmd.action === 'LOAD'`, neutralisant toute télécommande distante.
+    - Résolution : Injection de l'état complet du média actif (`currentMediaId`, `mediaTitle`, `positionSeconds`, `durationSeconds`, `isPlaying`, `volume`, `isMuted`) dans le battement de cœur global, et prise en charge intégrale de `PLAY`, `PAUSE`, `SEEK`, `STOP`, `SET_VOLUME`, `MUTE`, `UNMUTE`, `LOAD` lors de la navigation sur n'importe quelle page.
+  - **Présevation de la Session Sociale lors de la Navigation (`player/[id].tsx`) :**
+    - Conditionnement de `leavePlayback(id)` au démontage de `/player/[id]` uniquement si le média a réellement été fermé ou changé dans le store applicatif (`!curActive || curActive.id !== String(id)`).
+  - **Alignement Pixel-Perfect de la Miniature Vidéo :**
+    - Calage de `miniVideoStyle` et `videoContainerMini` à `top: 22px` sur Desktop et `top: 24px` sur Mobile pour recouvrir exactement le cadre 58x40 / 50x36 sans fuite visuelle.
+  - **Validation & Contrôle d'Intégrité :**
+    - Compilation TypeScript Frontend (`npx tsc --noEmit`) : 0 erreur.
+    - Tests de sécurité PBAC, Social, et synchro de lecture : 100% de réussite.
+
 - [x] **93. Rétablissement Intégral du Bouton Play/Pause en Mode Replié & Sanctuarisation de la Réactivité des Boutons et Raccourcis du Menu (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `SiteHeader.tsx`, `index.tsx`, `TagSearchBar.tsx`, `mauvaise_pratique.md`, `bonne_pratique.md`, `documentation_player_et_cast.md`, `sommaire.md`) :**
   - **Correction du Bouton Pause/Play en Mode Replié :**
     - Diagnostic : Dans `FloatingBottomPlayer.tsx`, `handleTogglePlay` s'appuyait sur l'état de pause interne du DOM vidéo (`v.paused`) au lieu de l'état réactif React `isPlaying`. Si le flux était en buffering, décodage suspendu ou en cours de lecture, `v.paused` pouvait diverger ou être vrai alors que `isPlaying` était vrai, tentant un `v.play()` au lieu d'une mise en pause, ou appelant `playerStore.setPlaying(true)` uniquement dans la résolution asynchrone d'une promesse `.then()`. De plus, les événements `onPlay`/`onPause` de la balise vidéo vérifiaient un verrou `userInitiatedRef.current` qui ignorait les pauses matérielles (mise en veille, changement d'onglet, fin de média), laissant l'UI afficher une icône `⏸` alors que le média était arrêté.

@@ -30,6 +30,7 @@ export interface LastPlaybackInfo {
   positionSeconds: number;
   durationSeconds: number;
   updatedAt: number;
+  streamUrl?: string;
 }
 
 export interface PlayerStoreState {
@@ -104,7 +105,21 @@ export function onRemoteSubtitleChange(fn: (sub: string) => void): () => void {
 }
 
 let saveTimer: any = null;
+let lastProgressBroadcastPos = -1;
 let remoteSyncLockDepth = 0;
+let lastUserActionTimestamp = 0;
+
+export function recordUserAction(): void {
+  lastUserActionTimestamp = Date.now();
+}
+
+export function getLastUserActionTimestamp(): number {
+  return lastUserActionTimestamp;
+}
+
+export function isWithinUserGracePeriod(graceMs = 4000): boolean {
+  return Date.now() - lastUserActionTimestamp < graceMs;
+}
 
 function notify() {
   listeners.forEach((fn) => fn(state));
@@ -158,10 +173,34 @@ export const playerStore = {
     remoteSyncLockDepth++;
   },
 
-  endRemoteSync() {
+  endRemoteSync(delayMs = 600) {
     setTimeout(() => {
       remoteSyncLockDepth = Math.max(0, remoteSyncLockDepth - 1);
-    }, 450);
+    }, delayMs);
+  },
+
+  isWithinUserGracePeriod(graceMs = 4000): boolean {
+    return isWithinUserGracePeriod(graceMs);
+  },
+
+  recordUserAction() {
+    recordUserAction();
+  },
+
+  updateStreamUrl(newStreamUrl: string, currentPosition?: number) {
+    if (!state.activeMedia || state.activeMedia.streamUrl === newStreamUrl) return;
+    state.activeMedia.streamUrl = newStreamUrl;
+    if (typeof currentPosition === "number" && currentPosition > 0) {
+      state.activeMedia.positionSeconds = currentPosition;
+    }
+    if (state.lastPlayback && state.lastPlayback.id === state.activeMedia.id) {
+      state.lastPlayback.streamUrl = newStreamUrl;
+      if (typeof currentPosition === "number" && currentPosition > 0) {
+        state.lastPlayback.positionSeconds = currentPosition;
+      }
+      saveLastPlayback(state.lastPlayback);
+    }
+    notify();
   },
 
   openMedia(media: {
@@ -188,6 +227,10 @@ export const playerStore = {
     const audio = media.activeAudio || (isSameMedia && prevMedia ? prevMedia.activeAudio : 'auto');
     const subtitle = media.activeSubtitle || (isSameMedia && prevMedia ? prevMedia.activeSubtitle : 'off');
 
+    if (!media.isRemoteSync) {
+      recordUserAction();
+    }
+
     state.activeMedia = {
       id: media.id,
       title: media.title,
@@ -211,6 +254,7 @@ export const playerStore = {
       positionSeconds: pos,
       durationSeconds: dur,
       updatedAt: Date.now(),
+      streamUrl: media.streamUrl,
     };
     saveLastPlayback(state.lastPlayback);
 
@@ -220,7 +264,7 @@ export const playerStore = {
 
     if (media.isRemoteSync) {
       this.beginRemoteSync();
-      this.endRemoteSync();
+      this.endRemoteSync(1500);
     }
 
     if (typeof window !== 'undefined') {
@@ -255,11 +299,32 @@ export const playerStore = {
   setPlaying(isPlaying: boolean, shouldBroadcast = true, isExplicitAction = false) {
     if (!state.activeMedia) return;
     state.activeMedia.isPlaying = isPlaying;
+    if (isExplicitAction) {
+      recordUserAction();
+    }
     notify();
 
     const cast = getActiveCastTarget();
     if (cast) {
       sendCastCommand(cast.id, isPlaying ? 'PLAY' : 'PAUSE');
+    } else if (typeof window !== 'undefined') {
+      const v = (document.querySelector('video[data-player-div-video="true"]') ||
+        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+      if (v) {
+        if (isPlaying && v.paused) {
+          const p = v.play();
+          if (p !== undefined) {
+            p.catch((err: any) => {
+              if (err?.name === 'NotAllowedError') {
+                v.muted = true;
+                v.play().catch(() => {});
+              }
+            });
+          }
+        } else if (!isPlaying && !v.paused) {
+          v.pause();
+        }
+      }
     }
 
     if (shouldBroadcast) {
@@ -299,12 +364,20 @@ export const playerStore = {
         this.beginRemoteSync();
         try {
           if (isPlaying && v.paused) {
-            v.play().catch(() => {});
+            const p = v.play();
+            if (p !== undefined) {
+              p.catch((err: any) => {
+                if (err?.name === 'NotAllowedError') {
+                  v.muted = true;
+                  v.play().catch(() => {});
+                }
+              });
+            }
           } else if (!isPlaying && !v.paused) {
             v.pause();
           }
         } finally {
-          this.endRemoteSync();
+          this.endRemoteSync(1000);
         }
       }
     }
@@ -336,6 +409,17 @@ export const playerStore = {
       }
     }
 
+    // Diffusion réseau de la progression uniquement par palier de 5 secondes (synchronisation sur changement)
+    if (Math.abs(newSec - lastProgressBroadcastPos) >= 5) {
+      lastProgressBroadcastPos = newSec;
+      playbackBroadcaster?.report({
+        mediaId: state.activeMedia.id,
+        positionSeconds: current,
+        durationSeconds: duration,
+        isPlaying: state.activeMedia.isPlaying,
+      }, false);
+    }
+
     // N'avertir les composants React via notify() que si la seconde pleine a changé (divise par 4 les re-renders)
     if (prevSec !== newSec) {
       notify();
@@ -345,6 +429,9 @@ export const playerStore = {
   seekTo(pos: number, shouldBroadcast = true, isExplicitAction = false) {
     if (!state.activeMedia) return;
     state.activeMedia.positionSeconds = pos;
+    if (isExplicitAction) {
+      recordUserAction();
+    }
     notify();
 
     const cast = getActiveCastTarget();
@@ -363,7 +450,7 @@ export const playerStore = {
     }
 
     if (!shouldBroadcast) {
-      this.endRemoteSync();
+      this.endRemoteSync(800);
     }
 
     if (shouldBroadcast) {
@@ -525,8 +612,11 @@ export const playerStore = {
 
     try {
       const token = getAuthToken();
-      const base = `${getApiBaseUrl()}/api/media/${last.id}/stream`;
-      const streamUrl = token ? `${base}?token=${encodeURIComponent(token)}` : base;
+      let streamUrl = last.streamUrl;
+      if (!streamUrl) {
+        const base = `${getApiBaseUrl()}/api/media/${last.id}/stream`;
+        streamUrl = token ? `${base}?token=${encodeURIComponent(token)}` : base;
+      }
 
       this.openMedia({
         id: last.id,
@@ -545,6 +635,10 @@ export const playerStore = {
     }
   },
 };
+
+if (typeof window !== "undefined") {
+  (window as any).playerStore = playerStore;
+}
 
 export function usePlayerState(): PlayerStoreState {
   const [s, setS] = useState<PlayerStoreState>({ ...playerStore.getState() });

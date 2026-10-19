@@ -1,5 +1,5 @@
 server:
-  siteName: Universal Media GUUU Stack
+  siteName: MERRY Studio
   siteTagline: Le hub multimédia zéro-config out-of-the-box
   locale: fr-FR
   port: 3000
@@ -39,6 +39,8 @@ media:
     - "#recycle"
     - .git
     - lost+found
+    - /run/media/tele/My Passport/musique
+    - /run/media/tele/My Passport/e-books
   defaultAudioLanguage: fra
   defaultSubtitleLanguage: fra
   subtitleMode: fallback_if_audio_missing

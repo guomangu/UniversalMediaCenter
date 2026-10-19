@@ -1,3 +1,28 @@
+function parseRealDeviceName(userAgent?: string, fallback?: string): string {
+  const ua = userAgent || "";
+  let browser = "Navigateur";
+  if (/Edg\//i.test(ua)) browser = "Microsoft Edge";
+  else if (/OPR\/|Opera/i.test(ua)) browser = "Opera";
+  else if (/Chrome\//i.test(ua)) browser = "Google Chrome";
+  else if (/Firefox\//i.test(ua)) browser = "Mozilla Firefox";
+  else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = "Apple Safari";
+
+  if (/Tizen/i.test(ua)) return "Samsung Smart TV (Tizen)";
+  if (/webOS/i.test(ua)) return "LG Smart TV (webOS)";
+  if (/Android/i.test(ua)) {
+    if (/TV|SmartTV/i.test(ua)) return "Android TV";
+    const m = ua.match(/Android [^;]+;\s*([^;)]+)\)/i);
+    const model = m && m[1] ? m[1].replace(/Build\/.*/i, "").trim() : "";
+    return model ? `${model} (${browser})` : `${browser} (Android)`;
+  }
+  if (/iPhone/i.test(ua)) return `iPhone (${browser})`;
+  if (/iPad/i.test(ua)) return `iPad (${browser})`;
+  if (/SmartTV/i.test(ua)) return "Smart TV";
+  if (/Windows/i.test(ua)) return `${browser} (Windows)`;
+  if (/Macintosh|Mac OS/i.test(ua)) return `${browser} (macOS)`;
+  if (/Linux/i.test(ua)) return `${browser} (Linux)`;
+  return fallback && fallback !== "Appareil Connecté" && fallback !== "Navigateur Web" ? fallback : `${browser} Web`;
+}
 export type UserDeviceType = 'BROWSER' | 'MOBILE' | 'TV' | 'CHROMECAST' | 'AIRPLAY' | 'DESKTOP';
 
 export interface DevicePlaybackState {
@@ -116,7 +141,10 @@ class UserDeviceRegistry {
 
     const existing = this.devices.get(deviceId);
     const created = existing?.createdAt || now;
-    const finalName = existing?.customName || data.name || existing?.name || 'Appareil Connecté';
+    const rawName = data.name || existing?.name || "";
+    const isGeneric = !rawName || rawName === "Appareil Connecté" || rawName === "Navigateur Web" || rawName === "Linux" || rawName === "Windows" || rawName === "Mac";
+    const computedName = isGeneric && (data.userAgent || existing?.userAgent) ? parseRealDeviceName(data.userAgent || existing?.userAgent, rawName) : (rawName || "Écran Connecté");
+    const finalName = existing?.customName || computedName;
     const finalSyncGroup = data.syncGroupId || existing?.syncGroupId || 'default';
 
     const updated: UserConnectedDevice = {

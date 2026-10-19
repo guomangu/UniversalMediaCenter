@@ -106,6 +106,14 @@ export default function MediaDetailScreen() {
   };
 
   useEffect(() => {
+    return () => {
+      if (typeof document !== "undefined" && document.activeElement && document.activeElement !== document.body) {
+        (document.activeElement as HTMLElement).blur?.();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     loadData();
     const interval = setInterval(loadSessions, 10000);
     return () => clearInterval(interval);
@@ -243,10 +251,27 @@ export default function MediaDetailScreen() {
       : `Regarder`;
 
   const handlePlay = () => {
-    router.push({
-      pathname: `/player/${playId}`,
-      params: share ? { share, title: media.title } : { title: media.title },
-    } as any);
+    if (typeof document !== "undefined" && document.activeElement && document.activeElement !== document.body) {
+      (document.activeElement as HTMLElement).blur?.();
+    }
+    const isChannel = media.nodeType === "LIVE_CHANNEL" || Boolean(media.streamUrl);
+    const filePath = (media.videoFilePath || '').toLowerCase();
+    const isNonNativeContainer = !filePath.endsWith('.mp4') && !filePath.endsWith('.webm');
+    const useHls = Boolean(media.requiresHls || (media.nodeType !== 'LIVE_CHANNEL' && (!filePath || isNonNativeContainer)));
+    const streamUrl = isChannel && media.streamUrl
+      ? (media.streamUrl.startsWith("http") ? `/api/iptv/proxy?url=${encodeURIComponent(media.streamUrl)}` : `/api/media/${playId}/stream`)
+      : getVideoStreamUrl(playId, share, useHls);
+
+    playerStore.openMedia({
+      id: String(playId),
+      title: media.title,
+      slug: media.slug,
+      posterUrl: fanartUri || resolveImageUrl(media.posterPath),
+      streamUrl,
+      isLive: isChannel,
+      initialTime: media.resumePositionSeconds || 0,
+      expand: true,
+    });
   };
 
   const handleActorPress = (actor: any) => {
@@ -478,12 +503,20 @@ export default function MediaDetailScreen() {
                 <Pressable
                   key={extra.id}
                   focusable={true}
-                  onPress={() =>
-                    router.push({
-                      pathname: `/player/${extra.id}`,
-                      params: { title: extra.title },
-                    } as any)
-                  }
+                  onPress={() => {
+                    if (typeof document !== "undefined" && document.activeElement && document.activeElement !== document.body) {
+                      (document.activeElement as HTMLElement).blur?.();
+                    }
+                    playerStore.openMedia({
+                      id: String(extra.id),
+                      title: extra.title,
+                      posterUrl: fanartUri || resolveImageUrl(media.posterPath),
+                      streamUrl: getVideoStreamUrl(extra.id, share),
+                      isLive: false,
+                      initialTime: 0,
+                      expand: true,
+                    });
+                  }}
                   style={styles.extraCard}
                 >
                   <View style={styles.extraPosterBox}>

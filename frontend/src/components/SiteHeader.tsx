@@ -38,6 +38,14 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
   const [favoritesCount, setFavoritesCount] = useState<number>(0);
   const currentUser = useCurrentUser();
   const categoryScrollRef = useRef<ScrollView>(null);
+  const lastActionTimeRef = useRef<number>(0);
+
+  const handleDebouncedAction = (fn: () => void) => {
+    const now = Date.now();
+    if (now - lastActionTimeRef.current < 250) return;
+    lastActionTimeRef.current = now;
+    fn();
+  };
 
   const loadFavs = () => {
     if (currentUser) {
@@ -74,8 +82,8 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
         const chipRect = chipEl.getBoundingClientRect();
         const scrollRect = scrollEl.getBoundingClientRect();
         const targetScrollLeft = chipEl.offsetLeft - (scrollRect.width / 2) + (chipRect.width / 2);
-        if (typeof scrollEl.scrollTo === 'function') {
-          scrollEl.scrollTo({ left: Math.max(0, targetScrollLeft), behavior: 'smooth' });
+        if (typeof Element.prototype.scrollTo === 'function') {
+          (Element.prototype.scrollTo as any).call(scrollEl, { left: Math.max(0, targetScrollLeft), behavior: 'smooth' });
         } else {
           scrollEl.scrollLeft = Math.max(0, targetScrollLeft);
         }
@@ -84,17 +92,32 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
   }, [activeCategoryId]);
 
   const navigateUserTab = (tab: 'FAVORITES' | 'FRIENDS' | 'FORUMS' | 'FEED') => {
-    if (!currentUser) {
+    handleDebouncedAction(() => {
+      if (!currentUser) {
+        router.push({
+          pathname: '/login',
+          params: { returnUrl: `/user?tab=${tab}` },
+        } as any);
+        return;
+      }
       router.push({
-        pathname: '/login',
-        params: { returnUrl: `/user?tab=${tab}` },
+        pathname: '/user',
+        params: { tab },
       } as any);
-      return;
-    }
-    router.push({
-      pathname: '/user',
-      params: { tab },
-    } as any);
+    });
+  };
+
+  const handleLogoPress = () => {
+    handleDebouncedAction(() => {
+      if (onScrollToTop) onScrollToTop();
+      else router.push('/');
+    });
+  };
+
+  const handleSelectCategory = (id: string) => {
+    handleDebouncedAction(() => {
+      onSelectCategory?.(id);
+    });
   };
 
   return (
@@ -103,13 +126,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
         <View style={styles.topRow}>
           <Pressable
             focusable={true}
-            onPress={onScrollToTop || (() => router.push('/'))}
+            onPress={handleLogoPress}
             {...(Platform.OS === 'web'
               ? ({
                   onClick: (e: any) => {
                     e?.stopPropagation?.();
-                    if (onScrollToTop) onScrollToTop();
-                    else router.push('/');
+                    handleLogoPress();
                   },
                 } as any)
               : {})}
@@ -191,12 +213,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
             <Pressable
               focusable={true}
               style={styles.tvBtn}
-              onPress={() => router.push('/tv' as any)}
+              onPress={() => handleDebouncedAction(() => router.push('/tv' as any))}
               {...(Platform.OS === 'web'
                 ? ({
                     onClick: (e: any) => {
                       e?.stopPropagation?.();
-                      router.push('/tv' as any);
+                      handleDebouncedAction(() => router.push('/tv' as any));
                     },
                   } as any)
                 : {})}
@@ -208,12 +230,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               <Pressable
                 focusable={true}
                 style={styles.profileBtn}
-                onPress={() => router.push('/user' as any)}
+                onPress={() => handleDebouncedAction(() => router.push('/user' as any))}
                 {...(Platform.OS === 'web'
                   ? ({
                       onClick: (e: any) => {
                         e?.stopPropagation?.();
-                        router.push('/user' as any);
+                        handleDebouncedAction(() => router.push('/user' as any));
                       },
                     } as any)
                   : {})}
@@ -226,12 +248,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               <Pressable
                 focusable={true}
                 style={styles.loginBtn}
-                onPress={() => router.push('/login' as any)}
+                onPress={() => handleDebouncedAction(() => router.push('/login' as any))}
                 {...(Platform.OS === 'web'
                   ? ({
                       onClick: (e: any) => {
                         e?.stopPropagation?.();
-                        router.push('/login' as any);
+                        handleDebouncedAction(() => router.push('/login' as any));
                       },
                     } as any)
                   : {})}
@@ -244,12 +266,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               <Pressable
                 focusable={true}
                 style={styles.adminBtn}
-                onPress={() => router.push('/admin' as any)}
+                onPress={() => handleDebouncedAction(() => router.push('/admin' as any))}
                 {...(Platform.OS === 'web'
                   ? ({
                       onClick: (e: any) => {
                         e?.stopPropagation?.();
-                        router.push('/admin' as any);
+                        handleDebouncedAction(() => router.push('/admin' as any));
                       },
                     } as any)
                   : {})}
@@ -344,12 +366,12 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                     focusable={true}
                     key={cat.id}
                     nativeID={`cat-chip-${cat.id}`}
-                    onPress={() => onSelectCategory(cat.id)}
+                    onPress={() => handleSelectCategory(cat.id)}
                     {...(Platform.OS === 'web'
                       ? ({
                           onClick: (e: any) => {
                             e?.stopPropagation?.();
-                            onSelectCategory(cat.id);
+                            handleSelectCategory(cat.id);
                           },
                         } as any)
                       : {})}
@@ -398,6 +420,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(160, 175, 195, 0.14)',
     position: 'relative',
     overflow: 'hidden',
+    userSelect: 'none',
     ...(Platform.OS === 'web'
       ? ({
           transition: 'all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
@@ -458,6 +481,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     borderWidth: 1,
     borderColor: 'rgba(160, 175, 195, 0.14)',
+    userSelect: 'none',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
   },
   userNavPillTxt: { color: '#c5cedb', fontSize: 11, fontWeight: '600' },
   mobileUserScroll: { gap: 6, paddingVertical: 2, paddingHorizontal: 2 },
@@ -465,12 +490,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4,
   },
-  tvBtn: { backgroundColor: 'rgba(55, 68, 85, 0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(140, 165, 195, 0.25)' },
+  tvBtn: {
+    backgroundColor: 'rgba(55, 68, 85, 0.4)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(140, 165, 195, 0.25)',
+    userSelect: 'none',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
   tvBtnText: { color: '#cbd5e1', fontWeight: '700', fontSize: 11 },
-  loginBtn: { backgroundColor: '#3b4554', paddingHorizontal: 11, paddingVertical: 5, borderRadius: Radius.pill },
+  loginBtn: {
+    backgroundColor: '#3b4554',
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    userSelect: 'none',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
   loginBtnText: { color: '#edeef2', fontWeight: '600', fontSize: 11 },
-  profileBtn: { backgroundColor: 'rgba(50, 60, 75, 0.45)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill, borderWidth: 1, borderColor: 'rgba(140, 165, 195, 0.22)' },
+  profileBtn: {
+    backgroundColor: 'rgba(50, 60, 75, 0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(140, 165, 195, 0.22)',
+    userSelect: 'none',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
   profileBtnText: { color: '#cbd5e1', fontWeight: '700', fontSize: 11 },
-  adminBtn: { backgroundColor: 'rgba(42, 48, 58, 0.6)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: Radius.pill },
+  adminBtn: {
+    backgroundColor: 'rgba(42, 48, 58, 0.6)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    userSelect: 'none',
+    cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any,
+  },
   adminBtnText: { color: '#c5cedb', fontWeight: '600', fontSize: 11 },
 });

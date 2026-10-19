@@ -117,7 +117,7 @@ export const styles = StyleSheet.create({
   // Miniature vidéo en mode replié : positionnée en absolute pour ne pas impacter le flux flexbox
   videoContainerMini: {
     position: 'absolute',
-    top: 16,
+    top: 22,
     left: 10,
     width: 58,
     height: 40,

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { View, Text, Pressable, Image, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, Image, Platform, useWindowDimensions, StyleSheet } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import Hls from 'hls.js';
 import { playerStore, usePlayerState } from '@/services/playerStore';
-import { useActiveCastTarget, disconnectCastTotally } from '@/services/castState';
+import { useActiveCastTarget, getActiveCastTarget, disconnectCastTotally } from '@/services/castState';
 import { sendCastCommand } from '@/services/castService';
-import { resolveImageUrl, fetchNextMedia, fetchMediaDetail } from '@/services/api';
+import { resolveImageUrl, fetchNextMedia, fetchMediaDetail, getVideoStreamUrl } from '@/services/api';
 import { fetchMediaTracks, MediaTracksData } from '@/services/mediaTracksApi';
 import { toggleFullscreen, isFullscreenActive } from '@/utils/fullscreen';
 import { PlayerSubtitleModal } from './PlayerSubtitleModal';
@@ -61,10 +61,16 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsInstanceRef = useRef<Hls | null>(null);
-  const userInitiatedRef = useRef<boolean>(false);
+  const userInitiatedActionRef = useRef<'PLAY' | 'PAUSE' | 'SEEK' | null>(null);
+  const lastUserPlayRequestTimeRef = useRef<number>(0);
   const mouseTimer = useRef<any>(null);
   const countdownTimer = useRef<any>(null);
   const prevStreamUrlRef = useRef<string>('');
+  const lastToggleTimeRef = useRef<number>(0);
+  const lastSeekTimeRef = useRef<number>(0);
+  const lastExpandTimeRef = useRef<number>(0);
+  const lastCollapseTimeRef = useRef<number>(0);
+  const lastCloseTimeRef = useRef<number>(0);
 
   const activeMedia = playerState.activeMedia;
   const lastPlayback = playerState.lastPlayback;
@@ -85,8 +91,8 @@ export const FloatingBottomPlayer: React.FC = () => {
   // Calcul dynamique des styles responsive pour la miniature vidéo et son ancrage
   const miniVideoStyle = useMemo(() => ({
     position: 'absolute' as const,
-    top: isMobile ? 18 : 16,
-    left: isMobile ? 10 : 10,
+    top: isMobile ? 24 : 22,
+    left: 10,
     width: isMobile ? 50 : 58,
     height: isMobile ? 36 : 40,
     borderRadius: 6,
@@ -139,7 +145,14 @@ export const FloatingBottomPlayer: React.FC = () => {
   // Hook 1 : Chargement des métadonnées enrichies (pistes audio, sous-titres, chapitres intro, next épisode)
   useEffect(() => {
     if (activeMedia?.id) {
-      fetchMediaTracks(activeMedia.id).then(setTracks).catch(() => {});
+      fetchMediaTracks(activeMedia.id).then((t) => {
+        setTracks(t);
+        if (t?.requiresHls && activeMedia?.streamUrl && !activeMedia.streamUrl.includes('.m3u8') && !activeMedia.isLive) {
+          const hlsUrl = getVideoStreamUrl(activeMedia.id, activeMedia.share, true);
+          const curPos = localVideoRef.current?.currentTime || activeMedia.positionSeconds || 0;
+          playerStore.updateStreamUrl(hlsUrl, curPos);
+        }
+      }).catch(() => {});
       fetchNextMedia(activeMedia.id).then(setNextNode).catch(() => {});
 
       if (!activeMedia.isLive) {
@@ -169,6 +182,7 @@ export const FloatingBottomPlayer: React.FC = () => {
         hlsInstanceRef.current.destroy();
         hlsInstanceRef.current = null;
       }
+      prevStreamUrlRef.current = '';
       return;
     }
 
@@ -185,6 +199,12 @@ export const FloatingBottomPlayer: React.FC = () => {
       typeof window !== 'undefined' &&
       Hls.isSupported()
     );
+
+    // Si le flux actuel est déjà attaché et inchangé, préserver l'instance et la lecture sans rechargement
+    if (prevStreamUrlRef.current === streamUrl && (hlsInstanceRef.current || (v.src && v.src.endsWith(streamUrl)))) {
+      return;
+    }
+    prevStreamUrlRef.current = streamUrl;
 
     const tryAutoplay = () => {
       if (activeMedia.isPlaying) {
@@ -248,12 +268,15 @@ export const FloatingBottomPlayer: React.FC = () => {
   useEffect(() => {
     const v = localVideoRef.current;
     if (!v || isCasting) return;
+    // Si l'utilisateur vient d'initier une action manuelle directe, le lecteur local a déjà été ordonné
+    if (userInitiatedActionRef.current) return;
+
     if (activeMedia?.isPlaying && v.paused) {
       v.play().catch(() => {});
     } else if (!activeMedia?.isPlaying && !v.paused) {
       v.pause();
     }
-  }, [activeMedia?.isPlaying, isCasting]);
+  }, [activeMedia?.isPlaying, isExpanded, isCasting]);
 
   // Hook 4 : Synchronisation volume & mute
   useEffect(() => {
@@ -355,9 +378,11 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   const performSeek = useCallback((target: number) => {
     if (!Number.isFinite(target)) return;
-    userInitiatedRef.current = true;
+    userInitiatedActionRef.current = 'SEEK';
     if (isCasting && activeCastTarget) {
+      activeCastTarget.positionSeconds = target;
       sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: target });
+      playerStore.seekTo(target, true, true);
     } else {
       if (localVideoRef.current) {
         localVideoRef.current.currentTime = target;
@@ -432,38 +457,65 @@ export const FloatingBottomPlayer: React.FC = () => {
     setHoverRatio(null);
   }, []);
 
-  const handleTogglePlay = () => {
-    userInitiatedRef.current = true;
-    if (isCasting && activeCastTarget) {
-      sendCastCommand(activeCastTarget.id, isPlaying ? 'PAUSE' : 'PLAY');
-    } else {
-      const nextPlay = !isPlaying;
-      playerStore.setPlaying(nextPlay, true, true);
-      const v = localVideoRef.current;
-      if (v) {
-        if (nextPlay) {
-          const p = v.play();
-          if (p !== undefined) {
-            p.catch((err) => {
-              if (err.name === 'NotAllowedError') {
-                v.muted = true;
-                setAudioBlocked(true);
-                v.play().catch(() => {});
-              }
-            });
-          }
-        } else {
-          v.pause();
-        }
+  const handleTogglePlay = useCallback((e?: any) => {
+    e?.stopPropagation?.();
+    if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body) {
+      if (document.activeElement.closest?.('[aria-hidden="true"]') || document.activeElement.closest?.('[style*="display: none"]')) {
+        (document.activeElement as HTMLElement).blur();
       }
     }
-  };
+    const now = Date.now();
+    if (now - lastToggleTimeRef.current < 250) {
+      return;
+    }
+    lastToggleTimeRef.current = now;
 
-  const handleSeekRelative = (offset: number) => {
-    userInitiatedRef.current = true;
+    const currentCast = getActiveCastTarget();
+    if (isCasting && currentCast) {
+      const isCastPlaying = Boolean(currentCast.isPlaying);
+      const nextPlay = !isCastPlaying;
+      currentCast.isPlaying = nextPlay;
+      sendCastCommand(currentCast.id, nextPlay ? 'PLAY' : 'PAUSE');
+      playerStore.setPlaying(nextPlay, true, true);
+      return;
+    }
+
+    const currentMedia = playerStore.getState().activeMedia;
+    if (!currentMedia) {
+      if (playerStore.getState().lastPlayback) {
+        playerStore.resumeLastPlayback();
+      }
+      return;
+    }
+
+    const nextPlay = !currentMedia.isPlaying;
+    userInitiatedActionRef.current = nextPlay ? 'PLAY' : 'PAUSE';
+    if (nextPlay) {
+      lastUserPlayRequestTimeRef.current = now;
+    }
+    setTimeout(() => {
+      if (userInitiatedActionRef.current === 'PLAY' || userInitiatedActionRef.current === 'PAUSE') {
+        userInitiatedActionRef.current = null;
+      }
+    }, 500);
+
+    playerStore.setPlaying(nextPlay, true, true);
+  }, [isCasting]);
+
+  const handleSeekRelative = useCallback((offset: number, e?: any) => {
+    e?.stopPropagation?.();
+    const now = Date.now();
+    if (now - lastSeekTimeRef.current < 200) {
+      return;
+    }
+    lastSeekTimeRef.current = now;
+
+    userInitiatedActionRef.current = 'SEEK';
     if (isCasting && activeCastTarget) {
       const nextPos = Math.max(0, Math.min(dur || 7200, pos + offset));
+      activeCastTarget.positionSeconds = nextPos;
       sendCastCommand(activeCastTarget.id, 'SEEK', { positionSeconds: nextPos });
+      playerStore.seekTo(nextPos, true, true);
     } else {
       const v = localVideoRef.current;
       if (v) {
@@ -475,14 +527,44 @@ export const FloatingBottomPlayer: React.FC = () => {
         playerStore.seekRelative(offset);
       }
     }
-  };
+  }, [isCasting, activeCastTarget, dur, pos]);
 
-  const handleExpand = () => {
+  const handleExpand = useCallback((e?: any) => {
+    e?.stopPropagation?.();
+    if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body) {
+      (document.activeElement as HTMLElement).blur();
+    }
+    const now = Date.now();
+    if (now - lastExpandTimeRef.current < 300) return;
+    lastExpandTimeRef.current = now;
+
     playerStore.setExpanded(true);
-  };
 
-  const handleCollapse = () => {
+    // Maintien ininterrompu de la lecture au dépli
+    const v = localVideoRef.current;
+    if (v && activeMedia?.isPlaying && v.paused && !isCasting) {
+      v.play().catch(() => {});
+    }
+  }, [isCasting, activeMedia?.isPlaying]);
+
+  const handleCollapse = useCallback((e?: any) => {
+    e?.stopPropagation?.();
+    if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body) {
+      (document.activeElement as HTMLElement).blur();
+    }
+    const now = Date.now();
+    if (now - lastCollapseTimeRef.current < 300) return;
+    lastCollapseTimeRef.current = now;
+
+    // Repli de la div player en bas d écran sans couper la lecture (YouTube-style seamless playback)
     playerStore.setExpanded(false);
+
+    // Maintien ininterrompu de la lecture au repli
+    const v = localVideoRef.current;
+    if (v && activeMedia?.isPlaying && v.paused && !isCasting) {
+      v.play().catch(() => {});
+    }
+
     if (pathname?.startsWith('/player')) {
       if (activeMedia?.id) {
         router.replace(`/media/${activeMedia.id}` as any);
@@ -490,9 +572,17 @@ export const FloatingBottomPlayer: React.FC = () => {
         router.replace('/' as any);
       }
     }
-  };
+  }, [isCasting, pathname, activeMedia?.id, activeMedia?.isPlaying, router]);
 
-  const handleClose = async () => {
+  const handleClose = useCallback(async (e?: any) => {
+    e?.stopPropagation?.();
+    if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body) {
+      (document.activeElement as HTMLElement).blur();
+    }
+    const now = Date.now();
+    if (now - lastCloseTimeRef.current < 300) return;
+    lastCloseTimeRef.current = now;
+
     if (localVideoRef.current) {
       localVideoRef.current.pause();
     }
@@ -500,10 +590,10 @@ export const FloatingBottomPlayer: React.FC = () => {
       await disconnectCastTotally(false);
     }
     playerStore.closeMedia();
-  };
+  }, [isCasting]);
 
   const handleSkipIntro = () => {
-    userInitiatedRef.current = true;
+    userInitiatedActionRef.current = 'SEEK';
     const target = introChapter ? introChapter.end : (localVideoRef.current?.currentTime || 0) + 85;
     if (localVideoRef.current) localVideoRef.current.currentTime = target;
     setShowSkipIntro(false);
@@ -511,7 +601,7 @@ export const FloatingBottomPlayer: React.FC = () => {
   };
 
   const handleRestartFromBeginning = () => {
-    userInitiatedRef.current = true;
+    userInitiatedActionRef.current = 'SEEK';
     setShowRestartBtn(false);
     if (localVideoRef.current) localVideoRef.current.currentTime = 0;
     playerStore.seekTo(0, true, true);
@@ -617,10 +707,8 @@ export const FloatingBottomPlayer: React.FC = () => {
       style={isExpanded ? styles.containerExpanded : styles.containerCollapsed}
     >
       {/* 1. ÉLÉMENT VIDÉO NOUVEAU CŒUR DU SITE : UNIQUE, CONTINU, JAMAIS DÉTRUIT */}
-      <Pressable
-        focusable={!isExpanded}
-        accessibilityRole={!isExpanded ? 'button' : undefined}
-        accessibilityLabel={!isExpanded ? 'Agrandir le lecteur vidéo en plein écran' : undefined}
+      <View
+        nativeID="player_video_container"
         style={
           isExpanded
             ? styles.videoContainerFull
@@ -628,7 +716,6 @@ export const FloatingBottomPlayer: React.FC = () => {
                 ? miniVideoStyle
                 : { display: 'none' })
         }
-        onPress={!isExpanded ? handleExpand : undefined}
       >
         {isCasting && isExpanded ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
@@ -672,17 +759,31 @@ export const FloatingBottomPlayer: React.FC = () => {
               pointerEvents: isExpanded ? 'auto' : 'none',
             }}
             onPlay={() => {
-              const isExplicit = userInitiatedRef.current;
-              userInitiatedRef.current = false;
+              const action = userInitiatedActionRef.current;
+              if (action === 'PLAY') {
+                userInitiatedActionRef.current = null;
+              }
               if (!playerStore.isApplyingRemoteSync()) {
-                playerStore.setPlaying(true, true, isExplicit);
+                playerStore.setPlaying(true, action === 'PLAY', action === 'PLAY');
               }
             }}
             onPause={() => {
-              const isExplicit = userInitiatedRef.current;
-              userInitiatedRef.current = false;
-              if (!playerStore.isApplyingRemoteSync()) {
-                playerStore.setPlaying(false, true, isExplicit);
+              const action = userInitiatedActionRef.current;
+              if (action === 'PAUSE') {
+                userInitiatedActionRef.current = null;
+                if (!playerStore.isApplyingRemoteSync()) {
+                  playerStore.setPlaying(false, true, true);
+                }
+                return;
+              }
+              // Si la pause n'a pas été expressément demandée par l'utilisateur (ex: layout shift, repli/dépli, navigation),
+              // et que le média est en cours de lecture, relancer immédiatement !
+              const isPlayWanted = Boolean(playerStore.getState().activeMedia?.isPlaying);
+              if (isPlayWanted && !isCasting) {
+                const v = localVideoRef.current;
+                if (v && v.paused) {
+                  v.play().catch(() => {});
+                }
               }
             }}
             onTimeUpdate={() => {
@@ -728,8 +829,17 @@ export const FloatingBottomPlayer: React.FC = () => {
                     setTimeout(() => setShowRestartBtn(false), 5000);
                   }
                 }
-                if (activeMedia?.isPlaying && v.paused) {
-                  v.play().catch(() => {});
+                                if (activeMedia?.isPlaying && v.paused) {
+                  const p = v.play();
+                  if (p !== undefined) {
+                    p.catch((err: any) => {
+                      if (err?.name === "NotAllowedError") {
+                        v.muted = true;
+                        v.play().catch(() => {});
+                        setAudioBlocked(true);
+                      }
+                    });
+                  }
                 }
               }
             }}
@@ -745,7 +855,24 @@ export const FloatingBottomPlayer: React.FC = () => {
             ) : null}
           </video>
         ) : null}
-      </Pressable>
+
+        {/* Overlay tactile transparent en mode replié pour déplier la vidéo d'un clic */}
+        {!isExpanded && Platform.OS === 'web' && !isCasting && activeMedia?.streamUrl ? (
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            accessibilityLabel="Agrandir le lecteur vidéo en plein écran"
+            style={StyleSheet.absoluteFill}
+            onPress={handleExpand}
+            {...({
+              onClick: (e: any) => {
+                e?.stopPropagation?.();
+                handleExpand();
+              },
+            } as any)}
+          />
+        ) : null}
+      </View>
 
       {/* 2. MODE DÉPLIÉ (CINÉMA / VUE COMPLÈTE) */}
       {isExpanded ? (
@@ -758,7 +885,12 @@ export const FloatingBottomPlayer: React.FC = () => {
                 accessibilityRole="button"
                 accessibilityLabel="Réduire le lecteur en bas d'écran"
                 style={styles.collapseBtn}
-                onPress={handleCollapse}
+                onPress={(e) => {
+                  if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body) {
+                    (document.activeElement as HTMLElement).blur();
+                  }
+                  handleCollapse(e);
+                }}
               >
                 <Text style={styles.collapseBtnTxt}>{isMobile ? '▼' : '▼ Réduire'}</Text>
               </Pressable>
@@ -1072,6 +1204,16 @@ export const FloatingBottomPlayer: React.FC = () => {
 
             {/* Section droite : Options, Déplier ▲, Fermer ✕ */}
             <View style={styles.rightSection}>
+              {audioBlocked && (
+                <Pressable
+                  focusable={true}
+                  style={[styles.actionChip, { backgroundColor: '#f59e0b' }]}
+                  onPress={handleUnmuteGesture}
+                  accessibilityLabel="Activer le son"
+                >
+                  <Text style={styles.actionChipTxt}>🔇 Activer son</Text>
+                </Pressable>
+              )}
               {!isMobile && (
                 <>
                   <Pressable

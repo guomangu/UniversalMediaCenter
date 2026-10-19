@@ -29,6 +29,19 @@ import { Spacing, MaxContentWidth, Radius } from '@/constants/theme';
 
 let savedHomeScrollY = 0;
 
+function getScrollContainer(): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+  const candidates = Array.from(document.querySelectorAll('*')) as HTMLElement[];
+  return (
+    candidates.find(
+      (el) =>
+        el.scrollHeight > el.clientHeight + 40 &&
+        (window.getComputedStyle(el).overflowY === 'auto' ||
+          window.getComputedStyle(el).overflowY === 'scroll')
+    ) || null
+  );
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const currentUser = useCurrentUser();
@@ -94,10 +107,10 @@ export default function HomeScreen() {
   const applyScroll = useCallback((y: number) => {
     const targetY = Math.max(0, y);
     scrollRef.current?.scrollTo({ y: targetY, animated: false });
-    if (Platform.OS === 'web' && scrollRef.current) {
-      const node = (scrollRef.current as any).getScrollableNode?.() || (scrollRef.current as any);
-      if (node && node.scrollTop !== undefined) {
-        node.scrollTop = targetY;
+    if (Platform.OS === 'web') {
+      const sc = getScrollContainer();
+      if (sc) {
+        sc.scrollTop = targetY;
       }
     }
   }, []);
@@ -106,7 +119,7 @@ export default function HomeScreen() {
     if (!visibleCategories.length) return;
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
+      const scrollNode = getScrollContainer();
       if (scrollNode && scrollNode.scrollTop + scrollNode.clientHeight >= scrollNode.scrollHeight - 40) {
         const lastCat = visibleCategories[visibleCategories.length - 1];
         if (lastCat && lastCat.id !== activeCatRef.current) {
@@ -218,19 +231,26 @@ export default function HomeScreen() {
     setActiveCategoryId(id);
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
+      const sc = getScrollContainer();
       const el = document.getElementById(`cat-section-${id}`);
-      if (scrollNode && el) {
+      if (sc && el) {
         const elRect = el.getBoundingClientRect();
-        const scrollRect = scrollNode.getBoundingClientRect();
-        const currentScroll = scrollNode.scrollTop;
-        const target = currentScroll + (elRect.top - scrollRect.top) - headerPaddingTop - 8;
+        const scRect = sc.getBoundingClientRect();
+        const currentScroll = sc.scrollTop;
+        const target = currentScroll + (elRect.top - scRect.top) - headerPaddingTop - 8;
         const finalY = Math.max(0, target);
-        if (typeof scrollNode.scrollTo === 'function') {
-          scrollNode.scrollTo({ top: finalY, behavior: 'smooth' });
-        } else {
-          scrollNode.scrollTop = finalY;
+
+        try {
+          if (typeof Element.prototype.scrollTo === 'function') {
+            (Element.prototype.scrollTo as any).call(sc, { top: finalY, behavior: 'smooth' });
+          } else {
+            sc.scrollTop = finalY;
+          }
+        } catch {
+          sc.scrollTop = finalY;
         }
+
+        scrollRef.current?.scrollTo({ y: finalY, animated: true });
         savedHomeScrollY = finalY;
         if (window.sessionStorage) {
           sessionStorage.setItem('ums_home_scroll_y', String(finalY));
@@ -259,14 +279,19 @@ export default function HomeScreen() {
   const handleScrollToTop = () => {
     isRestoringScroll.current = false;
     scrollRestoredRef.current = true;
+    isJumpingRef.current = true;
     savedHomeScrollY = 0;
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const scrollNode = (scrollRef.current as any)?.getScrollableNode?.() || (scrollRef.current as any);
-      if (scrollNode) {
-        if (typeof scrollNode.scrollTo === 'function') {
-          scrollNode.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-          scrollNode.scrollTop = 0;
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const sc = getScrollContainer();
+      if (sc) {
+        try {
+          if (typeof Element.prototype.scrollTo === 'function') {
+            (Element.prototype.scrollTo as any).call(sc, { top: 0, behavior: 'smooth' });
+          } else {
+            sc.scrollTop = 0;
+          }
+        } catch {
+          sc.scrollTop = 0;
         }
       }
       if (window.sessionStorage) {
@@ -277,6 +302,9 @@ export default function HomeScreen() {
     const firstId = visibleCategories[0]?.id || 'sagas';
     activeCatRef.current = firstId;
     setActiveCategoryId(firstId);
+    setTimeout(() => {
+      isJumpingRef.current = false;
+    }, 800);
   };
 
   return (

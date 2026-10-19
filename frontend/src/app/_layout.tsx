@@ -1,4 +1,4 @@
-import { Stack, DarkTheme, DefaultTheme, ThemeProvider, useRouter } from 'expo-router';
+import { Stack, DarkTheme, DefaultTheme, ThemeProvider, useRouter, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, Platform } from 'react-native';
 import { useEffect } from 'react';
@@ -6,6 +6,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { useTvNavigation } from '@/hooks/useTvNavigation';
 import { FloatingBottomPlayer } from '@/components/FloatingBottomPlayer';
 import { useActiveCastTarget } from '@/services/castState';
+import { playerStore } from '@/services/playerStore';
 import {
   initGoogleCastFramework,
   registerAsReceiver,
@@ -36,8 +37,52 @@ if (Platform.OS !== 'web') {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
+  const pathname = usePathname();
   useActiveCastTarget();
   useTvNavigation();
+
+  // 1. Libération systématique du focus lors des changements de route pour éliminer tout piège WAI-ARIA
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const activeEl = document.activeElement;
+      if (activeEl && activeEl !== document.body) {
+        (activeEl as HTMLElement).blur?.();
+      }
+    }
+  }, [pathname]);
+
+  // 2. Sentinelle anti-focus-trap WAI-ARIA : empêche tout blocage 'Blocked aria-hidden on an element because its descendant retained focus'
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+
+    const releaseHiddenFocus = () => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return;
+      if (el.closest?.('[aria-hidden="true"]') || el.closest?.('[style*="display: none"]')) {
+        (el as HTMLElement).blur?.();
+        document.body.focus?.();
+      }
+    };
+
+    window.addEventListener('focusin', releaseHiddenFocus, true);
+    window.addEventListener('pointerdown', releaseHiddenFocus, true);
+
+    const observer = new MutationObserver(() => {
+      releaseHiddenFocus();
+    });
+
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['aria-hidden', 'style'],
+      subtree: true,
+    });
+
+    return () => {
+      window.removeEventListener('focusin', releaseHiddenFocus, true);
+      window.removeEventListener('pointerdown', releaseHiddenFocus, true);
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     registerPwa();
@@ -53,21 +98,53 @@ export default function RootLayout() {
       // Économiser le réseau et la batterie si l'onglet est en arrière-plan
       if (typeof document !== 'undefined' && document.hidden) return;
 
-      sendCastHeartbeat({}).catch(() => {});
+      const pState = playerStore.getState();
+      const active = pState.activeMedia;
+      if (active) {
+        sendCastHeartbeat({
+          currentMediaId: active.id,
+          mediaTitle: active.title,
+          positionSeconds: active.positionSeconds || 0,
+          durationSeconds: active.durationSeconds || 0,
+          isPlaying: active.isPlaying,
+          volume: pState.volume,
+          isMuted: pState.isMuted,
+        }).catch(() => {});
+      } else {
+        sendCastHeartbeat({}).catch(() => {});
+      }
 
-      // Si nous ne sommes pas sur la page lecteur (qui gère ses propres commandes en direct)
-      if (typeof window !== 'undefined' && !window.location.pathname.includes('/player')) {
+      // Gestion universelle des commandes distantes même quand le lecteur est replié ou lors de la navigation
+      if (typeof window !== 'undefined') {
         pollDeviceCommands(getLocalDeviceId(), (cmd) => {
           if (cmd.action === 'LOAD' && cmd.payload?.mediaId) {
-            const params: any = {};
-            if (cmd.payload.title) params.title = cmd.payload.title;
-            if (cmd.payload.positionSeconds !== undefined && cmd.payload.positionSeconds > 0) {
-              params.joinTime = String(Math.floor(cmd.payload.positionSeconds));
+            playerStore.openMedia({
+              id: cmd.payload.mediaId,
+              title: cmd.payload.title || 'Média',
+              streamUrl: cmd.payload.streamUrl || `/api/media/${cmd.payload.mediaId}/stream`,
+              posterUrl: cmd.payload.posterUrl || `/api/media/${cmd.payload.mediaId}/poster`,
+              isLive: Boolean(cmd.payload.isLive),
+              initialTime: cmd.payload.positionSeconds || 0,
+              expand: true,
+            });
+          } else if (cmd.action === 'PLAY') {
+            playerStore.setPlaying(true, true, true);
+          } else if (cmd.action === 'PAUSE') {
+            playerStore.setPlaying(false, true, true);
+          } else if (cmd.action === 'SEEK') {
+            if (typeof cmd.payload?.positionSeconds === 'number') {
+              playerStore.seekTo(cmd.payload.positionSeconds, true, true);
             }
-            router.push({
-              pathname: `/player/${cmd.payload.mediaId}`,
-              params,
-            } as any);
+          } else if (cmd.action === 'STOP') {
+            playerStore.closeMedia();
+          } else if (cmd.action === 'SET_VOLUME') {
+            if (typeof cmd.payload?.volume === 'number') {
+              playerStore.setVolume(cmd.payload.volume);
+            }
+          } else if (cmd.action === 'MUTE') {
+            playerStore.setMuted(true);
+          } else if (cmd.action === 'UNMUTE') {
+            playerStore.setMuted(false);
           }
         }).catch(() => {});
       }
