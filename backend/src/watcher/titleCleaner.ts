@@ -108,16 +108,20 @@ export function sanitizeReleaseTags(raw: string | number): string {
   t = t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, '');
   // Nettoyage des préfixes ordonnés (ex: "01 Iron Man", "03 Iron Man 2", "07 - Iron Man 3", "1a. ")
   t = t.replace(/^(?:[0-9]{1,3}[a-z]?|[a-z])\s*[-._– ]\s*/i, '');
+  // Nettoyage des blocs entre crochets AVANT les mots-clés techniques pour éviter les coupures incomplètes
+  t = t.replace(/\[.*?\]/g, ' ');
   t = t.replace(/[\s._]\d{3,4}x\d{3,4}.*$/i, '');
   t = t.replace(/\s*[–-]\s*(Action|Comedy|Drama|Aventure)?\s*\d{4}\s*.*$/i, '');
-  t = t.replace(/\s*\(?\d{4}\)?\s*(VFF|VF|VOSTFR|MULTi|ENG|FRENCH|AC3|DTS|BluRay|BDRip|1080p|720p|x264|x265|WEB).*$/i, '');
-  t = t.replace(/\b(MULTi|VFF|VF|VOSTFR|FRENCH|TRUEFRENCH|FASTSUB|SUBITA|LD|FiNAL|1080p|720p|480p|576p|360p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|h264|h265|x264|x265|xvid|divx|hevc|dts-hd|dts|truehd|ac3|aac|flac|mp3|proper|repack|remastered|extended|1920x\d+|1280x\d+)\b.*$/i, '');
+  t = t.replace(/\s*\(?\d{4}\)?\s*(VFF|VF|VOSTFR|MULTi|MUTLI|ENG|FRENCH|AC3|DTS|BluRay|BDRip|1080p|720p|x264|x265|WEB).*$/i, '');
+  t = t.replace(/\b(MULTi|MUTLI|VFF|VF|VOSTFR|FRENCH|TRUEFRENCH|FASTSUB|SUBITA|LD|FiNAL|1080p|720p|480p|576p|360p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|h264|h265|x264|x265|xvid|divx|hevc|dts-hd|dts|truehd|ac3|aac|flac|mp3|proper|repack|remastered|extended|1920x\d+|1280x\d+)\b.*$/i, '');
   t = t.replace(/(?<=[a-zA-Z0-9]{2,})\.|\.(?=[a-zA-Z0-9]{2,})/g, ' ');
   t = t.replace(/_/g, ' ');
-  t = t.replace(/\[.*?\]/g, '');
   // Suppression systématique de l'année entre parenthèses en fin de titre (ex: "Django Unchained (2012)" -> "Django Unchained")
   t = t.replace(/\s*\((?:19|20)\d{2}\)\s*$/i, '');
   t = t.replace(/`/g, "'");
+
+  // Élimination absolue des crochets, parenthèses ou tirets orphelins résiduels aux extrémités
+  t = t.replace(/[\s\-_[{(]+$/, '').replace(/^[\s\-_\]})]+/, '').trim();
 
   const cleaned = t.replace(/\s{2,}/g, ' ').trim();
   return cleaned || t || '';
@@ -152,8 +156,8 @@ export function extractCanonicalShowTitle(raw: string | number): string {
   s = s.replace(/^(?:[0-9]{1,3}[a-z]?|[a-z])[\s._–-]+\s*/i, '');
 
   // 5. Nettoyer les mentions d'intégrale / boxset AVANT les saisons et résolutions
-  s = s.replace(/\s*[-_–]\s*(?:iNTEGRALE|int[ée]grale|complete|intégral|integrale|boxset)\b.*$/i, '');
-  s = s.replace(/\b(?:iNTEGRALE|int[ée]grale|complete|intégral|integrale)\b.*$/i, '');
+  s = s.replace(/\s*[-_–]\s*(?:iNTEGRALE|intégrale|complete|intégral|integrale|boxset)\b.*$/i, '');
+  s = s.replace(/\b(?:iNTEGRALE|intégrale|complete|intégral|integrale)\b.*$/i, '');
 
   // 6. Nettoyer les codes d'épisodes s'ils sont dans le nom
   s = s.replace(/\s*[-_–]\s*S\d+.*$/i, '');
@@ -166,7 +170,7 @@ export function extractCanonicalShowTitle(raw: string | number): string {
   s = s.replace(/\s+\b(?:saison|season|séries?|series?|part|partie|cour|vol|volume|\d+(?:st|nd|rd|th)?\s*gig)\s*0*\d*.*$/i, '');
 
   // 8. Supprimer les résolutions, formats, qualités, langues
-  s = s.replace(/\b(360p|480p|576p|720p|1080p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|xvid|divx|x264|x265|hevc|h264|h265|vostfr|vff|vf|french|truefrench|multi|fastsub|subita|ld|final|repack|proper|remastered|extended)\b.*$/i, '');
+  s = s.replace(/\b(360p|480p|576p|720p|1080p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-dl|webrip|web|xvid|divx|x264|x265|hevc|h264|h265|vostfr|vff|vf|french|truefrench|multi|mutli|fastsub|subita|ld|final|repack|proper|remastered|extended|ac3|dts|dts-hd|aac|flac|mp3)\b.*$/i, '');
 
   // 9. Supprimer les années résiduelles (2017) ou (1990)
   s = s.replace(/\s*\(?(?:19|20)\d{2}\)?\s*$/i, '');
@@ -176,6 +180,7 @@ export function extractCanonicalShowTitle(raw: string | number): string {
   // 10. Remplacer les points et underscores par des espaces
   s = s.replace(/[._]/g, ' ');
   s = s.replace(/`/g, "'");
+  s = s.replace(/[\s\-_[{(]+$/, '').replace(/^[\s\-_\]})]+/, '').trim();
   s = s.replace(/\s{2,}/g, ' ').trim();
 
   // 11. Cas canoniques connus pour Ghost In The Shell & Kai / Pace Animes
@@ -215,27 +220,25 @@ export function extractYearFromText(text?: string | null): number | undefined {
   }
   const match = target.match(/\b((?:19|20)\d{2})\b/);
   if (match) {
-    const yr = parseInt(match[1], 10);
-    if (yr >= 1890 && yr <= 2099) return yr;
+    const y = parseInt(match[1], 10);
+    if (y >= 1888 && y <= 2035) return y;
   }
   return undefined;
 }
 
 /**
- * Normalisation phonétique et réduction des diphtongues/consonnes redoublées.
- * Permet de rapprocher automatiquement des orthographes alternatives ou fautives
- * (ex: "peacky blinders" -> "peaky blinders", "vikinggs" -> "vikings") sans dictionnaire en dur.
+ * Normalisation phonétique tolérante aux fautes de frappe
  */
 export function normalizePhoneticSpelling(raw: string): string {
-  if (!raw) return '';
+  if (!raw) return "";
   let s = raw.trim();
   // 1. Équivalence ck -> k (ex: peacky -> peaky)
-  s = s.replace(/ck/gi, 'k');
+  s = s.replace(/ck/gi, "k");
   // 2. Équivalence ph -> f (ex: telephon -> telefon)
-  s = s.replace(/ph/gi, 'f');
+  s = s.replace(/ph/gi, "f");
   // 3. Dédoublement des consonnes répétées (ex: 'vikinggs' -> 'vikings', 'stopp' -> 'stop')
-  s = s.replace(/([b-df-hj-np-tv-z])\1+/gi, '$1');
+  s = s.replace(/([b-df-hj-np-tv-z])\1+/gi, "$1");
   // 4. Normalisation des apostrophes
   s = s.replace(/[`'’]/g, "'");
-  return s.replace(/\s{2,}/g, ' ').trim();
+  return s.replace(/\s{2,}/g, " ").trim();
 }

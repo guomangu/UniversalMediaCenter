@@ -77,13 +77,13 @@ export async function reconcileAndPruneLibrary(roots) {
         if (hasVideo && videoExists) {
             validNodes.push(node);
         }
-        else if (!hasVideo && hasNfo && nfoExists) {
-            validNodes.push(node);
-        }
         else {
-            // Le fichier n'existe plus à l'emplacement renseigné
+            // Pour MOVIE, EPISODE, EXTRA, l'absence de fichier vidéo physique valide en fait un média orphelin/fantôme
             const fileToCheck = node.videoFilePath || node.nfoFilePath;
             if (fileToCheck && isDiskAccessibleForPath(fileToCheck, effectiveRoots)) {
+                missingNodes.push(node);
+            }
+            else if (!hasVideo) {
                 missingNodes.push(node);
             }
         }
@@ -131,6 +131,18 @@ export async function reconcileAndPruneLibrary(roots) {
                         c.title.toLowerCase() === missing.title.toLowerCase());
                 }
             }
+        }
+        // C. Match par nom de fichier NFO ou par titre identique (cas des NFO orphelins sans vidéo)
+        if (!matchedValidNode && missing.nfoFilePath) {
+            const nfoBase = path.basename(missing.nfoFilePath, '.nfo').toLowerCase();
+            const candidates = validByBasename.get(nfoBase) || [];
+            if (candidates.length > 0) {
+                matchedValidNode = candidates[0];
+            }
+        }
+        if (!matchedValidNode && missing.title) {
+            const cleanMissing = missing.title.trim().toLowerCase();
+            matchedValidNode = validNodes.find((v) => v.title.trim().toLowerCase() === cleanMissing && v.nodeType === missing.nodeType);
         }
         if (matchedValidNode && matchedValidNode.id !== missing.id) {
             // Déplacement confirmé avec doublon déjà ingéré sous le nouveau chemin !

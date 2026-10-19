@@ -1,3 +1,46 @@
+## 🛑 133. Échec de Conversion Directe FFmpeg des Sous-Titres Bitmap Blu-ray (`hdmv_pgs_subtitle` / `dvd_subtitle`), Rejet HTTP 404 du Tag `<track>` & Absence de Pipeline OCR (`mediaSubtitles.ts`, `Dockerfile`)
+
+* **Problème / Symptôme :**
+  Lors de la sélection d'une piste de sous-titres intégrée à un rip Blu-ray (*Spectre*, James Bond, films haute définition récents), aucun texte ne s'affichait et le navigateur rejetait la requête avec l'erreur :
+  `GET https://api.cool.sweaw.com/api/media/.../subtitles?token=...&trackIndex=4 404 (Not Found)`.
+
+* **Causes Racines :**
+  - **Incompatibilité Fondamentale Bitmap vs WebVTT** : Les flux Blu-ray PGS (`hdmv_pgs_subtitle`) et DVD (`dvd_subtitle`) ne sont pas des données textuelles mais des séquences d'images bitmap transparentes (PNG-like).
+  - **Rejet d'Encodage FFmpeg Sans OCR** : La commande `ffmpeg -c:s webvtt` échoue nativement sur ces flux avec l'erreur explicite : `Error initializing output stream 0:0 -- Subtitle encoding currently only possible from text to text or bitmap to bitmap`.
+  - **Code Retour 404 Destructeur** : Lorsque FFmpeg levait une exception, le backend Hono renvoyait un code HTTP 404. La balise HTML5 `<track>` considérait la ressource comme inexistante et bloquait tout affichage tout en polluant la console du navigateur.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Pipeline Hybride Texte Direct + OCR Dédié** :
+    1. Si le flux est textuel (`subrip`, `ass`, `mov_text`, `webvtt`), conversion instantanée via FFmpeg.
+    2. Si le flux est graphique bitmap (`hdmv_pgs_subtitle`, `dvd_subtitle`), extraction ultra-rapide du conteneur `.sup` (>150x de vitesse) puis transcription OCR par `pgsrip` et le moteur natif `Tesseract` (`tesseract-ocr`, `tesseract-ocr-fra`, `tesseract-ocr-eng`).
+  - **Mise en Cache Persistante L1/L2** : Sauvegarder immédiatement le résultat transcrit dans `/tmp/ums_subtitles_cache/` afin de garantir un temps d'accès de 0 ms dès le second appel.
+  - **Neutralisation Inconditionnelle des Codes 404 pour `<track>`** : En cas de défaillance ou d'attente d'une piste, toujours retourner un corps WebVTT minimaliste (`WEBVTT\n\n`) avec le statut HTTP 200 OK. La balise `<track>` reste saine et stable.
+
+## 🛑 132. Ingestion Aveugle de NFOs Orphelins (Doublons Sans Jaquette), Timeout Prématuré des Sous-Titres WebVTT sur Supports Externes, Clic Intempestif sur l'Écran Vidéo & Pollution des Réalisateurs par les Postes d'Assistants (`FloatingBottomPlayer.tsx`, `mediaSubtitles.ts`, `mediaIngester.ts`, `externalMetadata.ts`, `titleCleaner.ts`)
+
+* **Problème / Symptôme :**
+  1. Affichage de doublons de médias sur l'interface (ex: *Scary Movie 3* affiché deux fois : un exemplaire valide avec jaquette et vidéo, et un faux exemplaire fantôme sans jaquette et sans vidéo).
+  2. Échec d'affichage des sous-titres sélectionnés dans le lecteur : l'écran restait sans texte car l'endpoint backend subissait un timeout de 20s lors de l'extraction FFmpeg sur disque dur USB externe, et rejetait les requêtes HEAD avec un code 404.
+  3. En mode déplié, cliquer ou toucher l'écran vidéo pour faire apparaître ou masquer l'overlay de contrôles déclenchait intempestivement la mise en pause ou la lecture, entrant en conflit avec le bouton Play/Pause central.
+  4. Manque du bouton plein écran direct dans le mini-lecteur replié en bas de page.
+  5. Absence de réalisateur ou association d'assistants réalisateurs/scripteurs (ex: Carlos Fidel, Martin Kitrosser) au lieu de Quentin Tarantino sur les films du dossier `TARANTINO`, ainsi que pollution des titres par des crochets résiduels (`Inglourious Basterds [`, `Django Unchained [`).
+  6. Crash React Web `Rendered more hooks than during the previous render` au déclenchement de la lecture dans `FloatingBottomPlayer.tsx`.
+
+* **Causes Racines :**
+  - **Ingestion Indiscriminée des Fichiers `.nfo` Orphelins** : Le watcher de fichiers ingérait tout `.nfo` découvert comme un nœud `MOVIE` complet même lorsqu'aucun fichier vidéo associé n'existait dans le répertoire (ex: dossiers d'archives NFO sur disques externes).
+  - **Timeout Excessif et Manque de Cache Persistant des Sous-Titres** : L'extraction de sous-titres d'un fichier MKV de plus de 2 heures depuis un disque USB externe via FFmpeg nécessite environ 60 secondes pour parcourir le conteneur. Un timeout de 20s coupait le processus prématurément. De plus, Hono ne répondait pas aux requêtes HEAD, et le résultat n'était conservé qu'en mémoire vive éphémère.
+  - **Écouteur Pressable Redondant sur l'Écran Vidéo** : Le composant `FloatingBottomPlayer` superposait un conteneur tactile avec `handleTogglePlay` au centre de la vidéo, provoquant des bascules de lecture involontaires lors des interactions de l'utilisateur.
+  - **Filtrage Trop Large des Métadonnées d'Équipe TMDb** : Le filtre `department === 'Directing'` capturait l'ensemble de l'équipe de mise en scène (assistants réalisateurs, script supervisors, second unit directors) et retenait le premier membre rencontré avant le réalisateur principal (`job === 'director'`).
+  - **Violation des Règles des Hooks React (Hooks Conditionnels)** : Les hooks `useMemo` (génération de l'URL WebVTT) et `useEffect` (synchronisation des pistes de sous-titres) étaient placés après les retours hâtifs (`if (!currentUser...) return null`, `if (!activeMedia...) return null`). Lorsque `activeMedia` s'activait, React exécutait plus de hooks que lors du rendu initial sans média.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Garde Stricte sur l'Ingestion NFO** : Interdire formellement la création de nœuds de type `MOVIE`, `EPISODE` ou `EXTRA` à partir d'un fichier `.nfo` orphelin sans vidéo adjacente valide sur le disque.
+  - **Moteur de Sous-Titres Haute Résilience avec Cache L1/L2** : Étendre le timeout d'extraction FFmpeg à 180s, autoriser les méthodes `GET` et `HEAD`, et persister immédiatement chaque flux WebVTT extrait sur disque (`/tmp/ums_subtitles_cache/`) pour garantir un temps de réponse de 0 ms aux requêtes ultérieures.
+  - **Délégation Exclusive des Contrôles de Lecture aux Boutons Dédiés** : Supprimer l'action Play/Pause au toucher de l'écran vidéo en mode déplié et la remplacer par un simple réveil d'activité (`resetMouseActivity`).
+  - **Bouton Plein Écran Universel dans le Lecteur Replié** : Proposer le bouton `⛶` directement dans la barre repliée pour un passage instantané en plein écran sans dépliement préalable.
+  - **Filtrage Précis du Rôle Réalisateur** : Exiger strictement `job === 'director'` ou `job === 'co-director'` lors de la désérialisation des équipes techniques.
+  - **Sanctuarisation de l'Ordre des Hooks React** : Positionner inconditionnellement tous les hooks (`useState`, `useRef`, `useCallback`, `useMemo`, `useEffect`) au sommet du composant fonctionnel, avant tout bloc conditionnel ou retour anticipé.
+
 ## 🛑 131. Blocage Systématique de la Lecture Vidéo à 5 Secondes de Lecture (DTS Out-of-Order HLS, PTS Discontinuity, Muxdelay FFMPEG & Découpage Non-Continu) (`mediaStream.ts`, `userPlaybackSync.ts`, `playerStore.ts`, `FloatingBottomPlayer.tsx`)
 
 * **Problème / Symptôme :**

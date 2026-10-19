@@ -347,7 +347,7 @@ export const styles = StyleSheet.create({
     zIndex: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    cursor: 'pointer' as any,
+    cursor: 'default' as any,
   },
   centerPlayIcon: {
     width: 68,

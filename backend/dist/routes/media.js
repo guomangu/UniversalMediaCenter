@@ -551,6 +551,28 @@ mediaRouter.get('/:id', async (c) => {
         }
     }
     const mediaProgress = progressMap.get(media.id);
+    // Récupération des réalisateurs pour le média et ses enfants
+    const allMediaIdsForDirectors = [media.id, ...childNodes.map((c) => c.id)];
+    const directorMap = new Map();
+    if (allMediaIdsForDirectors.length > 0) {
+        try {
+            const directorRows = await db.execute(sql `
+        SELECT l.node_id, v.value_text
+        FROM node_eav_links l
+        JOIN eav_values v ON l.value_id = v.id
+        JOIN eav_attributes a ON v.attribute_id = a.id
+        WHERE a.code = 'director'
+          AND l.node_id IN (${sql.join(allMediaIdsForDirectors.map((id) => sql `${id}::uuid`), sql `, `)})
+        ORDER BY l.order_index ASC
+      `);
+            for (const r of Array.from(directorRows)) {
+                if (r.node_id && r.value_text && !directorMap.has(r.node_id)) {
+                    directorMap.set(r.node_id, r.value_text);
+                }
+            }
+        }
+        catch { }
+    }
     const formattedMedia = {
         ...media,
         posterPath: media.posterPath ? `/api/media/${media.id}/poster` : undefined,
@@ -569,6 +591,7 @@ mediaRouter.get('/:id', async (c) => {
         communityRating: effectiveCommunityRating,
         releaseYear: effectiveReleaseYear ?? media.releaseYear,
         overview: effectiveOverview,
+        director: directorMap.get(media.id) || null,
     };
     const children = childNodes.map((chRaw) => {
         const ch = localizeMediaNode(chRaw, userLang);
@@ -609,6 +632,7 @@ mediaRouter.get('/:id', async (c) => {
             thumbPath: ch.thumbPath ? `/api/media/${ch.id}/thumb` : (ch.posterPath ? `/api/media/${ch.id}/poster` : undefined),
             seasonEpisodeTag,
             displayBadge,
+            director: directorMap.get(ch.id) || null,
             positionSeconds: chProg?.positionSeconds ?? 0,
             durationSeconds: chProg?.durationSeconds ?? (ch.runtimeSeconds || 0),
             progressPercent: chProg?.progressPercent ?? 0,
@@ -655,6 +679,24 @@ mediaRouter.get('/:id', async (c) => {
             const sagaSiblings = rawSagaSiblings.filter((s) => isMediaAllowedForUser(user, s));
             // Ne pas exposer une saga si tous ses films sont interdits pour l'utilisateur
             if (sagaSiblings.length > 0) {
+                const sagaDirectorMap = new Map();
+                try {
+                    const sDirectorRows = await db.execute(sql `
+            SELECT l.node_id, v.value_text
+            FROM node_eav_links l
+            JOIN eav_values v ON l.value_id = v.id
+            JOIN eav_attributes a ON v.attribute_id = a.id
+            WHERE a.code = 'director'
+              AND l.node_id IN (${sql.join(sagaSiblings.map((s) => sql `${s.id}::uuid`), sql `, `)})
+            ORDER BY l.order_index ASC
+          `);
+                    for (const r of Array.from(sDirectorRows)) {
+                        if (r.node_id && r.value_text && !sagaDirectorMap.has(r.node_id)) {
+                            sagaDirectorMap.set(r.node_id, r.value_text);
+                        }
+                    }
+                }
+                catch { }
                 parentSaga = {
                     id: pNode.id,
                     title: pNode.title,
@@ -669,6 +711,7 @@ mediaRouter.get('/:id', async (c) => {
                         nodeType: s.nodeType,
                         orderIndex: s.orderIndex,
                         communityRating: s.communityRating,
+                        director: sagaDirectorMap.get(s.id) || directorMap.get(s.id) || null,
                         posterPath: s.posterPath ? `/api/media/${s.id}/poster` : (pNode.posterPath ? `/api/media/${pNode.id}/poster` : undefined),
                     })),
                 };

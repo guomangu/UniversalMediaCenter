@@ -152,6 +152,11 @@ function renderEpisodeCard(item: ParsedChildNode, parentPoster: string | undefin
       <Text style={styles.title} numberOfLines={2}>
         {displayTitle}
       </Text>
+      {node.director ? (
+        <Text style={styles.directorSubtext} numberOfLines={1}>
+          🎬 {node.director}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -276,5 +281,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 18,
     textAlign: 'left',
+  },
+  directorSubtext: {
+    color: '#94a3b8',
+    fontSize: 11.5,
+    marginTop: 2,
+    fontWeight: '500',
   },
 });

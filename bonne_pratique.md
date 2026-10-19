@@ -350,3 +350,28 @@ ightarrow$ dans *"Mes écrans connectés"* avec action `[Déconnecter]`.
     *   Écouter impérativement l'événement `Hls.Events.ERROR`.
     *   Sur incident non-fatal de type `bufferStalledError`, vérifier si la lecture est souhaitée (`activeMedia.isPlaying`) et relancer immédiatement le lecteur (`v.play()`).
     *   Sur incident fatal, appeler `hls.startLoad()` pour `NETWORK_ERROR` ou `hls.recoverMediaError()` pour `MEDIA_ERROR`, garantissant une auto-réparation transparente sans intervention manuelle.
+
+## 22. Résilience d'Extraction des Sous-Titres WebVTT (Cache L1/L2, HEAD/GET), Ergonomie Plein Écran, Éradication des Doublons NFO & Primauté Algorithmique Universelle
+
+*   **Extraction des Sous-Titres WebVTT Multi-Méthodes et Cache Disque/Mémoire :**
+    *   Les navigateurs et moteurs vidéo effectuent régulièrement des requêtes de pré-vérification `HEAD` sur les URLs de pistes `<track src="...">`. La route de sous-titres doit impérativement répondre aux méthodes `GET` et `HEAD` avec les en-têtes corrects (`Content-Type: text/vtt; charset=utf-8`, `Access-Control-Allow-Origin: *`).
+    *   L'extraction FFmpeg depuis des conteneurs MKV/MP4 volumineux situés sur disques externes USB peut excéder 30 secondes. Allouer un timeout d'au moins 180s et un `maxBuffer` de 20 Mo.
+    *   Mettre en place un cache à deux niveaux : L1 en mémoire vive (`Map<string, string>`) et L2 sur disque persistant (`/tmp/ums_subtitles_cache/`) avec validation de taille non vide. Ainsi, chaque fichier de sous-titre extrait n'est extrait qu'une seule fois et servi en 0 ms par la suite.
+    *   Lors du chargement de la balise `<track>`, écouter l'événement `addtrack` sur `video.textTracks` ou forcer `track.mode = 'showing'` pour garantir l'affichage effectif des sous-titres à l'écran.
+
+*   **Ergonomie du Mini-Lecteur Flottant & Neutralisation des Conflits de Clic :**
+    *   Proposer systématiquement un bouton plein écran `⛶` directement dans la barre d'outils du mini-lecteur replié en bas d'écran (72px), permettant le basculement direct sans exiger d'abord le dépliement de la modale.
+    *   En mode lecteur déplié grand écran, dédier l'interaction tactile/souris sur la surface vidéo uniquement au réveil des contrôles visuels (`resetMouseActivity`). Ne jamais déclencher Play/Pause au clic aveugle sur l'écran, ce qui entre en conflit avec le glissement ou les tapotements d'affichage des commandes. Laisser le contrôle Play/Pause exclusivement aux boutons dédiés.
+
+*   **Éradication Algorithmique des Doublons Fantômes d'Ingestion :**
+    *   Rejeter formellement la création de nœuds de médias `MOVIE`, `EPISODE` ou `EXTRA` à partir de fichiers `.nfo` orphelins si aucun fichier vidéo correspondant n'existe dans le dossier ou dans l'arborescence immédiate.
+    *   Ne jamais manipuler la base de données manuellement au cas par cas. Concevoir des heuristiques d'assainissement globales (`hierarchyRepair.ts`) pour réparer les nœuds corrompus ou orphelins à l'échelle de l'ensemble de la médiathèque (ex: milliers de nœuds analysés et normalisés en une seule passe).
+
+*   **Filtrage Précis des Rôles Techniques & Extraction des Réalisateurs :**
+    *   Dans les extracteurs de crédits d'équipes (TMDb, NFO), filtrer strictement sur `job === 'director'` ou `job === 'co-director'`. Bannir l'utilisation laxiste de `department === 'Directing'` qui attribue par erreur les rôles d'assistants réalisateurs, scripteurs ou réalisateurs de seconde équipe au lieu du créateur principal.
+    *   Enrichir et relier automatiquement les collections et dossiers d'anthologies thématiques (ex: dossiers d'auteur `TARANTINO`) à leur saga parente et aux métadonnées canoniques de l'artiste.
+
+*   **Discipline des Outils & Intégration Environnement Développeur (Podman, Zed, Types Stricts) :**
+    *   Toujours utiliser `podman` (rootless) sur Fedora/RHEL/Silverblue/OSTree. Ne jamais invoquer `docker` ou `docker-compose`.
+    *   Respecter scrupuleusement les schémas d'outils JSON : fournir des entiers stricts (`StartLine: 380`) et jamais de flottants (`380.0`) pour éviter les rejets d'outils.
+    *   Consulter et maintenir le document de référence [`memoire_actions_AI_dev.md`](file:///var/home/tele/Documents/theuniversalmediastack/memoire_actions_AI_dev.md) pour préserver les connaissances opérationnelles du projet.

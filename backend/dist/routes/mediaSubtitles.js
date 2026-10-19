@@ -1,95 +1,256 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
 import fsp from 'node:fs/promises';
+import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 export const subtitleRouter = new Hono();
-const subtitleCache = new Map();
+const DISK_CACHE_DIR = '/tmp/ums_subtitles_cache';
+if (!fs.existsSync(DISK_CACHE_DIR)) {
+    try {
+        fs.mkdirSync(DISK_CACHE_DIR, { recursive: true });
+    }
+    catch (err) {
+        console.error('Failed to create subtitle cache directory:', err);
+    }
+}
+const subtitleMemoryCache = new Map();
+const inFlightOcrPromises = new Map();
 function srtToVtt(srt) {
-    return 'WEBVTT\n\n' + srt.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/(\d{2}:\d{2}:\\d{2}),(\d{3})/g, '$1.$2');
+    // Conversion fiable de SRT vers WebVTT : virgules en points pour les millisecondes (RFC 8216 / W3C)
+    return 'WEBVTT\n\n' + srt.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/(\d{2}:\d{2}:\d{2})[,.](\d{3})/g, '$1.$2');
 }
 const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-subtitleRouter.get('/:id/subtitles', async (c) => {
-    const id = c.req.param('id');
-    const trackIndex = c.req.query('trackIndex');
-    const fileName = c.req.query('fileName');
-    const lang = (c.req.query('lang') || '').toLowerCase();
-    const cacheKey = `${id}:${trackIndex || ''}:${fileName || ''}:${lang || ''}`;
-    if (subtitleCache.has(cacheKey)) {
-        return c.text(subtitleCache.get(cacheKey), 200, {
-            'Content-Type': 'text/vtt; charset=utf-8',
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'public, max-age=86400',
-        });
+function getDiskCachePath(cacheKey) {
+    const hash = crypto.createHash('sha256').update(cacheKey).digest('hex');
+    return path.join(DISK_CACHE_DIR, `${hash}.vtt`);
+}
+/**
+ * Extraction et OCR d'une piste bitmap (hdmv_pgs_subtitle / dvd_subtitle) via pgsrip et Tesseract
+ */
+async function ripPgsSubtitleTrack(videoPath, trackIndex, langHint) {
+    const ocrKey = `${videoPath}:${trackIndex}`;
+    if (inFlightOcrPromises.has(ocrKey)) {
+        return inFlightOcrPromises.get(ocrKey);
     }
+    const ocrPromise = (async () => {
+        let ocrLang = (langHint || '').toLowerCase();
+        try {
+            const { stdout } = await execFileAsync('ffprobe', [
+                '-v', 'error',
+                '-select_streams', String(trackIndex),
+                '-show_entries', 'stream=codec_name:stream_tags=language',
+                '-of', 'json',
+                videoPath,
+            ], { timeout: 15000 });
+            const info = JSON.parse(stdout);
+            const s = info.streams?.[0];
+            const l = s?.tags?.language?.toLowerCase();
+            if (l?.startsWith('en'))
+                ocrLang = 'eng';
+            else if (l?.startsWith('fr'))
+                ocrLang = 'fra';
+            else if (l)
+                ocrLang = l;
+        }
+        catch { }
+        if (!ocrLang)
+            ocrLang = 'fra';
+        const tempId = `pgs_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const tempSup = path.join('/tmp', `${tempId}.${ocrLang}.sup`);
+        const tempSrt = path.join('/tmp', `${tempId}.${ocrLang}.srt`);
+        try {
+            // 1. Extraction du flux SUP par FFmpeg (rapide, ~5-15s à >100x de vitesse)
+            await execFileAsync('ffmpeg', [
+                '-nostdin',
+                '-i', videoPath,
+                '-map', `0:${trackIndex}`,
+                '-c:s', 'copy',
+                tempSup,
+                '-y',
+            ], { timeout: 120000 });
+            // 2. Transcription OCR via pgsrip + Tesseract
+            await execFileAsync('pgsrip', [
+                'rip',
+                '-l', ocrLang,
+                tempSup,
+            ], { timeout: 180000 });
+            if (fs.existsSync(tempSrt)) {
+                const srt = await fsp.readFile(tempSrt, 'utf-8');
+                return srtToVtt(srt);
+            }
+        }
+        catch (err) {
+            console.error(`Erreur OCR pgsrip pour piste ${trackIndex}:`, err);
+        }
+        finally {
+            try {
+                if (fs.existsSync(tempSup))
+                    await fsp.unlink(tempSup);
+            }
+            catch { }
+            try {
+                if (fs.existsSync(tempSrt))
+                    await fsp.unlink(tempSrt);
+            }
+            catch { }
+        }
+        return null;
+    })();
+    inFlightOcrPromises.set(ocrKey, ocrPromise);
+    try {
+        return await ocrPromise;
+    }
+    finally {
+        inFlightOcrPromises.delete(ocrKey);
+    }
+}
+async function handleSubtitleRequest(c, id, rawTrackIndex, rawFileName, rawLang) {
+    let trackIndex = rawTrackIndex;
+    let fileName = rawFileName;
+    let lang = (rawLang || '').toLowerCase();
+    const cacheKey = `${id}:${trackIndex || ''}:${fileName || ''}:${lang || ''}`;
+    const diskPath = getDiskCachePath(cacheKey);
+    const headers = {
+        'Content-Type': 'text/vtt; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400',
+    };
+    // 1. Vérification Cache L1 (Mémoire vive)
+    if (subtitleMemoryCache.has(cacheKey)) {
+        const vtt = subtitleMemoryCache.get(cacheKey);
+        return c.req.method === 'HEAD' ? c.body(null, 200, headers) : c.text(vtt, 200, headers);
+    }
+    // 2. Vérification Cache L2 (Disque persistant)
+    try {
+        const cachedDisk = await fsp.readFile(diskPath, 'utf-8').catch(() => null);
+        if (cachedDisk && cachedDisk.length > 10) {
+            subtitleMemoryCache.set(cacheKey, cachedDisk);
+            return c.req.method === 'HEAD' ? c.body(null, 200, headers) : c.text(cachedDisk, 200, headers);
+        }
+    }
+    catch { }
     const media = await db.query.mediaNodes.findFirst({
         where: (t, { or, eq }) => isUuid(id) ? or(eq(t.id, id), eq(t.slug, id)) : eq(t.slug, id),
     });
     if (!media?.videoFilePath) {
-        return c.text('WEBVTT\n\n', 404, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+        return c.text('WEBVTT\n\n', 200, headers);
     }
     try {
         const dir = path.dirname(media.videoFilePath);
+        // Extraction depuis fichier externe adjacent (.srt, .vtt)
         if (fileName) {
-            const candidates = [path.join(dir, fileName), path.join(dir, 'Subtitles', fileName), path.join(path.dirname(dir), 'Subtitles', fileName)];
+            const candidates = [
+                path.join(dir, fileName),
+                path.join(dir, 'Subtitles', fileName),
+                path.join(dir, 'Subs', fileName),
+                path.join(path.dirname(dir), 'Subtitles', fileName)
+            ];
             for (const cand of candidates) {
                 const content = await fsp.readFile(cand, 'utf-8').catch(() => null);
                 if (content) {
                     const vtt = cand.endsWith('.vtt') ? content : srtToVtt(content);
-                    subtitleCache.set(cacheKey, vtt);
-                    return c.text(vtt, 200, {
-                        'Content-Type': 'text/vtt; charset=utf-8',
-                        'Access-Control-Allow-Origin': '*',
-                        'Cache-Control': 'public, max-age=86400',
-                    });
+                    subtitleMemoryCache.set(cacheKey, vtt);
+                    await fsp.writeFile(diskPath, vtt, 'utf-8').catch(() => { });
+                    return c.req.method === 'HEAD' ? c.body(null, 200, headers) : c.text(vtt, 200, headers);
                 }
             }
         }
+        // Extraction depuis flux interne par index de piste
         if (trackIndex !== undefined && trackIndex !== '') {
-            const { stdout } = await execFileAsync('ffmpeg', [
-                '-nostdin',
-                '-vn',
-                '-an',
-                '-i', media.videoFilePath,
-                '-map', `0:${trackIndex}`,
-                '-f', 'webvtt',
-                'pipe:1',
-            ], { timeout: 20000 });
-            if (stdout && stdout.includes('WEBVTT')) {
-                const vtt = stdout.substring(stdout.indexOf('WEBVTT'));
-                subtitleCache.set(cacheKey, vtt);
-                return c.text(vtt, 200, {
-                    'Content-Type': 'text/vtt; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*',
-                    'Cache-Control': 'public, max-age=86400',
-                });
+            try {
+                const { stdout } = await execFileAsync('ffmpeg', [
+                    '-nostdin',
+                    '-vn',
+                    '-an',
+                    '-i', media.videoFilePath,
+                    '-map', `0:${trackIndex}`,
+                    '-c:s', 'webvtt',
+                    '-f', 'webvtt',
+                    'pipe:1',
+                ], { timeout: 180000, maxBuffer: 20 * 1024 * 1024 });
+                if (stdout && stdout.includes('WEBVTT')) {
+                    const vtt = stdout.substring(stdout.indexOf('WEBVTT'));
+                    subtitleMemoryCache.set(cacheKey, vtt);
+                    await fsp.writeFile(diskPath, vtt, 'utf-8').catch(() => { });
+                    return c.req.method === 'HEAD' ? c.body(null, 200, headers) : c.text(vtt, 200, headers);
+                }
+            }
+            catch (directErr) {
+                // Encodage direct impossible (ex: sous-titre bitmap PGS ou DVD) -> Déclenchement de l'OCR haute fidélité
+                console.log(`Direct text extraction failed for track ${trackIndex}, attempting OCR extraction...`);
+                const vtt = await ripPgsSubtitleTrack(media.videoFilePath, trackIndex, lang);
+                if (vtt && vtt.includes('WEBVTT')) {
+                    subtitleMemoryCache.set(cacheKey, vtt);
+                    await fsp.writeFile(diskPath, vtt, 'utf-8').catch(() => { });
+                    return c.req.method === 'HEAD' ? c.body(null, 200, headers) : c.text(vtt, 200, headers);
+                }
             }
         }
+        // Extraction par code de langue
         if (lang) {
-            const { stdout } = await execFileAsync('ffmpeg', [
-                '-nostdin',
-                '-vn',
-                '-an',
-                '-i', media.videoFilePath,
-                '-map', `0:m:language:${lang}?`,
-                '-f', 'webvtt',
-                'pipe:1',
-            ], { timeout: 20000 }).catch(() => ({ stdout: '' }));
-            if (stdout && stdout.includes('WEBVTT')) {
-                const vtt = stdout.substring(stdout.indexOf('WEBVTT'));
-                subtitleCache.set(cacheKey, vtt);
-                return c.text(vtt, 200, {
-                    'Content-Type': 'text/vtt; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*',
-                    'Cache-Control': 'public, max-age=86400',
-                });
+            try {
+                const { stdout } = await execFileAsync('ffmpeg', [
+                    '-nostdin',
+                    '-vn',
+                    '-an',
+                    '-i', media.videoFilePath,
+                    '-map', `0:m:language:${lang}?`,
+                    '-c:s', 'webvtt',
+                    '-f', 'webvtt',
+                    'pipe:1',
+                ], { timeout: 180000, maxBuffer: 20 * 1024 * 1024 });
+                if (stdout && stdout.includes('WEBVTT')) {
+                    const vtt = stdout.substring(stdout.indexOf('WEBVTT'));
+                    subtitleMemoryCache.set(cacheKey, vtt);
+                    await fsp.writeFile(diskPath, vtt, 'utf-8').catch(() => { });
+                    return c.req.method === 'HEAD' ? c.body(null, 200, headers) : c.text(vtt, 200, headers);
+                }
+            }
+            catch (directErr) {
+                // Fallback OCR par langue
             }
         }
     }
     catch (err) {
         console.error('Subtitle extraction error:', err);
     }
-    return c.text('WEBVTT\n\n', 404, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    // Safety Fallback : Toujours retourner un WebVTT valide 200 OK (même vide) plutôt qu'une erreur 404
+    // Cela empêche le crash du tag <track> et évite les erreurs fatales dans la console du navigateur
+    return c.text('WEBVTT\n\n', 200, headers);
+}
+// 1. Support de l'endpoint avec paramètres d'URL (ex: /api/media/:id/subtitles?trackIndex=4 ou ?fileName=...)
+subtitleRouter.on(['GET', 'HEAD'], '/:id/subtitles', async (c) => {
+    const id = c.req.param('id');
+    const trackIndex = c.req.query('trackIndex');
+    const fileName = c.req.query('fileName');
+    const lang = (c.req.query('lang') || '').toLowerCase();
+    return handleSubtitleRequest(c, id, trackIndex, fileName, lang);
+});
+// 2. Support de l'endpoint avec identifiant de sous-titre en sous-chemin (ex: /api/media/:id/subtitles/track:4 ou /subtitles/file:...)
+subtitleRouter.on(['GET', 'HEAD'], '/:id/subtitles/:subId', async (c) => {
+    const id = c.req.param('id');
+    const rawSubId = decodeURIComponent(c.req.param('subId') || '');
+    let trackIndex;
+    let fileName;
+    let lang;
+    if (rawSubId.startsWith('track:')) {
+        trackIndex = rawSubId.slice(6);
+    }
+    else if (rawSubId.startsWith('file:')) {
+        fileName = rawSubId.slice(5);
+    }
+    else if (rawSubId.length === 2 || rawSubId.length === 3) {
+        lang = rawSubId;
+    }
+    else if (/^\d+$/.test(rawSubId)) {
+        trackIndex = rawSubId;
+    }
+    else {
+        fileName = rawSubId;
+    }
+    return handleSubtitleRequest(c, id, trackIndex, fileName, lang);
 });

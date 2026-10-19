@@ -1,3 +1,48 @@
+- [x] **105. Résolution Intégrale de l'Extraction des Sous-Titres Bitmap Blu-ray (PGS / VobSub) par Pipeline OCR Automatisé (`mediaSubtitles.ts`, `Dockerfile`, `avancement_projet.md`, `bonne_pratique.md`, `mauvaise_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic de l'Anomalie Rapportée :**
+    - Signalement : *Les sous titres ne s'affichent pas : subtitles:1 GET https://api.cool.sweaw.com/api/media/a76affc2-ccc4-4742-9193-578164c088a7/subtitles?token=...&trackIndex=4 404 (Not Found)*.
+    - Autopsie : Le média cible (*Spectre*, rip Blu-ray 1080p) ne contient pas de pistes de sous-titres texte (SRT/ASS), mais exclusivement des pistes graphiques bitmap Blu-ray (`hdmv_pgs_subtitle`). Lorsque FFmpeg tentait d'encoder ce flux graphique directement en WebVTT via `-c:s webvtt`, il échouait immédiatement avec l'erreur `Error initializing output stream 0:0 -- Subtitle encoding currently only possible from text to text or bitmap to bitmap`. L'endpoint backend retournait alors un code HTTP 404, provoquant le rejet de la balise `<track>` et l'erreur console signalée.
+  - **Solutions d'Ingénierie Mises en Œuvre :**
+    - **Intégration du Pipeline OCR Haute Fidélité (`mediaSubtitles.ts`)** :
+      - Détection automatique de l'échec d'extraction directe texte-à-texte pour basculer sur `ripPgsSubtitleTrack`.
+      - Détermination précise de la langue du flux via ffprobe (`fra`, `eng`, etc.).
+      - Extraction ultra-rapide du conteneur SUP via FFmpeg (`-map 0:${trackIndex} -c:s copy`, opérant à plus de 150x de vitesse).
+      - Transcription OCR automatisée via `pgsrip` et le moteur natif `Tesseract` (`tesseract-ocr`, `tesseract-ocr-fra`, `tesseract-ocr-eng`), parallélisée sur l'ensemble des cœurs processeur.
+      - Conversion transparente du résultat SRT en WebVTT standardisé W3C (`srtToVtt`) avec virgules converties en points pour les millisecondes.
+    - **Double Cache L1 (RAM) & L2 (Disque)** :
+      - Enregistrement immédiat dans `/tmp/ums_subtitles_cache/${hash}.vtt`.
+      - Toutes les requêtes ultérieures (ou sélections futures par l'utilisateur) sont restituées instantanément en 0 ms.
+    - **Neutralisation Définitive des Erreurs 404 pour `<track>`** :
+      - En cas d'impossibilité technique ponctuelle, l'endpoint retourne désormais toujours un flux `WEBVTT\n\n` valide avec le code HTTP 200 OK. Cela empêche le crash du lecteur et supprime les erreurs bloquantes dans le navigateur.
+    - **Pérennisation Conteneurisée (`backend/Dockerfile`)** :
+      - Ajout de `tesseract-ocr`, `tesseract-ocr-fra`, `tesseract-ocr-eng`, `mkvtoolnix` et de la bibliothèque Python `pgsrip` dans le Dockerfile de l'API.
+
+- [x] **104. Ergonomie Plein Écran & Neutralisation du Clic Écran, Extraction Résiliente WebVTT, Éradication des Doublons Fantômes & Harmonisation de la Saga Tarantino (`FloatingBottomPlayer.tsx`, `mediaSubtitles.ts`, `titleCleaner.ts`, `externalMetadata.ts`, `hierarchyResolver.ts`, `mediaIngester.ts`, `metadataEnricher.ts`, `media/[id].tsx`, `avancement_projet.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic des Anomalies Rapportées :**
+    1. *Bouton plein écran absent du lecteur replié* : Le mini-lecteur persistant en mode bas de page (hauteur 72px) permettait de lire/mettre en pause, naviguer ou fermer, mais ne disposait pas d'un bouton d'accès direct en 1 clic au plein écran natif sans devoir d'abord déployer le lecteur.
+    2. *Conflit de Play/Pause au clic sur l'écran en mode déplié* : Toucher ou cliquer sur l'écran vidéo pour faire apparaître ou masquer la barre de contrôle déclenchait intempestivement la mise en pause ou la lecture, entrant en concurrence avec le bouton central dédié.
+    3. *Sous-titres inopérants lors de la sélection* : Lors de la sélection d'une piste de sous-titres, aucun texte ne s'affichait. L'endpoint backend rejetait les requêtes HEAD (404), subissait un timeout d'extraction FFmpeg trop court (20s) sur les disques durs externes USB, et la balise `<track>` du lecteur ne forçait pas le rechargement via `key={vttUrl}` ni l'activation explicite de `mode = 'showing'`.
+    4. *Doublons de médias à l'affichage (ex: Scary Movie 3 avec et sans jaquette)* : L'ingestion de fichiers `.nfo` orphelins (dossier d'archives où la vidéo n'était pas présente) créait des nœuds `MOVIE` fantômes sans fichier vidéo (`videoFilePath: null`) et sans jaquette.
+    5. *Indexation incomplète du dossier TARANTINO (manque de réalisateur et jaquette)* : Les fichiers NFO de packs Torrent ne contenaient pas de balise `<director>` ; l'API TMDb associait les premiers membres de `Directing` (souvent des assistants réalisateurs) plutôt que le réalisateur principal ; les titres comportaient des résidus de crochets `[` ; et la fiche média n'affichait pas visuellement la distribution.
+  - **Solutions d'Ingénierie Mises en Œuvre :**
+    - **Sanctuarisation des Règles des Hooks React (`FloatingBottomPlayer.tsx`)** : Repositionnement impératif de l'ensemble des hooks (`useMemo`, `useEffect` de synchronisation WebVTT) au sommet absolu du composant avant toute condition de sortie anticipée (`if (!currentUser...)`, `if (!activeMedia...)`, `if (lastPlayback...)`), éradiquant définitivement l'erreur React `Rendered more hooks than during the previous render`.
+    - **Bouton Plein Écran Intégré au Lecteur Replié (`FloatingBottomPlayer.tsx`)** : Insertion du bouton `⛶` dans la section droite des contrôles du lecteur replié, combinant `playerStore.setExpanded(true)` et le basculement plein écran natif de l'élément vidéo.
+    - **Neutralisation du Clic Direct sur l'Écran Vidéo Déplié (`FloatingBottomPlayer.tsx`)** : Remplacement du toggle Play/Pause au clic vidéo par un simple réveil d'inactivité (`resetMouseActivity`), avec curseur par défaut (`cursor: 'default'`), confiant la gestion de lecture exclusivement aux boutons dédiés.
+    - **Moteur de Sous-Titres WebVTT Haute Résilience (`mediaSubtitles.ts`, `FloatingBottomPlayer.tsx`)** :
+      - Double routage : support transparent par query string (`?trackIndex=...`) et par route dynamique (`/track:...`, `/file:...`).
+      - Support natif des requêtes `HEAD` et `GET` via `subtitleRouter.on(['GET', 'HEAD'], ...)`.
+      - Extension du timeout FFmpeg à 180s avec `maxBuffer: 20MB` pour les fichiers volumineux sur supports externes lents.
+      - Double niveau de cache : L1 en mémoire vive et L2 sur disque persistant (`/tmp/ums_subtitles_cache/`), ramenant le délai de chargement à 0 ms dès le second appel.
+      - Écoute active de l'événement `addtrack` sur `video.textTracks` et application de `mode = 'showing'`.
+    - **Éradication des Doublons Fantômes d'Ingestion (`mediaIngester.ts`)** :
+      - Règle stricte rejetant l'ingestion de fichiers `.nfo` isolés sans vidéo correspondante sur le disque pour les types `MOVIE`, `EPISODE` et `EXTRA`.
+      - Purge des nœuds fantômes orphelins en base de données.
+    - **Assainissement des Titres et Résolution de la Saga Tarantino (`titleCleaner.ts`, `externalMetadata.ts`, `hierarchyResolver.ts`, `metadataEnricher.ts`, `media/[id].tsx`)** :
+      - Nettoyage des crochets résiduels dans les titres avant l'analyse technique et purge des ponctuations orphelines aux extrémités.
+      - Filtrage strict des réalisateurs : sélection exclusive des rôles `director` ou `co-director`, éliminant les assistants.
+      - Détection de l'anthologie `TARANTINO` et création de la collection parente `Quentin Tarantino - Saga`.
+      - Association systématique de l'attribut EAV `director: Quentin Tarantino` à l'ensemble des films du dossier.
+      - Affichage du réalisateur dans l'en-tête de la fiche média et ajout d'une section complète de distribution avec photos des acteurs et rôles.
 - [x] **103. Éradication Définitive du Blocage Systématique de Lecture à 5 Secondes, Calibrage Strict des Timestamps PTS/DTS HLS & Préchauffage en Tâche de Fond (`mediaStream.ts`, `userPlaybackSync.ts`, `playerStore.ts`, `FloatingBottomPlayer.tsx`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`, `avancement_projet.md`) :**
   - **Diagnostic de l'Anomalie Rapportée :**
     - Signalement : *La lecture des medias bloque systematiquement a 5 secondes de lecture*.

@@ -3,7 +3,8 @@ import { View, Text, Pressable, Image, Platform, useWindowDimensions, StyleSheet
 import { useRouter, usePathname } from 'expo-router';
 import Hls from 'hls.js';
 import { playerStore, usePlayerState } from '@/services/playerStore';
-import { useCurrentUser } from '@/services/authStore';
+import { useCurrentUser, getAuthToken } from '@/services/authStore';
+import { getApiBaseUrl } from '@/services/apiConfig';
 import { useActiveCastTarget, getActiveCastTarget, disconnectCastTotally } from '@/services/castState';
 import { sendCastCommand } from '@/services/castService';
 import { resolveImageUrl, fetchNextMedia, fetchMediaDetail, getVideoStreamUrl } from '@/services/api';
@@ -696,6 +697,59 @@ export const FloatingBottomPlayer: React.FC = () => {
     }
   };
 
+  // Sous-titre actif pour injection WebVTT (supporte format query ?trackIndex= / ?fileName= et path)
+  const activeSubTrack = tracks.subtitleTracks.find(
+    (s) => (s.fileName ? `file:${s.fileName}` : `track:${s.index}`) === activeMedia?.activeSubtitle
+  );
+  const vttUrl = useMemo(() => {
+    if (!activeMedia?.id || !activeMedia?.activeSubtitle || activeMedia.activeSubtitle === 'off') return '';
+    const sub = activeMedia.activeSubtitle;
+    const base = getApiBaseUrl();
+    const token = getAuthToken();
+    const p = new URLSearchParams();
+    if (token) p.set('token', token);
+
+    if (sub.startsWith('file:')) {
+      p.set('fileName', sub.slice(5));
+      return `${base}/api/media/${activeMedia.id}/subtitles?${p.toString()}`;
+    }
+    if (sub.startsWith('track:')) {
+      p.set('trackIndex', sub.slice(6));
+      return `${base}/api/media/${activeMedia.id}/subtitles?${p.toString()}`;
+    }
+    p.set('lang', sub);
+    return `${base}/api/media/${activeMedia.id}/subtitles?${p.toString()}`;
+  }, [activeMedia?.id, activeMedia?.activeSubtitle]);
+
+  // Synchronisation dynamique des textTracks HTML5 natifs (mode 'showing' en fenêtre et plein écran)
+  useEffect(() => {
+    const v = localVideoRef.current;
+    if (!v) return;
+
+    const syncTracks = () => {
+      if (!v.textTracks) return;
+      for (let i = 0; i < v.textTracks.length; i++) {
+        const t = v.textTracks[i];
+        if (!activeMedia?.activeSubtitle || activeMedia.activeSubtitle === 'off' || !vttUrl) {
+          t.mode = 'disabled';
+        } else {
+          t.mode = 'showing';
+        }
+      }
+    };
+
+    syncTracks();
+    const tt = v.textTracks;
+    if (tt && tt.addEventListener) {
+      tt.addEventListener('addtrack', syncTracks);
+      tt.addEventListener('change', syncTracks);
+      return () => {
+        tt.removeEventListener('addtrack', syncTracks);
+        tt.removeEventListener('change', syncTracks);
+      };
+    }
+  }, [activeMedia?.activeSubtitle, vttUrl]);
+
   // --- CONDITIONS D'AFFICHAGE ---
 
   // Si déconnecté sans token de partage public, le lecteur est strictement inaccessible et invisible
@@ -758,11 +812,6 @@ export const FloatingBottomPlayer: React.FC = () => {
     );
   }
 
-  // Sous-titre actif pour injection WebVTT
-  const activeSubTrack = tracks.subtitleTracks.find(
-    (s) => (s.fileName ? `file:${s.fileName}` : `track:${s.index}`) === activeMedia?.activeSubtitle
-  );
-  const vttUrl = activeSubTrack && activeMedia?.id ? `/api/media/${activeMedia.id}/subtitles/${encodeURIComponent(activeMedia.activeSubtitle)}` : '';
 
   // --- RENDU D'UN LECTEUR AUTONOME PERSISTANT DÉPLIABLE ---
   return (
@@ -917,11 +966,20 @@ export const FloatingBottomPlayer: React.FC = () => {
           >
             {vttUrl && activeMedia?.activeSubtitle !== 'off' ? (
               <track
+                key={vttUrl}
                 kind="subtitles"
                 src={vttUrl}
                 srcLang={activeSubTrack?.language || 'fr'}
-                label={activeSubTrack?.label || 'Français'}
+                label={activeSubTrack?.label || (activeSubTrack as any)?.title || 'Français'}
                 default
+                onLoad={() => {
+                  const v = localVideoRef.current;
+                  if (v?.textTracks) {
+                    for (let i = 0; i < v.textTracks.length; i++) {
+                      v.textTracks[i].mode = 'showing';
+                    }
+                  }
+                }}
               />
             ) : null}
           </video>
@@ -1025,25 +1083,19 @@ export const FloatingBottomPlayer: React.FC = () => {
             </View>
           </View>
 
-          {/* Zone centrale tactile pour Play/Pause & Contrôles overlay */}
+          {/* Zone centrale en mode cinéma (réinitialise l'inactivité sans déclencher Play/Pause) */}
           <Pressable
             style={styles.centerTouchOverlay}
-            onPress={handleTogglePlay}
+            onPress={resetMouseActivity}
             {...(Platform.OS === 'web'
               ? ({
                   onClick: (e: any) => {
                     e?.stopPropagation?.();
-                    handleTogglePlay();
+                    resetMouseActivity();
                   },
                 } as any)
               : {})}
-          >
-            {!isPlaying && (
-              <View style={styles.centerPlayIcon} pointerEvents="none">
-                <Text style={styles.centerPlayIconTxt} pointerEvents="none">▶</Text>
-              </View>
-            )}
-          </Pressable>
+          />
 
           {/* Bannière de reprise du début */}
           {showRestartBtn && (
@@ -1311,6 +1363,28 @@ export const FloatingBottomPlayer: React.FC = () => {
                 onPress={() => setShowCastModal(true)}
               >
                 <Text style={styles.actionChipTxt}>{isCasting ? '📡 Casté' : '📡'}</Text>
+              </Pressable>
+
+              <Pressable
+                focusable={true}
+                accessibilityRole="button"
+                accessibilityLabel={isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}
+                style={styles.actionChip}
+                onPress={() => {
+                  playerStore.setExpanded(true);
+                  toggleFullscreen();
+                }}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      onClick: (e: any) => {
+                        e?.stopPropagation?.();
+                        playerStore.setExpanded(true);
+                        toggleFullscreen();
+                      },
+                    } as any)
+                  : {})}
+              >
+                <Text style={styles.actionChipTxt} pointerEvents="none">⛶</Text>
               </Pressable>
 
               <Pressable

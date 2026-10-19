@@ -53,9 +53,16 @@ function SagaMovieCard({ movie, isCurrent, parentSaga }: { movie: any; isCurrent
       <Text numberOfLines={1} style={[styles.movieTitle, isCurrent && styles.activeMovieTitle]}>
         {movie.title}
       </Text>
-      <Text style={styles.movieYear}>
-        {movie.releaseYear || 'Année inconnue'}
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+        <Text style={styles.movieYear}>
+          {movie.releaseYear || 'Année inconnue'}
+        </Text>
+        {movie.director ? (
+          <Text style={[styles.movieYear, { color: "#818cf8", fontWeight: "600", maxWidth: "65%" }]} numberOfLines={1}>
+            🎬 {movie.director}
+          </Text>
+        ) : null}
+      </View>
     </Pressable>
   );
 }

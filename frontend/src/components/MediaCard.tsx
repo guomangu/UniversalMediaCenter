@@ -129,7 +129,14 @@ export const MediaCard: React.FC<MediaCardProps> = ({ item, styleVariant = 'POST
         >
           {item.title}
         </Text>
-        {item.releaseYear ? <Text style={styles.subtext}>{item.releaseYear}</Text> : null}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+          {item.releaseYear ? <Text style={styles.subtext}>{item.releaseYear}</Text> : <View />}
+          {(item as any).director ? (
+            <Text style={[styles.subtext, { color: "#818cf8", fontWeight: "600", maxWidth: "65%" }]} numberOfLines={1}>
+              🎬 {(item as any).director}
+            </Text>
+          ) : null}
+        </View>
       </Pressable>
     </Link>
   );

@@ -381,6 +381,31 @@ export default function MediaDetailScreen() {
               <Text style={styles.taglineTxt}>« {media.tagline} »</Text>
             ) : null}
 
+            {directors.length > 0 && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginVertical: 4 }}>
+                <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '700' }}>🎬 Réalisé par :</Text>
+                {directors.map((d, idx) => (
+                  <Pressable
+                    key={idx}
+                    focusable={true}
+                    onPress={() => router.push(`/explore?q=${encodeURIComponent(d.value_text)}` as any)}
+                    style={{
+                      backgroundColor: 'rgba(99, 102, 241, 0.25)',
+                      borderColor: 'rgba(129, 140, 248, 0.4)',
+                      borderWidth: 1,
+                      paddingHorizontal: 10,
+                      paddingVertical: 3,
+                      borderRadius: 14,
+                    }}
+                  >
+                    <Text style={{ color: '#c7d2fe', fontSize: 12.5, fontWeight: '700' }}>
+                      {d.value_text}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
             {media.overview ? (
               <ClickableTopicText
                 text={media.overview}
@@ -536,6 +561,104 @@ export default function MediaDetailScreen() {
                 </Pressable>
               ))}
             </ScrollView>
+          </View>
+        )}
+
+        {/* ======================================================== */}
+        {/* 2.bis DISTRIBUTION & REALISATION                         */}
+        {/* ======================================================== */}
+        {(directors.length > 0 || actors.length > 0) && (
+          <View style={styles.section}>
+            <Text style={styles.secTitle}>🎬 Distribution & Réalisation</Text>
+            {directors.length > 0 && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '700' }}>Réalisation :</Text>
+                {directors.map((d: any, idx: number) => (
+                  <Pressable
+                    key={idx}
+                    focusable={true}
+                    onPress={() => router.push(`/explore?q=${encodeURIComponent(d.value_text)}` as any)}
+                    style={{
+                      backgroundColor: 'rgba(99, 102, 241, 0.25)',
+                      borderColor: 'rgba(129, 140, 248, 0.4)',
+                      borderWidth: 1,
+                      paddingHorizontal: 12,
+                      paddingVertical: 5,
+                      borderRadius: 16,
+                    }}
+                  >
+                    <Text style={{ color: '#c7d2fe', fontSize: 13, fontWeight: '700' }}>
+                      {d.value_text}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {actors.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 12, paddingVertical: 8 }}
+              >
+                {actors.map((actor: any, idx: number) => {
+                  const thumbUri = actor.metadata_json?.thumbUrl || actor.metadata?.thumbUrl;
+                  return (
+                    <Pressable
+                      key={idx}
+                      focusable={true}
+                      onPress={() => handleActorPress(actor)}
+                      style={{
+                        width: 104,
+                        backgroundColor: 'rgba(30, 41, 59, 0.65)',
+                        borderRadius: 10,
+                        padding: 8,
+                        alignItems: 'center',
+                        borderWidth: 1,
+                        borderColor: 'rgba(148, 163, 184, 0.15)',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 64,
+                          height: 64,
+                          borderRadius: 32,
+                          backgroundColor: '#1e293b',
+                          overflow: 'hidden',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginBottom: 6,
+                        }}
+                      >
+                        {thumbUri ? (
+                          <Image
+                            source={{ uri: thumbUri }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Text style={{ fontSize: 24 }}>🎭</Text>
+                        )}
+                      </View>
+                      <Text
+                        style={{ color: '#f8fafc', fontSize: 12, fontWeight: '700', textAlign: 'center' }}
+                        numberOfLines={2}
+                      >
+                        {actor.value_text}
+                      </Text>
+                      {actor.context_role ? (
+                        <Text
+                          style={{ color: '#94a3b8', fontSize: 10.5, marginTop: 2, textAlign: 'center' }}
+                          numberOfLines={1}
+                        >
+                          {actor.context_role}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
           </View>
         )}
 

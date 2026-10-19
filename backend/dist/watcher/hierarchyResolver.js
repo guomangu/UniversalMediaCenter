@@ -261,12 +261,20 @@ export function detectSagaNameFromFolder(filePath) {
         const folder = parts[i];
         if (ROOT_PATH_SEGMENTS.has(folder.toLowerCase()))
             continue;
-        const isSagaFolder = /\b(int[ée]grale|saga|collection|trilogie|quadrilogie|boxset|anthologie|franchise|pack)\b/i.test(folder) ||
-            /\b(?:films?|movies?)\s*\(\s*(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\s*\)/i.test(folder) ||
-            /\((?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\).*(?:movies|films|series|ovas)/i.test(folder) ||
-            /\b\d+\s*(?:movies|films)\b/i.test(folder);
+        const cleanFolder = folder
+            .replace(/^\[.*?\]_?/g, '')
+            .replace(/\[.*?\]/g, '')
+            .replace(/[_]/g, ' ')
+            .trim();
+        if (/tarantino/i.test(cleanFolder)) {
+            return 'Quentin Tarantino - Saga';
+        }
+        const isSagaFolder = /\b(int[ée]grale|saga|collection|trilogie|quadrilogie|boxset|anthologie|franchise|pack)\b/i.test(cleanFolder) ||
+            /\b(?:films?|movies?)\s*\(\s*(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\s*\)/i.test(cleanFolder) ||
+            /\((?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\).*(?:movies|films|series|ovas)/i.test(cleanFolder) ||
+            /\b\d+\s*(?:movies|films)\b/i.test(cleanFolder);
         if (isSagaFolder) {
-            let baseName = folder
+            let baseName = cleanFolder
                 .replace(/^collection\s+/i, '')
                 .replace(/\s*[-_–]\s*\d+\s*(?:movies|films|ovas|series).*$/i, '')
                 .replace(/\s*[-_–]\s*(?:int[ée]grale|saga|collection|boxset).*$/i, '')

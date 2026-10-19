@@ -535,6 +535,15 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
       continue;
     }
 
+    // Réparation des titres corrompus résiduels (ex: "]" ou "[")
+    if (node.title === "]" || node.title === "[" || (node.title && node.title.trim().length <= 1)) {
+      const fixedTitle = sanitizeReleaseTags(path.basename(filePath, path.extname(filePath)));
+      if (fixedTitle && fixedTitle !== "]" && fixedTitle !== "[") {
+        await db.update(mediaNodes).set({ title: fixedTitle, updatedAt: new Date() }).where(eq(mediaNodes.id, node.id));
+        node.title = fixedTitle;
+      }
+    }
+
     report.inspected++;
 
     // A. Si c'est un film (MOVIE) :

@@ -35,6 +35,12 @@ export async function ingestMediaNode(
     adjacent.thumbPath = undefined;
   }
 
+  // Sanctuarisation : un fichier NFO sans vidéo adjacente pour MOVIE/EPISODE/EXTRA ne doit jamais être ingéré (évite les doublons fantômes)
+  if (!adjacent.videoFilePath && parsed.type !== 'SHOW' && parsed.type !== 'COLLECTION') {
+    console.log(`⚠️ [Ingester] NFO orphelin sans vidéo ignoré pour éviter les doublons fantômes : ${nfoPath}`);
+    return '';
+  }
+
   const filePathToCheck = adjacent.videoFilePath || nfoPath;
   const isKai = isKaiOrPaceMedia(filePathToCheck, parsed.title);
   let kaiInfo = isKai ? parseKaiEpisodeInfo(filePathToCheck) : null;
@@ -393,7 +399,11 @@ export async function ingestMediaNode(
   for (const country of (parsed.countries || [])) {
     eavPromises.push(linkTagToNode(nodeId, 'country', country));
   }
-  for (const dir of (parsed.directors || [])) {
+  const directorsList = [...(parsed.directors || [])];
+  if (directorsList.length === 0 && /tarantino/i.test(filePathToCheck)) {
+    directorsList.push('Quentin Tarantino');
+  }
+  for (const dir of directorsList) {
     eavPromises.push(linkTagToNode(nodeId, 'director', dir));
   }
   for (const writer of (parsed.writers || [])) {

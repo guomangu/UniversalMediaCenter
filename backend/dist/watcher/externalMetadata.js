@@ -341,7 +341,7 @@ async function fetchTmdbTvShow(tmdbIdOrTitle) {
         const name = cr.name;
         if (!name)
             continue;
-        if (dept === 'Directing' || job === 'director') {
+        if (job === 'director' || job === 'co-director' || (job.includes('director') && !job.includes('assistant') && !job.includes('casting') && !job.includes('supervisor'))) {
             if (!directors.includes(name))
                 directors.push(name);
         }
@@ -482,7 +482,7 @@ async function fetchTmdbMovie(tmdbIdOrTitle) {
         const name = cr.name;
         if (!name)
             continue;
-        if (dept === 'Directing' || job === 'director') {
+        if (job === 'director' || job === 'co-director') {
             if (!directors.includes(name))
                 directors.push(name);
         }
