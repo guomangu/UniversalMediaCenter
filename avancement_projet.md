@@ -1,3 +1,32 @@
+- [x] **107. Résolution de l'Échec OCR des Sous-Titres PGS de *Coco* : Normalisation du Nom de Fichier SRT par `pgsrip` (`fra` → `fr`, `eng` → `en`) (`backend/src/routes/mediaSubtitles.ts`, `avancement_projet.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic de l'Anomalie Rapportée :**
+    - Signalement : *Les sous-titres de James Bond fonctionnent parfaitement alors que ceux de Coco (Pixar) ne fonctionnent pas du tout.*
+    - Autopsie : *Coco* (`2017.Coco.1920x804.BDRip.x264.DTS-HD.MA.mkv`) ne contient que huit pistes graphiques `hdmv_pgs_subtitle`. L'extraction SUP puis l'OCR `pgsrip` réussissaient bien (SUP de 29 Mo, SRT de 90 Ko), mais `pgsrip` normalise le code langue du nom de sortie : un fichier temporaire `pgs_xxx.fra.sup` produit `pgs_xxx.fr.srt` (et `eng` → `en`). Le code cherchait exactement `pgs_xxx.fra.srt`, ne le trouvait jamais et retournait le repli vide `WEBVTT\n\n`. James Bond apparaissait fonctionnel uniquement grâce à un cache disque antérieur déjà valide.
+  - **Solutions d'Ingénierie Mises en Œuvre :**
+    - Découverte dynamique du SRT produit : scan de `/tmp` sur le préfixe temporaire unique (`tempId`) au lieu de présupposer l'extension de langue (`findGeneratedSrt`).
+    - Rejet explicite des SRT vides ou sans flèche `-->` pour ne jamais mettre en cache un WebVTT vide.
+    - Nettoyage final de **tous** les fichiers générés à partir de `tempId` (SUP, SRT et intermédiaires éventuels).
+    - Validation réelle : piste française 4 de *Coco* → 90 184 octets de WebVTT en 85,8 s ; piste française 8 → 146 452 octets en 105,5 s (cache L1/L2 immédiat ensuite).
+
+  - **Diagnostic des Anomalies Rapportées :**
+    1. *Boutons du lecteur trop petits* : les contrôles du mode déplié conservaient des paddings et des tailles de police de 11px, peu confortables sur mobile comme sur téléviseur.
+    2. *Sous-titres sélectionnés mais invisibles* : la sélection mettait bien à jour `activeMedia.activeSubtitle`, l'endpoint backend répondait correctement en WebVTT, mais l'affichage reposait sur l'insertion/rechargement dynamique d'une balise `<track>` après chargement de la vidéo, comportement non fiable selon les moteurs (Chromium), aggravé par le cache navigateur des anciennes réponses vides et par la perte de la piste lors du Cast/navigation.
+    3. *Ligne blanche en haut et en bas de l'image au clic* : l'overlay tactile de la surface vidéo recevait le focus clavier/souris et héritait de l'anneau `outline` global des boutons (`[role="button"]:focus`), dessinant une bordure claire sur les bords de l'image.
+  - **Solutions d'Ingénierie Mises en Œuvre :**
+    - **Agrandissement Général des Contrôles** : augmentation des paddings, rayons, tailles de police et cibles tactiles (`minHeight: 40-46px`) sur les boutons du mini-lecteur et du lecteur déplié (lecture, ±10s/30s, volume, audio, sous-titres, cast, plein écran, réduire), avec padding horizontal réduit sur mobile pour préserver la responsivité.
+    - **Moteur de Sous-Titres Souverain (`FloatingBottomPlayer.tsx`)** :
+      - Récupération explicite du WebVTT via `fetch(..., { cache: 'no-store', credentials: 'omit' })`, ignorant tout cache navigateur périmé.
+      - Parsing WebVTT tolérant (`parseWebVttCues`) puis injection directe de `VTTCue` dans une unique `TextTrack` native (`video.addTextTrack`) passée en `mode = 'showing'`.
+      - Désactivation systématique des pistes in-band hls.js concurrentes (zéro doublon), fonctionnement identique en fenêtré et en plein écran natif, et repli `Blob` + `<track>` si `VTTCue` est indisponible.
+      - Prise en charge du paramètre `share` dans l'URL de sous-titres et annulation des requêtes obsolètes via `AbortController`.
+    - **Propagation Intégrale des Sous-Titres au Cast (`CastModal.tsx`, `castService.ts`, `_layout.tsx`, `player/[id].tsx`)** :
+      - Transmission de `activeSubtitle`/`activeAudio` dans `currentMedia` du lecteur vers `CastModal` (champ auparavant absent, expliquant l'absence de sous-titres à distance).
+      - Ajout de ces pistes à toutes les commandes `LOAD`/`LOAD_MEDIA` (Caster, Synchroniser) et aux actions « Suivre » pour préserver la piste distante.
+      - Récepteurs UMS et Cast : prise en charge de `SET_SUBTITLE`/`SET_AUDIO` et restauration des pistes lors de l'ouverture du lecteur, sans écrasement par les valeurs par défaut.
+      - Google Cast : déclaration des `chrome.cast.media.Track` avec URL WebVTT sur la même origine que le flux et activation de `activeTrackIds` ; commande `SET_SUBTITLE` relayée via `editTracksInfo`.
+    - **Éradication de l'Anneau Blanc (`global.css`, styles, overlays)** : suppression globale de tout `outline`, `box-shadow` et `border` sur la balise vidéo, ses conteneurs et leurs enfants directs ; overlays vidéo rendus non focusables (`focusable={false}`, `tabIndex={-1}`, `data-player-overlay`) pour que le clic sur l'image ne génère plus aucune ligne claire.
+    - **Backend (`mediaSubtitles.ts`)** : les réponses de repli vides (`WEBVTT\n\n`) sont désormais servies avec `Cache-Control: no-store`, afin qu'une extraction OCR réussie ultérieurement soit immédiatement visible.
+
 - [x] **105. Résolution Intégrale de l'Extraction des Sous-Titres Bitmap Blu-ray (PGS / VobSub) par Pipeline OCR Automatisé (`mediaSubtitles.ts`, `Dockerfile`, `avancement_projet.md`, `bonne_pratique.md`, `mauvaise_pratique.md`, `sommaire.md`) :**
   - **Diagnostic de l'Anomalie Rapportée :**
     - Signalement : *Les sous titres ne s'affichent pas : subtitles:1 GET https://api.cool.sweaw.com/api/media/a76affc2-ccc4-4742-9193-578164c088a7/subtitles?token=...&trackIndex=4 404 (Not Found)*.

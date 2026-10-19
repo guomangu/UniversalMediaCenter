@@ -160,6 +160,10 @@ export default function PlayerScreen() {
     if (id && resolvedTitle && streamUrl && !isForbidden && !isCorrupted) {
       if (openedMediaIdRef.current !== String(id)) {
         openedMediaIdRef.current = String(id);
+        // Si ce média est déjà ouvert (ex: commande Cast reçue), préserver sa piste audio
+        // et sa piste de sous-titres au lieu de les écraser par les valeurs par défaut.
+        const existing = playerStore.getState().activeMedia;
+        const isSameMedia = existing?.id === String(id);
         playerStore.openMedia({
           id: String(id),
           title: mediaTitle,
@@ -167,8 +171,8 @@ export default function PlayerScreen() {
           posterUrl: `/api/media/${id}/poster`,
           streamUrl,
           isLive,
-          activeAudio: tracks.defaultAudioTrack || 'auto',
-          activeSubtitle: tracks.defaultSubtitle || 'off',
+          activeAudio: isSameMedia ? undefined : (tracks.defaultAudioTrack || 'auto'),
+          activeSubtitle: isSameMedia ? undefined : (tracks.defaultSubtitle || 'off'),
           initialTime: initialTime || 0,
           isRemoteSync: isJoiningLiveSyncRef.current,
           expand: true,

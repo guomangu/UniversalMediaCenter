@@ -1,3 +1,41 @@
+## 🛑 135. Échec OCR Silencieux des Sous-Titres PGS de *Coco* : `pgsrip` Normalise le Code Langue du Fichier de Sortie (`fra` → `fr`, `eng` → `en`) et le Code Cherchait un Nom Impossible (`mediaSubtitles.ts`)
+
+* **Problème / Symptôme :**
+  Les sous-titres PGS de *Coco* (Pixar) ne s'affichaient jamais, tandis que ceux de *James Bond / Spectre* fonctionnaient. L'endpoint répondait `HTTP 200` avec un corps vide `WEBVTT\n\n` après 85-120 secondes.
+
+* **Causes Racines :**
+  - **Nom de Sortie `pgsrip` Non Déterministe** : avec un fichier d'entrée `pgs_xxx.fra.sup` et `-l fra`, `pgsrip` produit `pgs_xxx.fr.srt` (code ISO 639-1), pas `pgs_xxx.fra.srt` (code ISO 639-2). Le code testait `fs.existsSync('/tmp/pgs_xxx.fra.srt')`, toujours faux.
+  - **Faux Sentiment de Fonctionnement sur James Bond** : le résultat de *Spectre* provenait d'un cache disque L2 déjà rempli, masquant le bug de nommage.
+  - **Absence de Garde sur le Contenu** : `srtToVtt('')` produit `WEBVTT\n\n`, qui passait le test `includes('WEBVTT')` et pouvait être mis en cache comme un succès.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Découverte Dynamique du Fichier Produit** : ne jamais présupposer le nom exact d'un artefact généré par un outil externe. Utiliser un préfixe temporaire unique et scanner le répertoire de travail (`fsp.readdir('/tmp')` + `startsWith(tempId)` + `.endsWith('.srt')`).
+  - **Validation du Contenu** : exiger un SRT non vide et contenant au moins un séparateur `-->` avant conversion et mise en cache.
+  - **Nettoyage par Préfixe** : supprimer tous les fichiers commençant par `tempId` (SUP, SRT, intermédiaires), et pas seulement deux chemins supposés.
+  - **Tests sur Plusieurs Médias** : valider l'OCR sur au moins un média dont le cache est vide (neuf), afin de ne pas confondre succès du cache et succès de l'extraction.
+
+## 🛑 134. Sous-Titres Sélectionnés Invisibles (Insertion Dynamique `<track>` Non Fiable, Cache de Réponse Vide, Piste Perdue au Cast), Overlay Vidéo Focusable Générant une Ligne Blanche & Boutons de Lecteur Sous-Dimensionnés (`FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`, `global.css`, `CastModal.tsx`, `castService.ts`, `player/[id].tsx`, `_layout.tsx`, `mediaSubtitles.ts`)
+
+* **Problème / Symptôme :**
+  1. La sélection d'une piste de sous-titres dans le lecteur ne produisait aucun texte à l'écran, alors que l'endpoint backend retournait un WebVTT valide.
+  2. Les sous-titres sélectionnés n'étaient pas repris lors d'un Cast vers un autre écran (Chromecast ou autre navigateur UMS).
+  3. Au clic sur l'image du média en lecture, une ligne blanche entourait le haut et le bas de l'image.
+  4. Les boutons du lecteur (mini-lecteur et mode déplié) étaient trop petits et peu confortables au toucher.
+
+* **Causes Racines :**
+  - **Insertion/Rechargement Dynamique de `<track>` Non Fiable** : la balise `<track>` était ajoutée ou modifiée après le chargement de la ressource vidéo. Selon les moteurs (notamment Chromium), le chargement de la piste n'était pas garanti et le cache HTTP pouvait resservir une ancienne réponse vide (`WEBVTT\n\n`, `max-age=86400`).
+  - **Piste Absente du Payload Cast** : `currentMedia` transmis à `CastModal` ne contenait ni `activeSubtitle` ni `activeAudio` ; les commandes `LOAD`/`LOAD_MEDIA` et les actions « Suivre » ne propageaient donc jamais la sélection.
+  - **Écrasement à la Navigation** : `PlayerScreen` réouvrait le média avec `tracks.defaultSubtitle || 'off'` après une commande Cast distante, écrasant la piste reçue.
+  - **Focus de l'Overlay Vidéo** : l'overlay tactile transparent portait `role="button"` et devenait focusable au clic, héritant de l'anneau global `outline: 2px solid rgba(148,163,184,0.75)`.
+  - **Cibles Tactiles Insuffisantes** : paddings de 5-8px et polices de 11px sur les contrôles principaux.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Injection Directe de Cues Natives** : récupérer le WebVTT via `fetch` (`no-store`) puis alimenter une `TextTrack` créée par `video.addTextTrack('subtitles', ...)` avec des `VTTCue`, en forçant `mode = 'showing'`. Désactiver toutes les autres pistes in-band pour éviter les doublons. Cette méthode fonctionne en fenêtré et en plein écran natif.
+  - **Payload Cast Complet** : toujours transmettre `activeSubtitle`/`activeAudio` dans `CastMediaPayload`, les commandes `LOAD`/`LOAD_MEDIA` et les actions « Suivre » ; côté récepteur, honorer `SET_SUBTITLE`/`SET_AUDIO` et ne jamais écraser une piste déjà ouverte par les valeurs par défaut.
+  - **URL de Sous-Titres sur la Même Origine que le Flux** : pour Google Cast, construire le `trackContentId` depuis `getApiBaseUrl()` (domaine public HTTPS ou IP LAN) et activer `activeTrackIds`.
+  - **Neutralisation du Focus de Surface** : rendre les overlays vidéo non focusables (`focusable={false}`, `tabIndex={-1}`) et supprimer `outline`/`box-shadow`/`border` sur la vidéo, ses conteneurs et leurs enfants directs, sans affecter les anneaux de focus des vrais boutons.
+  - **Cibles Tactiles Conformes** : viser au moins 40-46px de hauteur pour les contrôles principaux, tout en réduisant les marges horizontales sur mobile pour éviter tout débordement.
+
 ## 🛑 133. Échec de Conversion Directe FFmpeg des Sous-Titres Bitmap Blu-ray (`hdmv_pgs_subtitle` / `dvd_subtitle`), Rejet HTTP 404 du Tag `<track>` & Absence de Pipeline OCR (`mediaSubtitles.ts`, `Dockerfile`)
 
 * **Problème / Symptôme :**

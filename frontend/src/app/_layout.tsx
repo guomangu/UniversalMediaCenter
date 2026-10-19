@@ -106,9 +106,12 @@ export default function RootLayout() {
         sendCastHeartbeat({
           currentMediaId: active.id,
           mediaTitle: active.title,
+          posterUrl: active.posterUrl,
           positionSeconds: active.positionSeconds || 0,
           durationSeconds: active.durationSeconds || 0,
           isPlaying: active.isPlaying,
+          audioTrack: active.activeAudio,
+          subtitleTrack: active.activeSubtitle,
           volume: pState.volume,
           isMuted: pState.isMuted,
         }).catch(() => {});
@@ -126,6 +129,8 @@ export default function RootLayout() {
               streamUrl: cmd.payload.streamUrl || `/api/media/${cmd.payload.mediaId}/stream`,
               posterUrl: cmd.payload.posterUrl || `/api/media/${cmd.payload.mediaId}/poster`,
               isLive: Boolean(cmd.payload.isLive),
+              activeAudio: cmd.payload.activeAudio || 'auto',
+              activeSubtitle: cmd.payload.activeSubtitle || 'off',
               initialTime: cmd.payload.positionSeconds || 0,
               expand: true,
             });
@@ -147,6 +152,14 @@ export default function RootLayout() {
             playerStore.setMuted(true);
           } else if (cmd.action === 'UNMUTE') {
             playerStore.setMuted(false);
+          } else if (cmd.action === 'SET_AUDIO') {
+            if (cmd.payload?.audio) {
+              playerStore.setAudio(cmd.payload.audio, false, false);
+            }
+          } else if (cmd.action === 'SET_SUBTITLE') {
+            if (cmd.payload?.subtitle) {
+              playerStore.setSubtitle(cmd.payload.subtitle, false, false);
+            }
           }
         }).catch(() => {});
       }

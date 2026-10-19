@@ -5,6 +5,7 @@ import {
   getLocalDeviceName,
   setLocalDeviceName,
 } from './deviceIdentity';
+import { fetchMediaTracks } from './mediaTracksApi';
 
 export { getLocalDeviceId, getLocalDeviceName, setLocalDeviceName };
 
@@ -33,6 +34,9 @@ export interface CastMediaPayload {
   streamUrl?: string;
   posterUrl?: string;
   positionSeconds?: number;
+  activeSubtitle?: string;
+  activeAudio?: string;
+  share?: string;
 }
 
 export type CastAction =
@@ -180,10 +184,55 @@ export async function triggerNativeCast(media?: CastMediaPayload): Promise<Nativ
         if (media.posterUrl) {
           mediaInfo.metadata.images = [{ url: media.posterUrl }];
         }
+
         const request = new chrome.cast.media.LoadRequest(mediaInfo);
         if (media.positionSeconds && media.positionSeconds > 0) {
           request.currentTime = media.positionSeconds;
         }
+
+        // Intégration des sous-titres dans la session Google Cast
+        try {
+          const trackData = await fetchMediaTracks(media.id, media.share).catch(() => null);
+          if (trackData?.subtitleTracks && trackData.subtitleTracks.length > 0 && chrome?.cast?.media?.Track) {
+            const castTracks: any[] = [];
+            let activeTrackId: number | null = null;
+
+            trackData.subtitleTracks.forEach((s, idx) => {
+              const trackId = s.index || (idx + 1);
+              const track = new chrome.cast.media.Track(trackId, chrome.cast.media.TrackType.TEXT);
+              const p = new URLSearchParams();
+              const token = getAuthToken();
+              if (token) p.set('token', token);
+              if (media.share) p.set('share', media.share);
+              if (s.fileName) {
+                p.set('fileName', s.fileName);
+              } else {
+                p.set('trackIndex', String(s.index));
+              }
+              // Utiliser la même origine que le flux : elle est déjà joignable par le récepteur
+              // (domaine public HTTPS ou IP LAN selon le déploiement).
+              track.trackContentId = `${getApiBaseUrl()}/api/media/${media.id}/subtitles?${p.toString()}`;
+              track.trackContentType = 'text/vtt';
+              track.subtype = chrome.cast.media.TextTrackType.SUBTITLES;
+              track.name = s.label || 'Sous-titre';
+              track.language = s.language || 'fr';
+              castTracks.push(track);
+
+              const subVal = s.fileName ? `file:${s.fileName}` : `track:${s.index}`;
+              if (media.activeSubtitle && (media.activeSubtitle === subVal || media.activeSubtitle === s.language)) {
+                activeTrackId = trackId;
+              }
+            });
+
+            mediaInfo.tracks = castTracks;
+            if (activeTrackId !== null) {
+              request.activeTrackIds = [activeTrackId];
+            }
+          }
+        } catch (subErr) {
+          console.warn('Google Cast subtitle load error:', subErr);
+        }
+
         await session.loadMedia(request);
         return { success: true, target: 'GOOGLE_CAST', message: 'Connecté via Google Cast' };
       }
@@ -257,6 +306,55 @@ export async function sendCastHeartbeat(state: Partial<CastDevice>): Promise<voi
 
 export async function sendCastCommand(targetDeviceId: string, action: CastAction, payload?: any): Promise<boolean> {
   try {
+    // 0. Si une session Google Cast est active, appliquer les commandes directement sur le Chromecast
+    if (typeof window !== 'undefined' && (window as any).cast?.framework) {
+      try {
+        const castContext = (window as any).cast.framework.CastContext.getInstance();
+        const session = castContext?.getCurrentSession();
+        const mediaSession = session?.getMediaSession();
+        const chromeCast = (window as any).chrome?.cast;
+
+        if (mediaSession && chromeCast) {
+          if (action === 'PLAY') {
+            mediaSession.play(new chromeCast.media.PlayRequest(), () => {}, () => {});
+          } else if (action === 'PAUSE') {
+            mediaSession.pause(new chromeCast.media.PauseRequest(), () => {}, () => {});
+          } else if (action === 'SEEK' && typeof payload?.positionSeconds === 'number') {
+            const seekReq = new chromeCast.media.SeekRequest();
+            seekReq.currentTime = payload.positionSeconds;
+            mediaSession.seek(seekReq, () => {}, () => {});
+          } else if (action === 'SET_VOLUME' && typeof payload?.volume === 'number') {
+            const volReq = new chromeCast.media.VolumeRequest(new chromeCast.media.Volume(payload.volume));
+            mediaSession.setVolume(volReq, () => {}, () => {});
+          } else if (action === 'SET_SUBTITLE') {
+            const sub = payload?.subtitle;
+            if (!sub || sub === 'off') {
+              mediaSession.editTracksInfo(
+                new chromeCast.media.EditTracksInfoRequest([]),
+                () => {},
+                () => {}
+              );
+            } else {
+              const tracks = mediaSession.media?.tracks || [];
+              const match = tracks.find((t: any) => {
+                if (sub.startsWith('track:')) return String(t.trackId) === sub.slice(6);
+                if (sub.startsWith('file:')) return t.trackContentId?.includes(sub.slice(5));
+                return t.language === sub;
+              });
+              const activeIds = match ? [match.trackId] : [];
+              mediaSession.editTracksInfo(
+                new chromeCast.media.EditTracksInfoRequest(activeIds),
+                () => {},
+                () => {}
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Native Google Cast command relay warning:', e);
+      }
+    }
+
     const p1 = fetch(`${getApiBaseUrl()}/api/cast/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

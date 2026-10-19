@@ -386,6 +386,8 @@ function executeRemoteCommand(cmd: UserDeviceCommand, router?: any) {
           posterUrl: media.posterUrl || `/api/media/${media.mediaId}/poster`,
           streamUrl: media.streamUrl || getVideoStreamUrl(media.mediaId),
           initialTime: livePos,
+          activeSubtitle: media.activeSubtitle || 'off',
+          activeAudio: media.activeAudio || 'auto',
           isRemoteSync: true,
           expand: true,
         });

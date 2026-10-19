@@ -65,7 +65,21 @@ async function ripPgsSubtitleTrack(videoPath: string, trackIndex: string, langHi
 
     const tempId = `pgs_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const tempSup = path.join('/tmp', `${tempId}.${ocrLang}.sup`);
-    const tempSrt = path.join('/tmp', `${tempId}.${ocrLang}.srt`);
+
+    // pgsrip normalise le code langue du nom de sortie (ex: `fra` -> `fr`, `eng` -> `en`).
+    // On ne peut donc pas prédire exactement le nom du fichier SRT : on scanne les fichiers
+    // générés à partir de notre identifiant temporaire unique.
+    const findGeneratedSrt = async (): Promise<string | null> => {
+      try {
+        const entries = await fsp.readdir('/tmp');
+        const match = entries.find(
+          (name) => name.startsWith(`${tempId}`) && name.toLowerCase().endsWith('.srt')
+        );
+        return match ? path.join('/tmp', match) : null;
+      } catch {
+        return null;
+      }
+    };
 
     try {
       // 1. Extraction du flux SUP par FFmpeg (rapide, ~5-15s à >100x de vitesse)
@@ -85,15 +99,30 @@ async function ripPgsSubtitleTrack(videoPath: string, trackIndex: string, langHi
         tempSup,
       ], { timeout: 180000 });
 
-      if (fs.existsSync(tempSrt)) {
-        const srt = await fsp.readFile(tempSrt, 'utf-8');
-        return srtToVtt(srt);
+      const generatedSrt = await findGeneratedSrt();
+      if (generatedSrt) {
+        const srt = await fsp.readFile(generatedSrt, 'utf-8');
+        // Ne jamais considérer un SRT vide comme un succès (sinon un WebVTT vide serait mis en cache).
+        if (srt.trim().length > 0 && srt.includes('-->')) {
+          return srtToVtt(srt);
+        }
+        console.warn(`OCR pgsrip a produit un SRT vide pour la piste ${trackIndex}.`);
+      } else {
+        console.warn(`OCR pgsrip n'a produit aucun fichier SRT pour la piste ${trackIndex}.`);
       }
     } catch (err) {
       console.error(`Erreur OCR pgsrip pour piste ${trackIndex}:`, err);
     } finally {
-      try { if (fs.existsSync(tempSup)) await fsp.unlink(tempSup); } catch {}
-      try { if (fs.existsSync(tempSrt)) await fsp.unlink(tempSrt); } catch {}
+      // pgsrip peut générer plusieurs fichiers (SUP, SRT, éventuels intermédiaires) :
+      // on nettoie tout ce qui commence par notre identifiant temporaire unique.
+      try {
+        const leftovers = await fsp.readdir('/tmp').catch(() => [] as string[]);
+        await Promise.all(
+          leftovers
+            .filter((name) => name.startsWith(tempId))
+            .map((name) => fsp.unlink(path.join('/tmp', name)).catch(() => {}))
+        );
+      } catch {}
     }
     return null;
   })();
@@ -140,7 +169,7 @@ async function handleSubtitleRequest(c: any, id: string, rawTrackIndex?: string,
   });
 
   if (!media?.videoFilePath) {
-    return c.text('WEBVTT\n\n', 200, headers);
+    return c.text('WEBVTT\n\n', 200, { ...headers, 'Cache-Control': 'no-store' });
   }
 
   try {
@@ -226,8 +255,10 @@ async function handleSubtitleRequest(c: any, id: string, rawTrackIndex?: string,
   }
 
   // Safety Fallback : Toujours retourner un WebVTT valide 200 OK (même vide) plutôt qu'une erreur 404
-  // Cela empêche le crash du tag <track> et évite les erreurs fatales dans la console du navigateur
-  return c.text('WEBVTT\n\n', 200, headers);
+  // Cela empêche le crash du tag <track> et évite les erreurs fatales dans la console du navigateur.
+  // Un résultat vide n'est jamais mis en cache navigateur afin qu'une extraction ultérieure réussie
+  // puisse être immédiatement visible (notamment pour les pistes bitmap en cours d'OCR).
+  return c.text('WEBVTT\n\n', 200, { ...headers, 'Cache-Control': 'no-store' });
 }
 
 // 1. Support de l'endpoint avec paramètres d'URL (ex: /api/media/:id/subtitles?trackIndex=4 ou ?fileName=...)

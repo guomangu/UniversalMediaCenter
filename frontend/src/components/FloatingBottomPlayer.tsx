@@ -28,6 +28,53 @@ function formatTime(sec: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+interface ParsedWebVttCue {
+  start: number;
+  end: number;
+  text: string;
+}
+
+// Convertit un horodatage WebVTT (`MM:SS.mmm` ou `HH:MM:SS.mmm`) en secondes.
+function parseVttTimestamp(value: string): number {
+  const clean = value.trim().split(/\s+/)[0].replace(',', '.');
+  const parts = clean.split(':');
+  if (parts.length < 2) return NaN;
+  const seconds = parseFloat(parts[parts.length - 1]);
+  const minutes = parseInt(parts[parts.length - 2], 10);
+  const hours = parts.length > 2 ? parseInt(parts[parts.length - 3], 10) : 0;
+  if (!Number.isFinite(seconds) || !Number.isFinite(minutes) || !Number.isFinite(hours)) return NaN;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+// Parseur WebVTT tolérant : ignore les blocs NOTE/STYLE/REGION et les identifiants de cue.
+function parseWebVttCues(vtt: string): ParsedWebVttCue[] {
+  const cues: ParsedWebVttCue[] = [];
+  const normalized = vtt.replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '');
+
+  for (const block of normalized.split(/\n{2,}/)) {
+    const lines = block.split('\n');
+    while (lines.length > 0 && lines[0].trim() === '') lines.shift();
+    if (lines.length === 0) continue;
+
+    const timingIndex = lines.findIndex((line) => line.includes('-->'));
+    if (timingIndex === -1) continue;
+
+    const [rawStart, rawRest] = lines[timingIndex].split('-->');
+    if (!rawRest) continue;
+
+    const start = parseVttTimestamp(rawStart);
+    const end = parseVttTimestamp(rawRest);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+
+    const text = lines.slice(timingIndex + 1).join('\n').trim();
+    if (!text) continue;
+
+    cues.push({ start, end, text });
+  }
+
+  return cues;
+}
+
 export const FloatingBottomPlayer: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
@@ -64,6 +111,7 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsInstanceRef = useRef<Hls | null>(null);
+  const subtitleAbortRef = useRef<AbortController | null>(null);
   const userInitiatedActionRef = useRef<'PLAY' | 'PAUSE' | 'SEEK' | null>(null);
   const lastUserPlayRequestTimeRef = useRef<number>(0);
   const mouseTimer = useRef<any>(null);
@@ -180,6 +228,9 @@ export const FloatingBottomPlayer: React.FC = () => {
           const hlsUrl = getVideoStreamUrl(activeMedia.id, activeMedia.share, true);
           const curPos = localVideoRef.current?.currentTime || activeMedia.positionSeconds || 0;
           playerStore.updateStreamUrl(hlsUrl, curPos);
+        }
+        if (t?.defaultSubtitle && t.defaultSubtitle !== 'off' && (!activeMedia.activeSubtitle || activeMedia.activeSubtitle === 'off')) {
+          playerStore.setSubtitle(t.defaultSubtitle, false, false);
         }
       }).catch(() => {});
       fetchNextMedia(activeMedia.id).then(setNextNode).catch(() => {});
@@ -709,6 +760,8 @@ export const FloatingBottomPlayer: React.FC = () => {
     const p = new URLSearchParams();
     if (token) p.set('token', token);
 
+    if (activeMedia.share) p.set('share', activeMedia.share);
+
     if (sub.startsWith('file:')) {
       p.set('fileName', sub.slice(5));
       return `${base}/api/media/${activeMedia.id}/subtitles?${p.toString()}`;
@@ -719,36 +772,143 @@ export const FloatingBottomPlayer: React.FC = () => {
     }
     p.set('lang', sub);
     return `${base}/api/media/${activeMedia.id}/subtitles?${p.toString()}`;
-  }, [activeMedia?.id, activeMedia?.activeSubtitle]);
+  }, [activeMedia?.id, activeMedia?.activeSubtitle, activeMedia?.share]);
 
-  // Synchronisation dynamique des textTracks HTML5 natifs (mode 'showing' en fenêtre et plein écran)
+  // Moteur de sous-titres WebVTT robuste : récupération explicite du texte puis injection
+  // de cues natives (TextTrack). Cette approche fonctionne en fenêtré comme en plein écran,
+  // ne dépend ni du chargement dynamique de <track> ni du cache HTTP du navigateur.
   useEffect(() => {
     const v = localVideoRef.current;
     if (!v) return;
 
-    const syncTracks = () => {
-      if (!v.textTracks) return;
-      for (let i = 0; i < v.textTracks.length; i++) {
-        const t = v.textTracks[i];
-        if (!activeMedia?.activeSubtitle || activeMedia.activeSubtitle === 'off' || !vttUrl) {
-          t.mode = 'disabled';
-        } else {
-          t.mode = 'showing';
+    // Purge des anciennes balises <track> (fallback) et annulation de la requête précédente.
+    try {
+      v.querySelectorAll('track').forEach((el) => el.remove());
+    } catch {}
+    subtitleAbortRef.current?.abort();
+    subtitleAbortRef.current = null;
+
+    const getTrackList = (): TextTrack[] => {
+      const list: TextTrack[] = [];
+      for (let i = 0; i < v.textTracks.length; i++) list.push(v.textTracks[i]);
+      return list;
+    };
+
+    const clearCues = (track: TextTrack) => {
+      try {
+        track.mode = 'hidden';
+        if (track.cues) {
+          while (track.cues.length > 0) track.removeCue(track.cues[0]);
         }
+      } catch {}
+    };
+
+    const existingManaged = getTrackList().find((t: any) => t.__umsManaged === true) as TextTrack | undefined;
+
+    // Une seule source de vérité : on désactive toutes les autres pistes natives/in-band (hls.js).
+    for (const t of getTrackList()) {
+      if (t !== existingManaged) {
+        try { t.mode = 'disabled'; } catch {}
+      }
+    }
+
+    const subtitleValue = activeMedia?.activeSubtitle;
+    const isEnabled = Boolean(subtitleValue && subtitleValue !== 'off' && vttUrl);
+
+    if (!isEnabled) {
+      if (existingManaged) {
+        clearCues(existingManaged);
+        try { existingManaged.mode = 'disabled'; } catch {}
+      }
+      return;
+    }
+
+    let managed = existingManaged;
+    if (!managed) {
+      try {
+        managed = v.addTextTrack('subtitles', activeSubTrack?.label || 'Sous-titres', activeSubTrack?.language || 'fr');
+        (managed as any).__umsManaged = true;
+      } catch (err) {
+        console.warn('[UMS Subtitles] Création de la piste native impossible:', err);
+        return;
+      }
+    }
+    clearCues(managed);
+
+    const controller = new AbortController();
+    subtitleAbortRef.current = controller;
+    const targetTrack = managed;
+
+    const applyCues = (vtt: string) => {
+      const parsedCues = parseWebVttCues(vtt);
+      if (parsedCues.length === 0) {
+        console.warn('[UMS Subtitles] WebVTT reçu sans cues exploitables.');
+        return;
+      }
+
+      const CueCtor: any =
+        typeof window !== 'undefined' && ((window as any).VTTCue || (window as any).TextTrackCue);
+      let addedCount = 0;
+
+      if (CueCtor) {
+        for (const cue of parsedCues) {
+          try {
+            targetTrack.addCue(new CueCtor(cue.start, cue.end, cue.text));
+            addedCount++;
+          } catch {}
+        }
+      }
+
+      if (addedCount > 0) {
+        targetTrack.mode = 'showing';
+        return;
+      }
+
+      // Repli très rare (navigateur sans VTTCue) : <track> natif alimenté par un Blob local.
+      try {
+        const blob = new Blob([vtt], { type: 'text/vtt;charset=utf-8' });
+        const blobUrl = URL.createObjectURL(blob);
+        const trackEl = document.createElement('track');
+        trackEl.kind = 'subtitles';
+        trackEl.src = blobUrl;
+        trackEl.srclang = activeSubTrack?.language || 'fr';
+        trackEl.label = activeSubTrack?.label || 'Sous-titres';
+        trackEl.default = true;
+        const release = () => URL.revokeObjectURL(blobUrl);
+        trackEl.addEventListener('load', () => {
+          try { if (trackEl.track) trackEl.track.mode = 'showing'; } catch {}
+          release();
+        });
+        trackEl.addEventListener('error', release);
+        v.appendChild(trackEl);
+      } catch (err) {
+        console.warn('[UMS Subtitles] Repli <track> impossible:', err);
       }
     };
 
-    syncTracks();
-    const tt = v.textTracks;
-    if (tt && tt.addEventListener) {
-      tt.addEventListener('addtrack', syncTracks);
-      tt.addEventListener('change', syncTracks);
-      return () => {
-        tt.removeEventListener('addtrack', syncTracks);
-        tt.removeEventListener('change', syncTracks);
-      };
-    }
-  }, [activeMedia?.activeSubtitle, vttUrl]);
+    fetch(vttUrl, { signal: controller.signal, cache: 'no-store', credentials: 'omit' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((vtt) => {
+        if (controller.signal.aborted) return;
+        if (!vtt || !vtt.includes('WEBVTT')) {
+          console.warn('[UMS Subtitles] Réponse WebVTT vide ou invalide.');
+          return;
+        }
+        applyCues(vtt);
+      })
+      .catch((err) => {
+        if ((err as any)?.name !== 'AbortError') {
+          console.warn('[UMS Subtitles] Échec du chargement de la piste:', err);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [activeMedia?.id, activeMedia?.activeSubtitle, vttUrl, activeSubTrack, isCasting]);
 
   // --- CONDITIONS D'AFFICHAGE ---
 
@@ -877,6 +1037,10 @@ export const FloatingBottomPlayer: React.FC = () => {
               backgroundColor: '#000',
               zIndex: 1,
               pointerEvents: isExpanded ? 'auto' : 'none',
+              outlineStyle: 'none',
+              outlineWidth: 0,
+              outlineColor: 'transparent',
+              boxShadow: 'none',
             }}
             onPlay={() => {
               const action = userInitiatedActionRef.current;
@@ -963,37 +1127,20 @@ export const FloatingBottomPlayer: React.FC = () => {
                 }
               }
             }}
-          >
-            {vttUrl && activeMedia?.activeSubtitle !== 'off' ? (
-              <track
-                key={vttUrl}
-                kind="subtitles"
-                src={vttUrl}
-                srcLang={activeSubTrack?.language || 'fr'}
-                label={activeSubTrack?.label || (activeSubTrack as any)?.title || 'Français'}
-                default
-                onLoad={() => {
-                  const v = localVideoRef.current;
-                  if (v?.textTracks) {
-                    for (let i = 0; i < v.textTracks.length; i++) {
-                      v.textTracks[i].mode = 'showing';
-                    }
-                  }
-                }}
-              />
-            ) : null}
-          </video>
+          />
         ) : null}
 
         {/* Overlay tactile transparent en mode replié pour déplier la vidéo d'un clic */}
         {!isExpanded && Platform.OS === 'web' && !isCasting && activeMedia?.streamUrl ? (
           <Pressable
-            focusable={true}
+            focusable={false}
+            tabIndex={-1}
             accessibilityRole="button"
             accessibilityLabel="Agrandir le lecteur vidéo en plein écran"
-            style={StyleSheet.absoluteFill}
+            style={[StyleSheet.absoluteFill, { outlineStyle: 'none', outlineWidth: 0, outlineColor: 'transparent' } as any]}
             onPress={handleExpand}
             {...({
+              'data-player-overlay': 'true',
               onClick: (e: any) => {
                 e?.stopPropagation?.();
                 handleExpand();
@@ -1007,7 +1154,7 @@ export const FloatingBottomPlayer: React.FC = () => {
       {isExpanded ? (
         <>
           {/* Barre Supérieure Dépliée avec bouton Réduire ▼ et Titre */}
-          <View style={[styles.topBarExpanded, { opacity: mouseActive || !isPlaying ? 1 : 0 }]}>
+          <View style={[styles.topBarExpanded, isMobile ? { paddingHorizontal: 8 } : null, { opacity: mouseActive || !isPlaying ? 1 : 0 }]}>
             <View style={styles.topBarLeft}>
               <Pressable
                 focusable={true}
@@ -1083,12 +1230,15 @@ export const FloatingBottomPlayer: React.FC = () => {
             </View>
           </View>
 
-          {/* Zone centrale en mode cinéma (réinitialise l'inactivité sans déclencher Play/Pause) */}
+          {/* Zone centrale en mode cinéma (réinitialise l'inactivité sans déclencher Play/Pause et sans outline blanc) */}
           <Pressable
-            style={styles.centerTouchOverlay}
+            focusable={false}
+            tabIndex={-1}
+            style={[styles.centerTouchOverlay, { outlineStyle: 'none', outlineWidth: 0, outlineColor: 'transparent' } as any]}
             onPress={resetMouseActivity}
             {...(Platform.OS === 'web'
               ? ({
+                  'data-player-overlay': 'true',
                   onClick: (e: any) => {
                     e?.stopPropagation?.();
                     resetMouseActivity();
@@ -1150,7 +1300,13 @@ export const FloatingBottomPlayer: React.FC = () => {
           )}
 
           {/* Barre inférieure Dépliée (Scrubber & Contrôles) */}
-          <View style={[styles.bottomBarExpanded, { opacity: mouseActive || !isPlaying ? 1 : 0 }]}>
+          <View
+            style={[
+              styles.bottomBarExpanded,
+              isMobile ? { paddingHorizontal: 10, paddingBottom: 12 } : null,
+              { opacity: mouseActive || !isPlaying ? 1 : 0 },
+            ]}
+          >
             {/* Scrubber haute précision avec glisser-déplacer (drag), hit-box 26px et infobulle */}
             <View
               ref={scrubberExpandedRef}
@@ -1174,13 +1330,13 @@ export const FloatingBottomPlayer: React.FC = () => {
 
             <View style={styles.bottomControlsRow}>
               <View style={styles.bottomLeftControls}>
-                <Pressable focusable={true} style={styles.controlBtn} onPress={() => handleSeekRelative(-10)}>
-                  <Text style={styles.controlBtnTxt}>{isMobile ? '⏪ 10' : '⏪ 10s'}</Text>
+                <Pressable focusable={true} style={styles.controlBtnExpanded} onPress={() => handleSeekRelative(-10)}>
+                  <Text style={styles.controlBtnExpandedTxt}>{isMobile ? '⏪ 10' : '⏪ 10s'}</Text>
                 </Pressable>
 
                 <Pressable
                   focusable={true}
-                  style={styles.playBtn}
+                  style={styles.playBtnExpanded}
                   onPress={handleTogglePlay}
                   {...(Platform.OS === 'web'
                     ? ({
@@ -1191,11 +1347,11 @@ export const FloatingBottomPlayer: React.FC = () => {
                       } as any)
                     : {})}
                 >
-                  <Text style={styles.playBtnTxt} pointerEvents="none">{isPlaying ? '⏸' : '▶'}</Text>
+                  <Text style={styles.playBtnExpandedTxt} pointerEvents="none">{isPlaying ? '⏸' : '▶'}</Text>
                 </Pressable>
 
-                <Pressable focusable={true} style={styles.controlBtn} onPress={() => handleSeekRelative(30)}>
-                  <Text style={styles.controlBtnTxt}>{isMobile ? '30 ⏩' : '30s ⏩'}</Text>
+                <Pressable focusable={true} style={styles.controlBtnExpanded} onPress={() => handleSeekRelative(30)}>
+                  <Text style={styles.controlBtnExpandedTxt}>{isMobile ? '30 ⏩' : '30s ⏩'}</Text>
                 </Pressable>
 
                 <Text style={styles.timeExpandedText} numberOfLines={1}>
@@ -1206,15 +1362,15 @@ export const FloatingBottomPlayer: React.FC = () => {
               <View style={styles.bottomRightControls}>
                 <Pressable
                   focusable={true}
-                  style={styles.volumeBtn}
+                  style={styles.volumeBtnExpanded}
                   onPress={() => playerStore.setMuted(!playerState.isMuted)}
                 >
-                  <Text style={styles.volumeBtnTxt}>{playerState.isMuted ? '🔇' : '🔊'}</Text>
+                  <Text style={styles.volumeBtnExpandedTxt}>{playerState.isMuted ? '🔇' : '🔊'}</Text>
                 </Pressable>
 
                 {nextNode && (
-                  <Pressable focusable={true} style={styles.controlBtn} onPress={handlePlayNext}>
-                    <Text style={styles.controlBtnTxt}>{isMobile ? '⏭' : 'Suivant ⏭'}</Text>
+                  <Pressable focusable={true} style={styles.controlBtnExpanded} onPress={handlePlayNext}>
+                    <Text style={styles.controlBtnExpandedTxt}>{isMobile ? '⏭' : 'Suivant ⏭'}</Text>
                   </Pressable>
                 )}
               </View>
@@ -1459,6 +1615,9 @@ export const FloatingBottomPlayer: React.FC = () => {
           streamUrl: activeMedia?.streamUrl || '',
           positionSeconds: localVideoRef.current?.currentTime || pos,
           posterUrl: activeMedia?.posterUrl,
+          activeSubtitle: activeMedia?.activeSubtitle || 'off',
+          activeAudio: activeMedia?.activeAudio || 'auto',
+          share: activeMedia?.share,
         }}
       />
 

@@ -68,7 +68,10 @@ Le lecteur vidéo d'UMS est conçu pour offrir une expérience cinématographiqu
 
 ### 1.4. Moteur de Sous-Titres WebVTT Universel (Mode Fenêtré & Plein Écran)
 - Les sous-titres sont extraits ou convertis au format standard WebVTT (`text/vtt`).
-- Ils sont injectés à la fois dans les éléments natifs `<track>` de la balise `<video>` et affichés via un overlay personnalisé synchronisé, garantissant leur lisibilité parfaite en mode plein écran natif navigateur (isolation du top-layer) et en mode fenêtré.
+- Le lecteur récupère explicitement le WebVTT (`fetch`, cache désactivé), parse les cues puis les injecte dans une piste native unique (`video.addTextTrack`) sous forme de `VTTCue`. La piste est passée en `mode = 'showing'`, ce qui garantit l'affichage en mode fenêtré comme en plein écran natif (top-layer), sans dépendre du rechargement dynamique de `<track>` ni du cache navigateur.
+- Les pistes in-band concurrentes (hls.js) sont désactivées pour éradiquer tout dédoublement. Un repli `Blob` + `<track>` est conservé pour les navigateurs dépourvus de `VTTCue`.
+- Les réponses WebVTT vides de repli sont servies avec `Cache-Control: no-store` afin qu'une extraction OCR ultérieure réussie soit immédiatement visible.
+- La sélection est propagée aux écrans distants : `activeSubtitle`/`activeAudio` sont inclus dans tous les payloads Cast (`LOAD`, `LOAD_MEDIA`, « Suivre »), et les récepteurs honorent `SET_SUBTITLE`/`SET_AUDIO`. Pour Google Cast, les pistes WebVTT sont déclarées dans `mediaInfo.tracks` avec `activeTrackIds`.
 
 ### 1.5. Barre de Progression Haute Précision & Glisser-Déplacer Tactile (Scrubbing Drag & Drop)
 - Support complet du glisser-déplacer tactile sur smartphone et souris sur ordinateur.

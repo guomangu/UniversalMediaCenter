@@ -375,3 +375,30 @@ ightarrow$ dans *"Mes écrans connectés"* avec action `[Déconnecter]`.
     *   Toujours utiliser `podman` (rootless) sur Fedora/RHEL/Silverblue/OSTree. Ne jamais invoquer `docker` ou `docker-compose`.
     *   Respecter scrupuleusement les schémas d'outils JSON : fournir des entiers stricts (`StartLine: 380`) et jamais de flottants (`380.0`) pour éviter les rejets d'outils.
     *   Consulter et maintenir le document de référence [`memoire_actions_AI_dev.md`](file:///var/home/tele/Documents/theuniversalmediastack/memoire_actions_AI_dev.md) pour préserver les connaissances opérationnelles du projet.
+
+## 23. Sous-Titres WebVTT par Cues Natives, Propagation Cast Complète, Neutralisation du Focus de Surface Vidéo & Cibles Tactiles Conformes
+
+*   **Lecture des Sous-Titres Sans Dépendre du Rechargement de `<track>` :**
+    *   Ne pas compter sur l'insertion ou la modification dynamique de l'attribut `src` d'une balise `<track>` après le chargement de la vidéo : le comportement varie selon les moteurs et le cache HTTP peut resservir une réponse vide.
+    *   Récupérer le WebVTT explicitement via `fetch(url, { cache: 'no-store', credentials: 'omit' })`, parser les cues (`HH:MM:SS.mmm` ou `MM:SS.mmm`) et les injecter dans une `TextTrack` unique créée par `video.addTextTrack('subtitles', label, lang)` avec des `VTTCue`.
+    *   Passer la piste en `mode = 'showing'` et désactiver toutes les autres pistes (`disabled`) pour éviter les doublons avec les pistes in-band de hls.js. Cette approche est valable en fenêtré comme en plein écran natif.
+    *   Prévoir un repli `Blob` + `<track>` uniquement si `VTTCue` n'est pas disponible, et annuler les fetches obsolètes (`AbortController`).
+
+*   **Propagation Intégrale des Pistes lors du Cast :**
+    *   Toujours inclure `activeSubtitle` et `activeAudio` dans le payload `CastMediaPayload` et dans les commandes `LOAD`/`LOAD_MEDIA`, y compris pour les actions « Suivre ».
+    *   Côté récepteur, honorer `SET_SUBTITLE` et `SET_AUDIO` ; à l'ouverture du lecteur, préserver les pistes déjà actives (`isSameMedia`) au lieu de les écraser par `tracks.defaultSubtitle`.
+    *   Pour Google Cast, construire le `trackContentId` WebVTT sur la même origine que le flux (`getApiBaseUrl()`) et renseigner `activeTrackIds` ; relayer les changements via `editTracksInfo`.
+    *   Ne jamais mettre en cache navigateur une réponse de sous-titres vide : retourner `Cache-Control: no-store` pour le fallback `WEBVTT\n\n`.
+
+*   **Neutralisation du Focus sur la Surface Vidéo :**
+    *   Les overlays tactiles couvrant la vidéo ne doivent pas être focusables (`focusable={false}`, `tabIndex={-1}`) ni hériter de l'anneau global des boutons.
+    *   Supprimer explicitement `outline`, `box-shadow` et `border` sur `video`, `#player_video_container`, leurs enfants directs et les overlays vidéo (`[data-player-overlay="true"]`), sans toucher aux anneaux de focus des vrais boutons pour préserver l'accessibilité clavier/télécommande.
+
+*   **Ergonomie Tactile des Contrôles :**
+    *   Viser des cibles d'au moins 40-46px de hauteur pour les boutons principaux (lecture, ±10s/30s, volume, audio, sous-titres, cast, plein écran, réduire).
+    *   Adapter les marges horizontales et les libellés au mobile (`isMobile`) pour éviter tout débordement de la barre inférieure sur les écrans étroits.
+
+*   **Robustesse des Artefacts OCR Externes (`pgsrip`, `ffmpeg`, `tesseract`) :**
+    *   Ne jamais présupposer le nom exact d'un fichier produit par un outil externe. `pgsrip` normalise le code langue de sortie (`fra` → `fr`, `eng` → `en`) : utiliser un identifiant temporaire unique et scanner le répertoire (`readdir` + `startsWith(tempId)` + extension) pour retrouver le SRT réellement généré.
+    *   Valider le contenu avant conversion : un SRT vide ou sans `-->` ne doit jamais devenir un WebVTT vide mis en cache.
+    *   Nettoyer tous les fichiers portant le préfixe temporaire, et tester l'OCR sur un média dont le cache L2 est vide pour ne pas confondre succès du cache et succès de l'extraction.

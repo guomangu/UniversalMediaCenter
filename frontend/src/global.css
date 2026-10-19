@@ -17,7 +17,7 @@ html, body, #root {
   -webkit-text-size-adjust: 100%;
 }
 
-/* TV Remote & Keyboard Focus Indicator - Soft Slate Steel */
+/* TV Remote & Keyboard Focus Indicator - Soft Slate Steel (hors écran vidéo) */
 [role="button"]:focus,
 [tabindex="0"]:focus,
 button:focus,
@@ -31,14 +31,37 @@ input:focus {
   z-index: 50 !important;
 }
 
-/* Indicateur visuel spécifique quand la vidéo est sélectionnée */
+/* Éradication absolue de toute bordure/ligne blanche ou anneau de focus sur l'écran vidéo et ses conteneurs */
+video,
 video:focus,
-[data-video-player="true"]:focus {
-  outline: 2px solid rgba(148, 163, 184, 0.75) !important;
-  outline-offset: -2px !important;
-  box-shadow: 0 0 20px rgba(148, 163, 184, 0.35) !important;
+video:focus-visible,
+[data-video-player="true"],
+[data-video-player="true"]:focus,
+[data-video-player="true"]:focus-visible,
+[data-player-div-video="true"],
+[data-player-div-video="true"]:focus,
+[data-player-div-video="true"]:focus-visible,
+#player_div video,
+#player_div video:focus,
+#player_div video:focus-visible,
+#player_video_container,
+#player_video_container:focus,
+#player_video_container:focus-visible,
+#player_video_container > *,
+#player_video_container > *:focus,
+#player_video_container > *:focus-visible,
+[data-player-overlay="true"],
+[data-player-overlay="true"]:focus,
+[data-player-overlay="true"]:focus-visible {
+  outline: none !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+  -webkit-focus-ring-color: transparent !important;
+  -webkit-tap-highlight-color: transparent !important;
   transform: none !important;
-  z-index: 20 !important;
 }
 
 /* ==============================================================================

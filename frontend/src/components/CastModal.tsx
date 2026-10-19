@@ -180,6 +180,8 @@ export const CastModal: React.FC<CastModalProps> = ({
       isPlaying: dev.currentPlayback?.isPlaying ?? false,
       volume: dev.currentPlayback?.volume ?? 1,
       isMuted: dev.currentPlayback?.isMuted ?? false,
+      subtitleTrack: currentMedia?.activeSubtitle || dev.currentPlayback?.activeSubtitle || "off",
+      audioTrack: currentMedia?.activeAudio || dev.currentPlayback?.activeAudio || "auto",
     };
   };
 
@@ -221,6 +223,8 @@ export const CastModal: React.FC<CastModalProps> = ({
         posterUrl: currentMedia.posterUrl,
         positionSeconds: livePos,
         syncGroupId: 'default',
+        activeSubtitle: currentMedia.activeSubtitle || 'off',
+        activeAudio: currentMedia.activeAudio || 'auto',
       });
     }
 
@@ -247,11 +251,15 @@ export const CastModal: React.FC<CastModalProps> = ({
       posterUrl: currentMedia.posterUrl,
       positionSeconds: livePos,
       syncGroupId: 'default',
+      activeSubtitle: currentMedia.activeSubtitle || 'off',
+      activeAudio: currentMedia.activeAudio || 'auto',
     });
 
     const castAdapter = buildCastAdapter(dev);
     castAdapter.isPlaying = true;
     castAdapter.positionSeconds = livePos;
+    castAdapter.subtitleTrack = currentMedia.activeSubtitle || 'off';
+    castAdapter.audioTrack = currentMedia.activeAudio || 'auto';
     setActiveCastTarget(castAdapter);
     onCastStarted?.();
     setFeedbackNotice(`Diffusion lancée sur ${real.title}.`);
@@ -272,6 +280,8 @@ export const CastModal: React.FC<CastModalProps> = ({
       posterUrl: pb.posterUrl || `/api/media/${pb.mediaId}/poster`,
       streamUrl: pb.streamUrl || getVideoStreamUrl(pb.mediaId),
       isLive: Boolean(pb.isLive),
+      activeAudio: pb.activeAudio || 'auto',
+      activeSubtitle: pb.activeSubtitle || 'off',
       initialTime: pb.positionSeconds || 0,
       isRemoteSync: true,
       expand: true,
@@ -316,7 +326,12 @@ export const CastModal: React.FC<CastModalProps> = ({
         title: currentMedia.title,
         streamUrl: lanUrl,
         positionSeconds: livePos,
+        activeSubtitle: currentMedia.activeSubtitle || 'off',
+        activeAudio: currentMedia.activeAudio || 'auto',
       });
+      if (currentMedia.activeSubtitle && currentMedia.activeSubtitle !== 'off') {
+        sendCastCommand(device.id, 'SET_SUBTITLE', { subtitle: currentMedia.activeSubtitle });
+      }
       onCastStarted?.();
     }
     setActiveCastTarget({ ...device, isPlaying: true, positionSeconds: livePos });
@@ -335,6 +350,8 @@ export const CastModal: React.FC<CastModalProps> = ({
       title: currentMedia.title,
       streamUrl: lanUrl,
       positionSeconds: livePos,
+      activeSubtitle: currentMedia.activeSubtitle || 'off',
+      activeAudio: currentMedia.activeAudio || 'auto',
     });
     setActiveCastTarget({ ...device, isPlaying: true, positionSeconds: livePos });
     onCastStarted?.();
@@ -351,6 +368,9 @@ export const CastModal: React.FC<CastModalProps> = ({
       title: device.mediaTitle || 'Média en cours',
       posterUrl: device.posterUrl || `/api/media/${device.currentMediaId}/poster`,
       streamUrl: getVideoStreamUrl(device.currentMediaId),
+      isLive: false,
+      activeAudio: device.audioTrack || 'auto',
+      activeSubtitle: device.subtitleTrack || 'off',
       initialTime: device.positionSeconds || 0,
       isRemoteSync: true,
       expand: true,
