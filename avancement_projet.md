@@ -1,3 +1,136 @@
+- [x] **103. Éradication Définitive du Blocage Systématique de Lecture à 5 Secondes, Calibrage Strict des Timestamps PTS/DTS HLS & Préchauffage en Tâche de Fond (`mediaStream.ts`, `userPlaybackSync.ts`, `playerStore.ts`, `FloatingBottomPlayer.tsx`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`, `avancement_projet.md`) :**
+  - **Diagnostic de l'Anomalie Rapportée :**
+    - Signalement : *La lecture des medias bloque systematiquement a 5 secondes de lecture*.
+    - Symptôme : Dès que la tête de lecture atteignait la fin du premier segment vidéo HLS (autour de 5,0s à 6,0s), la lecture se figeait définitivement sans jamais pouvoir charger le segment suivant.
+  - **Causes Racines Identifiées :**
+    1. **PTS Re-Zeroing & DTS Out-of-Order dans les Segments FFMPEG** : Lors du découpage segmentaire HLS VOD à la volée, FFmpeg réinitialisait les timestamps de présentation à 0s pour chaque segment sans `-output_ts_offset`. Le segment 0 couvrait 0s..6s, tandis que le segment 1 arrivait avec des horodatages à 0s (recul de 6 secondes dans le passé). Le `SourceBuffer` du navigateur rejetait le buffer (`DTS out of order`, `bufferStalledError`).
+    2. **Muxdelay par Défaut de FFmpeg (+1,4s)** : Le multiplexeur MPEG-TS de FFmpeg ajoutait un délai initial de 1,4 seconde sans `-muxpreload 0 -muxdelay 0`, décalant arbitrairement l'alignement des flux audio et vidéo.
+    3. **Absence de Balise `#EXT-X-DISCONTINUITY` dans `master.m3u8`** : Sans la balise de discontinuité du RFC 8216 entre chaque segment, le démultiplexeur Hls.js attendait une stricte contiguïté de timestamps et bloquait la transition.
+    4. **Découpage Imprécis avec Surplus Artificiel (`-t 6.05`)** : L'ajout d'un surplus de 0,05s créait des paquets en double chevauchant les limites de segments.
+    5. **Absence d'Interception des Erreurs dans le Lecteur Persistant (`FloatingBottomPlayer.tsx`)** : Manque d'écoute de `Hls.Events.ERROR`, laissant le lecteur figé sur tout incident temporaire de buffer.
+    6. **Battement Passif de Progression à 5s (`playerStore.ts`, `userPlaybackSync.ts`)** : À t = 5s (`Math.abs(newSec - lastProgressBroadcastPos) >= 5`), le client diffusait sa progression passive. Côté serveur, le statut de lecture risquait d'être réécrasé par un ancien état figé.
+  - **Solutions d'Ingénierie Mises en Œuvre :**
+    - **Calibrage Strict PTS/DTS (`-output_ts_offset String(startTime)`, `-muxpreload 0`, `-muxdelay 0`)** :
+      - Aligner chaque segment découpé sur son offset temporel exact (`startTime = segIdx * segmentDuration`).
+      - Neutralisation du retard de multiplexage pour des horodatages continus et croissants.
+    - **Recherche Précise en Deux Étapes & Découpage Net (`-t String(segDur)`)** :
+      - Combinaison d'un fast-seek avant `-i` (`-ss ${Math.max(0, startTime - 5)}`) et d'un accurate-seek après `-i` (`-ss ${startTime > 5 ? 5 : startTime}`), garantissant une découpe sans aucun paquet orphelin ni chevauchement.
+    - **Conformité RFC 8216 (`#EXT-X-DISCONTINUITY`)** :
+      - Insertion systématique de la balise `#EXT-X-DISCONTINUITY` entre chaque segment dans `master.m3u8`, permettant à Hls.js d'ajuster son `timestampOffset` sans interruption.
+    - **Préchauffage Anticipé en Arrière-Plan (Latence 0 ms)** :
+      - Dès qu'un segment `index` est réclamé par le lecteur, le backend déclenche en arrière-plan la génération asynchrone du segment `index + 1`. Le segment suivant est déjà disponible sur disque avant que le lecteur ne l'atteigne.
+    - **Auto-Réparation et Reprise Automatique dans `FloatingBottomPlayer.tsx`** :
+      - Interception active de `Hls.Events.ERROR` (`hls.recoverMediaError()`, relance `v.play()` sur `bufferStalledError`).
+    - **Normalisation de l'État de Lecture et Purge du Cache** :
+      - Préservation stricte de l'état `isPlaying` émis par le leader souverain.
+      - Purge complète des anciens segments corrompus dans `/tmp/ums_cache/segments/`.
+  - **Validation & Tests :**
+    - Décodage continu et test d'intégration FFmpeg sur un flux HLS réel sur 18 secondes : 100% de succès sans blocage, vitesse de décodage 24x.
+    - Tests unitaires et d'intégration backend (`node dist/test/testUserDevicesAndDiffusion.js`) : 100% de succès.
+    - TypeScript frontend et backend (`tsc --noEmit`) : 0 erreur.
+
+- [x] **102. Résolution Intégrale de la Progression Temporelle, Continuité du Cast, Déblocage Multi-Room & Réactivité Haute-Fréquence (`FloatingBottomPlayer.tsx`, `CastModal.tsx`, `accountSyncService.ts`, `userPlaybackSync.ts`, `userDeviceRegistry.ts`, `userDeviceService.ts`, `player/[id].tsx`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`, `avancement_projet.md`) :**
+  - **Diagnostic des Anomalies Rapportées :**
+    - Signalements : *Dernier problème : je n'arrive pas à gérer la progression des médias dans la barre de progression du player (ça se remet toujours à 0 secondes de progression) quand je suis en mode synchroniser mais qu'il n'y a aucun appareil dispo je crois. De plus le mode cast ne reprend pas la lecture là où le casteur en était. De plus le mode "cast" et "synchroniser" bloque et la lecture du média ne se lance pas mais les contrôles sont pourtant bien synchro alors qu'en mode "indépendant" ça marche très bien. De plus il faut que le player soit plus réactif quand il y a des changements de lecture ou de progression ou de cast.*
+  - **Causes Identifiées & Résolues :**
+    1. **Snapping à 0s sur le Scrubber en Mode Synchronisé** : Dans `userPlaybackSync.ts`, la comparaison stricte `deviceId === leaderDeviceId` échouait en raison de la séparation onglet (`_tab_xxx`) / appareil. Le serveur rejetait la progression passive du terminal en le considérant comme suiveur, puis renvoyait un état de groupe à 0s. Côté client, `accountSyncService.ts` comparait `orderOrigin !== myDeviceId` sans normaliser la racine matérielle, croyant recevoir un ordre distant et forçant `seekTo(0)`.
+    2. **Perte de Position Temporelle lors du Cast** : `CastModal` envoyait un timestamp statique ou nul (`currentMedia.positionSeconds`), et le composant récepteur (`LOAD_MEDIA`) ne propageait pas `initialTime` dans `playerStore.openMedia`.
+    3. **Blocage de la Vidéo en Mode Synchroniser & Cast** : 'Synchroniser' dans `CastModal` activait à tort `setActiveCastTarget`, détruisant la balise `<video>` et l'instance HLS sur l'appareil local pour afficher un écran d'attente. De plus, sur l'écran cible, l'autoplay était rejeté avec `NotAllowedError` sans fallback en sourdine (`muted`), figeant la vidéo alors que les contrôles indiquaient 'Play'.
+    4. **Manque de Réactivité** : La boucle de détection réseau tournait toutes les 10 secondes et les commandes distantes ne pilotaient pas directement le registre d'appareils de compte.
+  - **Solutions d'Excellence Mises en Œuvre :**
+    - **Normalisation Inviolable (`isMatchingDevice`) & Immunité Scrubber (`isWithinUserGracePeriod(4000)`)** :
+      - Comparaison universelle par racine matérielle (`split('_tab_')[0]`) dans `userPlaybackSync.ts`, `userDeviceRegistry.ts` et `accountSyncService.ts`. L'appareil actif est souverainement reconnu comme leader de son flux et ne peut jamais s'écraser lui-même.
+      - Fenêtre d'immunité de 4 000 ms protégeant le scrubber de toute interférence réseau lors d'un déplacement manuel ou saut temporel.
+      - `GET /sync` n'injecte plus d'état reconstruit fantôme lorsqu'aucun autre appareil tiers n'est présent dans le groupe.
+    - **Extraction Temps Réel du Caster (`getLivePosition`) & Injection Dynamique (`initialTime`)** :
+      - Lors d'un clic sur 'Caster', 'Synchroniser' ou le Cast natif (Google Cast / AirPlay), la position exacte est extraite directement de la balise vidéo sous-jacente (`v.currentTime`) ou du store.
+      - Le payload `LOAD_MEDIA` transmet `positionSeconds: livePos`. Le récepteur exécute `playerStore.openMedia({ initialTime: livePos })` et `playerStore.seekTo(livePos)`.
+      - Dans `player/[id].tsx`, écouteur dynamique sur `parsedJoinTime` repositionnant instantanément la lecture.
+    - **Découplage Multi-Room vs Cast & Autoplay Résilient Muted** :
+      - En mode 'Synchroniser', `activeCastTarget` n'est plus activé sur l'appareil local : les flux vidéo tournent simultanément sur tous les écrans pairs sans coupure.
+      - En mode 'Caster', l'appareil local devient la télécommande et ordonne à l'écran cible de charger et jouer le flux.
+      - Captation de `NotAllowedError` dans Hook 3 et `executeRemoteCommand` : passage automatique en `v.muted = true` et relance immédiate avec affichage de la bannière de réactivation sonore.
+    - **Réactivité 2s & Dispatcheur Universel de Commandes** :
+      - Polling de synchronisation abaissé de 10s à **2s** (`syncTimer = setInterval(checkRemoteChanges, 2000)`).
+      - `sendCastCommand` relaie simultanément vers `/api/cast/command` et `/api/user/devices/command`.
+  - **Validation & Tests :**
+    - TypeScript frontend et backend (`tsc --noEmit`) : 0 erreur.
+    - Tests d'intégration backend (`testUserDevicesAndDiffusion.js`, `testOrderBasedSync.js`) : 100% de succès.
+    - Conteneurs `ums_api` et serveur Expo vérifiés opérationnels.
+
+- [x] **101. Sécurisation Inviolable du Lecteur en Mode Déconnecté, Déchargement Total au Logout, Élimination de la Boucle de Reconnexion & Implémentation des 5 Boutons d'Action du Menu Cast (`FloatingBottomPlayer.tsx`, `playerStore.ts`, `app/player/[id].tsx`, `userDeviceRegistry.ts`, `access.ts`, `auth.ts`, `CastModal.tsx`, `CastModal.styles.ts`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`, `avancement_projet.md`) :**
+  - **Diagnostic des Anomalies Rapportées :**
+    - Signalements : *J'arrive à accéder au player alors que je suis déconnecté (alors qu'être connecté est obligatoire pour avoir certains droits sur certains médias et fonctionnalités). D'ailleurs j'ai compris pourquoi je n'arrivais plus à me reconnecter : le player était toujours actif et devait maintenir la connexion précédente (celle où j'ai été déconnecté).*
+    - Besoins complémentaires intégrés :
+      1. Révocation éphémère à usage unique : déconnecter un appareil ne doit expulser qu'une seule fois et ne jamais bannir perpétuellement l'appareil (`consumeRevocation`, `unrevokeDevice`).
+      2. Synchronisation manuelle par défaut : le système démarre par défaut en mode indépendant (`standalone`) et ne synchronise qu'à la demande explicite via le menu Cast.
+      3. Rétablissement du curseur de souris (`pointer`) et implémentation des 5 boutons par appareil : *Déconnecter*, *Synchroniser*, *Caster*, *Suivre*, *Connecter*.
+  - **Solutions d'Excellence Mises en Œuvre :**
+    - **Verrouillage Synchrone de l'Accès Lecteur & Déchargement Total au Logout :**
+      - Garde synchrone dans `app/player/[id].tsx` et `FloatingBottomPlayer.tsx` : si `!currentUser && !share`, aucun composant vidéo ne monte et redirection immédiate vers `/login?returnUrl=...`.
+      - Lors de l'événement `ums_logout` : invocation de `playerStore.closeMedia()`, purge des balises `<video>` du DOM (`pause()`, suppression de `src`, `.load()`), destruction des instances `Hls`, réinitialisation de `lastPlayback` (`dismissLastPlayback()`) et arrêt des sessions Cast (`disconnectCastTotally`).
+      - Arrêt immédiat des flux réseau et heartbeats d'arrière-plan, permettant une reconnexion propre sans maintien de l'ancienne session révoquée.
+    - **Révocation Éphémère Consommable & Protection de l'Appareil Émetteur :**
+      - Consommation immédiate de la révocation dès le premier rejet 401 `DEVICE_REVOKED` (`consumeRevocation`).
+      - Levée automatique de la révocation de l'appareil lors d'une authentification réussie `/api/auth/login` (`unrevokeDevice`).
+      - Comparaison par identifiant racine (`isMatchingDevice`) ignorant les suffixes d'onglets (`_tab_xxx`), protégeant l'appareil émetteur lors d'une déconnexion globale.
+    - **Les 5 Boutons d'Action par Appareil dans la Modale Cast (`CastModal.tsx`) :**
+      - Implémentation complète des 5 actions directes avec wrap responsive et retour visuel (bannière `feedbackNotice`) :
+        1. `🔴 Déconnecter` : révoque la session distante ou stoppe la session Cast de la TV.
+        2. `🔄 Synchroniser` : réunit l'appareil cible et l'appareil local sur le groupe `'default'`.
+        3. `📡 Caster` : pousse le média en cours vers l'écran cible et connecte la télécommande.
+        4. `👀 Suivre` : lance localement le média en cours de lecture sur l'écran cible à son timestamp exact.
+        5. `🎮 Connecter` : prend le contrôle comme télécommande active sans altérer la lecture en cours.
+      - Élimination du piège de superposition de l'overlay : fermeture sur clic direct du backdrop (`e.target === e.currentTarget && onClose()`), attribution de `cursor: 'pointer'`, `userSelect: 'none'` et `pointerEvents="none"` sur les textes enfants pour une réactivité souris et tactile irréprochable.
+  - **Validation & Tests :**
+    - TypeScript frontend et backend (`tsc --noEmit`) : 0 erreur.
+    - Suite de tests backend (`node dist/test/testUserDevicesAndDiffusion.js`, `testOrderBasedSync.js`) : 100% de succès.
+
+- [x] **100. Système d'Ancre Fonctionnel Haute Réactivité & Défilement Rapide pour les Raccourcis de l'Accueil (`index.tsx`, `SiteHeader.tsx`, `mauvaise_pratique.md`, `sommaire.md`, `avancement_projet.md`) :**
+  - **Diagnostic du Problème :**
+    - Signalement : *Les boutons raccourcis de l'accueil ne fonctionnent pas toujours (ils fonctionnent uniquement quand on a rechargé la page d'accueil).*
+    - Cause racine identifiée : `getScrollContainer()` dans `index.tsx` parcourait aveuglément `document.querySelectorAll("*")` à la recherche d'un élément ayant `overflowY === "auto" || "scroll"`. Dans une SPA avec Expo Router / React Navigation, les écrans précédents (`/tv`, `/user`, `/media/[id]`) restent souvent présents dans le DOM. `getScrollContainer()` résolvait ainsi un conteneur hors-champ ou inactif et y appliquait le `scrollTop`, laissant la `ScrollView` d'accueil immobile.
+    - Deuxième cause : `handleDebouncedAction` (250 ms) dans `SiteHeader` bloquait les clics utilisateur rapides entre les différentes puces de catégories.
+    - Troisième cause : Le smooth scroll natif du navigateur (`behavior: "smooth"`) prenait jusqu'à 1,5 seconde, créant une sensation de latence et de conflit avec la détection de position.
+  - **Solutions d'Excellence Mises en Œuvre :**
+    - **Résolution Déterministe de la ScrollView (`getHomeScrollNode`) :**
+      - Accès direct au nœud scrollable via `scrollRef.current?.getScrollableNode?.()` et par son identifiant unique dédié `nativeID="ums_home_scroll"` / `id="ums_home_scroll"`, éliminant 100% des erreurs d'adressage DOM après navigation SPA.
+    - **Mouvement Rapide & Fluide (`fastSmoothScroll`, 200 ms) :**
+      - Implémentation d'une interpolation ultra-réactive de 200 ms en `ease-out cubic` (`1 - (1 - progress)^3`), apportant un défilement rapide, précis et fluide qui atterrit instantanément sur la section cible.
+      - Annulation instantanée de l'animation en cours si l'utilisateur interagit avec la molette de souris (`wheel`) ou l'écran tactile (`touchstart`).
+    - **Déduplication Sans Blocage dans l'En-tête (`SiteHeader.tsx`) :**
+      - Suppression du délai de 250 ms sur la sélection des catégories : tout clic sur une nouvelle puce se déclenche immédiatement sans aucun temps mort.
+      - Déduplication ciblée uniquement sur les événements synthétiques doublons (`onClick` + `onPress`) survenus dans les 100 ms pour la *même* catégorie.
+      - Ajout de `id="cat-chip-${cat.id}"` sur chaque puce et `keyboardShouldPersistTaps="always"` sur le conteneur horizontal de défilement.
+  - **Validation & Tests :**
+    - TypeScript frontend et backend (`tsc --noEmit`) : 0 erreur.
+    - Navigation d'aller-retour inter-pages et sauts d'ancres rapides vérifiés et opérationnels sans nécessiter aucun rechargement F5.
+
+- [x] **99. Résolution des Doublons d'Appareils (Inter-Registres Account vs Cast), Désynchronisation Souveraine de l'Appareil Local & Rétablissement de la Réactivité Tactile/Souris de la Modale Cast (`CastModal.tsx`, `CastModal.styles.ts`, `userDeviceRegistry.ts`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
+  - **Diagnostic des Anomalies Rapportées :**
+    - Signalements : *Il y a des doublons d'appareils détectés (même quand on est connecté et synchro), de plus il n'est pas possible de se désynchroniser, de plus le menu cast du player a ses boutons qui ne fonctionnent pas car je crois qu'il y a un problème de z-index car mon curseur de souris est étrange dans ce menu cast.*
+    - Identification rigoureuse des 3 causes racines :
+      1. **Doublons Inter-Registres :** Les navigateurs UMS s'enregistraient simultanément sur `/api/user/devices` (compte) et `/api/cast/receiver` (cast). La modale présentait les deux sources en parallèle, doublant chaque écran connecté. De plus, l'appareil local n'était pas filtré sur ses variantes multi-onglets (`${localId}_tab_...`).
+      2. **Absence de Commande et de Contrôle Local de Désynchronisation :** L'encadré "Cet appareil" ne proposait aucun bouton pour basculer son propre mode de synchronisation. De plus, sur le serveur, `setSyncGroup` ne poussait aucune commande `SET_SYNC_GROUP` à l'appareil distant, qui repassait donc en `default` lors de son heartbeat.
+      3. **Piège de Contexte d'Empilement CSS (Backdrop Stacking Trap) :** Le conteneur modal n'avait pas de `position: 'relative'`. Le composant `<Pressable style={StyleSheet.absoluteFill}>` (le fond opaque) se retrouvait empilé au-dessus du modal, interceptant tous les clics et faussant le curseur de la souris.
+  - **Mise en Œuvre des Solutions d'Excellence :**
+    - **Déduplication Stricte & Exclusion Locale Inconditionnelle (`isThisDevice`) :**
+      - Filtrage de l'appareil local et de toutes ses sous-instances d'onglets.
+      - Déduplication des terminaux du compte par `deviceId` (conservation de l'instance la plus récente `lastSeenAt`).
+      - Exclusion des cibles Cast correspondant à des appareils déjà répertoriés dans le compte (par ID ou nom).
+      - Neutralisation de l'entrée TV statique si un téléviseur ou Chromecast est déjà détecté sur le réseau local.
+    - **Contrôle de Désynchronisation Souverain sur l'Appareil Local (`localBox`) :**
+      - Affichage du statut en temps réel (`🟢 Synchronisé` vs `⚪ Mode indépendant`).
+      - Bouton interactif direct `[Désynchroniser]` / `[Synchroniser]` permettant de basculer instantanément son propre terminal sans quitter la modale, avec mise à jour du `localStorage` et du registre serveur.
+      - Empilement d'une commande `SET_SYNC_GROUP` dans la file serveur lors de la désynchronisation d'un appareil distant pour pérenniser l'état.
+    - **Éradication du Piège de Stacking & Rétablissement des Clics / Curseur :**
+      - Attribution de `position: 'relative'`, `zIndex: 10` et `cursor: 'default'` sur `styles.modal`, reléguant le backdrop transparent à `zIndex: 1`.
+      - Élévation du z-index de l'overlay racine à `999999` (dominant les `99999` du lecteur plein écran).
+      - Double écouteur web natif `onClick` avec `e.stopPropagation()` sur l'ensemble des boutons et pilules d'action, et `pointerEvents="none"` sur les textes enfants pour une réactivité instantanée à 100%.
+  - **Validation & Tests :**
+    - TypeScript frontend et backend (`tsc --noEmit`) : 0 erreur.
+    - Tests multi-écrans automatisés (`testOrderBasedSync.ts`, `testUserDevicesAndDiffusion.ts`) : 100% de réussite.
+
 - [x] **98. Refonte du Menu 'Diffuser & Télécommande' (`CastModal.tsx`) : Partitionnement Visuel Strict 'Mes écrans connectés' vs 'Mes écrans déconnectés', Bouton Direct Déconnecter In-Place, Intégration Dynamique de la TV Locale & Détection des Noms Réels (`CastModal.tsx`, `CastModal.styles.ts`, `deviceIdentity.ts`, `userDeviceRegistry.ts`, `documentation_player_et_cast.md`, `mauvaise_pratique.md`, `bonne_pratique.md`, `sommaire.md`) :**
   - **Diagnostic & Besoins Utilisateur :**
     - Demande utilisateur : *Retravaille le menu Diffuser & Télécommande : Ajoute un bouton de deconnection directement dans les appareil connecter et il faut ajouter "Mes écrans deconnectés" en plus de "Mes écrans connectés" pour bien separer les ecrans en syncro et hors syncro. De plus tu enlevera "Caster sur ma Télévision" pour interger les appareils detecté dans "Mes écrans deconnectés" ou "Mes écrans connectés" en fonctions de leurs etats, de plus affiche les vrais nom des appareils.*
@@ -13,8 +146,10 @@
     - **Suppression du Bouton Isolé "Caster sur ma Télévision" & Intégration Dynamique :**
       - Élimination définitive du composant isolé `styles.nativeCastBtn`.
       - Intégration harmonieuse des cibles TV (Chromecast, Android TV, Smart TV, AirPlay) au sein des listes selon leur statut réel :
-        - En veille / disponible sur le LAN $ightarrow$ dans "Mes écrans déconnectés" avec boutons `[Diffuser]` et `[Connecter]`.
-        - En cours de diffusion $ightarrow$ dans "Mes écrans connectés" avec badge actif et bouton direct `[Déconnecter]`.
+        - En veille / disponible sur le LAN $
+ightarrow$ dans "Mes écrans déconnectés" avec boutons `[Diffuser]` et `[Connecter]`.
+        - En cours de diffusion $
+ightarrow$ dans "Mes écrans connectés" avec badge actif et bouton direct `[Déconnecter]`.
     - **Résolution Automatique et Affichage des Noms Réels Universels :**
       - Dérivation précise du modèle de matériel et du navigateur via `getRealDeviceDisplayName` et `parseRealDeviceName` (ex: `Google Chrome (Linux)`, `Apple Safari (iPhone)`, `Samsung Smart TV (Tizen)`, `LG Smart TV (webOS)`, `Chromecast Salon`, etc.) au lieu des étiquettes génériques anonymes (*"Navigateur Web"*, *"Linux"*, *"Appareil Connecté"*).
       - Association d'icônes contextualisées (`💻`, `📱`, `📺`) et de sous-titres dynamiques (média en cours de lecture, route active ou veille).

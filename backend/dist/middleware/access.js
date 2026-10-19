@@ -23,6 +23,7 @@ export async function authMiddleware(c, next) {
     const deviceId = c.req.header('x-device-id') || c.req.query('deviceId') || '';
     // Vérification de révocation à distance pour cet appareil
     if (userId && deviceId && userDeviceRegistry.isRevoked(userId, deviceId)) {
+        userDeviceRegistry.consumeRevocation(userId, deviceId);
         c.set('user', null);
         return c.json({
             error: 'DEVICE_REVOKED',

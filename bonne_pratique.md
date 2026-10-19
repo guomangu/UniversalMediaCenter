@@ -253,9 +253,100 @@ Pour assurer une réactivité instantanée et éliminer tout gel de navigation o
 *   **Suppression du Bouton Isolé & Intégration Dynamique de la TV :**
     *   Éliminer les boutons orphelins hors-liste tels que *"Caster sur ma Télévision"*.
     *   Intégrer les récepteurs TV détectés (Google Cast SDK, Smart TV DLNA, Apple AirPlay) directement dans la taxonomie des écrans :
-        - En attente / veille $ightarrow$ dans *"Mes écrans déconnectés"* avec actions `[Diffuser]` et `[Connecter]`.
-        - En diffusion active $ightarrow$ dans *"Mes écrans connectés"* avec action `[Déconnecter]`.
+        - En attente / veille $
+ightarrow$ dans *"Mes écrans déconnectés"* avec actions `[Diffuser]` et `[Connecter]`.
+        - En diffusion active $
+ightarrow$ dans *"Mes écrans connectés"* avec action `[Déconnecter]`.
 *   **Détection et Affichage des Noms Réels (`getRealDeviceDisplayName`) :**
     *   Bannir les libellés anonymes (*"Navigateur Web"*, *"Linux"*, *"Appareil Connecté"*).
     *   Identifier précisément le navigateur et l'environnement matériel à partir du User-Agent : ex. `Google Chrome (Linux)`, `Apple Safari (iPhone)`, `Samsung Smart TV (Tizen)`, `LG Smart TV (webOS)`, etc.
     *   Combiner le titre réel avec un sous-titre contextualisé (média en lecture, route actuelle ou statut de veille) et une icône représentative (`💻`, `📱`, `📺`).
+
+## 17. Architecture Anti-Doublons Multi-Registres, Désynchronisation Souveraine Locale & Isolation Stricte des Conduits Événementiels des Modales
+
+*   **Déduplication Universelle Multi-Registres (`UserDevices` ∩ `CastDevices`) :**
+    *   Ne jamais afficher côte à côte deux registres réseau distincts sans réconciliation préalable de leurs identifiants (`deviceId`, `name`, `ip`).
+    *   Tout appareil déjà répertorié au niveau du compte utilisateur doit être masqué de la liste des récepteurs Cast afin de garantir l'unicité stricte de chaque écran.
+    *   Exclure impérativement l'appareil local actuel de la liste des terminaux distants via `isThisDevice` (`id === localId || id.startsWith(localId + '_')`).
+*   **Contrôle de Désynchronisation Direct sur l'Appareil Local :**
+    *   L'interface modale doit toujours offrir un contrôle direct sur l'état de synchronisation de l'appareil courant (`localBox`) : afficher son statut (`🟢 Synchronisé` vs `⚪ Mode indépendant`) et un bouton `[Désynchroniser]` / `[Synchroniser]`.
+    *   La modification doit s'appliquer immédiatement au stockage local (`setLocalSyncGroupId`) et se synchroniser avec le serveur (`setDeviceSyncGroup`).
+*   **Pérennisation Distante par Commandes Asynchrones (`SET_SYNC_GROUP`) :**
+    *   Toute modification du groupe de synchronisation d'un appareil tiers (`setSyncGroup`) doit obligatoirement empiler une commande ciblée `SET_SYNC_GROUP` dans le registre serveur. L'appareil distant reçoit ainsi l'ordre lors de son battement de cœur et met à jour son état persistant.
+*   **Contexte d'Empilement CSS & Éradication du 'Backdrop Trap' :**
+    *   Toujours appliquer `position: 'relative'` et un `zIndex` supérieur (`zIndex: 10`) au conteneur principal d'une modale, et restreindre le composant de backdrop transparent (`StyleSheet.absoluteFill`) à `zIndex: 1`. Sans `position: relative`, le positionnement absolu du backdrop prend le pas et intercepte tous les événements de souris et de clic.
+    *   L'overlay modal racine doit afficher un `zIndex` de `999999` pour dominer sans ambiguïté les conteneurs vidéo plein écran (`99999`).
+    *   Associer systématiquement un écouteur DOM natif `{...(Platform.OS === 'web' ? { onClick: (e) => { e.stopPropagation(); handleAction(); } } : {})}` sur les boutons interactifs, et `pointerEvents="none"` sur les textes enfants pour éliminer tout conflit avec le PanResponder.
+
+## 18. Sécurité du Lecteur Déconnecté, Déchargement Total au Logout & Éviction Éphémère à Usage Unique (Zéro Boucle de Reconnexion)
+
+*   **Verrouillage Synchrone du Lecteur Vidéo (`useCurrentUser`) :**
+    *   L'accès au lecteur vidéo (que ce soit via la route `/player/[id]`, le déclenchement depuis la fiche `/media/[id]` ou le composant persistant `FloatingBottomPlayer`) est rigoureusement conditionné à l'authentification effective de l'utilisateur (`getCurrentUser()`), à l'exception unique des accès disposant d'un jeton public de partage (`share`).
+    *   Tout rendu non autorisé doit être court-circuité de façon synchrone (`if (!currentUser && !share) return null;`) afin d'interdire au navigateur d'initier le montage du composant vidéo, le buffering de flux ou la récupération de métadonnées réservées.
+*   **Déchargement Complet et Destruction DOM lors du Logout (`ums_logout`) :**
+    *   Lors de la déconnexion d'un utilisateur (volontaire ou suite à une expulsion distante `DEVICE_REVOKED`), l'application doit impérativement purger l'ensemble des éléments multimédias actifs :
+        1. Invoquer `playerStore.closeMedia()` : mettre en pause les balises `<video>` du DOM, supprimer leurs attributs `src` et exécuter `.load()` pour libérer immédiatement le décodeur matériel vidéo.
+        2. Détruire les instances `Hls.js` (`hls.destroy()`).
+        3. Réinitialiser la mémoire de reprise `lastPlayback` (`dismissLastPlayback()`) pour ne pas proposer de bouton de reprise à un utilisateur non connecté.
+        4. Clore toute session Cast active (`disconnectCastTotally(false)`).
+    *   Cette purge totale élimine la persistance de requêtes en tâche de fond qui maintiennent la connexion précédente et perturbent la reconnexion ultérieure.
+*   **Révocation Éphémère Consommable & Levée de Bannissement au Login (`consumeRevocation`, `unrevokeDevice`) :**
+    *   La révocation d'un appareil à distance ne doit expulser la session active qu'une seule et unique fois.
+    *   Dès qu'un code HTTP 401 `DEVICE_REVOKED` est notifié au client ou qu'un battement de cœur remonte la révocation, celle-ci doit être immédiatement consommée (`consumeRevocation`).
+    *   Lors de toute authentification réussie (`/api/auth/login`), le serveur doit obligatoirement lever l'état révoqué de l'appareil (`unrevokeDevice(user.id, deviceId)`), bannissant toute boucle infinie de déconnexion.
+*   **Préservation de l'Appareil Émetteur (`isMatchingDevice`) :**
+    *   Lors d'une déconnexion en masse (*"Déconnecter tous les autres appareils"*), la comparaison d'identité matérielle doit ignorer les suffixes d'onglets (`_tab_xxx`). L'appareil à l'origine de la demande ne doit en aucun cas s'auto-révoquer.
+
+## 19. Ergonomie des 5 Actions du Menu Cast ('Déconnecter', 'Synchroniser', 'Caster', 'Suivre', 'Connecter') & Curseur Souris Natif ('pointer')
+
+*   **Les 5 Actions Dédiées par Terminal :**
+    *   Dans le menu "Diffuser & Télécommande" (`CastModal`), chaque appareil listé doit offrir un éventail complet et intuitif de 5 actions fonctionnelles :
+        1. `🔴 Déconnecter` : révoque la session de l'appareil distant ou coupe la diffusion sur la TV.
+        2. `🔄 Synchroniser` : réunit l'appareil cible et l'appareil local au sein du même groupe de synchronisation (`default`).
+        3. `📡 Caster` : pousse le média en cours de lecture vers l'écran distant pour visionnage immédiat.
+        4. `👀 Suivre` : lance localement sur l'appareil le média que l'écran distant est en train de lire, synchronisé à la seconde près.
+        5. `🎮 Connecter` : associe l'appareil cible en tant que télécommande active sans perturber sa lecture en cours.
+*   **Curseur Souris et Réactivité Native des Clics :**
+    *   Bannir les calques transparents frères qui recouvrent le conteneur modal et bloquent les interactions de la souris.
+    *   Adopter une détection propre au niveau de l'overlay (`e.target === e.currentTarget && onClose()`).
+    *   Appliquer explicitement `cursor: 'pointer'`, `userSelect: 'none'` et `pointerEvents="none"` sur les libellés textuels, assurant un retour visuel clair et un clic instantané sans perte d'événement sous React Native Web.
+
+## 20. Synchronisation Temporelle Absolue en Multi-Room, Extraction Temps Réel du Caster & Découplage de la Télécommande Cast vs Écrans Pairs
+
+*   **Résolution Inviolable de l'Identité d'Appareil (`isMatchingDevice`) :**
+    *   Les sessions web multi-onglets créent des identifiants d'instance (`deviceId_tab_xxx`) adossés à une identité matérielle maîtresse (`deviceId`).
+    *   Toute comparaison de souveraineté temporelle et d'autorité sur le flux (`isSenderAuthoritative`) doit normaliser ces identifiants via `split('_tab_')[0]`.
+    *   L'appareil actif qui interagit avec le lecteur est toujours le leader de son groupe. Il ne doit sous aucun prétexte recevoir ses propres paquets différés et écraser sa position temporelle à 0 seconde.
+*   **Période d'Immunité Utilisateur sur le Scrubber (`isWithinUserGracePeriod`) :**
+    *   Lors d'une interaction manuelle (saut de 10s/30s ou glisser-déplacer du scrubber), le playerStore déclenche une période d'immunité de 4 000 ms.
+    *   Pendant cette fenêtre, le service de synchronisation ignore catégoriquement les ordres de position temporelle distants, protégeant l'utilisateur de tout retour en arrière ou sautillement intempestif.
+*   **Continuité Temporelle Immédiate du Cast (`getLivePosition`) :**
+    *   Ne jamais se fier à un état figé de props React pour démarrer un Cast ou une Synchronisation : interroger la balise vidéo sous-jacente (`v.currentTime`) à l'instant précis du clic.
+    *   Injecter immédiatement `positionSeconds: livePos` dans `LOAD_MEDIA`. Côté récepteur, initialiser `openMedia({ initialTime: livePos })` et forcer `seekTo(livePos)` pour une continuité sans faille.
+*   **Découplage Synchroniser vs Caster :**
+    *   En mode **Synchroniser**, les deux écrans doivent continuer à afficher et jouer le flux vidéo de concert. Ne jamais activer `activeCastTarget` sur le diffuseur local lors d'une simple synchronisation de compte.
+    *   En mode **Caster**, la télécommande prend le contrôle et envoie la commande `LOAD_MEDIA` à l'écran cible.
+*   **Tolérance Autoplay Navigateur (`NotAllowedError`) :**
+    *   Intercepter `NotAllowedError` sur tout appel de lecture automatique déclenché à distance.
+    *   Basculer automatiquement en sourdine (`v.muted = true`) et relancer la lecture immédiatement en affichant la bannière de réactivation audio.
+*   **Fréquence Équilibrée de Synchronisation (2s) :**
+    *   Utiliser une boucle réactive de 2 secondes (`setInterval(checkRemoteChanges, 2000)`) combinée avec le `BroadcastChannel` local (0 ms) pour une synchronisation multi-écrans fluide, instantanée et économe en ressources serveur.
+
+## 21. Continuité Temporelle des Segments HLS VOD, Alignement PTS/DTS & Préchauffage en Tâche de Fond (Zéro Blocage à 5s)
+
+*   **Calibrage Strict des Timestamps MPEG-TS (`-output_ts_offset`, `-muxpreload 0`, `-muxdelay 0`) :**
+    *   Lors du découpage et du transcodage à la volée de segments vidéo HLS indépendants, toujours aligner le timestamp de départ sur la ligne de temps globale (`-output_ts_offset String(startTime)`).
+    *   Neutraliser le retard initial par défaut de 1,4s de FFmpeg via `-muxpreload 0 -muxdelay 0`. Sans ce paramétrage, chaque segment commence avec des DTS erronés ou des timestamps décalés qui heurtent le segment précédent et font caler le SourceBuffer du navigateur dès la première transition (5-6 secondes de lecture).
+*   **Découpage Temporel Précis en Deux Temps (Fast Seek + Accurate Seek) :**
+    *   Pour garantir un découpage instantané même sur des fichiers volumineux de 2 heures tout en assurant une précision parfaite au millième de seconde, combiner un pré-seek avant `-i` (`-ss ${Math.max(0, startTime - 5)}`) et un seek d'ajustement précis après `-i` (`-ss ${startTime > 5 ? 5 : startTime}`).
+    *   Définir la durée exacte avec `-t String(segDur)` sans dépassement artificiel (+0.05s) qui génère des paquets audio/vidéo se chevauchant et corrompant le démultiplexeur.
+*   **Déclaration Explicite des Discontinuités (`#EXT-X-DISCONTINUITY`, RFC 8216) :**
+    *   Dans le manifeste virtuel `master.m3u8`, précéder chaque segment après le premier (`index > 0`) de la balise `#EXT-X-DISCONTINUITY`.
+    *   Cette balise autorise explicitement le démultiplexeur Hls.js ou natif du navigateur à réaligner l'offset temporel (`timestampOffset`) au point de coupure, garantissant une lecture continue sans gel ni saccade.
+*   **Préchauffage Anticipé en Tâche de Fond (Zero-Latency Background Pre-generation) :**
+    *   Dès qu'un segment `index` est demandé par le lecteur, déclencher immédiatement en tâche de fond la génération asynchrone du segment `index + 1` sans bloquer la requête en cours.
+    *   Lorsque le lecteur atteint la fin du segment en cours 5 secondes plus tard, le segment suivant est déjà disponible sur le disque : la latence de transit est ramenée à 0 ms et la lecture ne subit aucune mise en mémoire tampon.
+*   **Résilience du Lecteur & Gestion des Événements d'Erreur Hls.js (`FloatingBottomPlayer.tsx`) :**
+    *   Écouter impérativement l'événement `Hls.Events.ERROR`.
+    *   Sur incident non-fatal de type `bufferStalledError`, vérifier si la lecture est souhaitée (`activeMedia.isPlaying`) et relancer immédiatement le lecteur (`v.play()`).
+    *   Sur incident fatal, appeler `hls.startLoad()` pour `NETWORK_ERROR` ou `hls.recoverMediaError()` pour `MEDIA_ERROR`, garantissant une auto-réparation transparente sans intervention manuelle.

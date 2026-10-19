@@ -17,7 +17,7 @@ import {
 } from '@/services/castService';
 import { startDeviceHeartbeatLoop } from '@/services/userDeviceService';
 import { AuthGuard } from '@/components/auth/AuthGuard';
-import { syncSessionWithServer } from '@/services/authStore';
+import { syncSessionWithServer, getCurrentUser } from '@/services/authStore';
 import { registerPwa } from '@/services/pwaRegistration';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 
@@ -97,6 +97,8 @@ export default function RootLayout() {
     const interval = setInterval(() => {
       // Économiser le réseau et la batterie si l'onglet est en arrière-plan
       if (typeof document !== 'undefined' && document.hidden) return;
+      const user = getCurrentUser();
+      if (!user) return;
 
       const pState = playerStore.getState();
       const active = pState.activeMedia;

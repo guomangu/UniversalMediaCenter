@@ -6,6 +6,7 @@ import { createSessionToken } from '../auth/token.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { getSiteParams, validateInvitationCode } from '../config/paramManager.js';
 import type { UserSession } from '../middleware/access.js';
+import { userDeviceRegistry } from '../devices/userDeviceRegistry.js';
 
 export const authRouter = new Hono();
 
@@ -121,6 +122,8 @@ authRouter.post('/login', async (c) => {
     }
   }
 
+  const reqDeviceId = c.req.header('x-device-id') || '';
+  userDeviceRegistry.unrevokeDevice(user.id, reqDeviceId);
   const token = createSessionToken(user.id);
   return c.json({
     success: true,

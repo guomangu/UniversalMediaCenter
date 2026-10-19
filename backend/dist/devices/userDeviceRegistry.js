@@ -56,6 +56,15 @@ class UserDeviceRegistry {
             timer.unref();
         }
     }
+    isMatchingDevice(idA, idB) {
+        if (!idA || !idB)
+            return false;
+        if (idA === idB)
+            return true;
+        const baseA = idA.split('_tab_')[0];
+        const baseB = idB.split('_tab_')[0];
+        return baseA === baseB;
+    }
     registerOrHeartbeat(data) {
         const { deviceId, userId } = data;
         const now = Date.now();
@@ -77,34 +86,27 @@ class UserDeviceRegistry {
             };
         }
         const existing = this.devices.get(deviceId);
-        const created = existing?.createdAt || now;
-        const rawName = data.name || existing?.name || "";
-        const isGeneric = !rawName || rawName === "Appareil Connecté" || rawName === "Navigateur Web" || rawName === "Linux" || rawName === "Windows" || rawName === "Mac";
-        const computedName = isGeneric && (data.userAgent || existing?.userAgent) ? parseRealDeviceName(data.userAgent || existing?.userAgent, rawName) : (rawName || "Écran Connecté");
-        const finalName = existing?.customName || computedName;
-        const finalSyncGroup = data.syncGroupId || existing?.syncGroupId || 'default';
+        const parsedName = parseRealDeviceName(data.userAgent, data.name || existing?.name);
         const updated = {
             deviceId,
             userId,
-            name: finalName,
+            name: parsedName,
             customName: existing?.customName,
             deviceType: data.deviceType || existing?.deviceType || 'BROWSER',
             clientInfo: data.clientInfo || existing?.clientInfo,
             userAgent: data.userAgent || existing?.userAgent,
             ip: data.ip || existing?.ip,
             lastSeenAt: now,
-            createdAt: created,
-            currentRoute: data.currentRoute || existing?.currentRoute || '/',
-            pageTitle: data.pageTitle || existing?.pageTitle || 'Accueil',
-            syncGroupId: finalSyncGroup,
+            createdAt: existing ? existing.createdAt : now,
+            isOnline: true,
+            currentRoute: data.currentRoute !== undefined ? data.currentRoute : existing?.currentRoute,
+            pageTitle: data.pageTitle !== undefined ? data.pageTitle : existing?.pageTitle,
+            syncGroupId: data.syncGroupId || existing?.syncGroupId || 'standalone',
             currentPlayback: data.currentPlayback !== undefined ? data.currentPlayback : existing?.currentPlayback,
             isRevoked: false,
         };
         this.devices.set(deviceId, updated);
         return { device: updated, isRevoked: false };
-    }
-    getDevice(deviceId) {
-        return this.devices.get(deviceId);
     }
     listUserDevices(userId) {
         const now = Date.now();
@@ -115,7 +117,6 @@ class UserDeviceRegistry {
                 result.push({ ...dev, isOnline });
             }
         }
-        // Tri : En ligne d'abord, puis par dernière activité décroissante
         result.sort((a, b) => {
             if (a.isOnline !== b.isOnline)
                 return a.isOnline ? -1 : 1;
@@ -123,12 +124,72 @@ class UserDeviceRegistry {
         });
         return result;
     }
-    renameDevice(userId, deviceId, newName) {
+    clearGroupPlayback(userId, syncGroupId) {
+        for (const dev of this.devices.values()) {
+            if (dev.userId === userId && dev.syncGroupId === syncGroupId) {
+                dev.currentPlayback = undefined;
+            }
+        }
+    }
+    getGroupPlayback(userId, syncGroupId, excludeDeviceId) {
+        if (!syncGroupId || syncGroupId === "standalone")
+            return null;
+        const now = Date.now();
+        let bestPlayback = null;
+        let bestDeviceId = null;
+        let latestTime = 0;
+        for (const dev of this.devices.values()) {
+            if (dev.userId === userId &&
+                dev.syncGroupId === syncGroupId &&
+                dev.currentPlayback &&
+                now - dev.lastSeenAt <= this.DEVICE_TTL_MS) {
+                if (excludeDeviceId && this.isMatchingDevice(dev.deviceId, excludeDeviceId)) {
+                    continue;
+                }
+                if (dev.currentPlayback.updatedAt > latestTime) {
+                    latestTime = dev.currentPlayback.updatedAt;
+                    bestPlayback = dev.currentPlayback;
+                    bestDeviceId = dev.deviceId;
+                }
+            }
+        }
+        if (bestPlayback && bestDeviceId) {
+            return {
+                ...bestPlayback,
+                deviceId: bestDeviceId,
+            };
+        }
+        return null;
+    }
+    getDevicesForUser(userId) {
+        const now = Date.now();
+        const result = [];
+        for (const dev of this.devices.values()) {
+            if (dev.userId === userId && !this.isRevoked(userId, dev.deviceId)) {
+                result.push({
+                    ...dev,
+                    isOnline: now - dev.lastSeenAt < this.DEVICE_TTL_MS,
+                });
+            }
+        }
+        return result.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    }
+    getDevice(deviceId) {
+        const dev = this.devices.get(deviceId);
+        if (!dev)
+            return null;
+        const now = Date.now();
+        return {
+            ...dev,
+            isOnline: now - dev.lastSeenAt < this.DEVICE_TTL_MS,
+        };
+    }
+    renameDevice(userId, deviceId, customName) {
         const dev = this.devices.get(deviceId);
         if (!dev || dev.userId !== userId)
             return false;
-        dev.name = newName.trim();
-        dev.customName = newName.trim();
+        dev.name = customName.trim();
+        dev.customName = customName.trim();
         this.devices.set(deviceId, dev);
         return true;
     }
@@ -138,6 +199,13 @@ class UserDeviceRegistry {
             return false;
         dev.syncGroupId = syncGroupId.trim();
         this.devices.set(deviceId, dev);
+        // Notifier immédiatement l'appareil cible en file de commandes
+        this.queueCommand({
+            targetDeviceId: deviceId,
+            userId,
+            action: 'SET_SYNC_GROUP',
+            payload: { syncGroupId: syncGroupId.trim() },
+        });
         return true;
     }
     revokeDevice(userId, deviceId) {
@@ -161,7 +229,7 @@ class UserDeviceRegistry {
     revokeAllOtherDevices(userId, currentDeviceId) {
         let count = 0;
         for (const [deviceId, dev] of this.devices.entries()) {
-            if (dev.userId === userId && deviceId !== currentDeviceId) {
+            if (dev.userId === userId && !this.isMatchingDevice(deviceId, currentDeviceId)) {
                 this.revokeDevice(userId, deviceId);
                 count++;
             }
@@ -170,7 +238,45 @@ class UserDeviceRegistry {
     }
     isRevoked(userId, deviceId) {
         const userRevocations = this.revokedDevices.get(userId);
-        return Boolean(userRevocations?.has(deviceId));
+        if (!userRevocations || userRevocations.size === 0)
+            return false;
+        if (userRevocations.has(deviceId))
+            return true;
+        const baseTarget = deviceId.split('_tab_')[0];
+        for (const id of Array.from(userRevocations)) {
+            if (id.split('_tab_')[0] === baseTarget)
+                return true;
+        }
+        return false;
+    }
+    consumeRevocation(userId, deviceId) {
+        this.unrevokeDevice(userId, deviceId);
+    }
+    unrevokeDevice(userId, deviceId) {
+        if (!deviceId) {
+            this.revokedDevices.delete(userId);
+            return;
+        }
+        const userRevocations = this.revokedDevices.get(userId);
+        if (!userRevocations)
+            return;
+        const baseTarget = deviceId.split('_tab_')[0];
+        for (const id of Array.from(userRevocations)) {
+            if (id === deviceId || id.split('_tab_')[0] === baseTarget) {
+                userRevocations.delete(id);
+            }
+        }
+        if (userRevocations.size === 0) {
+            this.revokedDevices.delete(userId);
+        }
+    }
+    clearAllRevocations(userId) {
+        if (userId) {
+            this.revokedDevices.delete(userId);
+        }
+        else {
+            this.revokedDevices.clear();
+        }
     }
     queueCommand(cmd) {
         const fullCmd = {
@@ -189,73 +295,32 @@ class UserDeviceRegistry {
         return queue;
     }
     updatePlayback(userId, deviceId, playback, syncGroupId) {
-        let dev = this.devices.get(deviceId);
-        if (!dev) {
-            // Auto-enregistrement au vol de l'appareil s'il n'a pas encore fait de battement de cœur
-            dev = {
-                deviceId,
-                userId,
-                name: 'Appareil Connecté',
-                deviceType: 'BROWSER',
-                lastSeenAt: Date.now(),
-                createdAt: Date.now(),
-                currentRoute: '/',
-                syncGroupId: syncGroupId || 'default',
-                currentPlayback: playback,
-                isRevoked: false,
-            };
-            this.devices.set(deviceId, dev);
-        }
-        else if (dev.userId === userId) {
+        const dev = this.devices.get(deviceId);
+        if (!dev || dev.userId !== userId)
+            return false;
+        if (playback !== undefined) {
             dev.currentPlayback = playback;
-            if (syncGroupId)
-                dev.syncGroupId = syncGroupId;
-            dev.lastSeenAt = Date.now();
         }
-    }
-    /**
-     * Nettoie l'état de lecture de tous les appareils d'un groupe donné
-     */
-    clearGroupPlayback(userId, syncGroupId) {
-        for (const dev of this.devices.values()) {
-            if (dev.userId === userId && dev.syncGroupId === syncGroupId) {
-                dev.currentPlayback = undefined;
-            }
+        if (syncGroupId !== undefined) {
+            dev.syncGroupId = syncGroupId.trim();
         }
+        dev.lastSeenAt = Date.now();
+        this.devices.set(deviceId, dev);
+        return true;
     }
-    /**
-     * Trouve l'état de lecture le plus frais d'un groupe de synchronisation donné pour un utilisateur,
-     * incluant le deviceId de l'appareil émetteur.
-     */
-    getGroupPlayback(userId, syncGroupId, excludeDeviceId) {
-        if (!syncGroupId || syncGroupId === 'standalone')
-            return null;
+    getDevicesInSyncGroup(userId, syncGroupId) {
         const now = Date.now();
-        let bestPlayback = null;
-        let bestDeviceId = null;
-        let latestTime = 0;
+        const result = [];
         for (const dev of this.devices.values()) {
             if (dev.userId === userId &&
                 dev.syncGroupId === syncGroupId &&
-                dev.currentPlayback &&
-                now - dev.lastSeenAt <= this.DEVICE_TTL_MS) {
-                if (excludeDeviceId && dev.deviceId === excludeDeviceId) {
-                    continue;
-                }
-                if (dev.currentPlayback.updatedAt > latestTime) {
-                    latestTime = dev.currentPlayback.updatedAt;
-                    bestPlayback = dev.currentPlayback;
-                    bestDeviceId = dev.deviceId;
-                }
+                syncGroupId !== 'standalone' &&
+                !this.isRevoked(userId, dev.deviceId) &&
+                now - dev.lastSeenAt < this.DEVICE_TTL_MS) {
+                result.push(dev);
             }
         }
-        if (bestPlayback && bestDeviceId) {
-            return {
-                ...bestPlayback,
-                deviceId: bestDeviceId,
-            };
-        }
-        return null;
+        return result;
     }
 }
 export const userDeviceRegistry = new UserDeviceRegistry();

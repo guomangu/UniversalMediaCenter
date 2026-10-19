@@ -1,6 +1,7 @@
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders, getCurrentUser, logout } from './authStore';
 import { playerStore } from './playerStore';
+import { getVideoStreamUrl } from './api';
 import {
   getLocalDeviceId,
   getLocalDeviceName,
@@ -48,17 +49,15 @@ export interface UserConnectedDevice {
   ip?: string;
   lastSeenAt: number;
   createdAt: number;
-  currentRoute: string;
+  isOnline?: boolean;
+  currentRoute?: string;
   pageTitle?: string;
-  syncGroupId: string;
+  syncGroupId: string; // 'default' ou 'standalone'
   currentPlayback?: DevicePlaybackState;
-  isOnline: boolean;
-  isCurrentDevice: boolean;
+  isCurrentDevice?: boolean;
 }
 
 export type DeviceAction =
-  | 'LOAD_MEDIA'
-  | 'NAVIGATE'
   | 'PLAY'
   | 'PAUSE'
   | 'SEEK'
@@ -66,10 +65,13 @@ export type DeviceAction =
   | 'SET_VOLUME'
   | 'MUTE'
   | 'UNMUTE'
+  | 'LOAD_MEDIA'
+  | 'NAVIGATE'
+  | 'SET_SYNC_GROUP'
   | 'SET_AUDIO'
   | 'SET_SUBTITLE'
-  | 'SET_SYNC_GROUP'
-  | 'REVOKE_SESSION';
+  | 'REVOKE_SESSION'
+  | 'PING';
 
 export interface UserDeviceCommand {
   id: string;
@@ -80,8 +82,11 @@ export interface UserDeviceCommand {
   createdAt: number;
 }
 
+let heartbeatTimer: any = null;
+let isHeartbeating = false;
+
 /**
- * Liste tous les appareils connectés au compte de l'utilisateur
+ * Récupère la liste des appareils connectés au compte
  */
 export async function fetchUserDevices(): Promise<{ devices: UserConnectedDevice[]; currentDeviceId: string }> {
   const user = getCurrentUser();
@@ -94,15 +99,6 @@ export async function fetchUserDevices(): Promise<{ devices: UserConnectedDevice
         'X-Device-Id': getLocalDeviceId(),
       },
     });
-
-    if (res.status === 401) {
-      const errData = await res.json().catch(() => ({}));
-      if (errData?.error === 'DEVICE_REVOKED') {
-        handleDeviceRevocation();
-      }
-      return { devices: [], currentDeviceId: getLocalDeviceId() };
-    }
-
     if (!res.ok) return { devices: [], currentDeviceId: getLocalDeviceId() };
     const data = await res.json();
     return {
@@ -117,23 +113,20 @@ export async function fetchUserDevices(): Promise<{ devices: UserConnectedDevice
 /**
  * Renomme un appareil du compte
  */
-export async function renameUserDevice(deviceId: string, name: string): Promise<boolean> {
+export async function renameUserDevice(deviceId: string, customName: string): Promise<boolean> {
   const user = getCurrentUser();
   if (!user) return false;
 
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/user/devices/rename`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/user/devices/${encodeURIComponent(deviceId)}/rename`, {
       method: 'POST',
       headers: {
         ...getAuthHeaders(),
         'X-Device-Id': getLocalDeviceId(),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ deviceId, name }),
+      body: JSON.stringify({ customName }),
     });
-    if (deviceId === getLocalDeviceId()) {
-      setLocalDeviceName(name);
-    }
     return res.ok;
   } catch {
     return false;
@@ -141,25 +134,22 @@ export async function renameUserDevice(deviceId: string, name: string): Promise<
 }
 
 /**
- * Configure le groupe de synchronisation d'un appareil
+ * Modifie le groupe de synchronisation d'un appareil
  */
 export async function setDeviceSyncGroup(deviceId: string, syncGroupId: string): Promise<boolean> {
   const user = getCurrentUser();
   if (!user) return false;
 
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/user/devices/sync-group`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/user/devices/${encodeURIComponent(deviceId)}/sync-group`, {
       method: 'POST',
       headers: {
         ...getAuthHeaders(),
         'X-Device-Id': getLocalDeviceId(),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ deviceId, syncGroupId }),
+      body: JSON.stringify({ syncGroupId }),
     });
-    if (deviceId === getLocalDeviceId()) {
-      setLocalSyncGroupId(syncGroupId);
-    }
     return res.ok;
   } catch {
     return false;
@@ -248,44 +238,48 @@ export async function broadcastMediaToDevices(
   syncGroupId: string = 'default'
 ): Promise<{ success: boolean; sentCount?: number }> {
   const user = getCurrentUser();
-  if (!user) return { success: false };
+  if (!user || !targetDeviceIds.length) return { success: false, sentCount: 0 };
 
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/playback/broadcast`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/user/devices/broadcast`, {
       method: 'POST',
       headers: {
         ...getAuthHeaders(),
         'X-Device-Id': getLocalDeviceId(),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        targetDeviceIds,
-        syncGroupId,
-        ...media,
-      }),
+      body: JSON.stringify({ targetDeviceIds, media, syncGroupId }),
     });
-    if (!res.ok) return { success: false };
+    if (!res.ok) return { success: false, sentCount: 0 };
     const data = await res.json();
     return { success: true, sentCount: data.sentCount };
   } catch {
-    return { success: false };
+    return { success: false, sentCount: 0 };
   }
 }
 
+/**
+ * Gestionnaire unifié de la révocation de session
+ */
 function handleDeviceRevocation() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  // Fermer la lecture locale immédiatement
   playerStore.closeMedia();
+
+  // Déconnexion complète de l'utilisateur
   logout();
+
   if (typeof window !== 'undefined') {
-    alert('Votre compte a été déconnecté à distance sur cet appareil.');
+    alert('Votre session a été déconnectée à distance par sécurité.');
     window.location.href = '/login';
   }
 }
 
-let heartbeatTimer: any = null;
-let isHeartbeating = false;
-
 /**
- * Démarre la boucle réactive de battement de cœur et d'écoute de commandes pour cet appareil
+ * Boucle de Heartbeat (présence en ligne & réception des ordres distants)
  */
 export function startDeviceHeartbeatLoop(router?: any) {
   if (heartbeatTimer) return;
@@ -385,12 +379,27 @@ function executeRemoteCommand(cmd: UserDeviceCommand, router?: any) {
           setLocalSyncGroupId(cmd.payload.syncGroupId);
         }
 
+        const livePos = Number(media.positionSeconds) || 0;
+        playerStore.openMedia({
+          id: String(media.mediaId),
+          title: media.title || 'Média en cours',
+          posterUrl: media.posterUrl || `/api/media/${media.mediaId}/poster`,
+          streamUrl: media.streamUrl || getVideoStreamUrl(media.mediaId),
+          initialTime: livePos,
+          isRemoteSync: true,
+          expand: true,
+        });
+
+        if (livePos > 0) {
+          playerStore.seekTo(livePos, false, false);
+        }
+
         // Si nous avons un router expo et ne sommes pas sur la page lecteur
         if (router && typeof window !== 'undefined' && !window.location.pathname.includes(`/player/${media.mediaId}`)) {
           const params: any = {};
           if (media.title) params.title = media.title;
-          if (media.positionSeconds && media.positionSeconds > 0) {
-            params.joinTime = String(Math.floor(media.positionSeconds));
+          if (livePos > 0) {
+            params.joinTime = String(Math.floor(livePos));
           }
           router.push({
             pathname: `/player/${media.mediaId}`,
@@ -408,15 +417,45 @@ function executeRemoteCommand(cmd: UserDeviceCommand, router?: any) {
 
     case 'PLAY':
       playerStore.syncPlayingFromRemote(true);
+      if (typeof window !== 'undefined') {
+        const v = (document.querySelector('video[data-player-div-video="true"]') ||
+          document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+        if (v && v.paused) {
+          const p = v.play();
+          if (p !== undefined) {
+            p.catch((err: any) => {
+              if (err?.name === 'NotAllowedError') {
+                v.muted = true;
+                v.play().catch(() => {});
+              }
+            });
+          }
+        }
+      }
       break;
 
     case 'PAUSE':
       playerStore.syncPlayingFromRemote(false);
+      if (typeof window !== 'undefined') {
+        const v = (document.querySelector('video[data-player-div-video="true"]') ||
+          document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+        if (v && !v.paused) {
+          v.pause();
+        }
+      }
       break;
 
     case 'SEEK':
       if (typeof cmd.payload?.positionSeconds === 'number') {
-        playerStore.seekTo(cmd.payload.positionSeconds, false);
+        const targetPos = cmd.payload.positionSeconds;
+        playerStore.seekTo(targetPos, false, false);
+        if (typeof window !== 'undefined') {
+          const v = (document.querySelector('video[data-player-div-video="true"]') ||
+            document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+          if (v && Number.isFinite(targetPos)) {
+            v.currentTime = targetPos;
+          }
+        }
       }
       break;
 
@@ -457,6 +496,9 @@ function executeRemoteCommand(cmd: UserDeviceCommand, router?: any) {
       if (cmd.payload?.syncGroupId) {
         setLocalSyncGroupId(cmd.payload.syncGroupId);
       }
+      break;
+
+    default:
       break;
   }
 }

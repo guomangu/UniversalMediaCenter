@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { playerStore } from '@/services/playerStore';
+import { useCurrentUser } from '@/services/authStore';
 import { fetchAccountPlayback, getLocalDeviceId } from '@/services/accountSyncService';
 import { fetchMediaTracks } from '@/services/mediaTracksApi';
 import { getVideoStreamUrl, fetchMediaDetail } from '@/services/api';
@@ -22,6 +23,16 @@ export default function PlayerScreen() {
   const rawJoinTime = joinTime !== undefined ? Number(joinTime) : time !== undefined ? Number(time) : null;
   const parsedJoinTime = rawJoinTime !== null && !isNaN(rawJoinTime) && rawJoinTime >= 0 ? rawJoinTime : null;
   const router = useRouter();
+  const currentUser = useCurrentUser();
+
+  useEffect(() => {
+    if (!currentUser && !share) {
+      router.replace({
+        pathname: '/login',
+        params: { returnUrl: `/player/${id}` },
+      } as any);
+    }
+  }, [currentUser, share, id]);
 
   const [initialTime, setInitialTime] = useState(parsedJoinTime || 0);
   const [resolvedTitle, setResolvedTitle] = useState('');
@@ -46,6 +57,7 @@ export default function PlayerScreen() {
 
   // Détection proactive d'une session de lecture en cours sur un autre appareil du même compte
   useEffect(() => {
+    if (!currentUser && !share) return;
     if (id) {
       fetchAccountPlayback().then((remote) => {
         if (remote && remote.mediaId === String(id) && remote.deviceId !== getLocalDeviceId()) {
@@ -61,7 +73,19 @@ export default function PlayerScreen() {
     }
   }, [id]);
 
+  // Synchronisation dynamique si un joinTime est injecté ou mis à jour via navigation/cast
   useEffect(() => {
+    if (parsedJoinTime !== null && parsedJoinTime >= 0) {
+      setInitialTime(parsedJoinTime);
+      const curMedia = playerStore.getState().activeMedia;
+      if (curMedia && curMedia.id === String(id) && Math.abs(curMedia.positionSeconds - parsedJoinTime) > 1.5) {
+        playerStore.seekTo(parsedJoinTime, false, false);
+      }
+    }
+  }, [parsedJoinTime, id]);
+
+  useEffect(() => {
+    if (!currentUser && !share) return;
     if (id) {
       const isDirectLive = queryIsLive === 'true' || String(id).startsWith('iptv-');
       setIsLive(isDirectLive);
@@ -92,14 +116,18 @@ export default function PlayerScreen() {
           setIsLive(isChannel);
 
           if (!isChannel && !isJoiningLiveSyncRef.current) {
-            const cur = parsedJoinTime ?? (res.media.progress?.positionSeconds || 0);
-            const dur = res.media.progress?.durationSeconds || res.media.runtimeSeconds || 0;
-            if (cur > 10 && dur > 60 && dur - cur > 30) {
-              setInitialTime(cur);
-            } else if (cur >= dur - 30 && dur > 60) {
-              setInitialTime(0);
+            if (parsedJoinTime !== null && parsedJoinTime >= 0) {
+              setInitialTime(parsedJoinTime);
             } else {
-              setInitialTime(cur);
+              const cur = res.media.progress?.positionSeconds || 0;
+              const dur = res.media.progress?.durationSeconds || res.media.runtimeSeconds || 0;
+              if (cur > 10 && dur > 60 && dur - cur > 30) {
+                setInitialTime(cur);
+              } else if (cur >= dur - 30 && dur > 60) {
+                setInitialTime(0);
+              } else {
+                setInitialTime(cur);
+              }
             }
           }
         }
@@ -108,6 +136,7 @@ export default function PlayerScreen() {
   }, [id, share, queryIsLive, parsedJoinTime]);
 
   useEffect(() => {
+    if (!currentUser && !share) return;
     if (id && !isForbidden) {
       fetchMediaTracks(String(id), share).then((data) => {
         setTracks(data);
@@ -127,6 +156,7 @@ export default function PlayerScreen() {
 
   // Initialisation unique du playerStore pour ce média dans le lecteur universel autonome
   useEffect(() => {
+    if (!currentUser && !share) return;
     if (id && resolvedTitle && streamUrl && !isForbidden && !isCorrupted) {
       if (openedMediaIdRef.current !== String(id)) {
         openedMediaIdRef.current = String(id);
@@ -146,6 +176,11 @@ export default function PlayerScreen() {
       }
     }
   }, [id, resolvedTitle, streamUrl, isForbidden, isCorrupted, mediaTitle, resolvedSlug, isLive, tracks, initialTime]);
+
+  // Si déconnecté sans token public, redirection immédiate et aucun rendu
+  if (!currentUser && !share) {
+    return null;
+  }
 
   if (isForbidden) {
     return (
@@ -195,11 +230,6 @@ export default function PlayerScreen() {
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: '#94a3b8', fontSize: 13 }}>Chargement de la lecture...</Text>
-      </View>
-    </SafeAreaView>
-  );
+  // Le lecteur autonome FloatingBottomPlayer en racine (_layout.tsx) s'occupe du rendu permanent
+  return <View style={{ flex: 1, backgroundColor: '#000000' }} />;
 }

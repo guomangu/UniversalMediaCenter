@@ -12,8 +12,8 @@ import { proxyLiveStream } from '../iptv/liveProxyService.js';
 const execFileAsync = promisify(execFile);
 export const streamRouter = new Hono();
 const MIME_MAP = {
-    '.mp4': 'video/mp4', '.mkv': 'video/mp4', '.webm': 'video/webm',
-    '.avi': 'video/x-msvideo', '.mov': 'video/quicktime', '.ts': 'video/mp2t',
+    ".mp4": "video/mp4", ".mkv": "video/mp4", ".webm": "video/webm",
+    ".avi": "video/x-msvideo", ".mov": "video/quicktime", ".ts": "video/mp2t",
 };
 const BROWSER_NATIVE_AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
 const BROWSER_NATIVE_VIDEO_CODECS = ['h264', 'av1', 'vp8', 'vp9'];
@@ -126,6 +126,9 @@ streamRouter.get('/:id/hls/:file', async (c) => {
         for (let i = 0; i < totalSegments; i++) {
             const isLast = i === totalSegments - 1;
             const dur = isLast ? Math.max(0.1, Number((probe.duration - i * segmentDuration).toFixed(3))) : segmentDuration;
+            if (i > 0) {
+                manifest += '#EXT-X-DISCONTINUITY\n';
+            }
             manifest += `#EXTINF:${dur.toFixed(3)},\n`;
             manifest += `/api/media/${media.id}/hls/segment_${i}.ts?audio=${encodeURIComponent(targetAudio)}${tokenParam}${shareParam}\n`;
         }
@@ -140,14 +143,22 @@ streamRouter.get('/:id/hls/:file', async (c) => {
         const index = parseInt(indexStr, 10);
         if (isNaN(index) || index < 0)
             return c.text('Invalid segment index', 400);
+        const segmentDuration = 6.0;
+        const totalSegments = Math.max(1, Math.ceil(probe.duration / segmentDuration));
+        if (index >= totalSegments)
+            return c.text('Segment index out of range', 404);
         const cacheDir = '/tmp/ums_cache/segments';
-        const segFile = path.join(cacheDir, `${media.id}_a${targetAudio}_seg${index}.ts`);
-        if (!fs.existsSync(segFile)) {
+        await fsp.mkdir(cacheDir, { recursive: true });
+        const generateSegment = async (segIdx) => {
+            const segFile = path.join(cacheDir, `${media.id}_a${targetAudio}_seg${segIdx}.ts`);
+            if (fs.existsSync(segFile))
+                return segFile;
             if (!inFlightSegments.has(segFile)) {
                 const segPromise = (async () => {
-                    await fsp.mkdir(cacheDir, { recursive: true });
                     const tempSeg = `${segFile}.tmp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.ts`;
-                    const startTime = index * 6;
+                    const startTime = segIdx * segmentDuration;
+                    const isLastSeg = segIdx === totalSegments - 1;
+                    const segDur = isLastSeg ? Math.max(0.1, Number((probe.duration - segIdx * segmentDuration).toFixed(3))) : segmentDuration;
                     let resolvedAudio = targetAudio;
                     if (!resolvedAudio || resolvedAudio === 'auto') {
                         const firstStereoAac = probe.audioStreams.find((s) => s.codec === 'aac' && (s.channels ?? 2) <= 2);
@@ -155,10 +166,13 @@ streamRouter.get('/:id/hls/:file', async (c) => {
                     }
                     const selectedAudioStream = probe.audioStreams.find((s) => String(s.index) === String(resolvedAudio));
                     const isStereoAac = selectedAudioStream ? (selectedAudioStream.codec === 'aac' && (selectedAudioStream.channels ?? 2) <= 2) : false;
+                    const preSeek = Math.max(0, startTime - 5);
+                    const postSeek = startTime > 5 ? 5 : startTime;
                     const ffmpegArgs = [
-                        '-ss', String(startTime),
+                        ...(preSeek > 0 ? ['-ss', String(preSeek)] : []),
                         '-i', media.videoFilePath,
-                        '-t', '6.05',
+                        ...(postSeek > 0 ? ['-ss', String(postSeek)] : []),
+                        '-t', String(segDur),
                         '-map', '0:v:0',
                         '-map', `0:${resolvedAudio}`,
                         ...(probe.isVideoNative
@@ -167,18 +181,26 @@ streamRouter.get('/:id/hls/:file', async (c) => {
                         ...(isStereoAac
                             ? ['-c:a', 'copy']
                             : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2']),
+                        '-muxpreload', '0',
+                        '-muxdelay', '0',
+                        '-output_ts_offset', String(startTime),
                         '-f', 'mpegts',
                         '-y',
                         tempSeg,
                     ];
                     try {
-                        await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 20000 });
+                        await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 25000 });
                         if (fs.existsSync(tempSeg)) {
                             await fsp.rename(tempSeg, segFile);
                         }
                     }
                     catch (err) {
                         console.error(`Erreur génération segment HLS ${segFile}:`, err);
+                        try {
+                            if (fs.existsSync(tempSeg))
+                                await fsp.unlink(tempSeg);
+                        }
+                        catch { }
                     }
                     finally {
                         inFlightSegments.delete(segFile);
@@ -187,16 +209,21 @@ streamRouter.get('/:id/hls/:file', async (c) => {
                 })();
                 inFlightSegments.set(segFile, segPromise);
             }
-            await inFlightSegments.get(segFile);
+            return await inFlightSegments.get(segFile);
+        };
+        const targetSegFile = await generateSegment(index);
+        // Préchauffage / pré-génération anticipée du segment suivant en tâche de fond pour lecture 100% fluide sans micro-coupure
+        if (index + 1 < totalSegments) {
+            generateSegment(index + 1).catch(() => { });
         }
-        if (fs.existsSync(segFile)) {
-            const stat = await fsp.stat(segFile);
+        if (fs.existsSync(targetSegFile)) {
+            const stat = await fsp.stat(targetSegFile);
             c.header('Content-Type', 'video/mp2t');
             c.header('Content-Length', String(stat.size));
             c.header('Cache-Control', 'public, max-age=86400');
             if (c.req.method === 'HEAD')
                 return c.body(null, 200);
-            const stream = fs.createReadStream(segFile);
+            const stream = fs.createReadStream(targetSegFile);
             return c.body(Readable.toWeb(stream), 200);
         }
         return c.text('Segment generation failed', 500);

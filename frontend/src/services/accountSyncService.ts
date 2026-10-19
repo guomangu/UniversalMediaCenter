@@ -52,7 +52,8 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     localBroadcastChannel.onmessage = (event) => {
       const { type, payload, senderDeviceId } = event.data || {};
       const myDeviceId = getLocalPlaybackDeviceId();
-      if (!payload || senderDeviceId === myDeviceId) return;
+      const myBaseId = getLocalDeviceId();
+      if (!payload || senderDeviceId === myDeviceId || senderDeviceId === myBaseId) return;
 
       const mySyncGroup = getLocalSyncGroupId();
       if (mySyncGroup === 'standalone' || (payload.syncGroupId && payload.syncGroupId !== mySyncGroup)) {
@@ -232,11 +233,21 @@ function applyRemoteOrder(remote: RemoteAccountPlayback) {
   const isSelf =
     remoteOrigin === myDeviceId ||
     remoteOrigin === myBaseId ||
-    remoteOrigin.startsWith(myBaseId + "_") ||
-    myDeviceId.startsWith(remoteOrigin + "_") ||
-    (remote.deviceId && (remote.deviceId === myDeviceId || remote.deviceId === myBaseId || remote.deviceId.startsWith(myBaseId + "_")));
+    remoteOrigin.split('_tab_')[0] === myBaseId ||
+    myDeviceId.startsWith(remoteOrigin + '_') ||
+    (remote.deviceId && (
+      remote.deviceId === myDeviceId ||
+      remote.deviceId === myBaseId ||
+      remote.deviceId.split('_tab_')[0] === myBaseId ||
+      myDeviceId.startsWith(remote.deviceId + '_')
+    ));
 
   if (isSelf) {
+    return;
+  }
+
+  // Ne JAMAIS écraser la position si l'utilisateur local est en train d'interagir ou vient de chercher (< 4s)
+  if (playerStore.isWithinUserGracePeriod(4000)) {
     return;
   }
 
@@ -310,7 +321,7 @@ export function startAccountPlaybackSyncLoop() {
     if (mySyncGroup === 'standalone') return;
 
     // Si l'utilisateur local manipule actuellement le lecteur, ne pas perturber
-    if (playerStore.isWithinUserGracePeriod(2500)) return;
+    if (playerStore.isWithinUserGracePeriod(4000)) return;
 
     try {
       const remote = await fetchAccountPlayback();
@@ -319,17 +330,25 @@ export function startAccountPlaybackSyncLoop() {
 
       const orderOrigin = remote.originDeviceId || remote.leaderDeviceId || remote.deviceId || '';
       const myDeviceId = getLocalPlaybackDeviceId();
+      const myBaseId = getLocalDeviceId();
 
-      // Si l'ordre vient de cet appareil lui-même, aucun besoin de s'écraser soi-même
-      if (orderOrigin === myDeviceId) return;
+      // Si l'ordre vient de cet appareil lui-même (même base id ou même tab id), ignorer
+      if (
+        orderOrigin === myDeviceId ||
+        orderOrigin === myBaseId ||
+        orderOrigin.split('_tab_')[0] === myBaseId ||
+        myDeviceId.startsWith(orderOrigin + '_')
+      ) {
+        return;
+      }
 
       // Un autre appareil a émis un ordre ou un changement : s'aligner
       applyRemoteOrder(remote);
     } catch {}
   };
 
-  // Fréquence douce au repos (10s) pour détecter les changements initiés sur d'autres appareils du compte
-  syncTimer = setInterval(checkRemoteChanges, 10_000);
+  // Fréquence réactive (2s) pour détecter promptement les changements initiés sur d'autres appareils du compte
+  syncTimer = setInterval(checkRemoteChanges, 2000);
 
   // Vérification instantanée lors du retour sur l'onglet ou au focus de la fenêtre
   if (typeof window !== 'undefined') {

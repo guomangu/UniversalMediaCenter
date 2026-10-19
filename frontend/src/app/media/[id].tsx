@@ -251,6 +251,14 @@ export default function MediaDetailScreen() {
       : `Regarder`;
 
   const handlePlay = () => {
+    const user = getCurrentUser();
+    if (!user && !share) {
+      router.push({
+        pathname: "/login",
+        params: { returnUrl: `/media/${id}` },
+      } as any);
+      return;
+    }
     if (typeof document !== "undefined" && document.activeElement && document.activeElement !== document.body) {
       (document.activeElement as HTMLElement).blur?.();
     }

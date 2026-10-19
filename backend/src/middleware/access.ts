@@ -49,6 +49,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
 
   // Vérification de révocation à distance pour cet appareil
   if (userId && deviceId && userDeviceRegistry.isRevoked(userId, deviceId)) {
+    userDeviceRegistry.consumeRevocation(userId, deviceId);
     c.set('user', null);
     return c.json(
       {

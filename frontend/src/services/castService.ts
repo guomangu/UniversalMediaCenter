@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
-import { getAuthToken } from './authStore';
+import { getAuthToken, getAuthHeaders } from './authStore';
 import {
   getLocalDeviceId,
   getLocalDeviceName,
@@ -101,20 +101,19 @@ export function initGoogleCastFramework(): void {
     }
   };
 
-  (window as any)['__onGCastApiAvailable'] = (isAvailable: boolean) => {
-    if (isAvailable) {
-      configureContext();
-    }
-  };
-
   if ((window as any).cast?.framework) {
     configureContext();
+  } else {
+    (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
+      if (isAvailable) {
+        configureContext();
+      }
+    };
   }
 }
 
 /**
- * Résout une URL de flux lisible par un Chromecast ou une Smart TV externe
- * Remplace localhost par l'IP LAN et ajoute le jeton d'authentification si requis
+ * Résout une URL de flux accessible sur le LAN pour le récepteur Cast
  */
 export async function resolveLanStreamUrl(rawUrl?: string, mediaId?: string): Promise<string> {
   let url = rawUrl;
@@ -258,12 +257,39 @@ export async function sendCastHeartbeat(state: Partial<CastDevice>): Promise<voi
 
 export async function sendCastCommand(targetDeviceId: string, action: CastAction, payload?: any): Promise<boolean> {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/cast/command`, {
+    const p1 = fetch(`${getApiBaseUrl()}/api/cast/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targetDeviceId, action, payload }),
     }).catch(() => null);
-    return Boolean(res && res.ok);
+
+    const token = getAuthToken();
+    let p2 = Promise.resolve(null as any);
+    if (token) {
+      const devActionMap: Record<string, string> = {
+        LOAD: 'LOAD_MEDIA',
+        PLAY: 'PLAY',
+        PAUSE: 'PAUSE',
+        SEEK: 'SEEK',
+        STOP: 'STOP',
+        SET_VOLUME: 'SET_VOLUME',
+        MUTE: 'MUTE',
+        UNMUTE: 'UNMUTE',
+      };
+      const devAction = devActionMap[action] || action;
+      p2 = fetch(`${getApiBaseUrl()}/api/user/devices/command`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'X-Device-Id': getLocalDeviceId(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ targetDeviceId, action: devAction, payload }),
+      }).catch(() => null);
+    }
+
+    const [res1, res2] = await Promise.all([p1, p2]);
+    return Boolean((res1 && res1.ok) || (res2 && res2.ok));
   } catch {
     return false;
   }

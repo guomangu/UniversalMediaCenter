@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getApiBaseUrl } from './apiConfig';
-import { getAuthHeaders, getAuthToken } from './authStore';
+import { getAuthHeaders, getAuthToken, getCurrentUser } from './authStore';
 import { sendCastCommand, CastDevice } from './castService';
-import { getActiveCastTarget, subscribeActiveCastTarget } from './castState';
+import { getActiveCastTarget, subscribeActiveCastTarget, disconnectCastTotally } from './castState';
 import { reportPlaybackProgress } from './sessionApi';
 import { getVideoStreamUrl } from './api';
 
@@ -219,6 +219,10 @@ export const playerStore = {
     isRemoteSync?: boolean; // Si true, l'ouverture est initiée par un leader distant
     expand?: boolean; // Si false, ne pas déplier automatiquement
   }) {
+    const user = getCurrentUser();
+    if (!user && !media.share) {
+      return;
+    }
     const prevMedia = state.activeMedia;
     const isSameMedia = Boolean(prevMedia && prevMedia.id === media.id);
     const pos = isSameMedia && prevMedia ? prevMedia.positionSeconds : (media.initialTime || 0);
@@ -230,6 +234,7 @@ export const playerStore = {
     if (!media.isRemoteSync) {
       recordUserAction();
     }
+    lastProgressBroadcastPos = Math.floor(pos);
 
     state.activeMedia = {
       id: media.id,
@@ -308,8 +313,8 @@ export const playerStore = {
     if (cast) {
       sendCastCommand(cast.id, isPlaying ? 'PLAY' : 'PAUSE');
     } else if (typeof window !== 'undefined') {
-      const v = (document.querySelector('video[data-player-div-video="true"]') ||
-        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+      const v = (document.querySelector('video[data-player-div-video=\"true\"]') ||
+        document.querySelector('video[data-video-player=\"true\"]')) as HTMLVideoElement | null;
       if (v) {
         if (isPlaying && v.paused) {
           const p = v.play();
@@ -358,8 +363,8 @@ export const playerStore = {
     notify();
 
     if (typeof window !== 'undefined') {
-      const v = (document.querySelector('video[data-player-div-video="true"]') ||
-        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+      const v = (document.querySelector('video[data-player-div-video=\"true\"]') ||
+        document.querySelector('video[data-video-player=\"true\"]')) as HTMLVideoElement | null;
       if (v) {
         this.beginRemoteSync();
         try {
@@ -444,8 +449,8 @@ export const playerStore = {
     }
 
     if (typeof window !== 'undefined') {
-      const v = (document.querySelector('video[data-player-div-video="true"]') ||
-        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+      const v = (document.querySelector('video[data-player-div-video=\"true\"]') ||
+        document.querySelector('video[data-video-player=\"true\"]')) as HTMLVideoElement | null;
       if (v) v.currentTime = pos;
     }
 
@@ -550,8 +555,8 @@ export const playerStore = {
       sendCastCommand(cast.id, muted ? 'MUTE' : 'UNMUTE');
     }
     if (typeof window !== 'undefined') {
-      const v = (document.querySelector('video[data-player-div-video="true"]') ||
-        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+      const v = (document.querySelector('video[data-player-div-video=\"true\"]') ||
+        document.querySelector('video[data-video-player=\"true\"]')) as HTMLVideoElement | null;
       if (v) v.muted = muted;
     }
     playbackBroadcaster?.report({
@@ -567,8 +572,8 @@ export const playerStore = {
       sendCastCommand(cast.id, 'SET_VOLUME', { volume: state.volume });
     }
     if (typeof window !== 'undefined') {
-      const v = (document.querySelector('video[data-player-div-video="true"]') ||
-        document.querySelector('video[data-video-player="true"]')) as HTMLVideoElement | null;
+      const v = (document.querySelector('video[data-player-div-video=\"true\"]') ||
+        document.querySelector('video[data-video-player=\"true\"]')) as HTMLVideoElement | null;
       if (v) v.volume = state.volume;
     }
     playbackBroadcaster?.report({
@@ -580,6 +585,18 @@ export const playerStore = {
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const videos = document.querySelectorAll("video");
+        videos.forEach((v) => {
+          try {
+            v.pause();
+            v.removeAttribute("src");
+            v.load();
+          } catch {}
+        });
+      } catch {}
     }
     if (state.activeMedia) {
       if (state.lastPlayback && state.activeMedia.id === state.lastPlayback.id) {
@@ -607,6 +624,9 @@ export const playerStore = {
   },
 
   async resumeLastPlayback(): Promise<boolean> {
+    const user = getCurrentUser();
+    if (!user) return false;
+
     const last = state.lastPlayback;
     if (!last || !last.id) return false;
 
@@ -652,4 +672,14 @@ export function usePlayerState(): PlayerStoreState {
   }, []);
 
   return s;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("ums_logout", () => {
+    playerStore.closeMedia();
+    playerStore.dismissLastPlayback();
+    try {
+      disconnectCastTotally(false);
+    } catch {}
+  });
 }

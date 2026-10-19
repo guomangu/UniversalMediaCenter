@@ -3,6 +3,7 @@ import { View, Text, Pressable, Image, Platform, useWindowDimensions, StyleSheet
 import { useRouter, usePathname } from 'expo-router';
 import Hls from 'hls.js';
 import { playerStore, usePlayerState } from '@/services/playerStore';
+import { useCurrentUser } from '@/services/authStore';
 import { useActiveCastTarget, getActiveCastTarget, disconnectCastTotally } from '@/services/castState';
 import { sendCastCommand } from '@/services/castService';
 import { resolveImageUrl, fetchNextMedia, fetchMediaDetail, getVideoStreamUrl } from '@/services/api';
@@ -34,6 +35,7 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   const playerState = usePlayerState();
   const activeCastTarget = useActiveCastTarget();
+  const currentUser = useCurrentUser();
 
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
   const [showSubModal, setShowSubModal] = useState(false);
@@ -78,8 +80,16 @@ export const FloatingBottomPlayer: React.FC = () => {
 
   const isCasting = Boolean(activeCastTarget);
   const mediaTitle = activeCastTarget?.mediaTitle || activeMedia?.title || 'Média en cours';
-  const pos = isCasting ? (activeCastTarget?.positionSeconds ?? 0) : (activeMedia?.positionSeconds ?? 0);
-  const dur = isCasting ? (activeCastTarget?.durationSeconds ?? 0) : (activeMedia?.durationSeconds ?? 0);
+  const pos = isCasting
+    ? (typeof activeCastTarget?.positionSeconds === 'number' && activeCastTarget.positionSeconds > 0
+        ? activeCastTarget.positionSeconds
+        : (activeMedia?.positionSeconds ?? (localVideoRef.current?.currentTime || 0)))
+    : (activeMedia?.positionSeconds ?? (localVideoRef.current?.currentTime || 0));
+  const dur = isCasting
+    ? (typeof activeCastTarget?.durationSeconds === 'number' && activeCastTarget.durationSeconds > 0
+        ? activeCastTarget.durationSeconds
+        : (activeMedia?.durationSeconds ?? 0))
+    : (activeMedia?.durationSeconds ?? 0);
   const effectiveDur = dur > 0 ? dur : (localVideoRef.current?.duration && Number.isFinite(localVideoRef.current.duration) ? Math.floor(localVideoRef.current.duration) : 0);
   const currentPos = scrubPos !== null ? scrubPos : pos;
   const currentDur = effectiveDur;
@@ -141,6 +151,24 @@ export const FloatingBottomPlayer: React.FC = () => {
       };
     }
   }, []);
+
+  // Déchargement et destruction immédiate si l'utilisateur est déconnecté (sans token de partage public)
+  useEffect(() => {
+    if (!currentUser && !activeMedia?.share) {
+      if (hlsInstanceRef.current) {
+        hlsInstanceRef.current.destroy();
+        hlsInstanceRef.current = null;
+      }
+      const v = localVideoRef.current;
+      if (v) {
+        try {
+          v.pause();
+          v.removeAttribute('src');
+          v.load();
+        } catch {}
+      }
+    }
+  }, [currentUser, activeMedia?.share]);
 
   // Hook 1 : Chargement des métadonnées enrichies (pistes audio, sous-titres, chapitres intro, next épisode)
   useEffect(() => {
@@ -244,6 +272,34 @@ export const FloatingBottomPlayer: React.FC = () => {
         }
         tryAutoplay();
       });
+
+      hls.on(Hls.Events.ERROR, (_: any, data: any) => {
+        if (!data.fatal) {
+          if (data.details === "bufferStalledError") {
+            const curState = playerStore.getState().activeMedia;
+            if (curState?.isPlaying && v.paused) {
+              v.play().catch(() => {});
+            }
+          }
+          return;
+        }
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR:
+            hls.startLoad();
+            break;
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            hls.recoverMediaError();
+            {
+              const curState = playerStore.getState().activeMedia;
+              if (curState?.isPlaying && v.paused) {
+                v.play().catch(() => {});
+              }
+            }
+            break;
+          default:
+            break;
+        }
+      });
     } else {
       if (v.src !== streamUrl) {
         v.src = streamUrl;
@@ -272,7 +328,16 @@ export const FloatingBottomPlayer: React.FC = () => {
     if (userInitiatedActionRef.current) return;
 
     if (activeMedia?.isPlaying && v.paused) {
-      v.play().catch(() => {});
+      const p = v.play();
+      if (p !== undefined) {
+        p.catch((err: any) => {
+          if (err?.name === 'NotAllowedError') {
+            v.muted = true;
+            setAudioBlocked(true);
+            v.play().catch(() => {});
+          }
+        });
+      }
     } else if (!activeMedia?.isPlaying && !v.paused) {
       v.pause();
     }
@@ -632,6 +697,12 @@ export const FloatingBottomPlayer: React.FC = () => {
   };
 
   // --- CONDITIONS D'AFFICHAGE ---
+
+  // Si déconnecté sans token de partage public, le lecteur est strictement inaccessible et invisible
+  if (!currentUser && !activeMedia?.share) {
+    return null;
+  }
+
 
   // Si aucun média n'est actif et aucun dernier visionnage disponible
   if (!activeMedia && !lastPlayback && !activeCastTarget) {
@@ -1312,7 +1383,7 @@ export const FloatingBottomPlayer: React.FC = () => {
           id: activeMedia?.id || '',
           title: mediaTitle,
           streamUrl: activeMedia?.streamUrl || '',
-          positionSeconds: pos,
+          positionSeconds: localVideoRef.current?.currentTime || pos,
           posterUrl: activeMedia?.posterUrl,
         }}
       />

@@ -121,6 +121,11 @@ export function logout(): void {
   memoryUser = null;
   memoryToken = null;
   purgeAllMediaCaches();
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(new CustomEvent("ums_logout"));
+    } catch {}
+  }
   notify();
 }
 

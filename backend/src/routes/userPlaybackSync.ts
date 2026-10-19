@@ -37,6 +37,14 @@ const groupPlaybackMap = new Map<string, AccountPlaybackState>(); // key: `${use
 const accountPlaybackMap = new Map<string, AccountPlaybackState>(); // key: userId (fallback rétro-compatible)
 const lastDbSaveMap = new Map<string, number>();
 
+function isMatchingDevice(idA?: string, idB?: string): boolean {
+  if (!idA || !idB) return false;
+  if (idA === idB) return true;
+  const baseA = idA.split('_tab_')[0];
+  const baseB = idB.split('_tab_')[0];
+  return baseA === baseB;
+}
+
 // Nettoyage périodique des sessions de lecture inactives (> 60 secondes sans battement de cœur)
 const syncCleanupTimer = setInterval(() => {
   const now = Date.now();
@@ -85,8 +93,9 @@ playbackSyncRouter.get('/sync', async (c) => {
   }
 
   // 2. Recherche dans le registre d'appareils pour ce groupe spécifique
-  const groupPlayback = userDeviceRegistry.getGroupPlayback(user.id, syncGroupId);
-  if (groupPlayback) {
+  // Ne renvoyer une lecture reconstruite QUE si elle provient d'un AUTRE appareil réel !
+  const groupPlayback = userDeviceRegistry.getGroupPlayback(user.id, syncGroupId, deviceId);
+  if (groupPlayback && !isMatchingDevice(groupPlayback.deviceId, deviceId)) {
     const leaderDeviceId = groupPlayback.deviceId;
     const reconstructed: AccountPlaybackState = {
       ...groupPlayback,
@@ -161,7 +170,15 @@ playbackSyncRouter.post('/sync', async (c) => {
   let nextOrderSeq = existingGroupState?.orderSeq || 1;
   let actionTimestamp = existingGroupState?.actionTimestamp || now;
 
+  const isSameLeader = existingGroupState && isMatchingDevice(deviceId, existingGroupState.leaderDeviceId);
+
   if (isAction) {
+    leaderDeviceId = deviceId;
+    isSenderAuthoritative = true;
+    nextOrderSeq = (existingGroupState?.orderSeq || 0) + 1;
+    actionTimestamp = now;
+  } else if (existingGroupState && existingGroupState.mediaId !== String(mediaId)) {
+    // Si le groupe avait un média différent, le sender qui joue un nouveau média devient leader
     leaderDeviceId = deviceId;
     isSenderAuthoritative = true;
     nextOrderSeq = (existingGroupState?.orderSeq || 0) + 1;
@@ -173,10 +190,10 @@ playbackSyncRouter.post('/sync', async (c) => {
 
     if (isRecentActionLock) {
       leaderDeviceId = existingGroupState.leaderDeviceId;
-      isSenderAuthoritative = (deviceId === existingGroupState.leaderDeviceId);
+      isSenderAuthoritative = Boolean(isSameLeader);
     } else if (isOldLeaderAlive && existingGroupState.leaderDeviceId) {
       leaderDeviceId = existingGroupState.leaderDeviceId;
-      isSenderAuthoritative = (deviceId === existingGroupState.leaderDeviceId);
+      isSenderAuthoritative = Boolean(isSameLeader);
     } else {
       // Ancien leader inactif ou expiré : ce terminal devient le nouveau leader
       leaderDeviceId = deviceId;
@@ -211,12 +228,8 @@ playbackSyncRouter.post('/sync', async (c) => {
     return c.json({ success: true, playback: existingGroupState, isFollower: true });
   }
 
-  // Déterminer isPlaying officiel :
-  // Si action explicite, la nouvelle valeur prévaut immédiatement.
-  // Si battement passif et ordre récent, conserver la valeur officielle de l'ordre.
-  const officialPlaying = isAction
-    ? Boolean(isPlaying)
-    : (existingGroupState ? existingGroupState.isPlaying : Boolean(isPlaying));
+  // Déterminer isPlaying officiel pour le leader souverain
+  const officialPlaying = Boolean(isPlaying);
 
   const state: AccountPlaybackState = {
     userId: user.id,
@@ -287,7 +300,7 @@ playbackSyncRouter.post('/sync', async (c) => {
   return c.json({ success: true, playback: state });
 });
 
-// Arrêter la session de lecture du compte ou d'un appareil
+// Arrêter / fermer la lecture synchronisée du compte
 playbackSyncRouter.post('/stop', async (c) => {
   const user = (c as any).get('user') as UserSession;
   if (!user?.id) return c.json({ error: 'Non authentifié' }, 401);
@@ -296,89 +309,16 @@ playbackSyncRouter.post('/stop', async (c) => {
   const headerDeviceId = c.req.header('x-device-id');
   const deviceId = String(body.deviceId || headerDeviceId || '').trim();
   const syncGroupId = String(body.syncGroupId || 'default').trim();
+
   const groupKey = `${user.id}:${syncGroupId}`;
+  const existing = groupPlaybackMap.get(groupKey);
 
-  const existingGroup = groupPlaybackMap.get(groupKey);
-  const isLeaderStopping = !deviceId || (existingGroup && (existingGroup.leaderDeviceId === deviceId || existingGroup.deviceId === deviceId));
-
-  if (isLeaderStopping) {
+  // Seul le leader ou un terminal du même groupe peut clore la session
+  if (existing) {
     groupPlaybackMap.delete(groupKey);
-    accountPlaybackMap.delete(user.id);
-    userDeviceRegistry.clearGroupPlayback(user.id, syncGroupId);
-  } else if (deviceId) {
-    userDeviceRegistry.updatePlayback(user.id, deviceId, undefined);
   }
+  accountPlaybackMap.delete(user.id);
+  userDeviceRegistry.clearGroupPlayback(user.id, syncGroupId);
 
   return c.json({ success: true });
-});
-
-// Diffuser un média simultanément sur une liste d'appareils cibles (Multi-room / synchronisation flexible)
-playbackSyncRouter.post('/broadcast', async (c) => {
-  const user = (c as any).get('user') as UserSession;
-  if (!user?.id) return c.json({ error: 'Non authentifié' }, 401);
-
-  const body = await c.req.json().catch(() => ({}));
-  const {
-    targetDeviceIds,
-    syncGroupId = 'default',
-    mediaId,
-    title,
-    streamUrl,
-    posterUrl,
-    positionSeconds = 0,
-    isPlaying = true,
-  } = body;
-
-  if (!mediaId || !Array.isArray(targetDeviceIds) || targetDeviceIds.length === 0) {
-    return c.json({ error: 'mediaId et targetDeviceIds (tableau non vide) sont requis' }, 400);
-  }
-
-  const leaderDeviceId = c.req.header('x-device-id') || 'leader';
-  const now = Date.now();
-
-  const state: AccountPlaybackState = {
-    userId: user.id,
-    deviceId: String(leaderDeviceId),
-    leaderDeviceId: String(leaderDeviceId),
-    syncGroupId: String(syncGroupId),
-    mediaId: String(mediaId),
-    mediaTitle: String(title || 'Média diffusé'),
-    posterUrl: posterUrl ? String(posterUrl) : undefined,
-    streamUrl: streamUrl ? String(streamUrl) : undefined,
-    positionSeconds: Number(positionSeconds) || 0,
-    durationSeconds: 0,
-    isPlaying: Boolean(isPlaying),
-    activeAudio: 'auto',
-    activeSubtitle: 'off',
-    volume: 1,
-    isMuted: false,
-    orderSeq: 1,
-    originDeviceId: String(leaderDeviceId),
-    actionType: 'BROADCAST',
-    actionTimestamp: now,
-    updatedAt: now,
-  };
-
-  groupPlaybackMap.set(`${user.id}:${syncGroupId}`, state);
-  accountPlaybackMap.set(user.id, state);
-
-  // Émettre des commandes directes vers les appareils cibles pour leur forcer l'ouverture immédiate
-  for (const tid of targetDeviceIds) {
-    userDeviceRegistry.queueCommand({
-      targetDeviceId: String(tid),
-      userId: user.id,
-      action: 'LOAD_MEDIA',
-      payload: {
-        mediaId,
-        title,
-        streamUrl,
-        posterUrl,
-        positionSeconds,
-        isPlaying,
-        syncGroupId,
-      },
-    });
-  }
-
-  return c.json({ success: true, count: targetDeviceIds.length, playback: state });
 });

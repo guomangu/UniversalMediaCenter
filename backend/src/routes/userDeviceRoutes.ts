@@ -43,6 +43,7 @@ userDeviceRouter.post('/devices/heartbeat', async (c) => {
 
   // Vérifier si l'appareil a été révoqué
   if (userDeviceRegistry.isRevoked(user.id, deviceId)) {
+    userDeviceRegistry.consumeRevocation(user.id, deviceId);
     return c.json(
       {
         error: 'DEVICE_REVOKED',
@@ -71,6 +72,7 @@ userDeviceRouter.post('/devices/heartbeat', async (c) => {
   });
 
   if (isRevoked) {
+    userDeviceRegistry.consumeRevocation(user.id, deviceId);
     return c.json(
       {
         error: 'DEVICE_REVOKED',

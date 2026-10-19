@@ -33,6 +33,7 @@ userDeviceRouter.post('/devices/heartbeat', async (c) => {
     }
     // Vérifier si l'appareil a été révoqué
     if (userDeviceRegistry.isRevoked(user.id, deviceId)) {
+        userDeviceRegistry.consumeRevocation(user.id, deviceId);
         return c.json({
             error: 'DEVICE_REVOKED',
             message: 'Cet appareil a été déconnecté à distance de votre compte.',
@@ -55,6 +56,7 @@ userDeviceRouter.post('/devices/heartbeat', async (c) => {
         currentPlayback: body.currentPlayback,
     });
     if (isRevoked) {
+        userDeviceRegistry.consumeRevocation(user.id, deviceId);
         return c.json({
             error: 'DEVICE_REVOKED',
             message: 'Cet appareil a été déconnecté à distance de votre compte.',

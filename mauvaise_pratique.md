@@ -1,3 +1,120 @@
+## 🛑 131. Blocage Systématique de la Lecture Vidéo à 5 Secondes de Lecture (DTS Out-of-Order HLS, PTS Discontinuity, Muxdelay FFMPEG & Découpage Non-Continu) (`mediaStream.ts`, `userPlaybackSync.ts`, `playerStore.ts`, `FloatingBottomPlayer.tsx`)
+
+* **Problème / Symptôme :**
+  1. Lors du lancement de tout média nécessitant un flux HLS (fichiers `.mkv`, `.avi`, pistes audio multicanales ou codecs non-natifs), la lecture démarrait correctement puis se figeait systématiquement et définitivement à 5 secondes de lecture (entre 5.0s et 6.0s), sans jamais pouvoir dépasser ce seuil.
+  2. La mise en mémoire tampon restait bloquée indéfiniment à la fin du premier segment vidéo.
+  3. Le lecteur web affichait un état de chargement sans fin ou s'arrêtait silencieusement sans message d'erreur clair pour l'utilisateur.
+
+* **Conséquences :**
+  - Impossibilité totale de visionner des films ou des séries encodés en formats modernes (`.mkv`, audio AC3/DTS, H.264 High 10) sur le navigateur.
+  - Frustration extrême de l'utilisateur confronté à un arrêt brutal à 5 secondes sur l'ensemble du catalogue vidéo.
+
+* **Causes Racines :**
+  - **Absence de Calibrage des Timestamps MPEG-TS (`-output_ts_offset`)** : Chaque segment HLS VOD découpé à la volée par FFmpeg (`segment_1.ts`, `segment_2.ts`, etc.) voyait ses horodatages de présentation (PTS) réinitialisés à 0s. Lorsque le navigateur (Chrome, Firefox, Safari) terminait le segment 0 (couvrant 0s à 6s) et recevait le segment 1 avec un PTS commençant à 0s (soit un saut arrière de 6 secondes dans le passé), le `SourceBuffer` de l'API MediaSource (MSE) rejetait catégoriquement les données (`DTS out of order`, `bufferStalledError`).
+  - **Muxdelay par Défaut de FFmpeg (+1,4s)** : Le multiplexeur MPEG-TS de FFmpeg appliquait par défaut un décalage `muxdelay` de 1,4 seconde sans `-muxpreload 0 -muxdelay 0`, décalant arbitrairement l'alignement des flux audio et vidéo.
+  - **Manque de Balise `#EXT-X-DISCONTINUITY` dans le Manifeste `master.m3u8`** : Sans la balise de discontinuité conforme au RFC 8216 entre chaque segment, le démultiplexeur Hls.js supposait une continuité stricte et bloquait immédiatement lors de la transition.
+  - **Découpage Imprécis avec Dépassement Artificiel (`-t 6.05`)** : Ajouter un surplus artificiel de 0,05s produisait des paquets audio/vidéo se chevauchant d'un segment à l'autre, générant des collisions de paquets au démultiplexage.
+  - **Absence d'Interception des Erreurs Hls.js dans le Lecteur Global (`FloatingBottomPlayer.tsx`)** : Le lecteur persistant n'écoutait pas `Hls.Events.ERROR` et n'exécutait aucun `hls.recoverMediaError()` ni relance sur `bufferStalledError`.
+  - **Écrasement d'État lors du Battement Passif à 5s (`userPlaybackSync.ts`)** : À t = 5s, le `playerStore` envoyait sa première notification réseau de progression (`Math.abs(newSec - lastProgressBroadcastPos) >= 5`). Côté serveur, un leader autoritaire actif se voyait réassigner l'ancien `isPlaying` mémorisé dans le groupe au lieu de préserver son état de lecture réel.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Calibrage Strict PTS/DTS (`-output_ts_offset String(startTime)`, `-muxpreload 0`, `-muxdelay 0`)** : Configurer systématiquement FFmpeg pour que chaque segment démarre exactement au temps global du manifeste HLS (`index * segmentDuration`), garantissant une chronologie strictement continue et ascendante.
+  - **Recherche Précise en Deux Étapes** : Combiner un pré-seek rapide (`-ss ${Math.max(0, startTime - 5)}` avant `-i`) et un ajustement fin (`-ss ${startTime > 5 ? 5 : startTime}` après `-i`) avec une durée exacte (`-t String(segDur)`), bannissant tout paquet orphelin ou chevauchant.
+  - **Balise `#EXT-X-DISCONTINUITY` Systématique** : Précéder chaque segment (`i > 0`) de la balise `#EXT-X-DISCONTINUITY` dans `master.m3u8`, permettant au moteur Hls.js de recalculer son `timestampOffset` sans aucune rupture de lecture.
+  - **Préchauffage Anticipé en Arrière-Plan (0 ms Latency)** : Lors de la requête du segment `index`, déclencher en parallèle la génération asynchrone du segment `index + 1`. Le segment suivant est ainsi déjà prêt sur disque avant que le lecteur ne l'atteigne.
+  - **Auto-Réparation Active dans `FloatingBottomPlayer.tsx`** : Intercepter `Hls.Events.ERROR` avec récupération automatique (`recoverMediaError`, `startLoad`) et relance immédiate sur `bufferStalledError`.
+
+## 🛑 130. Réinitialisation Sauvage du Scrubber à 0s en Mode Synchronisé, Écrasement par Pseudo-Ordre Décalé & Blocage Mutuel du Flux Vidéo en Mode Multi-Room (`FloatingBottomPlayer.tsx`, `CastModal.tsx`, `accountSyncService.ts`, `userPlaybackSync.ts`, `userDeviceRegistry.ts`, `userDeviceService.ts`)
+
+* **Problème / Symptôme :**
+  1. En mode synchronisé (`syncGroupId = 'default'`), impossible de déplacer la progression dans la barre de lecture du player : le curseur/scrubber se remettait systématiquement et violemment à 0 seconde dès qu'il n'y avait aucun autre appareil disponible ou lors de l'écoute du serveur.
+  2. Le mode Cast ne reprenait pas la lecture là où le casteur en était, forçant le média à repartir du début (0s) sur l'écran cible.
+  3. Les modes 'Cast' et 'Synchroniser' bloquaient la lecture : la vidéo ne se lançait pas (écran figé, HLS détruit ou balise masquée), alors que les contrôles de l'interface semblaient pourtant bien synchronisés (boutons Play/Pause actifs), contrastant avec le mode 'indépendant' qui fonctionnait parfaitement.
+  4. Manque flagrant de réactivité lors des commandes de lecture, de progression ou de cast (latence de synchronisation pouvant atteindre 10 secondes).
+
+* **Conséquences :**
+  - Impossibilité pour l'utilisateur de reprendre ou d'avancer dans un film en mode synchronisé.
+  - Échec complet de la diffusion vers d'autres écrans ou de la lecture multi-room.
+  - Perte de la position temporelle en cours lors du transfert vers un téléviseur ou un navigateur distant.
+
+* **Causes Racines :**
+  - **Collision d'Identité Onglet vs Appareil (`_tab_xxx`) dans la Souveraineté de Lecture** : `userPlaybackSync.ts` comparait strictement `deviceId === leaderDeviceId`. L'onglet actif émettait `ums_dev_xxx_tab_yyy` alors que le registre stockait `ums_dev_xxx`. Le serveur refusait la progression passive du terminal en le rétrogradant en 'suiveur', et renvoyait un état obsolète à 0s.
+  - **Écrasement Auto-Destructeur Côté Client** : Dans `accountSyncService.ts`, `applyRemoteOrder` et `checkRemoteChanges` vérifiaient `orderOrigin !== myDeviceId`. En raison du suffixe d'onglet, l'appareil croyait recevoir un ordre d'un terminal tiers et appelait `playerStore.seekTo(0)`.
+  - **Confusion Fondamentale entre Multi-Room Sync et Télécommande Cast** : Dans `CastModal.tsx`, cliquer sur 'Synchroniser' assignait `setActiveCastTarget`, ce qui basculait `isCasting = true` sur le terminal local, détruisait son instance HLS et retirait sa balise `<video>` du DOM pour afficher un écran d'attente, au lieu de continuer à diffuser le flux en parallèle.
+  - **Absence d'Extraction Temps Réel du Curseur Caster** : `CastModal` transmettait une valeur statique ou désynchronisée `currentMedia.positionSeconds` plutôt que de lire `v.currentTime` à l'instant exact du clic.
+  - **Blocage par la Politique Autoplay Navigateur (`NotAllowedError`)** : Lorsque l'ordre distant arrivait sans geste utilisateur direct sur l'écran récepteur, `v.play()` échouait sans basculer en sourdine (`v.muted = true`), bloquant le flux alors que le store déclarait `isPlaying = true`.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Normalisation Inconditionnelle des Identifiants Matériels (`isMatchingDevice`)** : Comparer systématiquement les racines d'appareils via `split('_tab_')[0]` sur le back-end et le front-end. Le terminal local actif est reconnu comme leader souverain de son groupe et ne peut jamais s'écraser lui-même.
+  - **Fenêtre d'Immunité Utilisateur (`isWithinUserGracePeriod(4000)`)** : Pendant 4 000 ms après tout glisser-déplacer ou saut temporel manuel, interdire formellement à tout paquet réseau entrant de modifier la position du scrubber.
+  - **Capture Temps Réel Immédiate (`getLivePosition`)** : Lors du lancement d'un Cast ou d'une Synchronisation, interroger `localVideoRef.current.currentTime || playerStore.getState().activeMedia.positionSeconds` pour transmettre la seconde exacte au récepteur.
+  - **Découplage Strict Synchroniser vs Caster** : En mode Synchroniser, préserver la balise vidéo et HLS sur tous les terminaux (aucun passage à `activeCastTarget`). En mode Caster, router les commandes vers le récepteur distant.
+  - **Gestion Résiliente de l'Autoplay Muted** : Capturer tout `NotAllowedError` dans Hook 3 et dans `executeRemoteCommand` pour muter le son et lancer la lecture immédiatement avec la bannière interactive de réactivation sonore.
+  - **Cycle Haute-Fréquence (2s)** : Abaisser la boucle de détection distante à 2 000 ms et propager immédiatement les actions via `BroadcastChannel` (0 ms local) et `sendDeviceCommand`.
+
+## 🛑 129. Accès au Lecteur Vidéo en Mode Déconnecté, Persistance de Connexion Fantôme en Arrière-Plan, Révocation Permanente Auto-Destructive & Curseur Souris Inopérant dans le Menu Cast (`FloatingBottomPlayer.tsx`, `playerStore.ts`, `app/player/[id].tsx`, `userDeviceRegistry.ts`, `access.ts`, `auth.ts`, `CastModal.tsx`, `CastModal.styles.ts`)
+
+* **Problème / Symptôme :**
+  1. Un utilisateur déconnecté pouvait encore accéder au lecteur vidéo ou déclencher la lecture :
+     - En accédant directement à `/player/[id]`, le composant montait et commençait à initialiser le flux avant que la redirection asynchrone ne s'exécute.
+     - La barre de reprise de lecture du mini-lecteur (`FloatingBottomPlayer`) persistait au bas de l'écran et permettait de cliquer sur *"Reprendre"* même sans compte connecté.
+     - Le lecteur continuait à tourner en tâche de fond dans l'application racine et maintenait ouverte la connexion avec les anciens jetons de la session précédente.
+  2. Lors de la tentative de reconnexion, l'utilisateur était bloqué ou pris au piège d'une déconnexion permanente :
+     - Après avoir cliqué sur *"Déconnecter tous les autres appareils"*, le terminal appelant était lui-même révoqué en raison d'une comparaison brute de chaînes entre `deviceId` de base et identifiant d'instance d'onglet (`_tab_xxx`).
+     - L'identifiant restait inscrit à vie dans `revokedDevices` sans jamais être consommé ni levé lors d'un nouveau `/api/auth/login`.
+     - Le lecteur persistant resté actif continuait d'envoyer des battements de cœur ou de synchronisation avec l'ancien jeton, provoquant des conflits d'authentification immédiats.
+  3. Dans le menu Cast, les boutons d'action étaient impossibles à cliquer à la souris avec un curseur figé en style `default`, et il manquait les 5 actions fonctionnelles réclamées par l'ergonomie multi-écrans (*Déconnecter*, *Synchroniser*, *Caster*, *Suivre*, *Connecter*).
+
+* **Conséquences :**
+  - Faille d'étanchéité : lecture de médias non autorisés ou fuite de métadonnées pour des profils déconnectés.
+  - Impossibilité absolue pour l'utilisateur de se reconnecter après une déconnexion d'appareils (boucle infinie 401 `DEVICE_REVOKED`).
+  - Blocage total des interactions dans la modale Cast (curseur bloqué, boutons insensibles).
+
+* **Causes Racines :**
+  - **Absence de Garde Synchrone d'Authentification sur le Lecteur** : `FloatingBottomPlayer` et `player/[id].tsx` n'évaluaient pas `currentUser` avant de lancer les effets de bord et de monter les balises `<video>` HTML5.
+  - **Non-Déchargement des Balises DOM `<video>` au Logout** : `authStore.logout()` n'émettait aucun ordre direct de vidage des balises DOM, laissant les flux VOD/HLS actifs sous le capot.
+  - **Révocation Non-Consommable et Perte d'Identité Racine** : `revokeAllOtherDevices` comparait `devId !== currentDeviceId` de façon stricte sans normaliser les suffixes d'onglets, et le middleware `access.ts` ne consommait pas la révocation lors du renvoi du code 401.
+  - **Superposition Conflictuelle d'Overlay & Curseur CSS** : La modale Cast superposait un `Pressable` frère invisible sur toute la surface de l'écran avec `cursor: 'default'`, interceptant les clics souris destinés aux boutons d'action.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Sanctuarisation de l'Accès au Lecteur (`useCurrentUser`)** :
+    - Bloquer immédiatement le rendu (`return null`) sur `/player/[id]` et dans `FloatingBottomPlayer` si `!currentUser && !share`.
+    - Décharger, vider (`removeAttribute('src')`, `.load()`) et détruire toutes les balises `<video>` et instances `Hls` lors de la déconnexion (`ums_logout`).
+    - Purger `lastPlayback` (`dismissLastPlayback()`) et couper toute session Cast active (`disconnectCastTotally(false)`).
+  - **Révocation à Usage Unique & Dé-bannissement à la Reconnexion (`consumeRevocation`, `unrevokeDevice`)** :
+    - Consommer l'expulsion dès le premier code 401 `DEVICE_REVOKED` (`consumeRevocation`).
+    - Lever explicitement la révocation de l'appareil lors d'un login valide (`unrevokeDevice(user.id, deviceId)`).
+    - Protéger l'appareil émetteur lors d'une déconnexion globale via comparaison de la racine matérielle (`isMatchingDevice`).
+  - **Ergonomie des 5 Boutons d'Action & Curseur Souris Natif (`pointer`)** :
+    - Fournir sur chaque appareil les 5 actions clairement distinctes : `🔴 Déconnecter`, `🔄 Synchroniser`, `📡 Caster`, `👀 Suivre`, `🎮 Connecter`.
+    - Structurer la modale avec détection sur l'overlay (`e.target === e.currentTarget && onClose()`), assigner `cursor: 'pointer'`, `userSelect: 'none'` et `pointerEvents="none"` sur les textes pour une sensation tactile et souris irréprochable.
+
+## 🛑 128. Recherche d'Élément Scrollable via querySelectorAll('*') en SPA, Debounce Agressif et Lenteur du Défilement Natif Bloquant les Raccourcis d'Ancre de l'Accueil (`index.tsx`, `SiteHeader.tsx`)
+
+* **Problème / Symptôme :**
+  1. Les boutons raccourcis de l'accueil (puces de catégories : *"Sagas"*, *"Films récents"*, *"Séries"*, *"Genres"*, etc.) ne fonctionnaient pas toujours : ils ne fonctionnaient souvent qu'après avoir rechargé la page d'accueil avec F5. Après avoir navigué vers une autre page (ex. `/tv`, `/user`, `/media/[id]`) et être revenu sur l'accueil, les clics sur les raccourcis ne déclenchaient plus aucun défilement.
+  2. Le défilement natif via `Element.prototype.scrollTo({ behavior: "smooth" })` était trop lent (~1,5 seconde de glissement mou), créant une sensation de latence et de blocage.
+
+* **Conséquences :**
+  - Frustration utilisateur : les boutons de navigation rapide de l'en-tête semblaient inertes ou cassés dès que l'utilisateur naviguait dans l'application.
+  - Impossibilité d'accéder directement aux sections thématiques de l'accueil sans rechargement complet du navigateur.
+
+* **Causes Racines :**
+  - **Recherche Aveugle de Conteneur dans le DOM Global** : `getScrollContainer()` parcourait `document.querySelectorAll("*")` à la recherche du premier élément ayant `overflowY === "auto" || "scroll"`. Dans une SPA avec React Navigation / Expo Router, les écrans précédents restent souvent montés ou présents dans le DOM. `getScrollContainer()` résolvait ainsi un conteneur hors-champ ou inactif et y appliquait le `scrollTop`, sans aucun impact sur la `ScrollView` d'accueil affichée.
+  - **Debounce Inadapté sur les Raccourcis d'Ancre** : `handleDebouncedAction` (250 ms) appliqué à la sélection de catégorie avalait les clics utilisateur rapides entre deux catégories différentes.
+  - **Lenteur et Conflits du Smooth Scroll Natif** : L'animation native du navigateur prenait plus de 1000 ms, entrant en conflit avec la détection de section active (`isJumpingRef`) et avec les recalculs de taille (`handleContentSizeChange`).
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Résolution Déterministe du Nœud de Défilement (`getHomeScrollNode`)** :
+    - Récupérer directement le nœud DOM via `scrollRef.current?.getScrollableNode?.()` ou par son identifiant explicite dédié `nativeID="ums_home_scroll"` / `id="ums_home_scroll"`, sans jamais utiliser `querySelectorAll("*")`.
+  - **Animation d'Ancre Fluide et Rapide (`fastSmoothScroll`, 200 ms)** :
+    - Remplacer le smooth scroll natif par une interpolation fluide ultra-réactive de 200 ms en `ease-out cubic` (`1 - (1 - p)^3`), garantissant un saut d'ancre instantané et précis au pixel près.
+    - Annuler immédiatement l'animation en cours si l'utilisateur touche l'écran ou utilise la molette de la souris.
+  - **Élimination du Debounce Artificiel & Déduplication Instantanée** :
+    - Supprimer tout délai bloquant sur `onSelectCategory` et ne filtrer que les doublons d'événements synthétiques survenus dans les 100 ms pour un *même* identifiant de catégorie.
+  - **Fiabilisation des Sélecteurs de Puces** :
+    - Assigner `nativeID` et `id` explicite (`cat-chip-cat.id`) sur les puces et munir le `ScrollView` horizontal de `keyboardShouldPersistTaps="always"`.
+
 ## 🛑 126. Confusion Visuelle des Écrans en Synchronisation vs Hors Ligne, Bouton Déconnecter Absent sur les Terminaux et Dispersion du Bouton 'Caster sur ma Télévision' (`CastModal.tsx`, `deviceIdentity.ts`, `userDeviceRegistry.ts`)
 
 * **Problème / Symptôme :**

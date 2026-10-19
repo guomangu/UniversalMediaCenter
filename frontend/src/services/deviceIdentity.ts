@@ -186,8 +186,8 @@ export function getLocalDeviceType(): UserDeviceType {
  * Récupère le groupe de synchronisation actuel de cet appareil ('default', 'standalone', etc.)
  */
 export function getLocalSyncGroupId(): string {
-  if (typeof window === 'undefined' || !window.localStorage) return 'default';
-  return localStorage.getItem(STORAGE_SYNC_GROUP) || 'default';
+  if (typeof window === 'undefined' || !window.localStorage) return 'standalone';
+  return localStorage.getItem(STORAGE_SYNC_GROUP) || 'standalone';
 }
 
 export function setLocalSyncGroupId(syncGroupId: string): void {

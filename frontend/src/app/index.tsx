@@ -28,18 +28,78 @@ import { getCachedData } from '@/services/pwaDataCache';
 import { Spacing, MaxContentWidth, Radius } from '@/constants/theme';
 
 let savedHomeScrollY = 0;
+let currentScrollAnimId: number | null = null;
 
-function getScrollContainer(): HTMLElement | null {
+function cancelFastScroll() {
+  if (currentScrollAnimId !== null) {
+    cancelAnimationFrame(currentScrollAnimId);
+    currentScrollAnimId = null;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('wheel', cancelFastScroll, { passive: true });
+  window.addEventListener('touchstart', cancelFastScroll, { passive: true });
+}
+
+function getHomeScrollNode(scrollRef?: React.RefObject<any>): HTMLElement | null {
   if (typeof document === 'undefined') return null;
-  const candidates = Array.from(document.querySelectorAll('*')) as HTMLElement[];
-  return (
-    candidates.find(
-      (el) =>
-        el.scrollHeight > el.clientHeight + 40 &&
-        (window.getComputedStyle(el).overflowY === 'auto' ||
-          window.getComputedStyle(el).overflowY === 'scroll')
-    ) || null
-  );
+
+  // 1. Direct from React Native Web ScrollView ref
+  const node = scrollRef?.current?.getScrollableNode?.() || scrollRef?.current;
+  if (node instanceof HTMLElement) {
+    return node;
+  }
+
+  // 2. Element by explicit ID 'ums_home_scroll'
+  const byId = document.getElementById('ums_home_scroll');
+  if (byId instanceof HTMLElement) {
+    if (
+      byId.scrollHeight > byId.clientHeight &&
+      (window.getComputedStyle(byId).overflowY === 'auto' || window.getComputedStyle(byId).overflowY === 'scroll')
+    ) {
+      return byId;
+    }
+    const inner = byId.querySelector('[style*="overflow-y: auto"], [style*="overflow-y: scroll"], [style*="overflow: auto"], [style*="overflow: scroll"]') as HTMLElement | null;
+    if (inner) return inner;
+    return byId;
+  }
+
+  // 3. Fallback to document scrolling element
+  if (document.scrollingElement instanceof HTMLElement) {
+    return document.scrollingElement;
+  }
+  return document.body;
+}
+
+function fastSmoothScroll(container: HTMLElement, targetY: number, duration: number = 200, onDone?: () => void) {
+  cancelFastScroll();
+  const startY = container.scrollTop;
+  const diff = targetY - startY;
+  if (Math.abs(diff) < 2) {
+    container.scrollTop = targetY;
+    onDone?.();
+    return;
+  }
+  const startTime = performance.now();
+
+  function step(currentTime: number) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(1, elapsed / duration);
+    // Ease-out cubic: mouvement rapide et atterrissage précis
+    const ease = 1 - Math.pow(1 - progress, 3);
+    container.scrollTop = Math.round(startY + diff * ease);
+
+    if (progress < 1) {
+      currentScrollAnimId = requestAnimationFrame(step);
+    } else {
+      container.scrollTop = targetY;
+      currentScrollAnimId = null;
+      onDone?.();
+    }
+  }
+
+  currentScrollAnimId = requestAnimationFrame(step);
 }
 
 export default function HomeScreen() {
@@ -108,7 +168,7 @@ export default function HomeScreen() {
     const targetY = Math.max(0, y);
     scrollRef.current?.scrollTo({ y: targetY, animated: false });
     if (Platform.OS === 'web') {
-      const sc = getScrollContainer();
+      const sc = getHomeScrollNode(scrollRef);
       if (sc) {
         sc.scrollTop = targetY;
       }
@@ -119,7 +179,7 @@ export default function HomeScreen() {
     if (!visibleCategories.length) return;
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const scrollNode = getScrollContainer();
+      const scrollNode = getHomeScrollNode(scrollRef);
       if (scrollNode && scrollNode.scrollTop + scrollNode.clientHeight >= scrollNode.scrollHeight - 40) {
         const lastCat = visibleCategories[visibleCategories.length - 1];
         if (lastCat && lastCat.id !== activeCatRef.current) {
@@ -190,6 +250,17 @@ export default function HomeScreen() {
     loadData(false);
   }, [currentUser?.id, currentUser?.isAdmin]);
 
+  // Libération de sécurité du mode restauration après délai
+  useEffect(() => {
+    if (isRestoringScroll.current) {
+      const timer = setTimeout(() => {
+        isRestoringScroll.current = false;
+        scrollRestoredRef.current = true;
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   // Détection des interactions utilisateur réelles pour relâcher le mode restauration
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
@@ -231,49 +302,50 @@ export default function HomeScreen() {
     setActiveCategoryId(id);
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const sc = getScrollContainer();
+      const sc = getHomeScrollNode(scrollRef);
       const el = document.getElementById(`cat-section-${id}`);
+
+      let targetY: number | null = null;
+
       if (sc && el) {
         const elRect = el.getBoundingClientRect();
         const scRect = sc.getBoundingClientRect();
         const currentScroll = sc.scrollTop;
-        const target = currentScroll + (elRect.top - scRect.top) - headerPaddingTop - 8;
-        const finalY = Math.max(0, target);
+        const computed = currentScroll + (elRect.top - scRect.top) - headerPaddingTop - 8;
+        targetY = Math.max(0, Math.round(computed));
+      } else if (typeof catPositions.current[id] === 'number') {
+        targetY = Math.max(0, Math.round(catPositions.current[id] - headerPaddingTop - 8));
+      }
 
-        try {
-          if (typeof Element.prototype.scrollTo === 'function') {
-            (Element.prototype.scrollTo as any).call(sc, { top: finalY, behavior: 'smooth' });
-          } else {
-            sc.scrollTop = finalY;
-          }
-        } catch {
-          sc.scrollTop = finalY;
+      if (targetY !== null) {
+        if (sc) {
+          fastSmoothScroll(sc, targetY, 200, () => {
+            isJumpingRef.current = false;
+          });
+        } else {
+          scrollRef.current?.scrollTo({ y: targetY, animated: true });
+          setTimeout(() => {
+            isJumpingRef.current = false;
+          }, 200);
         }
 
-        scrollRef.current?.scrollTo({ y: finalY, animated: true });
-        savedHomeScrollY = finalY;
+        savedHomeScrollY = targetY;
         if (window.sessionStorage) {
-          sessionStorage.setItem('ums_home_scroll_y', String(finalY));
+          sessionStorage.setItem('ums_home_scroll_y', String(targetY));
         }
-        setTimeout(() => {
-          isJumpingRef.current = false;
-        }, 800);
         return;
       }
     }
 
     const pos = catPositions.current[id];
     if (typeof pos === 'number') {
-      const target = Math.max(0, pos - headerPaddingTop - 12);
-      applyScroll(target);
+      const target = Math.max(0, Math.round(pos - headerPaddingTop - 8));
+      scrollRef.current?.scrollTo({ y: target, animated: true });
       savedHomeScrollY = target;
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
-        sessionStorage.setItem('ums_home_scroll_y', String(target));
-      }
     }
     setTimeout(() => {
       isJumpingRef.current = false;
-    }, 800);
+    }, 220);
   };
 
   const handleScrollToTop = () => {
@@ -281,30 +353,32 @@ export default function HomeScreen() {
     scrollRestoredRef.current = true;
     isJumpingRef.current = true;
     savedHomeScrollY = 0;
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const sc = getScrollContainer();
-      if (sc) {
-        try {
-          if (typeof Element.prototype.scrollTo === 'function') {
-            (Element.prototype.scrollTo as any).call(sc, { top: 0, behavior: 'smooth' });
-          } else {
-            sc.scrollTop = 0;
-          }
-        } catch {
-          sc.scrollTop = 0;
-        }
-      }
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
       if (window.sessionStorage) {
         sessionStorage.setItem('ums_home_scroll_y', '0');
       }
+      const sc = getHomeScrollNode(scrollRef);
+      if (sc) {
+        fastSmoothScroll(sc, 0, 180, () => {
+          isJumpingRef.current = false;
+        });
+      } else {
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+        setTimeout(() => {
+          isJumpingRef.current = false;
+        }, 180);
+      }
+    } else {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      setTimeout(() => {
+        isJumpingRef.current = false;
+      }, 200);
     }
-    applyScroll(0);
+
     const firstId = visibleCategories[0]?.id || 'sagas';
     activeCatRef.current = firstId;
     setActiveCategoryId(firstId);
-    setTimeout(() => {
-      isJumpingRef.current = false;
-    }, 800);
   };
 
   return (
@@ -319,6 +393,8 @@ export default function HomeScreen() {
 
         <ScrollView
           ref={scrollRef}
+          nativeID="ums_home_scroll"
+          {...(Platform.OS === 'web' ? { id: 'ums_home_scroll' } : {})}
           style={styles.scroll}
           contentContainerStyle={[styles.contentContainer, { paddingTop: headerPaddingTop }]}
           showsVerticalScrollIndicator={false}

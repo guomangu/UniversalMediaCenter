@@ -39,6 +39,8 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
   const currentUser = useCurrentUser();
   const categoryScrollRef = useRef<ScrollView>(null);
   const lastActionTimeRef = useRef<number>(0);
+  const lastSelectedCategoryRef = useRef<{ id: string; timestamp: number }>({ id: '', timestamp: 0 });
+  const lastLogoPressRef = useRef<number>(0);
 
   const handleDebouncedAction = (fn: () => void) => {
     const now = Date.now();
@@ -108,16 +110,24 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
   };
 
   const handleLogoPress = () => {
-    handleDebouncedAction(() => {
-      if (onScrollToTop) onScrollToTop();
-      else router.push('/');
-    });
+    const now = Date.now();
+    if (now - lastLogoPressRef.current < 100) return;
+    lastLogoPressRef.current = now;
+    if (onScrollToTop) {
+      onScrollToTop();
+    } else {
+      router.push('/');
+    }
   };
 
   const handleSelectCategory = (id: string) => {
-    handleDebouncedAction(() => {
-      onSelectCategory?.(id);
-    });
+    const now = Date.now();
+    // Ignore synthetic duplicate events for the exact same category chip within 100ms
+    if (lastSelectedCategoryRef.current.id === id && now - lastSelectedCategoryRef.current.timestamp < 100) {
+      return;
+    }
+    lastSelectedCategoryRef.current = { id, timestamp: now };
+    onSelectCategory?.(id);
   };
 
   return (
@@ -284,7 +294,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
 
         {/* Barre de navigation rapide utilisateur sur Mobile */}
         {isMobile && currentUser ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mobileUserScroll}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.mobileUserScroll}>
             <Pressable
               focusable={true}
               style={[styles.userNavPill, styles.mobileUserPill]}
@@ -357,6 +367,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
               ref={categoryScrollRef}
               horizontal
               showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="always"
               contentContainerStyle={styles.scroll}>
 
               {categories.map((cat) => {
@@ -366,6 +377,7 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
                     focusable={true}
                     key={cat.id}
                     nativeID={`cat-chip-${cat.id}`}
+                    {...(Platform.OS === 'web' ? { id: `cat-chip-${cat.id}` } : {})}
                     onPress={() => handleSelectCategory(cat.id)}
                     {...(Platform.OS === 'web'
                       ? ({
