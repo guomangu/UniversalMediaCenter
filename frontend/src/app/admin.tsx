@@ -38,7 +38,7 @@ export default function AdminScreen() {
                 : 'Vous naviguez en mode invité. Veuillez vous connecter avec un compte administrateur pour configurer le système.'}
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
-              <Pressable focusable={true} style={[styles.submitBtn, { flex: 1, backgroundColor: '#475569' }]} onPress={() => router.push('/')}>
+              <Pressable focusable={true} style={[styles.submitBtn, { flex: 1, backgroundColor: '#475569' }]} onPress={() => router.navigate('/')}>
                 <Text style={styles.submitText}>🏠 Accueil</Text>
               </Pressable>
               <Pressable

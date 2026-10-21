@@ -160,9 +160,14 @@ export async function ingestMediaNode(
       }
     } else if (effectiveType === 'MOVIE') {
       // Un film n'est JAMAIS rattaché à un SHOW, seulement à une COLLECTION (Saga)
-      const folderSagaName = detectSagaNameFromFolder(nfoPath || adjacent.videoFilePath || '');
-      if (folderSagaName) {
-        const sagaNode = await findOrCreateCollectionNode(folderSagaName);
+      // Priorité 1 : la saga déclarée explicitement dans le NFO (<set><name>).
+      // Priorité 2 : heuristique sur le nom du dossier physique.
+      const explicitCollection = parsed.collectionName?.trim();
+      const sagaName = explicitCollection || detectSagaNameFromFolder(nfoPath || adjacent.videoFilePath || '');
+      if (sagaName) {
+        const sagaNode = await findOrCreateCollectionNode(sagaName, {
+          tmdbId: explicitCollection ? parsed.collectionTmdbId : undefined,
+        });
         if (sagaNode) parentId = sagaNode.id;
       }
     } else if (effectiveType === 'SEASON') {

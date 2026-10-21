@@ -464,7 +464,7 @@ function executeRemoteCommand(cmd: UserDeviceCommand, router?: any) {
     case 'STOP':
       playerStore.closeMedia();
       if (router) {
-        router.push('/');
+        router.navigate('/');
       }
       break;
 

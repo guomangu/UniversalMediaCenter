@@ -51,6 +51,26 @@ export function parseNfoXml(xmlContent, filePath) {
         parsed.collection;
     if (!root || (typeof root !== 'string' && Object.keys(root).length === 0))
         return null;
+    // Saga locale déclarée dans le NFO (Kodi `<set><name>`, Emby `<collection>`).
+    // Ces balises étaient jusqu'ici jetées : les films sans enrichissement TMDb
+    // restaient orphelins même quand le NFO désignait explicitement leur saga.
+    const rawSet = root.set;
+    const rawCollection = root.collection;
+    const rawCollectionName = typeof rawSet === 'string'
+        ? rawSet
+        : rawSet && typeof rawSet === 'object' && rawSet.name != null
+            ? String(rawSet.name)
+            : typeof rawCollection === 'string'
+                ? rawCollection
+                : rawCollection && typeof rawCollection === 'object' && rawCollection.name != null
+                    ? String(rawCollection.name)
+                    : undefined;
+    const collectionName = rawCollectionName ? String(rawCollectionName).trim() || undefined : undefined;
+    const rawCollectionId = root.tmdbcollectionid ??
+        (rawSet && typeof rawSet === 'object' ? rawSet['@_tmdbid'] : undefined) ??
+        (rawCollection && typeof rawCollection === 'object' ? rawCollection['@_tmdbid'] : undefined);
+    const parsedCollectionId = rawCollectionId != null ? parseInt(String(rawCollectionId), 10) : NaN;
+    const collectionTmdbId = !Number.isNaN(parsedCollectionId) ? parsedCollectionId : undefined;
     // 1. Analyse contextuelle du chemin système de fichiers (dossier & nom de fichier)
     let folderSeason;
     let folderTitle;
@@ -288,6 +308,8 @@ export function parseNfoXml(xmlContent, filePath) {
         originalTitle,
         sortTitle: root.sorttitle ? sanitizeReleaseTags(root.sorttitle) : cleanedTitle,
         showTitle,
+        collectionName,
+        collectionTmdbId,
         seasonNumber: finalSeasonNumber,
         episodeNumber: finalEpisodeNumber,
         absoluteEpisodeNumber: isFilmsFolder ? undefined : filenameEpNum,

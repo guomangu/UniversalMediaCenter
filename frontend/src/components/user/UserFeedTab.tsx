@@ -131,7 +131,7 @@ export function UserFeedTab() {
               ? 'Invitez des amis dans l’onglet « Amis » pour découvrir leurs recommandations et leurs notes !'
               : 'Donnez votre avis avec une note et un commentaire depuis la fiche de vos films et séries favoris.'}
           </Text>
-          <Pressable focusable={true} onPress={() => router.push('/')} style={styles.actionBtn}>
+          <Pressable focusable={true} onPress={() => router.navigate('/')} style={styles.actionBtn}>
             <Text style={styles.actionBtnTxt}>Parcourir le catalogue</Text>
           </Pressable>
         </View>

@@ -21,11 +21,15 @@ export function CategorySection({
   onLayoutPos,
   onVisibilityChange,
 }: Props) {
-  const [tagLimit, setTagLimit] = useState(5);
+  // Les sagas sont la catégorie d'entrée de l'accueil : afficher davantage de
+  // collections d'emblée évite qu'une saga importante (Terre du Milieu, Rocky,
+  // Star Wars…) reste cachée derrière « Afficher plus » selon son nombre de films.
+  const initialTagLimit = category.id === 'sagas' ? 10 : 5;
+  const [tagLimit, setTagLimit] = useState(initialTagLimit);
 
   const getInitialCounts = useCallback((f?: string, q?: string) => {
     const init: Record<string, number> = {};
-    for (const t of category.tags.slice(0, 5)) {
+    for (const t of category.tags.slice(0, initialTagLimit)) {
       const lim = t.slug === 'all-movies' || t.slug === 'all-series' ? 30 : 10;
       const c = getCachedTaxonomyMedias({
         category: category.id,
@@ -39,7 +43,7 @@ export function CategorySection({
       }
     }
     return init;
-  }, [category.id, category.tags]);
+  }, [category.id, category.tags, initialTagLimit]);
 
   const [counts, setCounts] = useState<Record<string, number>>(() => getInitialCounts(activeFilter, searchQuery));
 
@@ -64,7 +68,7 @@ export function CategorySection({
   // Hydratation synchrone immédiate (0 ms) des IDs en cache pour éliminer tout effet de cascade
   const [mediasByTag, setMediasByTag] = useState<Record<string, string[]>>(() => {
     const init: Record<string, string[]> = {};
-    for (const t of category.tags.slice(0, 5)) {
+    for (const t of category.tags.slice(0, initialTagLimit)) {
       const lim = t.slug === 'all-movies' || t.slug === 'all-series' ? 30 : 10;
       const c = getCachedTaxonomyMedias({
         category: category.id,

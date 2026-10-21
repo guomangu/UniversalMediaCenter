@@ -218,7 +218,7 @@ export async function fetchLiveChannels(
   params?: { q?: string; category?: string; limit?: number },
   options?: { forceRefresh?: boolean; onFreshData?: (fresh: any[]) => void }
 ): Promise<any[]> {
-  const cacheKey = `iptv_channels_v2_${getUserCacheKey()}_${params?.q || ''}_${params?.category || ''}_${params?.limit || 0}`;
+  const cacheKey = `iptv_channels_v3_${getUserCacheKey()}_${params?.q || ''}_${params?.category || ''}_${params?.limit || 0}`;
   return fetchWithCache(
     cacheKey,
     async () => {

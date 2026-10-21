@@ -258,7 +258,7 @@ export default function UserScreen() {
                 {favoritesList.length === 0 ? (
                   <View style={styles.emptyBox}>
                     <Text style={styles.emptyTxt}>Vous n'avez pas encore ajouté de favoris.</Text>
-                    <Pressable focusable={true} onPress={() => router.push('/')} style={styles.actionBtn}>
+                    <Pressable focusable={true} onPress={() => router.navigate('/')} style={styles.actionBtn}>
                       <Text style={styles.actionBtnTxt}>Découvrir le catalogue</Text>
                     </Pressable>
                   </View>

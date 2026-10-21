@@ -287,9 +287,13 @@ export async function reconcileAndPruneLibrary(roots?: string[]): Promise<Reconc
   }
 
   // 5. Nettoyage des COLLECTIONS orphelines (Sagas dont tous les films ont disparu)
+  // Garde-fou : on ne supprime que les coquilles totalement vides. Une saga
+  // enrichie (synopsis/affiche/fanart) est conservée même sans enfant : la
+  // supprimer provoquerait un `ON DELETE SET NULL` sur ses films, qui
+  // perdraient définitivement leur rattachement et disparaîtraient de l'accueil.
   const sagas = await db.query.mediaNodes.findMany({
     where: (t, { eq: eqOp }) => eqOp(t.nodeType, 'COLLECTION'),
-    columns: { id: true, title: true },
+    columns: { id: true, title: true, overview: true, posterPath: true, fanartPath: true },
   });
 
   for (const saga of sagas) {
@@ -298,10 +302,14 @@ export async function reconcileAndPruneLibrary(roots?: string[]): Promise<Reconc
       columns: { id: true },
     });
 
-    if (!childMedia) {
+    const hasMetadata = Boolean(
+      (saga.overview && saga.overview.trim()) || saga.posterPath || saga.fanartPath
+    );
+
+    if (!childMedia && !hasMetadata) {
       await db.delete(mediaNodes).where(eq(mediaNodes.id, saga.id));
       report.sagasCleaned++;
-      console.log(`🍿 [Reconciler] Saga vide supprimée : "${saga.title}" (0 média rattaché)`);
+      console.log(`🍿 [Reconciler] Coquille de saga vide supprimée : "${saga.title}" (0 média rattaché)`);
     }
   }
 

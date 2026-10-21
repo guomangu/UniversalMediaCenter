@@ -690,11 +690,24 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
     where: (t, { eq: eqOp }) => eqOp(t.nodeType, 'COLLECTION'),
   });
 
-  // LOTR + Hobbit => Univers Terre du Milieu (Middle-Earth)
+  // LOTR + Hobbit => Univers Terre du Milieu (Middle-Earth).
+  // La détection part des FILMS eux-mêmes : exiger au préalable l'existence
+  // d'une collection LOTR/Hobbit rendait la réparation inopérante après la
+  // suppression d'une saga vide (le parent_id des films passait à NULL via
+  // ON DELETE SET NULL, et plus rien ne recréait l'univers).
   const lotrHobbitRegex = /(seigneur des anneaux|lord of the rings|hobbit|terre du milieu)/i;
-  const middleEarthCols = allCollections.filter((c) => lotrHobbitRegex.test(c.title));
+  const middleEarthMovies = await db.query.mediaNodes.findMany({
+    where: (t, { eq: eqOp }) => eqOp(t.nodeType, 'MOVIE'),
+    columns: { id: true, title: true, originalTitle: true, parentId: true, videoFilePath: true },
+  });
+  const middleEarthMatches = middleEarthMovies.filter(
+    (movie) =>
+      lotrHobbitRegex.test(movie.title) ||
+      lotrHobbitRegex.test(movie.originalTitle || '') ||
+      lotrHobbitRegex.test(movie.videoFilePath || '')
+  );
 
-  if (middleEarthCols.length > 0) {
+  if (middleEarthMatches.length >= 2) {
     const universeTitle = 'Univers Terre du Milieu - Saga';
     let universeNode = allCollections.find((c) => c.title.toLowerCase() === universeTitle.toLowerCase());
 
@@ -717,18 +730,13 @@ export async function repairAllMediaHierarchy(): Promise<RepairHierarchyReport> 
     }
 
     if (universeNode) {
-      const allMovies = await db.query.mediaNodes.findMany({
-        where: (t, { eq: eqOp }) => eqOp(t.nodeType, 'MOVIE'),
-      });
-      for (const m of allMovies) {
-        if (lotrHobbitRegex.test(m.title) || lotrHobbitRegex.test(m.originalTitle || '')) {
-          if (m.parentId !== universeNode.id) {
-            await db
-              .update(mediaNodes)
-              .set({ parentId: universeNode.id, updatedAt: new Date() })
-              .where(eq(mediaNodes.id, m.id));
-            report.moviesLinkedToSagas++;
-          }
+      for (const movie of middleEarthMatches) {
+        if (movie.parentId !== universeNode.id) {
+          await db
+            .update(mediaNodes)
+            .set({ parentId: universeNode.id, updatedAt: new Date() })
+            .where(eq(mediaNodes.id, movie.id));
+          report.moviesLinkedToSagas++;
         }
       }
     }

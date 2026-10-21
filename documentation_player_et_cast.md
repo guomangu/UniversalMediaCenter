@@ -212,6 +212,9 @@ La session Google Cast officielle ne passe pas par le registre serveur : le Chro
 ### 6.1. Qualification Stricte des Flux TV (`streamTester.ts`)
 - Validation préalable de la connectivité et des codecs avant tout affichage dans la grille des chaînes.
 - Détection des flux morts ou expirés avec marquage d'indisponibilité.
+- **Compatibilité réelle avec le lecteur :** un direct n'est `READY` que si la réponse commence par `#EXTM3U` (HLS). Le testeur résout master playlist → variante → premier segment (profondeur 2) et vérifie que le segment renvoie une charge média réelle (MPEG-TS, fMP4, MKV/WebM, PS, ou segment chiffré suffisamment volumineux).
+- **Flux bruts rejetés :** un MPEG-TS HTTP/UDP (`http://host:8800/udp/...`) répond souvent `200 application/octet-stream` mais n'est pas lisible par HLS.js. Il est désormais marqué `ERROR` et grisé, au lieu d'apparaître à tort « EN DIRECT ».
+- **Lecture bornée :** seuls les premiers kilo-octets sont lus via `AbortController`, jamais `res.text()` / `arrayBuffer()` sur un flux infini (sinon le test se bloque).
 
 ### 6.2. Proxy Universel HLS & Neutralisation du Contenu Mixte (`liveProxyService.ts`, `/api/iptv/proxy`)
 - Tous les flux TV distants en HTTP non chiffré sont relayés par le proxy HTTPS Hono, éliminant le blocage de contenu mixte sur les navigateurs sécurisés.

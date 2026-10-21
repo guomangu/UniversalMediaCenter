@@ -1,3 +1,20 @@
+## 🛑 140. Raccourcis d'Accueil Figés par Duplication d'Écrans, Chaînes TV Brutes Marquées Disponibles & Sagas Orphelines après Purge (`index.tsx`, `SiteHeader.tsx`, `admin.tsx`, `user.tsx`, `user/UserFeedTab.tsx`, `user/UserForumsTab.tsx`, `userDeviceService.ts`, `streamTester.ts`, `nfoParser.ts`, `mediaIngester.ts`, `metadataEnricher.ts`, `hierarchyRepair.ts`, `mediaReconciler.ts`)
+
+* **Problème / Symptôme :**
+  1. Les raccourcis de catégories de l'accueil ne déclenchaient plus aucun défilement après une navigation, et ne refonctionnaient qu'après un rechargement complet (F5).
+  2. La chaîne « France 3 » (flux `http://...:8800/udp/...`) s'affichait en clair comme disponible, mais la lecture échouait.
+  3. La saga du *Seigneur des anneaux* / *Le Hobbit* n'apparaissait plus à l'accueil ; les six films étaient présents en base avec `parent_id = NULL`.
+
+* **Causes Racines :**
+  - **Identifiants DOM dupliqués :** le logo et plusieurs boutons « Accueil » utilisaient `router.push('/')`. Dans une pile Expo Router, cela empile une seconde instance d'`index` sans démonter la première : deux `id="ums_home_scroll"` et deux jeux de `id="cat-section-*"`. `document.getElementById` renvoyait l'élément de l'instance masquée ; le calcul de position visait donc un rect hors-champ et la ScrollView visible ne bougeait pas. Un F5 ne laissait qu'une instance, d'où le symptôme « ça marche après rechargement ».
+  - **Testeur IPTV trop permissif :** `checkChannelStreamAvailability` acceptait tout flux `200` non-HTML/non-JSON. Or le lecteur force HLS.js pour les directs (`isLive`). Un MPEG-TS brut en `application/octet-stream` (proxy UDP) répond `200` mais n'est pas un manifeste HLS : la chaîne était marquée `READY` à tort.
+  - **Sagas :** `COLLECTION.parent_id` est en `ON DELETE SET NULL`. La purge des collections vides a supprimé la collection Terre du Milieu, détachant les six films. Ensuite, `computeMetadataNeedScore` ne priorisait pas les films orphelins déjà complets (ils n'étaient plus jamais ré-enrichis pour récupérer `belongs_to_collection`), `hierarchyRepair` exigeait l'existence préalable d'une collection LOTR/Hobbit pour créer l'univers, et les balises NFO `<set><name>`/`<collection>` n'étaient jamais extraites.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Une seule instance d'accueil :** utiliser `router.navigate('/')` (et non `push`) pour revenir à l'accueil ; confiner toute recherche DOM (`#ums_home_scroll`, `#cat-section-*`) à la racine de l'instance courante, jamais au document global.
+  - **Tester ce que le lecteur sait lire :** un direct n'est `READY` que si le premier octet utile commence par `#EXTM3U`, que la chaîne master → variante → segment est résolue, et que le segment renvoie une charge média réelle. Lire uniquement les premiers octets avec un `AbortController` (jamais `res.text()` sur un flux infini).
+  - **Aucune donnée structurelle perdue :** ne jamais supprimer une collection enrichie (synopsis/affiche/fanart), même vide. Extraire `<set><name>` et `<collection>` du NFO dès l'ingestion, prioriser les films orphelins appartenant à une franchise probable, et reconstruire l'univers Terre du Milieu à partir des films eux-mêmes, pas de collections préexistantes.
+
 ## 🛑 139. NFO Non-XML Bloquant l'Indexation, Dossiers de Release Ignorés par chokidar, Sagas « Hexalogie » Invisibles, Films Autonomes Sans Ordre, Purge sur Disque Illisible & Chromecast Sans Télécommande (`mediaExtensions.ts`, `bootScanner.ts`, `index.ts`, `nfoParser.ts`, `titleCleaner.ts`, `lexicalParser.ts`, `mediaFileDetector.ts`, `hierarchyResolver.ts`, `mediaIngester.ts`, `mediaReconciler.ts`, `externalMetadata.ts`, `deviceIdentity.ts`, `useTvNavigation.ts`, `_layout.tsx`, `global.css`, `castService.ts`, `castState.ts`, `playerStore.ts`, `CastModal.tsx`, `FloatingBottomPlayer.tsx`)
 
 * **Problème / Symptôme :**

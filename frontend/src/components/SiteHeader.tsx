@@ -119,7 +119,11 @@ export function SiteHeader({ categories = [], activeCategoryId, onSelectCategory
     if (onScrollToTop) {
       onScrollToTop();
     } else {
-      router.push('/');
+      // `navigate` réutilise l'écran d'accueil déjà présent dans la pile.
+      // Un `push` créait une seconde instance d'index, donc deux fois les
+      // identifiants DOM (ancres d'accueil) : les raccourcis visaient alors
+      // l'instance masquée et ne défilaient plus.
+      router.navigate('/');
     }
   };
 

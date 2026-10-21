@@ -500,3 +500,20 @@ ightarrow$ dans *"Mes écrans connectés"* avec action `[Déconnecter]`.
     *   Les commandes `PLAY/PAUSE/SEEK/SET_VOLUME/MUTE/UNMUTE/SET_SUBTITLE/SET_AUDIO/STOP` doivent être exécutées localement sur la session Cast ; le Chromecast ne sonde pas `/api/cast/poll`.
     *   Les sous-titres doivent être déclarés dans `MediaInfo.tracks` comme pistes `TEXT` avec `trackContentId` absolu de même origine que le flux, `trackContentType = text/vtt` et `activeTrackIds` à chargement.
     *   Pour changer de piste audio, recharger le HLS avec `?audio=<index>` au timestamp courant : le Default Media Receiver ne commute pas les pistes audio d'un MKV direct. Conserver l'état lecture/pause et le sous-titre actif pendant le rechargement.
+
+## 28. Navigation d'Accueil Mono-Instance, Qualification HLS Réelle & Sanctuarisation des Sagas
+
+*   **Navigation d'Accueil :**
+    *   Ne jamais utiliser `router.push('/')` pour revenir à l'accueil dans une pile Expo Router : cela empile un second écran `index` sans démonter le premier. Utiliser `router.navigate('/')`, qui réutilise l'instance existante.
+    *   Ne jamais résoudre un nœud DOM par `document.getElementById('...')` quand l'écran peut être dupliqué : confiner la recherche à la racine de l'instance courante (`rootRef.current.querySelector(...)`). Les identifiants (`ums_home_scroll`, `cat-section-*`) ne sont pas garantis uniques dans le document.
+
+*   **Tests de Flux TV :**
+    *   Un testeur de direct doit valider le format que le lecteur sait réellement lire, pas seulement le code HTTP. Le lecteur force HLS.js pour `isLive` : exiger `#EXTM3U`, résoudre master → variante → segment et vérifier la charge binaire.
+    *   Un flux MPEG-TS brut peut répondre `200 application/octet-stream` sans être lisible : il doit être marqué `ERROR` et grisé.
+    *   Ne jamais lire un corps de direct avec `res.text()`/`arrayBuffer()` (flux infini). Lire uniquement les premiers octets avec un `AbortController` et annuler le reader dès la lecture terminée.
+
+*   **Sagas & Données Structurelles :**
+    *   `parent_id` en `ON DELETE SET NULL` : supprimer une collection vide détache silencieusement ses films. Ne purger une collection que si elle est totalement vide **et** dépourvue de métadonnées (synopsis, affiche, fanart).
+    *   Extraire dès l'ingestion les balises de saga locales (`<set><name>`, `<collection>`) et les utiliser en priorité sur l'heuristique de dossier.
+    *   Un film complet mais orphelin ne remonte jamais dans une file d'enrichissement triée par carence : ajouter un score explicite pour les films orphelins appartenant à une franchise probable, sinon `belongs_to_collection` n'est jamais récupéré.
+    *   Une réparation d'univers (Terre du Milieu, Rockyverse…) doit partir des **films** correspondants et créer le conteneur si nécessaire, jamais exiger l'existence préalable d'une collection.

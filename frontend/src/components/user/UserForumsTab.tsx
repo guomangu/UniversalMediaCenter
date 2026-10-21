@@ -79,7 +79,7 @@ export function UserForumsTab() {
               </Text>
               <Pressable
                 focusable={true}
-                onPress={() => router.push('/')}
+                onPress={() => router.navigate('/')}
                 style={styles.actionBtn}
               >
                 <Text style={styles.actionBtnTxt}>Choisir un média sur l'accueil</Text>

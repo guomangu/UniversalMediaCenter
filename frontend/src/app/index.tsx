@@ -48,7 +48,10 @@ if (typeof window !== 'undefined') {
   window.addEventListener('touchstart', () => cancelFastScroll(), { passive: true });
 }
 
-function getHomeScrollNode(scrollRef?: React.RefObject<any>): HTMLElement | null {
+function getHomeScrollNode(
+  scrollRef?: React.RefObject<any>,
+  scopeRoot?: HTMLElement | null
+): HTMLElement | null {
   if (typeof document === 'undefined') return null;
 
   // 1. Direct from React Native Web ScrollView ref
@@ -57,8 +60,13 @@ function getHomeScrollNode(scrollRef?: React.RefObject<any>): HTMLElement | null
     return node;
   }
 
-  // 2. Element by explicit ID 'ums_home_scroll'
-  const byId = document.getElementById('ums_home_scroll');
+  // 2. Element by explicit ID 'ums_home_scroll', confiné à l'instance d'accueil
+  //    courante (les écrans empilés peuvent dupliquer cet identifiant).
+  const scopedById =
+    scopeRoot && typeof scopeRoot.querySelector === 'function'
+      ? (scopeRoot.querySelector('#ums_home_scroll') as HTMLElement | null)
+      : null;
+  const byId = scopedById || document.getElementById('ums_home_scroll');
   if (byId instanceof HTMLElement) {
     if (
       byId.scrollHeight > byId.clientHeight &&
@@ -131,6 +139,11 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  // Racine DOM de CETTE instance d'accueil. Expo Router conserve les écrans
+  // empilés : plusieurs instances d'index peuvent coexister et dupliquer les
+  // identifiants `ums_home_scroll` / `cat-section-*`. Toute recherche DOM doit
+  // donc être confinée à cette racine, jamais au document global.
+  const homeRootRef = useRef<View>(null);
   const catPositions = useRef<Record<string, number>>({});
   const isRestoringScroll = useRef(savedHomeScrollY > 0);
   const scrollRestoredRef = useRef(false);
@@ -175,11 +188,20 @@ export default function HomeScreen() {
     }
   }, [visibleCategories, activeCategoryId]);
 
+  const getSectionElement = useCallback((id: string): HTMLElement | null => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return null;
+    const root = homeRootRef.current as unknown as HTMLElement | null;
+    if (root && typeof root.querySelector === 'function') {
+      return root.querySelector(`#cat-section-${id}`) as HTMLElement | null;
+    }
+    return document.getElementById(`cat-section-${id}`);
+  }, []);
+
   const applyScroll = useCallback((y: number) => {
     const targetY = Math.max(0, y);
     scrollRef.current?.scrollTo({ y: targetY, animated: false });
     if (Platform.OS === 'web') {
-      const sc = getHomeScrollNode(scrollRef);
+      const sc = getHomeScrollNode(scrollRef, homeRootRef.current as unknown as HTMLElement | null);
       if (sc) {
         sc.scrollTop = targetY;
       }
@@ -190,7 +212,7 @@ export default function HomeScreen() {
     if (!visibleCategories.length) return;
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const scrollNode = getHomeScrollNode(scrollRef);
+      const scrollNode = getHomeScrollNode(scrollRef, homeRootRef.current as unknown as HTMLElement | null);
       if (scrollNode && scrollNode.scrollTop + scrollNode.clientHeight >= scrollNode.scrollHeight - 40) {
         const lastCat = visibleCategories[visibleCategories.length - 1];
         if (lastCat && lastCat.id !== activeCatRef.current) {
@@ -202,7 +224,7 @@ export default function HomeScreen() {
 
       let currentId = visibleCategories[0]?.id || '';
       for (const cat of visibleCategories) {
-        const el = document.getElementById(`cat-section-${cat.id}`);
+        const el = getSectionElement(cat.id);
         if (el) {
           const rect = el.getBoundingClientRect();
           if (rect.top <= headerPaddingTop + 50) {
@@ -229,7 +251,7 @@ export default function HomeScreen() {
       activeCatRef.current = currentId;
       setActiveCategoryId(currentId);
     }
-  }, [visibleCategories, headerPaddingTop]);
+  }, [visibleCategories, headerPaddingTop, getSectionElement]);
 
   const loadData = async (force = false) => {
     const list = await fetchTaxonomy(force, (fresh) => {
@@ -317,8 +339,8 @@ export default function HomeScreen() {
     setActiveCategoryId(id);
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const sc = getHomeScrollNode(scrollRef);
-      const el = document.getElementById(`cat-section-${id}`);
+      const sc = getHomeScrollNode(scrollRef, homeRootRef.current as unknown as HTMLElement | null);
+      const el = getSectionElement(id);
 
       let targetY: number | null = null;
 
@@ -373,7 +395,7 @@ export default function HomeScreen() {
       if (window.sessionStorage) {
         sessionStorage.setItem('ums_home_scroll_y', '0');
       }
-      const sc = getHomeScrollNode(scrollRef);
+      const sc = getHomeScrollNode(scrollRef, homeRootRef.current as unknown as HTMLElement | null);
       if (sc) {
         fastSmoothScroll(sc, 0, 180, () => {
           isJumpingRef.current = false;
@@ -398,7 +420,7 @@ export default function HomeScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <SafeAreaView ref={homeRootRef} style={styles.safeArea} edges={['top', 'left', 'right']}>
         <SiteHeader
           activeCategoryId={activeCategoryId}
           categories={visibleCategories}

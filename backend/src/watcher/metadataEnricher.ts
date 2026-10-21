@@ -119,15 +119,46 @@ export async function enrichLibraryMetadata(batchLimit = 80): Promise<{
 
   // 4. Récupérer et classer tous les médias par priorité algorithmique
   const allNodes = await db.query.mediaNodes.findMany();
+
+  // 4.bis Détection des films probablement membres d'une saga mais orphelins
+  // (collection supprimée, enrichissement antérieur incomplet...). Sans ce
+  // boost, un film déjà complet (titre, affiche, synopsis) n'était jamais
+  // ré-enrichi et ne récupérait donc jamais son `belongs_to_collection`.
+  const franchiseKey = (title?: string | null): string => {
+    if (!title) return '';
+    return title
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter((token) => token && !/^(19|20)\d{2}$/.test(token))
+      .slice(0, 2)
+      .join(' ');
+  };
+
+  const franchiseCounts = new Map<string, number>();
+  for (const node of allNodes) {
+    if (node.nodeType !== 'MOVIE') continue;
+    const key = franchiseKey(node.title);
+    if (!key.includes(' ')) continue;
+    franchiseCounts.set(key, (franchiseCounts.get(key) || 0) + 1);
+  }
+
   const scoredNodes = allNodes
-    .map((node) => ({
-      node,
-      score: computeMetadataNeedScore(
+    .map((node) => {
+      let score = computeMetadataNeedScore(
         node,
         tagCountMap.get(node.id) || 0,
         crewCountMap.get(node.id) || { directors: 0, actors: 0 }
-      ),
-    }))
+      );
+      if (node.nodeType === 'MOVIE' && !node.parentId) {
+        const key = franchiseKey(node.title);
+        if ((franchiseCounts.get(key) || 0) >= 2) score += 180;
+      }
+      return { node, score };
+    })
     .sort((a, b) => b.score - a.score);
 
   const targetBatch = scoredNodes.slice(0, batchLimit);
