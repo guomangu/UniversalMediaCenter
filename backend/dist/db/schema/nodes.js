@@ -22,6 +22,7 @@ export const mediaNodes = pgTable('media_nodes', {
     nfoSha256: text('nfo_sha256'),
     streamUrl: text('stream_url'),
     iptvSourceId: uuid('iptv_source_id'),
+    tvgId: text('tvg_id'),
     posterPath: text('poster_path'),
     fanartPath: text('fanart_path'),
     clearlogoPath: text('clearlogo_path'),

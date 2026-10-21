@@ -393,6 +393,12 @@ export const CastModal: React.FC<CastModalProps> = ({
     const mediaWithPos = currentMedia ? { ...currentMedia, positionSeconds: livePos } : undefined;
     const result = await triggerNativeCast(mediaWithPos);
     if (result.success) {
+      // La session Google Cast doit devenir la cible active de la télécommande :
+      // sans cela, le lecteur local restait affiché et les contrôles pilotaient
+      // le navigateur au lieu du Chromecast.
+      if (result.device) {
+        setActiveCastTarget(result.device);
+      }
       onCastStarted?.();
       onClose();
     } else {

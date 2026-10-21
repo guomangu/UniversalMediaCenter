@@ -77,15 +77,30 @@ export function AdminLayoutTab() {
   };
 
   const cycleTagZone = async (tag: any) => {
-    const zones = ['HERO_PRIMARY', 'BELOW_PLAYER', 'DETAILS_MODAL', 'SEARCH_FILTER', 'NONE'];
-    const currIdx = zones.indexOf(tag.uiZone || 'NONE');
-    const nextZone = zones[(currIdx + 1) % zones.length];
+    // Ces valeurs doivent correspondre exactement à l'enum PostgreSQL
+    // `tag_zone`. Les anciennes valeurs (HERO_PRIMARY, BELOW_PLAYER…) étaient
+    // rejetées par la base et rendaient l'édition des tags inopérante.
+    const zones = [
+      { value: 'HERO_BADGE', label: 'Badge principal' },
+      { value: 'PRIMARY_PILL', label: 'Pastille principale' },
+      { value: 'PERSON_CAROUSEL', label: 'Carrousel personnes' },
+      { value: 'TECHNICAL_DRAWER', label: 'Tiroir technique' },
+      { value: 'HIDDEN_SEARCHABLE', label: 'Masqué (recherche uniquement)' },
+    ];
+    const currIdx = zones.findIndex((z) => z.value === tag.uiZone);
+    const next = zones[(currIdx + 1) % zones.length];
 
     setActionLoading(true);
-    await updateAdminTag(tag.id, { uiZone: nextZone });
+    const res = await updateAdminTag(tag.id, { uiZone: next.value });
     setActionLoading(false);
-    setTags(tags.map((t) => (t.id === tag.id ? { ...t, uiZone: nextZone } : t)));
-    setMsg(`✅ Zone d'affichage du tag "${tag.displayName || tag.code}" mise à jour : ${nextZone}`);
+
+    if (!res?.success) {
+      setMsg(`❌ Impossible de mettre à jour le tag : ${res?.error || 'erreur inconnue'}`);
+      return;
+    }
+
+    setTags(tags.map((t) => (t.id === tag.id ? { ...t, uiZone: next.value } : t)));
+    setMsg(`✅ Zone d'affichage du tag "${tag.displayName || tag.code}" : ${next.label}`);
   };
 
   return (

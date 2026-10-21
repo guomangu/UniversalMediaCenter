@@ -8,6 +8,7 @@ import { statsRouter } from './mediaStats.js';
 import { subtitleRouter } from './mediaSubtitles.js';
 import { tracksRouter } from './mediaTracks.js';
 import { mediaNextRouter } from './mediaNext.js';
+import { downloadRouter } from './mediaDownload.js';
 import { processNfoFile } from '../watcher/index.js';
 import { getRelatedTagsForMedia, getTfIdfSimilarMedias } from './mediaRelated.js';
 import { parseSeasonEpisode } from '../watcher/seasonEpisodeHelper.js';
@@ -28,6 +29,7 @@ mediaRouter.route('/', statsRouter);
 mediaRouter.route('/', subtitleRouter);
 mediaRouter.route('/', tracksRouter);
 mediaRouter.route('/', mediaNextRouter);
+mediaRouter.route('/', downloadRouter);
 const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 async function findMediaByIdOrSlug(idOrSlug) {
     if (!idOrSlug)

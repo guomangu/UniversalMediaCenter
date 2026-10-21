@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { db } from '../db/connection.js';
-import { mediaNodes, iptvSources, eavValues, eavAttributes, nodeEavLinks } from '../db/schema/index.js';
-import { eq, and, or, ilike, asc, not } from 'drizzle-orm';
+import { mediaNodes, iptvSources, eavValues, eavAttributes, nodeEavLinks, epgPrograms } from '../db/schema/index.js';
+import { eq, and, or, ilike, asc, not, inArray, gte, lte } from 'drizzle-orm';
 import { requireAdmin, requireAuth } from '../middleware/access.js';
 import { isMediaAllowedForUser } from '../auth/mediaAccess.js';
 import { iptvSourcesRouter } from './iptvSources.js';
 import { proxyLiveStream } from '../iptv/liveProxyService.js';
+import { syncEpgForSource } from '../iptv/epgIngester.js';
 import { getSafeOutboundUrl, safeFetch } from '../utils/safeUrl.js';
 export const iptvRouter = new Hono();
 // Toutes les routes IPTV exigent une session valide (y compris le proxy).
@@ -98,23 +99,135 @@ iptvRouter.post('/sync-epg', requireAdmin, async (c) => {
     const sources = await db.query.iptvSources.findMany({
         where: (t, { eq }) => eq(t.isActive, true),
     });
-    let syncedSources = 0;
+    const results = [];
+    let totalPrograms = 0;
     for (const src of sources) {
         if (!src.epgXmltvUrl)
             continue;
-        const safeEpgUrl = getSafeOutboundUrl(src.epgXmltvUrl, { allowPrivate: true, allowHttp: true });
-        if (!safeEpgUrl)
-            continue;
-        try {
-            const res = await safeFetch(safeEpgUrl.toString(), { allowPrivate: true, allowHttp: true }, { signal: AbortSignal.timeout(15000) });
-            if (res.ok) {
-                await db.update(iptvSources).set({ lastSyncedAt: new Date() }).where(eq(iptvSources.id, src.id));
-                syncedSources++;
-            }
-        }
-        catch (e) { }
+        const result = await syncEpgForSource({
+            id: src.id,
+            name: src.name,
+            epgXmltvUrl: src.epgXmltvUrl,
+        });
+        totalPrograms += result.programs;
+        results.push(result);
     }
-    return c.json({ success: true, syncedSources, totalSources: sources.length });
+    return c.json({
+        success: true,
+        syncedSources: results.filter((r) => !r.error).length,
+        totalSources: sources.length,
+        totalPrograms,
+        results,
+    });
+});
+/** Convertit un enregistrement EPG en objet JSON stable pour le frontend. */
+function serializeProgram(program) {
+    return {
+        id: program.id,
+        channelId: program.channelNodeId,
+        title: program.title,
+        subtitle: program.subtitle || null,
+        description: program.description || null,
+        category: program.category || null,
+        iconUrl: program.iconUrl || null,
+        startTime: program.startTime?.toISOString?.() ?? program.startTime,
+        endTime: program.endTime?.toISOString?.() ?? program.endTime,
+    };
+}
+/**
+ * Retourne les programmes EPG d'une sélection de chaînes sur une fenêtre
+ * temporelle. Les chaînes sont filtrées par les mêmes règles ABAC/PBAC que
+ * `/channels` : un profil restreint ne peut pas déduire le contenu d'une
+ * chaîne bloquée à travers le guide.
+ */
+iptvRouter.get('/epg', async (c) => {
+    const user = c.get('user');
+    if (user && user.canWatchIptv === false) {
+        return c.json({ from: null, to: null, programs: {} });
+    }
+    const rawIds = (c.req.query('channelIds') || '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+        .slice(0, 300);
+    if (rawIds.length === 0) {
+        return c.json({ from: null, to: null, programs: {} });
+    }
+    const hours = Math.min(Math.max(parseInt(c.req.query('hours') || '6', 10) || 6, 1), 48);
+    const fromParam = c.req.query('from');
+    const from = fromParam && !Number.isNaN(Date.parse(fromParam)) ? new Date(fromParam) : new Date();
+    const to = new Date(from.getTime() + hours * 60 * 60 * 1000);
+    const channels = await db
+        .select()
+        .from(mediaNodes)
+        .where(and(eq(mediaNodes.nodeType, 'LIVE_CHANNEL'), inArray(mediaNodes.id, rawIds)));
+    const allowedIds = channels.filter((channel) => isMediaAllowedForUser(user, channel)).map((channel) => channel.id);
+    if (allowedIds.length === 0) {
+        return c.json({ from: from.toISOString(), to: to.toISOString(), programs: {} });
+    }
+    const rows = await db
+        .select()
+        .from(epgPrograms)
+        .where(and(inArray(epgPrograms.channelNodeId, allowedIds), lte(epgPrograms.startTime, to), gte(epgPrograms.endTime, from)))
+        .orderBy(asc(epgPrograms.startTime));
+    const grouped = {};
+    for (const row of rows) {
+        if (!grouped[row.channelNodeId])
+            grouped[row.channelNodeId] = [];
+        grouped[row.channelNodeId].push(serializeProgram(row));
+    }
+    return c.json({ from: from.toISOString(), to: to.toISOString(), programs: grouped });
+});
+/**
+ * Retourne uniquement l'émission en cours et la suivante pour chaque chaîne.
+ * Utilisé par les cartes TV : la charge réseau reste minimale (deux programmes
+ * par chaîne) quel que soit le nombre de chaînes affichées.
+ */
+iptvRouter.get('/epg/now-next', async (c) => {
+    const user = c.get('user');
+    if (user && user.canWatchIptv === false) {
+        return c.json({ now: Date.now(), channels: {} });
+    }
+    const rawIds = (c.req.query('channelIds') || '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+        .slice(0, 300);
+    if (rawIds.length === 0) {
+        return c.json({ now: Date.now(), channels: {} });
+    }
+    const channels = await db
+        .select()
+        .from(mediaNodes)
+        .where(and(eq(mediaNodes.nodeType, 'LIVE_CHANNEL'), inArray(mediaNodes.id, rawIds)));
+    const allowedIds = channels.filter((channel) => isMediaAllowedForUser(user, channel)).map((channel) => channel.id);
+    if (allowedIds.length === 0) {
+        return c.json({ now: Date.now(), channels: {} });
+    }
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+    const rows = await db
+        .select()
+        .from(epgPrograms)
+        .where(and(inArray(epgPrograms.channelNodeId, allowedIds), gte(epgPrograms.endTime, now), lte(epgPrograms.startTime, horizon)))
+        .orderBy(asc(epgPrograms.startTime));
+    const result = {};
+    for (const id of allowedIds)
+        result[id] = { now: null, next: null };
+    for (const row of rows) {
+        const entry = result[row.channelNodeId];
+        if (!entry)
+            continue;
+        const start = new Date(row.startTime).getTime();
+        const end = new Date(row.endTime).getTime();
+        if (start <= now.getTime() && end > now.getTime()) {
+            entry.now = serializeProgram(row);
+        }
+        else if (start > now.getTime() && !entry.next) {
+            entry.next = serializeProgram(row);
+        }
+    }
+    return c.json({ now: now.toISOString(), channels: result });
 });
 iptvRouter.get('/stream/:channelId/live.m3u8', async (c) => {
     const channelId = c.req.param('channelId');

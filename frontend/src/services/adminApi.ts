@@ -228,6 +228,10 @@ export async function updateAdminTag(id: string, updates: any): Promise<any> {
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { success: false, error: body.error || `HTTP ${res.status}` };
+    }
     return await res.json();
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -260,8 +264,24 @@ export async function createIptvSource(payload: { name: string; m3uUrl: string; 
 
 export async function syncIptvSource(id: string): Promise<any> {
   invalidateCacheByPrefix('iptv_');
+  invalidateCacheByPrefix('epg_');
   try {
     const res = await fetch(`${getApiBaseUrl()}/api/iptv/sources/${id}/sync`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/** Synchronise les guides XMLTV de toutes les sources IPTV actives. */
+export async function syncAllEpg(): Promise<any> {
+  invalidateCacheByPrefix('iptv_');
+  invalidateCacheByPrefix('epg_');
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/iptv/sync-epg`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });

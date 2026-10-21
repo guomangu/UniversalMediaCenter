@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, TextInput, Text, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { searchCatalog } from '@/services/api';
@@ -14,16 +14,29 @@ export const SearchBar: React.FC = () => {
     people: [],
   });
   const [isOpen, setIsOpen] = useState(false);
+  const debounceRef = useRef<any>(null);
 
-  const handleSearch = async (text: string) => {
+  useEffect(() => () => clearTimeout(debounceRef.current), []);
+
+  const handleSearch = (text: string) => {
     setQuery(text);
-    if (text.length >= 2) {
-      const data = await searchCatalog(text);
-      setResults(data);
-      setIsOpen(true);
-    } else {
+    clearTimeout(debounceRef.current);
+
+    if (text.trim().length < 2) {
       setIsOpen(false);
+      setResults({ nodes: [], tags: [], people: [] });
+      return;
     }
+
+    debounceRef.current = setTimeout(async () => {
+      const data = await searchCatalog(text.trim());
+      setResults({
+        nodes: Array.isArray(data?.nodes) ? data.nodes : [],
+        tags: Array.isArray(data?.tags) ? data.tags : [],
+        people: Array.isArray(data?.people) ? data.people : [],
+      });
+      setIsOpen(true);
+    }, 180);
   };
 
   return (
@@ -38,19 +51,45 @@ export const SearchBar: React.FC = () => {
       />
       {isOpen && (
         <View style={styles.dropdown}>
-          <ScrollView style={styles.scroll}>
+          <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
+            {results.people.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Personnes</Text>
+                {results.people.slice(0, 5).map((person: any) => (
+                  <Pressable
+                    key={`person-${person.slug}-${person.role || ''}`}
+                    focusable={true}
+                    style={styles.resultRow}
+                    onPress={() => {
+                      setIsOpen(false);
+                      router.push({
+                        pathname: '/person/[slug]',
+                        params: { slug: person.slug, name: person.name, role: person.role || '' },
+                      } as any);
+                    }}
+                  >
+                    <Text style={styles.resultTitle}>{person.name}</Text>
+                    <Text style={styles.resultSub}>{person.role || 'Personne'}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
             {results.tags.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Tags & Filtres</Text>
                 <View style={styles.tagWrap}>
-                  {results.tags.map((t) => (
+                  {results.tags.map((t: any) => (
                     <TagPill
-                      key={t.id}
-                      label={t.value_text}
-                      theme={t.color_theme || 'indigo'}
+                      key={`${t.slug || t.label}-${t.category || ''}`}
+                      label={t.label}
+                      subtext={t.category}
+                      theme="indigo"
                       onPress={() => {
                         setIsOpen(false);
-                        router.push(`/explore?tag=${t.value_slug}`);
+                        router.push({
+                          pathname: '/explore',
+                          params: { tag: t.slug, label: t.label },
+                        } as any);
                       }}
                     />
                   ))}
@@ -60,7 +99,7 @@ export const SearchBar: React.FC = () => {
             {results.nodes.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Médias ({results.nodes.length})</Text>
-                {results.nodes.slice(0, 5).map((node) => (
+                {results.nodes.slice(0, 5).map((node: any) => (
                   <Pressable
                     key={node.id}
                     focusable={true}
@@ -70,10 +109,13 @@ export const SearchBar: React.FC = () => {
                       router.push(`/media/${node.id}` as any);
                     }}>
                     <Text style={styles.resultTitle}>{node.title}</Text>
-                    <Text style={styles.resultSub}>{node.release_year || node.node_type}</Text>
+                    <Text style={styles.resultSub}>{node.releaseYear || node.nodeType}</Text>
                   </Pressable>
                 ))}
               </View>
+            )}
+            {results.tags.length === 0 && results.people.length === 0 && results.nodes.length === 0 && (
+              <Text style={styles.emptyResult}>Aucun résultat pour « {query.trim()} »</Text>
             )}
           </ScrollView>
         </View>

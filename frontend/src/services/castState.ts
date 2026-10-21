@@ -3,6 +3,7 @@ import {
   fetchDeviceStatus,
   sendCastCommand,
   endGoogleCastSession,
+  isNativeCastDeviceId,
   CastDevice,
 } from './castService';
 
@@ -44,19 +45,32 @@ function startSyncLoop(targetId: string) {
   }, 1200);
 }
 
-// Réhydratation automatique au démarrage si une session de Cast était active
+// Réhydratation automatique au démarrage si une session de Cast était active.
+// Pour Google Cast, le SDK peut restaurer la session avec un léger retard :
+// on retente quelques fois avant de considérer la session perdue.
 if (typeof window !== 'undefined' && window.localStorage) {
   const savedId = localStorage.getItem(STORAGE_ACTIVE_CAST_KEY);
   if (savedId) {
-    fetchDeviceStatus(savedId).then((dev) => {
-      if (dev) {
-        activeTarget = dev;
-        notifyListeners();
-        startSyncLoop(dev.id);
-      } else {
-        localStorage.removeItem(STORAGE_ACTIVE_CAST_KEY);
-      }
-    }).catch(() => {});
+    const restore = (attempt = 0) => {
+      fetchDeviceStatus(savedId)
+        .then((dev) => {
+          if (dev) {
+            activeTarget = dev;
+            notifyListeners();
+            startSyncLoop(dev.id);
+          } else if (isNativeCastDeviceId(savedId) && attempt < 12) {
+            setTimeout(() => restore(attempt + 1), 500);
+          } else {
+            localStorage.removeItem(STORAGE_ACTIVE_CAST_KEY);
+          }
+        })
+        .catch(() => {
+          if (isNativeCastDeviceId(savedId) && attempt < 12) {
+            setTimeout(() => restore(attempt + 1), 500);
+          }
+        });
+    };
+    restore();
   }
 }
 
@@ -103,8 +117,12 @@ export async function disconnectCastTotally(stopTarget = false): Promise<void> {
     }
   }
 
-  // Fin de session Google Cast
-  endGoogleCastSession();
+  // Fin de session Google Cast uniquement si la cible active est bien la
+  // session native. stopTarget=false conserve la lecture sur l'écran distant
+  // tout en libérant la télécommande locale.
+  if (activeTarget && isNativeCastDeviceId(activeTarget.id)) {
+    endGoogleCastSession(stopTarget || false);
+  }
 
   // Nettoyage complet
   setActiveCastTarget(null);

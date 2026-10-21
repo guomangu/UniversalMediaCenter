@@ -23,6 +23,7 @@ Ce document rassemble et unifie l'ensemble des spécifications techniques, des r
 - [3. Diffusion Sans Fil (Cast) & Synchronisation Multi-Écrans](#3-diffusion-sans-fil-cast--synchronisation-multi-écrans)
   - [3.1. Résolution d'Adresse LAN Dynamique](#31-résolution-dadresse-lan-dynamique)
   - [3.2. Protocole de Synchronisation Bidirectionnelle Caster $\leftrightarrow$ Cible](#32-protocole-de-synchronisation-bidirectionnelle-caster--cible)
+  - [3.2.bis. Session Google Cast Native (Chromecast / Google TV)](#32bis-session-google-cast-native-chromecast--google-tv)
   - [3.3. Persistance & Reconnexion Automatique après Rechargement](#33-persistance--reconnexion-automatique-après-rechargement)
   - [3.4. Déconnexion Totale (*Total Disconnect*)](#34-déconnexion-totale-total-disconnect)
 - [4. Moteur de Transcodage HLS VOD à la Volée & Compatibilité Universelle](#4-moteur-de-transcodage-hls-vod-à-la-volée--compatibilité-universelle)
@@ -79,6 +80,9 @@ Le lecteur vidéo d'UMS est conçu pour offrir une expérience cinématographiqu
 - **Scrubber focusable à la télécommande** : le halo bleu signale le focus. Une fois sur la barre, `←` / `→` reculent ou avancent immédiatement de 10 secondes, tandis que `↑` / `↓` quittent la barre pour rejoindre les boutons situés au-dessus ou en dessous. `OK` / `Entrée` bascule lecture/pause. Aucune flèche horizontale ne peut donc modifier la progression par accident depuis un autre bouton.
 
 ### 1.6. Commandes & Raccourcis Clavier / Télécommande
+
+- **Mode TV explicite :** sur un navigateur de TV (Tizen, webOS, Android TV…), `isTvEnvironment()` active `data-tv-mode="true"` et `cursor: none` pour rester en navigation D-pad. Les touches sont normalisées (`Left/Right/Up/Down`, `OK/Select`, `Back`, `MediaPlayPause`, codes `keyCode` constructeurs) et le focus est reposé sur le premier contrôle à l'ouverture et à chaque navigation.
+- **Sans ce mode**, le navigateur TV conserve son pointeur virtuel : les flèches déplacent la souris à l'écran au lieu de déplacer le focus entre les boutons.
 - `↑` `↓` `←` `→` / D-pad : déplacement du focus entre les contrôles (jamais de seek implicite).
 - `OK` / `Entrée` : active le contrôle sélectionné ; sur le scrubber, bascule lecture/pause.
 - Sur le scrubber : `←` / `→` ajustent la progression de ±10 s ; `↑` / `↓` sortent de la barre vers les boutons adjacents (barre supérieure, boutons contextuels ou contrôles du bas).
@@ -153,6 +157,14 @@ Les récepteurs externes (comme le Chromecast ou une Smart TV Samsung/LG) n'ont 
 3. **Transmission des Commandes :**
    Toute action sur le lecteur du Caster émet immédiatement une commande ciblée :
    `PLAY`, `PAUSE`, `SEEK`, `SET_VOLUME`, `MUTE`, `UNMUTE`, `SET_AUDIO`, `SET_SUBTITLE`, `STOP`.
+
+### 3.2.bis. Session Google Cast Native (Chromecast / Google TV)
+La session Google Cast officielle ne passe pas par le registre serveur : le Chromecast ne sonde jamais `/api/cast/poll`. Elle est donc exposée comme une cible virtuelle `native_google_cast` :
+- **État temps réel :** `fetchDeviceStatus('native_google_cast')` lit directement `CastSession.getMediaSession()` (`getEstimatedTime()`, `playerState`, `duration`, `getActiveTrackIds()`, volume, mute) et le convertit en `CastDevice` pour la barre de progression et les menus du lecteur.
+- **Commandes :** `sendCastCommand` court-circuite le registre et exécute `PlayRequest`, `PauseRequest`, `SeekRequest`, `session.setVolume()`, `session.setMute()`, `editTracksInfo()` et `endCurrentSession()` sur le SDK.
+- **Sous-titres :** les pistes WebVTT sont déclarées dans `MediaInfo.tracks` (`TrackType.TEXT`, `trackContentType = text/vtt`, URL absolue sur la même origine que le flux) et activées via `LoadRequest.activeTrackIds` ou `editTracksInfo`.
+- **Pistes audio :** le Default Media Receiver ne commute pas les pistes audio d'un MKV direct. `SET_AUDIO` recharge le HLS avec `?audio=<index>` au timestamp courant, en conservant l'état lecture/pause et le sous-titre actif.
+- **Déconnexion :** `disconnectCastTotally(true)` arrête la lecture distante ; `disconnectCastTotally(false)` libère la télécommande tout en laissant le film se poursuivre sur la TV.
 
 ### 3.3. Persistance & Reconnexion Automatique après Rechargement
 - L'identifiant de la cible active est sanctuarisé dans le `localStorage` sous la clé `ums_active_cast_target_id`.

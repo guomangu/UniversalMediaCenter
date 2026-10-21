@@ -191,6 +191,10 @@ export async function enrichLibraryMetadata(batchLimit = 80): Promise<{
           updates.translationsJson = external.translations;
           hasUpdate = true;
         }
+        if (!node.originalTitle && external.originalTitle) {
+          updates.originalTitle = external.originalTitle;
+          hasUpdate = true;
+        }
         if ((!node.overview || node.overview.trim().length === 0) && external.overview) {
           updates.overview = external.overview;
           hasUpdate = true;
@@ -287,6 +291,9 @@ export async function enrichLibraryMetadata(batchLimit = 80): Promise<{
               const cleanChildTitle = sanitizeReleaseTags(child.title);
               if (cleanChildTitle && cleanChildTitle !== child.title) {
                 childUpdates.title = cleanChildTitle;
+              }
+              if (!child.originalTitle && childExt.originalTitle) {
+                childUpdates.originalTitle = childExt.originalTitle;
               }
               if (!child.overview && childExt.overview) childUpdates.overview = childExt.overview;
               if (!child.tagline && childExt.tagline) childUpdates.tagline = childExt.tagline;

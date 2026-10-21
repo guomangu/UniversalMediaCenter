@@ -1,6 +1,12 @@
+import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import type { ParsedNfo, ParsedActor, ParsedChapter, ParsedStreamDetails } from './types.js';
-import { cleanMediaTitle, sanitizeReleaseTags, extractCanonicalShowTitle } from './titleCleaner.js';
+import {
+  cleanMediaTitle,
+  sanitizeReleaseTags,
+  extractCanonicalShowTitle,
+  extractYearFromText,
+} from './titleCleaner.js';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -25,7 +31,20 @@ const parser = new XMLParser({
 });
 
 export function parseNfoXml(xmlContent: string, filePath?: string): ParsedNfo | null {
-  const parsed = parser.parse(xmlContent);
+  // Beaucoup de NFO de releases contiennent une bannière ASCII/ANSI avant le XML,
+  // ou un BOM UTF-8. On isole le document XML avant de le parser.
+  let xml = String(xmlContent || '').replace(/^\uFEFF/, '');
+  if (!/^\s*</.test(xml)) {
+    const rootIndex = xml.search(/<\?xml|<(movie|tvshow|episodedetails|season|set|collection)\b/i);
+    if (rootIndex > 0) xml = xml.slice(rootIndex);
+  }
+
+  let parsed: any;
+  try {
+    parsed = parser.parse(xml);
+  } catch {
+    return null;
+  }
   if (!parsed || typeof parsed !== 'object') return null;
 
   const isShow = Boolean(parsed.tvshow);
@@ -114,9 +133,19 @@ export function parseNfoXml(xmlContent: string, filePath?: string): ParsedNfo | 
   const finalSeasonNumber = folderSeason !== undefined ? folderSeason : parsedSeason;
 
   // 3. Titre propre et distinct
-  const rawTitle = root.title || filenameEpTitle || '';
+  // Repli sur le nom de fichier quand le NFO est valide mais dépourvu de <title>.
+  const fileBase = filePath
+    ? path.basename(filePath, path.extname(filePath))
+    : '';
+  // Les NFO génériques (movie.nfo, tvshow.nfo, season.nfo) ne portent pas le
+  // titre de l'œuvre : on utilise le nom du dossier parent.
+  const parentFolderName = filePath ? path.basename(path.dirname(filePath)) : '';
+  const isGenericNfoName = /^(movie|tvshow|season|folder|poster|fanart|backdrop|logo|clearlogo|thumb)$/i.test(fileBase);
+  const titleSource = isGenericNfoName ? parentFolderName : fileBase;
+  const filenameTitle = titleSource ? sanitizeReleaseTags(titleSource) : '';
+  const rawTitle = root.title || filenameEpTitle || (isEpisode ? '' : filenameTitle);
   const originalTitle = root.originaltitle;
-  const showTitle = root.showtitle || filenameShowTitle || folderTitle;
+  const showTitle = root.showtitle || filenameShowTitle || folderTitle || (isShow ? filenameTitle : undefined);
   const cleanedTitle = cleanMediaTitle(
     rawTitle,
     originalTitle,
@@ -208,7 +237,7 @@ export function parseNfoXml(xmlContent: string, filePath?: string): ParsedNfo | 
   const rating = isNaN(rawRating as any) ? undefined : rawRating;
 
   const rawYear = root.year != null ? parseInt(String(root.year), 10) : undefined;
-  const year = isNaN(rawYear as any) ? undefined : rawYear;
+  const year = isNaN(rawYear as any) ? extractYearFromText(filePath || fileBase) : rawYear;
 
   const rawRuntime = root.runtime != null ? parseInt(String(root.runtime), 10) : undefined;
   const runtime = isNaN(rawRuntime as any) ? undefined : rawRuntime;

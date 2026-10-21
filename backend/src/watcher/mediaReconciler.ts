@@ -18,27 +18,57 @@ export interface ReconcileReport {
  * Vérifie si le volume physique hébergeant un fichier est accessible.
  * Évite de supprimer des fichiers si un disque dur externe est débranché.
  */
+function isDirectoryReadable(dirPath: string): boolean {
+  try {
+    const handle = fs.opendirSync(dirPath);
+    handle.closeSync();
+    return true;
+  } catch {
+    // EIO / EACCES / ENODEV : le volume est monté mais illisible. Il ne faut
+    // surtout pas interpréter cela comme « fichiers supprimés ».
+    return false;
+  }
+}
+
+/**
+ * Distingue un fichier réellement absent (ENOENT) d'un fichier inaccessible
+ * pour cause d'erreur d'E/S (EIO, ENODEV, ETIMEDOUT...). `existsSync` masque
+ * cette distinction et transforme une panne de disque en suppression massive.
+ */
+function getPathState(filePath: string): 'exists' | 'missing' | 'inaccessible' {
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() || stat.isDirectory() ? 'exists' : 'inaccessible';
+  } catch (err: any) {
+    if (err?.code === 'ENOENT') return 'missing';
+    return 'inaccessible';
+  }
+}
+
 export function isDiskAccessibleForPath(filePath: string, configuredRoots?: string[]): boolean {
   if (!filePath) return false;
   const roots = configuredRoots && configuredRoots.length > 0 ? configuredRoots : parseMediaChaosRoots();
+  const normFile = path.normalize(filePath).replace(/\\/g, '/');
 
-  // 1. Vérification par rapport aux racines déclarées
-  for (const root of roots) {
-    const normRoot = path.normalize(root).replace(/\\/g, '/');
-    const normFile = path.normalize(filePath).replace(/\\/g, '/');
-    if (normFile.startsWith(normRoot)) {
-      // Si la racine elle-même existe sur le disque, le volume est monté et accessible
-      return fs.existsSync(normRoot);
+  // 1. Les volumes amovibles doivent être vérifiés au niveau de leur point de montage
+  //    réel (/run/media/<user>/<disque>). Sinon, une racine configurée plus haute
+  //    (/run/media/tele) existe toujours même quand le disque est débranché, et le
+  //    réconciliateur supprime à tort toute la bibliothèque du disque absent.
+  if (normFile.startsWith('/run/media/')) {
+    const parts = normFile.split('/');
+    if (parts.length >= 5) {
+      const mountPoint = parts.slice(0, 5).join('/');
+      return fs.existsSync(mountPoint) && isDirectoryReadable(mountPoint);
     }
   }
 
-  // 2. Détection dynamique pour les disques /run/media/... ou /home/...
-  if (filePath.startsWith('/run/media/')) {
-    const parts = filePath.split('/');
-    if (parts.length >= 5) {
-      // /run/media/user/DiskName
-      const mountPoint = parts.slice(0, 5).join('/');
-      return fs.existsSync(mountPoint);
+  // 2. Vérification par rapport aux racines déclarées
+  for (const root of roots) {
+    const normRoot = path.normalize(root).replace(/\\/g, '/');
+    if (normFile.startsWith(normRoot)) {
+      // La racine doit être lisible, pas seulement exister : un disque en EIO
+      // rendrait tous ses fichiers « absents » et déclencherait leur purge.
+      return fs.existsSync(normRoot) && isDirectoryReadable(normRoot);
     }
   }
 
@@ -85,18 +115,21 @@ export async function reconcileAndPruneLibrary(roots?: string[]): Promise<Reconc
   const missingNodes: typeof allNodes = [];
 
   for (const node of allNodes) {
-    if (node.nodeType === 'SHOW' || node.nodeType === 'COLLECTION') {
+    if (node.nodeType === 'SHOW' || node.nodeType === 'COLLECTION' || node.nodeType === 'SEASON') {
       continue;
     }
 
     const hasVideo = !!node.videoFilePath;
     const hasNfo = !!node.nfoFilePath;
 
-    const videoExists = hasVideo ? fs.existsSync(node.videoFilePath!) : false;
-    const nfoExists = hasNfo ? fs.existsSync(node.nfoFilePath!) : false;
+    const videoState = hasVideo ? getPathState(node.videoFilePath!) : 'missing';
+    const nfoState = hasNfo ? getPathState(node.nfoFilePath!) : 'missing';
 
-    if (hasVideo && videoExists) {
+    if (hasVideo && videoState === 'exists') {
       validNodes.push(node);
+    } else if (videoState === 'inaccessible' || nfoState === 'inaccessible') {
+      // Erreur d'E/S : on gèle la purge pour ce nœud, le volume est en panne.
+      continue;
     } else {
       // Pour MOVIE, EPISODE, EXTRA, l'absence de fichier vidéo physique valide en fait un média orphelin/fantôme
       const fileToCheck = node.videoFilePath || node.nfoFilePath;

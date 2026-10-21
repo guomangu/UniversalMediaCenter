@@ -1,9 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-
-const VIDEO_EXTENSIONS = new Set([
-  '.mkv', '.mp4', '.avi', '.mov', '.m4v', '.webm', '.ts', '.wmv', '.flv',
-]);
+import { isVideoExtension } from './mediaExtensions.js';
 
 export interface AdjacentMediaFiles {
   videoFilePath?: string;
@@ -27,13 +24,18 @@ export async function detectAdjacentFiles(nfoPath: string): Promise<AdjacentMedi
     // Compter les vidéos du dossier pour savoir si c'est un dossier multi-films à plat
     let videoCount = 0;
     for (const entry of entries) {
-      if (!entry.isFile()) continue;
+      const fullPath = path.join(dir, entry.name);
+      let isFile = entry.isFile();
+      if (!isFile && entry.isSymbolicLink()) {
+        isFile = await fs.stat(fullPath).then((s) => s.isFile()).catch(() => false);
+      }
+      if (!isFile) continue;
       const ext = path.extname(entry.name).toLowerCase();
-      if (VIDEO_EXTENSIONS.has(ext)) {
+      if (isVideoExtension(ext)) {
         videoCount++;
         const base = path.basename(entry.name, ext).toLowerCase();
         if (!isShowOrSeasonNfo && base === nfoBase) {
-          result.videoFilePath = path.join(dir, entry.name);
+          result.videoFilePath = fullPath;
         }
       }
     }
@@ -41,10 +43,15 @@ export async function detectAdjacentFiles(nfoPath: string): Promise<AdjacentMedi
     // 1. Détection du fichier vidéo principal adjacent (sans déplacement)
     if (!isShowOrSeasonNfo && !result.videoFilePath && videoCount === 1) {
       for (const entry of entries) {
-        if (!entry.isFile()) continue;
+        const fullPath = path.join(dir, entry.name);
+        let isFile = entry.isFile();
+        if (!isFile && entry.isSymbolicLink()) {
+          isFile = await fs.stat(fullPath).then((s) => s.isFile()).catch(() => false);
+        }
+        if (!isFile) continue;
         const ext = path.extname(entry.name).toLowerCase();
-        if (VIDEO_EXTENSIONS.has(ext)) {
-          result.videoFilePath = path.join(dir, entry.name);
+        if (isVideoExtension(ext)) {
+          result.videoFilePath = fullPath;
           break;
         }
       }

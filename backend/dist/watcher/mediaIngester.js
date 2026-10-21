@@ -27,8 +27,12 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
     if (adjacent.thumbPath && (await isTaintedArtwork(adjacent.thumbPath))) {
         adjacent.thumbPath = undefined;
     }
-    // Sanctuarisation : un fichier NFO sans vidéo adjacente pour MOVIE/EPISODE/EXTRA ne doit jamais être ingéré (évite les doublons fantômes)
-    if (!adjacent.videoFilePath && parsed.type !== 'SHOW' && parsed.type !== 'COLLECTION') {
+    // Sanctuarisation : un fichier NFO sans vidéo adjacente pour MOVIE/EPISODE/EXTRA ne doit jamais être ingéré (évite les doublons fantômes).
+    // Les SHOW, SEASON et COLLECTION sont des conteneurs légitimes sans vidéo propre.
+    if (!adjacent.videoFilePath &&
+        parsed.type !== 'SHOW' &&
+        parsed.type !== 'COLLECTION' &&
+        parsed.type !== 'SEASON') {
         console.log(`⚠️ [Ingester] NFO orphelin sans vidéo ignoré pour éviter les doublons fantômes : ${nfoPath}`);
         return '';
     }
@@ -138,6 +142,10 @@ export async function ingestMediaNode(nfoPath, parsed, sha256) {
                 if (sagaNode)
                     parentId = sagaNode.id;
             }
+        }
+        else if (effectiveType === 'SEASON') {
+            // Un season.nfo est un conteneur de saison : le rattacher à son SHOW.
+            parentId = await resolveParentShowNodeId(nfoPath);
         }
     }
     // Déduplication stricte et réconciliation de déplacement par chemin NFO ou vidéo
@@ -520,7 +528,12 @@ export async function ingestMediaFile(videoPath) {
                     parentId = sagaNode.id;
             }
         }
-        if (meta.absoluteEpisodeNumber != null && meta.absoluteEpisodeNumber > 0) {
+        if (nodeType === 'MOVIE') {
+            // Les films d'une saga doivent être ordonnés chronologiquement par année.
+            orderIndex = meta.releaseYear || 0;
+            absoluteOrderIndex = meta.releaseYear || null;
+        }
+        else if (meta.absoluteEpisodeNumber != null && meta.absoluteEpisodeNumber > 0) {
             orderIndex = meta.absoluteEpisodeNumber;
             absoluteOrderIndex = meta.absoluteEpisodeNumber;
         }
@@ -547,13 +560,13 @@ export async function ingestMediaFile(videoPath) {
     }
     const canonicalTitle = nodeType === 'SHOW'
         ? extractCanonicalShowTitle(meta.title)
-        : meta.title;
+        : (sanitizeReleaseTags(meta.title) || meta.title);
     const payload = {
         parentId: effectiveParentId ? String(effectiveParentId) : undefined,
         nodeType,
         title: canonicalTitle,
         originalTitle: meta.originalTitle,
-        sortTitle: nodeType === 'SHOW' ? canonicalTitle : sortTitle,
+        sortTitle: nodeType === 'SHOW' ? canonicalTitle : (sanitizeReleaseTags(sortTitle) || canonicalTitle),
         orderIndex,
         absoluteOrderIndex,
         releaseYear: meta.releaseYear,

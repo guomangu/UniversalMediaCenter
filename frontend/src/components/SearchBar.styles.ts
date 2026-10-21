@@ -31,4 +31,5 @@ export const styles = StyleSheet.create({
   resultRow: { paddingVertical: Spacing.one, borderBottomWidth: 1, borderBottomColor: 'rgba(51, 65, 85, 0.4)' },
   resultTitle: { color: '#f8fafc', fontSize: 13, fontWeight: '600' },
   resultSub: { color: '#64748b', fontSize: 11 },
+  emptyResult: { color: '#94a3b8', fontSize: 12, paddingVertical: Spacing.two, textAlign: 'center' },
 });

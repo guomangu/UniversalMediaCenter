@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, Pressable, Platform, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { fetchMediaDetail, resolveImageUrl, getVideoStreamUrl } from '@/services/api';
+import { fetchMediaDetail, resolveImageUrl, getVideoStreamUrl, getDownloadUrl } from '@/services/api';
 import { getAuthToken } from '@/services/authStore';
 import { getApiBaseUrl } from '@/services/apiConfig';
 import { playerStore } from '@/services/playerStore';
@@ -15,6 +15,7 @@ import { getCurrentUser } from '@/services/authStore';
 import { TagPill } from '@/components/TagPill';
 import { ClickableTopicText } from '@/components/ClickableTopicText';
 import { MediaChildrenRow } from '@/components/MediaChildrenRow';
+import { MediaCard } from '@/components/MediaCard';
 import { MediaSagaRow } from '@/components/MediaSagaRow';
 import { MediaStudioSection } from '@/components/MediaStudioSection';
 import { MediaGenreSection } from '@/components/MediaGenreSection';
@@ -48,6 +49,7 @@ export default function MediaDetailScreen() {
   });
   const [activeSessions, setActiveSessions] = useState<MediaSession[]>([]);
   const [totalViewers, setTotalViewers] = useState(0);
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
 
   const loadReposts = () => {
     if (!id) return;
@@ -143,6 +145,7 @@ export default function MediaDetailScreen() {
     parentSaga = null,
     studioMedias = [],
     relatedTags = [],
+    similarMedias = [],
   } = data || ({} as any);
 
   // Extraction et classification exhaustive de toutes les métadonnées (Loi n°1 : Zéro perte de données)
@@ -288,21 +291,67 @@ export default function MediaDetailScreen() {
     });
   };
 
-  const handleActorPress = (actor: any) => {
-    const actorSlug =
-      actor.value_slug ||
-      actor.value_text
+  const handlePersonPress = (person: any) => {
+    const slug =
+      person.value_slug ||
+      person.value_text
         .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-z0-9_-]/g, '-')
         .replace(/-+/g, '-');
     router.push({
-      pathname: '/forum/[topic]',
+      pathname: '/person/[slug]',
       params: {
-        topic: actorSlug,
-        title: actor.value_text,
-        category: 'actor',
+        slug,
+        name: person.value_text,
+        role: person.attr_code || '',
       },
     } as any);
+  };
+
+  const handleActorPress = (actor: any) => handlePersonPress(actor);
+
+  const handleDownload = async () => {
+    if (!user) {
+      router.push({
+        pathname: '/login',
+        params: { returnUrl: `/media/${id}`, error: 'Connexion requise pour télécharger cette œuvre' },
+      } as any);
+      return;
+    }
+
+    if (!user.isAdmin && (user as any).canDownload === false) {
+      setDownloadNotice('Le téléchargement hors-ligne est désactivé pour votre profil par un administrateur.');
+      return;
+    }
+
+    const url = getDownloadUrl(media.id, share);
+    setDownloadNotice('Préparation du téléchargement…');
+
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      try {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = '';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setDownloadNotice('Téléchargement lancé dans votre navigateur.');
+        setTimeout(() => setDownloadNotice(null), 6000);
+      } catch {
+        setDownloadNotice("Le téléchargement n'a pas pu démarrer. Réessayez depuis un navigateur.");
+      }
+      return;
+    }
+
+    try {
+      await Linking.openURL(url);
+      setDownloadNotice('Téléchargement ouvert dans votre gestionnaire de fichiers.');
+    } catch {
+      setDownloadNotice('Impossible de lancer le téléchargement sur cet appareil.');
+    }
   };
 
   return (
@@ -394,7 +443,7 @@ export default function MediaDetailScreen() {
                   <Pressable
                     key={idx}
                     focusable={true}
-                    onPress={() => router.push(`/explore?q=${encodeURIComponent(d.value_text)}` as any)}
+                    onPress={() => handlePersonPress(d)}
                     style={{
                       backgroundColor: 'rgba(99, 102, 241, 0.25)',
                       borderColor: 'rgba(129, 140, 248, 0.4)',
@@ -510,7 +559,26 @@ export default function MediaDetailScreen() {
               >
                 <Text style={styles.btnText}>Diffuser sur l'écran</Text>
               </Pressable>
+
+              {media.videoFilePath && !media.streamUrl && media.nodeType !== 'LIVE_CHANNEL' && (
+                <Pressable
+                  focusable={true}
+                  onPress={handleDownload}
+                  style={[
+                    styles.playBtn,
+                    { backgroundColor: 'rgba(16, 185, 129, 0.22)', borderColor: 'rgba(52, 211, 153, 0.45)', borderWidth: 1 },
+                  ]}
+                >
+                  <Text style={[styles.btnText, { color: '#a7f3d0' }]}>⬇ Télécharger</Text>
+                </Pressable>
+              )}
             </View>
+
+            {downloadNotice && (
+              <View style={styles.downloadNotice}>
+                <Text style={styles.downloadNoticeTxt}>{downloadNotice}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -583,7 +651,7 @@ export default function MediaDetailScreen() {
                   <Pressable
                     key={idx}
                     focusable={true}
-                    onPress={() => router.push(`/explore?q=${encodeURIComponent(d.value_text)}` as any)}
+                    onPress={() => handlePersonPress(d)}
                     style={{
                       backgroundColor: 'rgba(99, 102, 241, 0.25)',
                       borderColor: 'rgba(129, 140, 248, 0.4)',
@@ -599,6 +667,40 @@ export default function MediaDetailScreen() {
                   </Pressable>
                 ))}
               </View>
+            )}
+
+            {[
+              { label: 'Scénario', list: writers, color: 'rgba(16, 185, 129, 0.22)', border: 'rgba(52, 211, 153, 0.4)', text: '#a7f3d0' },
+              { label: 'Production', list: producers, color: 'rgba(56, 189, 248, 0.2)', border: 'rgba(125, 211, 252, 0.4)', text: '#bae6fd' },
+              { label: 'Musique', list: composers, color: 'rgba(244, 114, 182, 0.18)', border: 'rgba(249, 168, 212, 0.4)', text: '#fbcfe8' },
+            ].map((group) =>
+              group.list.length > 0 ? (
+                <View
+                  key={group.label}
+                  style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}
+                >
+                  <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '700' }}>{group.label} :</Text>
+                  {group.list.map((person: any, idx: number) => (
+                    <Pressable
+                      key={`${group.label}-${idx}`}
+                      focusable={true}
+                      onPress={() => handlePersonPress(person)}
+                      style={{
+                        backgroundColor: group.color,
+                        borderColor: group.border,
+                        borderWidth: 1,
+                        paddingHorizontal: 12,
+                        paddingVertical: 5,
+                        borderRadius: 16,
+                      }}
+                    >
+                      <Text style={{ color: group.text, fontSize: 13, fontWeight: '700' }}>
+                        {person.value_text}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null
             )}
 
             {actors.length > 0 && (
@@ -694,6 +796,25 @@ export default function MediaDetailScreen() {
           relatedTags={relatedTags}
           fallbackTags={tags.PRIMARY_PILL}
         />
+
+        {/* Recommandations TF-IDF / BM25 calculées côté serveur */}
+        {similarMedias && similarMedias.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.secTitle}>✨ Recommandations pour vous</Text>
+            <Text style={{ color: '#8e9ab0', fontSize: 12, marginTop: 2, marginBottom: 6 }}>
+              Œuvres proches par leurs genres, réalisateurs, acteurs et studios
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingVertical: 8 }}
+            >
+              {similarMedias.map((item: any) => (
+                <MediaCard key={item.id} item={item} styleVariant="POSTER" />
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Section Avis & Critiques de la communauté YouTube-Quality */}
         <View style={styles.section}>
@@ -1007,4 +1128,15 @@ const styles = StyleSheet.create({
   delAvisTxt: { color: '#f87171', fontSize: 13, fontWeight: '800', paddingHorizontal: 4 },
   repostRating: { color: '#fcd34d', fontSize: 12 },
   repostComment: { color: '#c5cedb', fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
+  downloadNotice: {
+    marginTop: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
+    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: 640,
+  },
+  downloadNoticeTxt: { color: '#a7f3d0', fontSize: 12.5, lineHeight: 18 },
 });

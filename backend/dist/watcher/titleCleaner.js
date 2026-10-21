@@ -80,10 +80,49 @@ export function cleanMediaTitle(raw, original, showTitle, season, episode) {
 /**
  * Nettoie les balises techniques, releases de scènes, résolutions, préfixes de pistes et années redondantes
  */
+const TITLE_SMALL_WORDS = new Set([
+    'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in', 'into', 'nor',
+    'of', 'on', 'onto', 'or', 'over', 'the', 'to', 'up', 'with', 'vs', 'via',
+    'de', 'du', 'des', 'la', 'le', 'les', 'et', 'en', 'au', 'aux', 'sur', 'sous',
+    'dans', 'pour', 'par', 'avec',
+]);
+/**
+ * Met en forme un titre intégralement en minuscules (fréquent dans les noms de
+ * release) tout en préservant les chiffres romains d'épisode (II, IV...) et les
+ * petits mots de liaison français/anglais.
+ */
+function toDisplayTitleCase(input) {
+    const parts = input.split(/(\s+)/);
+    return parts
+        .map((part, index) => {
+        if (!part || /^\s+$/.test(part))
+            return part;
+        const bare = part.replace(/[^A-Za-z0-9']/g, '');
+        if (!bare)
+            return part;
+        if (/^(i|ii|iii|iv|v|vi|vii|viii|ix|x)$/i.test(bare)) {
+            return part.replace(bare, bare.toUpperCase());
+        }
+        const isEdge = index === 0 || index === parts.length - 1;
+        if (!isEdge && TITLE_SMALL_WORDS.has(bare.toLowerCase())) {
+            return part.toLowerCase();
+        }
+        return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+        .join('');
+}
 export function sanitizeReleaseTags(raw) {
     let t = String(raw ?? '').trim();
     // Nettoyage des suffixes de release
-    t = t.replace(/\.(mkv|mp4|avi|mov|ts|m4v|webm)$/i, '');
+    t = t.replace(/\.(mkv|mp4|avi|mov|ts|m4v|webm|m2ts|mts|mpg|mpeg|vob|ogv|3gp)$/i, '');
+    // Bloc année + tags techniques + groupe de release (ex: "... 1999.multi.1080p.bluray.x264-LOST")
+    // Il doit être retiré AVANT la suppression individuelle des tags, sinon l'année et
+    // le nom du groupe restent collés au titre du film.
+    t = t.replace(/\b(?:19|20)\d{2}\b[\s._-]+(?:vff|vf|vostfr|french|truefrench|multi|mutli|1080p|720p|480p|576p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|hdtv|web-?dl|webrip|web|x264|x265|h264|h265|hevc|ac3|dts|aac|flac)[\s\S]*$/i, '');
+    // Domaines et adresses de release (ex: ...@zone-telechargement.com)
+    t = t.replace(/\b(?:www\.)?[a-z0-9-]+\.(?:com|net|org|ws|tv|to|me|pw|cx|cc|info|io|co)\b.*$/i, ' ');
+    // Groupe de release en suffixe, uniquement s'il est en majuscules (évite Spider-Man, etc.)
+    t = t.replace(/\s+-\s*[A-Z0-9]{2,15}$/, '');
     // Nettoyage des années préfixées (ex: "1962 Dr. No", "1995 - Goldeneye", "2012.Skyfall")
     t = t.replace(/^(?:19|20)\d{2}\s*[-._– ]\s*/, '');
     // Nettoyage des préfixes ordonnés (ex: "01 Iron Man", "03 Iron Man 2", "07 - Iron Man 3", "1a. ")
@@ -102,6 +141,9 @@ export function sanitizeReleaseTags(raw) {
     // Élimination absolue des crochets, parenthèses ou tirets orphelins résiduels aux extrémités
     t = t.replace(/[\s\-_[{(]+$/, '').replace(/^[\s\-_\]})]+/, '').trim();
     const cleaned = t.replace(/\s{2,}/g, ' ').trim();
+    if (cleaned && cleaned === cleaned.toLowerCase() && /[a-z]/.test(cleaned)) {
+        return toDisplayTitleCase(cleaned);
+    }
     return cleaned || t || '';
 }
 /**

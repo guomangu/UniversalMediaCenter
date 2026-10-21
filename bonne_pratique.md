@@ -470,3 +470,33 @@ ightarrow$ dans *"Mes écrans connectés"* avec action `[Déconnecter]`.
 
 *   **Entrée dans le Lecteur :**
     *   Au dépliage, retirer le focus de l'arrière-plan. `↓` doit rejoindre directement le scrubber ; les autres directions rejoignent la barre supérieure la plus alignée avec le centre de l'écran.
+
+## 27. Mode Télécommande TV, Ingestion Fail-Open & Télécommande Chromecast Native
+
+*   **Détection TV & Pointeur Virtuel :**
+    *   Détecter les environnements TV via le User-Agent (`Tizen`, `webOS`, `Android TV`, `Google TV`, `Fire TV`, `HbbTV`, `NetCast`, `VIDAA`, `BRAVIA`, `AppleTV`, `Roku`…) et les objets natifs (`window.tizen`, `window.webOS`, `window.webapis`, `window.isSmartTV`).
+    *   Sur TV, poser `data-tv-mode="true"` sur `<html>` et neutraliser le curseur (`cursor: none`) ainsi que les transformations de survol. Sans cela, le navigateur TV reste en mode pointeur virtuel et la télécommande ne pilote pas le focus.
+    *   Normaliser les touches avant toute logique métier : `Left/Right/Up/Down` et `keyCode` 37-40, `Enter/OK/Select` et `keyCode` 13, `Back` et codes 461/10009/4, `MediaPlayPause` et codes 19/179/415. Certaines télécommandes ne renseignent que `keyCode`.
+    *   Reposer le focus sur le premier contrôle visible à l'ouverture et à chaque changement de route : le premier appui sur `OK` doit fonctionner sans devoir d'abord déplacer le pointeur.
+
+*   **Indexation Fail-Open :**
+    *   Un fichier `.nfo` est un **sidecar optionnel** : son absence, son invalité ou son encodage exotique ne doit jamais empêcher l'ingestion de la vidéo. En cas d'échec de parsing, basculer sur le pipeline autonome (`ingestStandaloneVideoFile`).
+    *   Isoler le document XML même s'il est précédé d'une bannière ASCII, retirer le BOM et se replier sur le nom de fichier pour `<title>`.
+    *   Centraliser les extensions vidéo et les noms ignorés dans un module unique (`mediaExtensions.ts`) pour que le scanner, le watcher et la détection des artworks voient exactement le même périmètre.
+    *   Ne jamais appliquer un filtre d'extension à un dossier : les noms de release contiennent des points (`star.wars.hexalogie.1977-2005...`). Utiliser `stats.isDirectory()` quand il est disponible et filtrer les fichiers dans le handler.
+    *   Suivre les liens symboliques avec un ensemble de chemins réels visités, et traiter `BDMV/STREAM`/`VIDEO_TS` comme un seul film (fichier principal) plutôt que comme des dizaines de fragments.
+
+*   **Sagas & Collections :**
+    *   Détecter les mots-clés de franchise après normalisation des points/underscores : `saga`, `intégrale`, `trilogie`, `tétralogie`, `pentalogie`, `hexalogie`, `coffret`, `boxset`, `franchise`, `filmographie`, `univers`…
+    *   Réutiliser une collection existante par nom normalisé (accents supprimés, `- Saga`/`Collection` retirés, ponctuation normalisée) au lieu d'un `LIKE` approximatif qui peut rattacher une franchise au mauvais conteneur.
+    *   Pour un film, `orderIndex`/`absoluteOrderIndex` doivent être l'année de sortie, afin que les sagas soient toujours ordonnées chronologiquement.
+
+*   **Intégrité des Montages :**
+    *   Vérifier la **lisibilité** du point de montage (`opendirSync`), pas seulement son existence. Un disque monté mais en `EIO` ne doit jamais déclencher la purge des nœuds : geler la réconciliation pour ce volume.
+
+*   **Télécommande Chromecast Native :**
+    *   Une session Google Cast doit être enregistrée comme cible active (`native_google_cast`) dans `castState`, avec un état lu dans `MediaSession` : `getEstimatedTime()`, `playerState`, `duration`, `getActiveTrackIds()`, volume et mute.
+    *   `fetchDeviceStatus` doit court-circuiter le registre serveur pour cet identifiant et interroger directement le SDK.
+    *   Les commandes `PLAY/PAUSE/SEEK/SET_VOLUME/MUTE/UNMUTE/SET_SUBTITLE/SET_AUDIO/STOP` doivent être exécutées localement sur la session Cast ; le Chromecast ne sonde pas `/api/cast/poll`.
+    *   Les sous-titres doivent être déclarés dans `MediaInfo.tracks` comme pistes `TEXT` avec `trackContentId` absolu de même origine que le flux, `trackContentType = text/vtt` et `activeTrackIds` à chargement.
+    *   Pour changer de piste audio, recharger le HLS avec `?audio=<index>` au timestamp courant : le Default Media Receiver ne commute pas les pistes audio d'un MKV direct. Conserver l'état lecture/pause et le sous-titre actif pendant le rechargement.

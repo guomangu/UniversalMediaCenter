@@ -1,8 +1,43 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { toggleFullscreen, isFullscreenActive } from '@/utils/fullscreen';
+import { isTvEnvironment } from '@/services/deviceIdentity';
 
 type Direction = 'up' | 'down' | 'left' | 'right';
+
+/**
+ * Normalise les événements clavier des télécommandes TV (Tizen, webOS, Android TV,
+ * HbbTV...). Certains navigateurs n'exposent pas `e.key` mais uniquement
+ * `keyCode`, ou renvoient `Left` / `OK` au lieu de `ArrowLeft` / `Enter`.
+ */
+function normalizeRemoteKey(e: KeyboardEvent): string {
+  const code = e.keyCode || 0;
+  const raw = e.key || '';
+  if (raw === 'ArrowLeft' || raw === 'Left' || code === 37) return 'ArrowLeft';
+  if (raw === 'ArrowUp' || raw === 'Up' || code === 38) return 'ArrowUp';
+  if (raw === 'ArrowRight' || raw === 'Right' || code === 39) return 'ArrowRight';
+  if (raw === 'ArrowDown' || raw === 'Down' || code === 40) return 'ArrowDown';
+  if (raw === 'Select' || raw === 'OK' || raw === 'Accept') return 'Select';
+  if (raw === 'Enter' || raw === 'NumpadEnter' || code === 13) return 'Enter';
+  if (raw === 'Escape' || raw === 'Esc' || code === 27) return 'Escape';
+  if (raw === 'BrowserBack' || raw === 'GoBack' || raw === 'Back' || [10009, 461, 4].includes(code)) {
+    return 'Back';
+  }
+  if (raw === 'Backspace' || code === 8) return 'Backspace';
+  if (raw === ' ' || raw === 'Spacebar' || raw === 'MediaPlayPause' || [415, 19, 179].includes(code)) {
+    return 'PlayPause';
+  }
+  return raw;
+}
+
+export function focusFirstTvElement(): boolean {
+  const candidates = getCandidates();
+  if (candidates.length === 0) return false;
+  const first =
+    candidates.find((el) => !['INPUT', 'TEXTAREA'].includes(el.tagName)) || candidates[0];
+  focusWithScroll(first);
+  return true;
+}
 
 function isPlayerScrubber(el: HTMLElement | null): boolean {
   return !!el && (el.getAttribute('data-player-scrubber') === 'true' || !!el.closest('[data-player-scrubber="true"]'));
@@ -576,24 +611,23 @@ export function useTvNavigation() {
 
     const onKey = (e: KeyboardEvent) => {
       focusActiveModalIfNeeded();
+      const key = normalizeRemoteKey(e);
       const active = document.activeElement as HTMLElement | null;
       const isVideo = isVideoElement(active);
       const isInput = active ? ['INPUT', 'TEXTAREA'].includes(active.tagName) : false;
       const modal = getActiveModal();
       const isScrubber = isPlayerScrubber(active);
 
-      const isEscape = e.key === 'Escape' || e.keyCode === 27;
-      const isBackNav =
-        ['BrowserBack', 'GoBack', 'Back'].includes(e.key) ||
-        [10009, 461, 4].includes(e.keyCode);
-      const isBackspace = e.key === 'Backspace' || e.keyCode === 8;
+      const isEscape = key === 'Escape';
+      const isBackNav = key === 'Back';
+      const isBackspace = key === 'Backspace';
 
       // Touche plein écran universelle télécommande & clavier ('F', 'FullScreen', ou codes TV)
       const isFullscreenKey =
-        e.key === 'f' ||
-        e.key === 'F' ||
-        e.key === 'FullScreen' ||
-        e.key === 'F11' ||
+        key === 'f' ||
+        key === 'F' ||
+        key === 'FullScreen' ||
+        key === 'F11' ||
         [10071, 10072, 184, 261].includes(e.keyCode);
 
       if (isFullscreenKey && !isInput) {
@@ -612,9 +646,9 @@ export function useTvNavigation() {
 
       // Raccourci d'accès direct à la barre de recherche (touche '/' ou touche Search télécommande)
       const isSearchShortcut =
-        e.key === '/' ||
-        e.key === 'Search' ||
-        e.key === 'BrowserSearch' ||
+        key === '/' ||
+        key === 'Search' ||
+        key === 'BrowserSearch' ||
         [84, 170].includes(e.keyCode);
 
       if (isSearchShortcut && !isInput) {
@@ -639,19 +673,19 @@ export function useTvNavigation() {
         // Ne pas couper la propagation : FloatingBottomPlayer doit pouvoir
         // réarmer l'affichage des contrôles (resetMouseActivity) avant de voir
         // `defaultPrevented` et de s'arrêter.
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (key === 'ArrowLeft' || key === 'ArrowRight') {
           e.preventDefault();
-          dispatchPlayerEvent('ums-player-seek', { offset: e.key === 'ArrowLeft' ? -10 : 10 });
+          dispatchPlayerEvent('ums-player-seek', { offset: key === 'ArrowLeft' ? -10 : 10 });
           return;
         }
 
-        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (key === 'ArrowUp' || key === 'ArrowDown') {
           e.preventDefault();
-          moveFocus(e.key === 'ArrowUp' ? 'up' : 'down');
+          moveFocus(key === 'ArrowUp' ? 'up' : 'down');
           return;
         }
 
-        if (e.key === 'Enter' || e.key === 'Select') {
+        if (key === 'Enter' || key === 'Select') {
           e.preventDefault();
           dispatchPlayerEvent('ums-player-toggle-play');
           return;
@@ -673,19 +707,19 @@ export function useTvNavigation() {
 
         // Dans un TEXTAREA, ↑/↓ doivent déplacer le curseur entre les lignes,
         // pas quitter le champ (contrairement à un INPUT mono-ligne).
-        if (e.key === 'ArrowDown' && !isMultiline) {
+        if (key === 'ArrowDown' && !isMultiline) {
           e.preventDefault();
           const moved = moveFocus('down');
           if (!moved) exitInputFocus(active);
           return;
         }
-        if (e.key === 'ArrowUp' && !isMultiline) {
+        if (key === 'ArrowUp' && !isMultiline) {
           e.preventDefault();
           const moved = moveFocus('up');
           if (!moved) exitInputFocus(active);
           return;
         }
-        if (e.key === 'ArrowLeft') {
+        if (key === 'ArrowLeft') {
           const inputEl = active as HTMLInputElement;
           const atStart = inputEl.selectionStart === 0 && inputEl.selectionEnd === 0;
           if (atStart) {
@@ -695,7 +729,7 @@ export function useTvNavigation() {
           }
           return;
         }
-        if (e.key === 'ArrowRight') {
+        if (key === 'ArrowRight') {
           const inputEl = active as HTMLInputElement;
           const atEnd =
             inputEl.selectionStart === inputVal.length && inputEl.selectionEnd === inputVal.length;
@@ -706,7 +740,7 @@ export function useTvNavigation() {
           }
           return;
         }
-        if (e.key === 'Enter') {
+        if (key === 'Enter' || key === 'Select') {
           return;
         }
         return;
@@ -746,10 +780,10 @@ export function useTvNavigation() {
       // 3. Navigation spatiale générale télécommande / clavier.
       // Les flèches déplacent le focus (jamais de seek implicite hors scrubber).
       // Sur le scrubber, ←/→ pilotent la progression et ↑/↓ sortent vers les boutons.
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
         e.preventDefault();
-        moveFocus(e.key.replace('Arrow', '').toLowerCase() as Direction);
-      } else if (e.key === 'Enter' || e.key === 'Select') {
+        moveFocus(key.replace('Arrow', '').toLowerCase() as Direction);
+      } else if (key === 'Enter' || key === 'Select') {
         if (!active) return;
         const isNativeClickable =
           active.tagName === 'BUTTON' ||
@@ -757,16 +791,23 @@ export function useTvNavigation() {
           active.getAttribute('role') === 'button' ||
           active.getAttribute('role') === 'link';
 
-        if (e.key === 'Enter') {
+        if (key === 'Enter') {
           // Les boutons et liens (HTML ou React Native Web) déclenchent déjà nativement
           // leur onClick / onPress lors de la frappe Enter. N'appeler active.click() que
           // s'il ne s'agit pas déjà d'un élément cliquable natif pour éviter la double bascule !
           if (!isNativeClickable) {
             active.click?.();
           }
-        } else if (e.key === 'Select') {
+        } else if (key === 'Select') {
           // La touche 'Select' spécifique aux télécommandes n'est pas toujours interceptée par le navigateur
           active.click?.();
+        }
+      } else if (key === 'PlayPause' && !isInput && !modal) {
+        // Touche lecture/pause de la télécommande : pilote le lecteur actif,
+        // y compris lorsqu'il est replié en mini-lecteur.
+        if (isScrubber || document.getElementById('player_div')) {
+          e.preventDefault();
+          dispatchPlayerEvent('ums-player-toggle-play');
         }
       }
     };
@@ -854,10 +895,44 @@ export function useTvNavigation() {
 
     window.addEventListener('keydown', onKey, { capture: true });
     animId = requestAnimationFrame(pollPad);
+
+    // Mode télécommande explicite sur TV : supprime le pointeur virtuel et
+    // place immédiatement le focus sur un contrôle réel pour que OK/Enter
+    // fonctionne dès le premier appui, sans passer par le mode curseur.
+    const isTv = isTvEnvironment();
+    let focusTimers: any[] = [];
+    if (isTv && typeof document !== 'undefined') {
+      document.documentElement.dataset.tvMode = 'true';
+      document.body.dataset.tvMode = 'true';
+
+      // Samsung Tizen ne transmet les touches multimédia que si l'application
+      // les enregistre explicitement. Les flèches/OK/Retour sont déjà natives.
+      try {
+        const tvInput = (window as any).tizen?.tvinputdevice;
+        if (tvInput?.registerKey) {
+          for (const keyName of ['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop']) {
+            tvInput.registerKey(keyName);
+          }
+        }
+      } catch {}
+      focusTimers = [0, 120, 450, 1200].map((delay) =>
+        setTimeout(() => {
+          if (!document.activeElement || document.activeElement === document.body) {
+            focusFirstTvElement();
+          }
+        }, delay)
+      );
+    }
+
     return () => {
       window.removeEventListener('keydown', onKey, { capture: true });
       modalObserver?.disconnect();
       cancelAnimationFrame(animId);
+      focusTimers.forEach(clearTimeout);
+      if (isTv && typeof document !== 'undefined') {
+        delete document.documentElement.dataset.tvMode;
+        delete document.body.dataset.tvMode;
+      }
     };
   }, []);
 }

@@ -4,6 +4,7 @@ import { iptvSources, mediaNodes, eavValues, nodeEavLinks, eavAttributes } from 
 import { parseM3uContent } from '../iptv/m3uParser.js';
 import { ingestIptvChannels } from '../iptv/channelIngester.js';
 import { testSourceChannelsAvailability } from '../iptv/streamTester.js';
+import { syncEpgForSource } from '../iptv/epgIngester.js';
 import { eq, desc, and, inArray } from 'drizzle-orm';
 import { requireAdmin } from '../middleware/access.js';
 import { getSafeOutboundUrl, safeFetch } from '../utils/safeUrl.js';
@@ -51,6 +52,12 @@ iptvSourcesRouter.post('/', async (c) => {
     // Test de disponibilité des flux en direct
     const testResults = await testSourceChannelsAvailability(source.id);
 
+    // Ingestion du guide EPG si une URL XMLTV est fournie. Un échec EPG ne
+    // doit jamais invalider l'import des chaînes déjà réussi.
+    const epgResult = epgXmltvUrl
+      ? await syncEpgForSource({ id: source.id, name: source.name, epgXmltvUrl: source.epgXmltvUrl })
+      : null;
+
     await db
       .update(iptvSources)
       .set({ lastSyncedAt: new Date() })
@@ -60,10 +67,12 @@ iptvSourcesRouter.post('/', async (c) => {
       success: true,
       source,
       importedCount,
+      epgPrograms: epgResult?.programs || 0,
+      epgError: epgResult?.error || null,
       testedCount: testResults.testedCount,
       availableCount: testResults.availableCount,
       unavailableCount: testResults.unavailableCount,
-      message: `${importedCount} canaux synchronisés : ${testResults.availableCount} opérationnels, ${testResults.unavailableCount} indisponibles (grisés)`,
+      message: `${importedCount} canaux synchronisés : ${testResults.availableCount} opérationnels, ${testResults.unavailableCount} indisponibles (grisés)${epgResult && !epgResult.error ? ` • ${epgResult.programs} programmes EPG` : ''}`,
     });
   } catch (err: any) {
     return c.json({ success: true, source, warning: `Source enregistrée mais synchronisation échouée: ${err.message}` });
@@ -138,6 +147,10 @@ iptvSourcesRouter.post('/:id/sync', async (c) => {
     // Test de disponibilité en direct de chaque flux de la source
     const testResults = await testSourceChannelsAvailability(id);
 
+    const epgResult = source.epgXmltvUrl
+      ? await syncEpgForSource({ id: source.id, name: source.name, epgXmltvUrl: source.epgXmltvUrl })
+      : null;
+
     await db
       .update(iptvSources)
       .set({ lastSyncedAt: new Date() })
@@ -146,10 +159,12 @@ iptvSourcesRouter.post('/:id/sync', async (c) => {
     return c.json({
       success: true,
       importedCount,
+      epgPrograms: epgResult?.programs || 0,
+      epgError: epgResult?.error || null,
       testedCount: testResults.testedCount,
       availableCount: testResults.availableCount,
       unavailableCount: testResults.unavailableCount,
-      message: `${importedCount} canaux synchronisés : ${testResults.availableCount} opérationnels, ${testResults.unavailableCount} indisponibles (grisés)`,
+      message: `${importedCount} canaux synchronisés : ${testResults.availableCount} opérationnels, ${testResults.unavailableCount} indisponibles (grisés)${epgResult && !epgResult.error ? ` • ${epgResult.programs} programmes EPG` : ''}`,
     });
   } catch (err: any) {
     return c.json({ error: `Erreur lors de la synchronisation: ${err.message}` }, 500);

@@ -133,7 +133,13 @@ export async function fetchTmdbCollection(collectionName) {
             });
             if (searchRes.ok) {
                 const searchData = await searchRes.json();
-                const first = searchData.results?.[0];
+                const results = Array.isArray(searchData.results) ? searchData.results : [];
+                const ranked = results
+                    .map((r) => ({ r, sim: stringSimilarity(cleanTitle, r.name || '') }))
+                    .sort((a, b) => b.sim - a.sim);
+                // Garde anti-hallucination : une collection « Star Wars » ne doit pas
+                // être confondue avec une franchise au nom vaguement proche.
+                const first = ranked.length > 0 && ranked[0].sim >= 0.55 ? ranked[0].r : undefined;
                 if (first) {
                     const detailUrl = `https://api.themoviedb.org/3/collection/${first.id}?language=fr-FR`;
                     const detailRes = await fetch(detailUrl, {

@@ -480,7 +480,13 @@ export const playerStore = {
     if (!state.activeMedia) return;
     state.activeMedia.activeAudio = audio;
     if (state.activeMedia.id) {
-      const base = getVideoStreamUrl(state.activeMedia.id, state.activeMedia.share);
+      // Conserver le HLS si le média est déjà servi en HLS : remplacer l'URL par
+      // le flux direct cassait la lecture et empêchait le Chromecast de changer
+      // de piste audio en cours de diffusion.
+      const useHls =
+        Boolean(state.activeMedia.streamUrl?.includes('.m3u8')) ||
+        Boolean(state.activeMedia.isLive);
+      const base = getVideoStreamUrl(state.activeMedia.id, state.activeMedia.share, useHls);
       const p = new URLSearchParams();
       if (audio && audio !== 'auto') p.set('audio', audio);
       if (state.activeMedia.share) p.set('share', state.activeMedia.share);

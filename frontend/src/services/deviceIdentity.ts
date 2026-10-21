@@ -188,10 +188,29 @@ export function setLocalDeviceName(name: string): void {
 /**
  * Détection du type d'appareil matériel
  */
+const TV_USER_AGENT_RE =
+  /(?:Tizen|webOS|Web0S|SmartTV|HbbTV|NetCast|Netcast|Viera|BRAVIA|VIDAA|Hisense|Android TV|Google TV|GoogleTV|Fire TV|FireTV|AFT[A-Z0-9]{2,}|CrKey|AppleTV|tvOS|Roku|Orsay|Philips TV|Opera TV|Espial)/i;
+
+/**
+ * Détecte un téléviseur / boîtier TV. Ces navigateurs pilotent le focus avec
+ * les touches de la télécommande : il ne faut pas les laisser basculer dans le
+ * mode « curseur souris » (pointeur virtuel, survol).
+ */
+export function isTvEnvironment(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w = window as any;
+  if (w.isSmartTV || w.tizen || w.webOS || w.webapis) return true;
+  const ua = navigator.userAgent || '';
+  if (TV_USER_AGENT_RE.test(ua)) return true;
+  const uaData = (navigator as any).userAgentData;
+  if (uaData && /TV|SMART/i.test(String(uaData.platform || ''))) return true;
+  return false;
+}
+
 export function getLocalDeviceType(): UserDeviceType {
   if (typeof window === 'undefined') return 'BROWSER';
   const ua = navigator.userAgent;
-  if (/Tizen|webOS|SmartTV/i.test(ua) || (window as any).isSmartTV) return 'TV';
+  if (isTvEnvironment()) return 'TV';
   if (/iPad|Tablet/i.test(ua)) return 'MOBILE';
   if (/Android|iPhone/i.test(ua)) return 'MOBILE';
   return 'BROWSER';

@@ -248,6 +248,25 @@ const testCases: TestCase[] = [
     expectedEpisode: 1,
     expectedIsExtra: false,
   },
+  // 26. Saga Star Wars : dossier de release avec points, mot « hexalogie »
+  //     et NFO texte non-XML (le film doit tout de même être indexé).
+  {
+    name: 'Star Wars Hexalogy Release Folder (Roman Episode)',
+    filePath: '/run/media/tele/My Passport/film/[ oxtorrent.com ] star.wars.hexalogie.1977-2005.multi.1080p.bluray.x264-lost/star.wars.episode.i.the.phantom.menace.1999.multi.1080p.bluray.x264-lost/star.wars.episode.i.the.phantom.menace.1999.multi.1080p.bluray.x264-lost.mkv',
+    expectedType: 'MOVIE',
+    expectedTitle: 'star wars episode i the phantom menace',
+    expectedSaga: 'Star Wars - Saga',
+    expectedIsExtra: false,
+  },
+  // 27. Saga Star Wars : épisode V avec suffixe français et groupe de release
+  {
+    name: 'Star Wars Episode V French Release Folder',
+    filePath: '/run/media/tele/My Passport/film/[ oxtorrent.com ] star.wars.hexalogie.1977-2005.multi.1080p.bluray.x264-lost/star.wars.episode.v.the.empire.strikes.back.1980.french.1080p.bluray.x264-lost/star.wars.episode.v.the.empire.strikes.back.1980.multi.1080p.bluray.x264-lost.mkv',
+    expectedType: 'MOVIE',
+    expectedTitle: 'star wars episode v the empire strikes back',
+    expectedSaga: 'Star Wars - Saga',
+    expectedIsExtra: false,
+  },
 ];
 
 async function runTests() {

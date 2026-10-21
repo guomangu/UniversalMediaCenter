@@ -267,18 +267,33 @@ export async function findOrCreateCollectionNode(
   });
   if (existing) return existing;
 
-  // 2. Recherche par racine normalisée (sans " - Saga" ou " Collection")
-  const normalizedBase = cleanName.replace(/\s*-\s*saga$/i, '').replace(/\s*collection$/i, '').trim();
+  // 2. Recherche par nom normalisé (sans " - Saga", "Collection", accents ni ponctuation).
+  // Cela évite de créer « Star Wars Collection » à côté de la saga existante
+  // « Star Wars - Saga » et de fragmenter une même franchise en deux collections.
+  const normalizeCollectionName = (value: string): string =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\b(saga|collection|integrale|int[ée]grale|coffret|boxset|trilogie|trilogy|hexalogie|hexalogy)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+
+  const normalizedBase = normalizeCollectionName(cleanName);
   if (normalizedBase.length > 2) {
-    const existingFuzzy = await db.query.mediaNodes.findFirst({
-      where: (t, { and: aOp, eq: eOp, or: oOp, like: lOp }) =>
-        aOp(
-          eOp(t.nodeType, 'COLLECTION'),
-          oOp(
-            lOp(t.title, `%${normalizedBase}%`),
-            lOp(t.sortTitle, `%${normalizedBase}%`)
-          )
-        ),
+    const collections = await db.query.mediaNodes.findMany({
+      where: (t, { eq: eOp }) => eOp(t.nodeType, 'COLLECTION'),
+      columns: { id: true, title: true, sortTitle: true },
+    });
+    const existingFuzzy = collections.find((c) => {
+      const a = normalizeCollectionName(c.title || '');
+      const b = normalizeCollectionName(c.sortTitle || '');
+      return (
+        a === normalizedBase ||
+        b === normalizedBase ||
+        (a.length > 2 && (a.includes(normalizedBase) || normalizedBase.includes(a))) ||
+        (b.length > 2 && (b.includes(normalizedBase) || normalizedBase.includes(b)))
+      );
     });
     if (existingFuzzy) return existingFuzzy;
   }
@@ -336,20 +351,29 @@ export function detectSagaNameFromFolder(filePath: string): string | null {
       return 'Quentin Tarantino - Saga';
     }
 
+    // Dossiers de type release : les mots sont souvent séparés par des points
+    // (ex: « star.wars.hexalogie.1977-2005... »), il faut donc les normaliser
+    // avant de chercher les mots-clés de saga.
+    const normalizedFolder = cleanFolder.replace(/[._]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+    const sagaKeywordRe =
+      /\b(int[ée]grale|integrale|saga|collection|trilogie|trilogy|quadrilogie|quadrilogy|t[ée]tralogie|tetralogy|pentalogie|pentalogy|hexalogie|hexalogy|heptalogie|heptalogy|octalogie|duologie|duology|boxset|coffret|anthologie|anthology|franchise|filmographie|filmography|univers|universe|pack)\b/i;
+
     const isSagaFolder =
-      /\b(int[ée]grale|saga|collection|trilogie|quadrilogie|boxset|anthologie|franchise|pack)\b/i.test(cleanFolder) ||
-      /\b(?:films?|movies?)\s*\(\s*(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\s*\)/i.test(cleanFolder) ||
-      /\((?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\).*(?:movies|films|series|ovas)/i.test(cleanFolder) ||
-      /\b\d+\s*(?:movies|films)\b/i.test(cleanFolder);
+      sagaKeywordRe.test(normalizedFolder) ||
+      /\b(?:films?|movies?)\s*\(\s*(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\s*\)/i.test(normalizedFolder) ||
+      /\((?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\).*(?:movies|films|series|ovas)/i.test(normalizedFolder) ||
+      /\b\d+\s*(?:movies|films)\b/i.test(normalizedFolder);
 
     if (isSagaFolder) {
-      let baseName = cleanFolder
+      let baseName = normalizedFolder
         .replace(/^collection\s+/i, '')
-        .replace(/\s*[-_–]\s*\d+\s*(?:movies|films|ovas|series).*$/i, '')
-        .replace(/\s*[-_–]\s*(?:int[ée]grale|saga|collection|boxset).*$/i, '')
-        .replace(/\s*collection\b.*$/i, '')
-        .replace(/\s*\(.*?\).*$/i, '')
+        .replace(/[\s.-]*(?:int[ée]grale|integrale|saga|collection|trilogie|trilogy|quadrilogie|quadrilogy|t[ée]tralogie|tetralogy|pentalogie|pentalogy|hexalogie|hexalogy|heptalogie|heptalogy|octalogie|duologie|duology|boxset|coffret|anthologie|anthology|franchise|filmographie|filmography|univers|universe|pack)\b.*$/i, '')
+        .replace(/[\s.-]*\d+\s*(?:movies|films|ovas|series)\b.*$/i, '')
+        .replace(/[\s.-]*\((?:19|20)\d{2}.*$/i, '')
         .replace(/^[0-9]+[a-z]?[\s._–-]+\s*/i, '')
+        .replace(/[._]+/g, ' ')
+        .replace(/\s{2,}/g, ' ')
         .trim();
 
       if (baseName.length >= 2) {

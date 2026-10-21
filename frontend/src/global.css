@@ -17,6 +17,23 @@ html, body, #root {
   -webkit-text-size-adjust: 100%;
 }
 
+/* ==============================================================================
+   Mode Télécommande TV
+   Sur Tizen/webOS/Android TV, le navigateur bascule en pointeur virtuel dès
+   qu'il détecte des styles de curseur ou un survol. On neutralise donc le
+   curseur pour conserver la navigation par touches (D-pad + OK).
+   ============================================================================== */
+html[data-tv-mode="true"],
+html[data-tv-mode="true"] * {
+  cursor: none !important;
+}
+
+html[data-tv-mode="true"] [role="button"]:hover,
+html[data-tv-mode="true"] button:hover,
+html[data-tv-mode="true"] a:hover {
+  transform: none !important;
+}
+
 /* TV Remote & Keyboard Focus Indicator - Soft Slate Steel (hors écran vidéo) */
 [role="button"]:focus,
 [tabindex="0"]:focus,

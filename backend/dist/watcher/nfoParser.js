@@ -1,5 +1,6 @@
+import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
-import { cleanMediaTitle, sanitizeReleaseTags, extractCanonicalShowTitle } from './titleCleaner.js';
+import { cleanMediaTitle, sanitizeReleaseTags, extractCanonicalShowTitle, extractYearFromText, } from './titleCleaner.js';
 const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
@@ -21,7 +22,21 @@ const parser = new XMLParser({
     ].includes(name),
 });
 export function parseNfoXml(xmlContent, filePath) {
-    const parsed = parser.parse(xmlContent);
+    // Beaucoup de NFO de releases contiennent une bannière ASCII/ANSI avant le XML,
+    // ou un BOM UTF-8. On isole le document XML avant de le parser.
+    let xml = String(xmlContent || '').replace(/^\uFEFF/, '');
+    if (!/^\s*</.test(xml)) {
+        const rootIndex = xml.search(/<\?xml|<(movie|tvshow|episodedetails|season|set|collection)\b/i);
+        if (rootIndex > 0)
+            xml = xml.slice(rootIndex);
+    }
+    let parsed;
+    try {
+        parsed = parser.parse(xml);
+    }
+    catch {
+        return null;
+    }
     if (!parsed || typeof parsed !== 'object')
         return null;
     const isShow = Boolean(parsed.tvshow);
@@ -106,9 +121,19 @@ export function parseNfoXml(xmlContent, filePath) {
     const isFilmsFolder = folderSeason === 999 || folderTitle === 'Films & Spéciaux';
     const finalSeasonNumber = folderSeason !== undefined ? folderSeason : parsedSeason;
     // 3. Titre propre et distinct
-    const rawTitle = root.title || filenameEpTitle || '';
+    // Repli sur le nom de fichier quand le NFO est valide mais dépourvu de <title>.
+    const fileBase = filePath
+        ? path.basename(filePath, path.extname(filePath))
+        : '';
+    // Les NFO génériques (movie.nfo, tvshow.nfo, season.nfo) ne portent pas le
+    // titre de l'œuvre : on utilise le nom du dossier parent.
+    const parentFolderName = filePath ? path.basename(path.dirname(filePath)) : '';
+    const isGenericNfoName = /^(movie|tvshow|season|folder|poster|fanart|backdrop|logo|clearlogo|thumb)$/i.test(fileBase);
+    const titleSource = isGenericNfoName ? parentFolderName : fileBase;
+    const filenameTitle = titleSource ? sanitizeReleaseTags(titleSource) : '';
+    const rawTitle = root.title || filenameEpTitle || (isEpisode ? '' : filenameTitle);
     const originalTitle = root.originaltitle;
-    const showTitle = root.showtitle || filenameShowTitle || folderTitle;
+    const showTitle = root.showtitle || filenameShowTitle || folderTitle || (isShow ? filenameTitle : undefined);
     const cleanedTitle = cleanMediaTitle(rawTitle, originalTitle, showTitle, finalSeasonNumber, finalEpisodeNumber);
     // 4. Casting & Équipes (Humain & Artistique)
     const actors = (root.actor || []).map((a) => ({
@@ -188,7 +213,7 @@ export function parseNfoXml(xmlContent, filePath) {
     const rawRating = root.rating != null ? parseFloat(String(root.rating)) : undefined;
     const rating = isNaN(rawRating) ? undefined : rawRating;
     const rawYear = root.year != null ? parseInt(String(root.year), 10) : undefined;
-    const year = isNaN(rawYear) ? undefined : rawYear;
+    const year = isNaN(rawYear) ? extractYearFromText(filePath || fileBase) : rawYear;
     const rawRuntime = root.runtime != null ? parseInt(String(root.runtime), 10) : undefined;
     const runtime = isNaN(rawRuntime) ? undefined : rawRuntime;
     const certification = root.mpaa || root.certification;

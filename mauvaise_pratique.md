@@ -1,3 +1,29 @@
+## 🛑 139. NFO Non-XML Bloquant l'Indexation, Dossiers de Release Ignorés par chokidar, Sagas « Hexalogie » Invisibles, Films Autonomes Sans Ordre, Purge sur Disque Illisible & Chromecast Sans Télécommande (`mediaExtensions.ts`, `bootScanner.ts`, `index.ts`, `nfoParser.ts`, `titleCleaner.ts`, `lexicalParser.ts`, `mediaFileDetector.ts`, `hierarchyResolver.ts`, `mediaIngester.ts`, `mediaReconciler.ts`, `externalMetadata.ts`, `deviceIdentity.ts`, `useTvNavigation.ts`, `_layout.tsx`, `global.css`, `castService.ts`, `castState.ts`, `playerStore.ts`, `CastModal.tsx`, `FloatingBottomPlayer.tsx`)
+
+* **Problème / Symptôme :**
+  1. Les six films Star Wars du dossier `[ oxtorrent.com ] star.wars.hexalogie.1977-2005...` n'apparaissaient pas : seuls deux films d'un autre disque étaient visibles dans la saga.
+  2. Sur une TV, le site restait en mode pointeur/cursor et les touches de la télécommande ne prenaient pas le relais pour naviguer.
+  3. Après un Cast vers un Chromecast (hors instance UMS), le film démarrait mais la télécommande, la progression, les sous-titres et les pistes audio ne répondaient plus.
+
+* **Causes Racines :**
+  - **NFO de release non-XML :** les fichiers `.nfo` fournis par le groupe de release contenaient une bannière ASCII et du texte, pas du XML Kodi. `parseNfoXml` retournait `null`, et comme la découverte considérait la vidéo comme « déjà couverte par un NFO », elle n'était jamais ingérée. Le NFO invalide servait en quelque sorte de bloqueur d'indexation.
+  - **Watcher chokidar :** le filtre `ignored` appliquait `path.extname()` à tous les chemins, y compris aux dossiers. Un dossier nommé `...bluray.x264-lost` était donc vu comme un fichier d'extension `.x264-lost` et tout son contenu était ignoré.
+  - **Sagas :** la détection ne connaissait que `saga|intégrale|trilogie|collection|…`, pas `hexalogie`/`pentalogie`/`tétralogie`, et ne normalisait pas les points des noms de release.
+  - **Ordre des films :** les films ingérés sans NFO recevaient `orderIndex = 0`, donc un ordre arbitraire dans les sagas.
+  - **Réconciliation :** `isDiskAccessibleForPath` se contentait de vérifier l'existence de la racine (`/run/media/tele`). Un disque monté mais en erreur `EIO` rendait tous les `existsSync` faux et déclenchait la suppression des nœuds comme « faux fichiers ».
+  - **TV :** aucune détection TV explicite, aucun focus initial, et de nombreux styles `cursor: pointer`/survol laissaient le navigateur TV en mode pointeur virtuel. Les codes `keyCode` de certaines télécommandes (`37-40`, `13`, `461`, `10009`) et les libellés `Left`/`OK` n'étaient pas normalisés.
+  - **Chromecast :** `triggerNativeCast` lançait `requestSession()` + `loadMedia()` sans définir `activeCastTarget`. Le lecteur local restait donc affiché et toutes les commandes partaient vers le registre serveur `/api/cast/command`, que le Chromecast ne sonde jamais. `SET_AUDIO` n'avait aucun effet natif et les sous-titres dépendaient d'un `MediaInfo` incomplet.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Fail-open sur les sidecars :** un NFO illisible/non-XML ne doit jamais empêcher l'ingestion de la vidéo. Basculer sur le pipeline autonome et journaliser l'anomalie. Isoler le XML même précédé d'une bannière, retirer le BOM et se replier sur le nom de fichier pour le titre.
+  - **Une seule source d'extensions :** centraliser `VIDEO_EXTENSIONS` et les dossiers/fichiers ignorés ; ne jamais déduire qu'un chemin est un fichier à partir de son extension sans vérifier `stats.isDirectory()`.
+  - **Découverte robuste :** suivre les liens symboliques avec un ensemble de chemins réels visités, ignorer les téléchargements incomplets, et traiter `BDMV/STREAM`/`VIDEO_TS` comme un seul film (fichier principal) au lieu de fragments.
+  - **Sagas multi-formats :** détecter les mots-clés de franchise après normalisation des points/underscores, puis réutiliser une collection existante par nom normalisé (accents, `- Saga`, `Collection`) plutôt que par `LIKE` approximatif.
+  - **Ordre déterministe :** pour un `MOVIE`, `orderIndex` et `absoluteOrderIndex` doivent être l'année de sortie.
+  - **Purge fail-safe :** vérifier que le point de montage est **lisible** (`opendirSync`) avant de considérer des fichiers absents. En cas d'erreur d'E/S, geler la purge.
+  - **TV :** détecter l'environnement TV, masquer le curseur, reposer le focus à chaque navigation, normaliser les codes de télécommande et ne jamais filtrer un dossier sur son extension.
+  - **Chromecast :** la session Google Cast doit devenir une cible active avec état lu dans `MediaSession` (`getEstimatedTime`, `playerState`, `getActiveTrackIds`, volume). Les commandes doivent être exécutées localement sur le SDK, pas envoyées au registre serveur. Le changement audio doit recharger le HLS au timestamp courant ; les sous-titres doivent être déclarés comme pistes `TEXT` avec `trackContentId` de même origine et `activeTrackIds`.
+
 ## 🛑 138. Usurpation d'Identité par `X-User-Id`, Proxy IPTV Ouvert (SSRF), Traversée de Chemin des Sous-Titres, Écritures Non Authentifiées & Fuite de Cache PWA Inter-Profils (`access.ts`, `token.ts`, `password.ts`, `auth.ts`, `authRegister.ts`, `inviteRoutes.ts`, `iptv.ts`, `iptvSources.ts`, `liveProxyService.ts`, `safeUrl.ts`, `mediaStream.ts`, `mediaSubtitles.ts`, `mediaArtworks.ts`, `media.ts`, `forumRoutes.ts`, `forumUpload.ts`, `cast.ts`, `userDeviceRoutes.ts`, `revocationStore.ts`, `sw.js`, `authStore.ts`, `pwaRegistration.ts`, `TvChannelCard.tsx`, `Caddyfile`)
 
 * **Problème / Symptôme :**

@@ -27,6 +27,94 @@ export function getUserCacheKey(): string {
   return user ? `${user.id}_${user.isAdmin ? 'admin' : (user as any).profileRole || 'user'}` : 'anon';
 }
 
+export interface EpgProgram {
+  id: string;
+  channelId: string;
+  title: string;
+  subtitle?: string | null;
+  description?: string | null;
+  category?: string | null;
+  iconUrl?: string | null;
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * Construit l'URL de téléchargement hors-ligne. Le jeton est passé en query
+ * string car un lien `<a download>` ne peut pas porter d'en-tête Authorization.
+ */
+export function getDownloadUrl(id: string, shareToken?: string | null): string {
+  const params = new URLSearchParams();
+  if (shareToken) params.set('share', shareToken);
+  const token = getAuthToken();
+  if (token) params.set('token', token);
+  const qs = params.toString();
+  return `${getApiBaseUrl()}/api/media/${id}/download${qs ? `?${qs}` : ''}`;
+}
+
+/** Grille EPG d'une sélection de chaînes sur une fenêtre temporelle. */
+export async function fetchEpgGuide(
+  channelIds: string[],
+  hours = 6,
+  options?: { forceRefresh?: boolean; onFreshData?: (fresh: Record<string, EpgProgram[]>) => void }
+): Promise<Record<string, EpgProgram[]>> {
+  const ids = channelIds.filter(Boolean).slice(0, 200).sort();
+  if (ids.length === 0) return {};
+  const cacheKey = `epg_guide_v1_${getUserCacheKey()}_${hours}_${ids.join(',')}`;
+  return fetchWithCache(
+    cacheKey,
+    async () => {
+      const sp = new URLSearchParams({ channelIds: ids.join(','), hours: String(hours) });
+      const res = await fetch(`${getApiBaseUrl()}/api/iptv/epg?${sp.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.programs || {};
+    },
+    { staleTime: 60_000, ttl: 60_000 * 30, ...options }
+  );
+}
+
+/** Émission en cours et suivante pour chaque chaîne (cartes TV). */
+export async function fetchEpgNowNext(
+  channelIds: string[],
+  options?: { forceRefresh?: boolean; onFreshData?: (fresh: Record<string, { now: EpgProgram | null; next: EpgProgram | null }>) => void }
+): Promise<Record<string, { now: EpgProgram | null; next: EpgProgram | null }>> {
+  const ids = channelIds.filter(Boolean).slice(0, 200).sort();
+  if (ids.length === 0) return {};
+  const cacheKey = `epg_nownext_v1_${getUserCacheKey()}_${ids.join(',')}`;
+  return fetchWithCache(
+    cacheKey,
+    async () => {
+      const sp = new URLSearchParams({ channelIds: ids.join(',') });
+      const res = await fetch(`${getApiBaseUrl()}/api/iptv/epg/now-next?${sp.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.channels || {};
+    },
+    { staleTime: 60_000, ttl: 60_000 * 30, ...options }
+  );
+}
+
+/** Fiche locale d'une personne (filmographie complète). */
+export async function fetchPerson(slug: string): Promise<any | null> {
+  const cacheKey = `person_detail_v1_${getUserCacheKey()}_${slug}`;
+  return fetchWithCache(
+    cacheKey,
+    async () => {
+      const res = await fetch(`${getApiBaseUrl()}/api/people/${encodeURIComponent(slug)}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    },
+    { staleTime: 5 * 60_000 }
+  );
+}
+
 export async function fetchHomeLayout(): Promise<any> {
   const cacheKey = `home_layout_${getUserCacheKey()}`;
   return fetchWithCache(cacheKey, async () => {

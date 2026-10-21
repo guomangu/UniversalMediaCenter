@@ -202,6 +202,14 @@ export async function createSecondaryTables() {
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS translations_json JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS iptv_source_id UUID REFERENCES iptv_sources(id) ON DELETE CASCADE;
     CREATE INDEX IF NOT EXISTS idx_media_nodes_iptv_source ON media_nodes (iptv_source_id);
+    ALTER TABLE media_nodes ADD COLUMN IF NOT EXISTS tvg_id TEXT;
+    CREATE INDEX IF NOT EXISTS idx_media_nodes_tvg_id ON media_nodes (tvg_id);
+    ALTER TABLE epg_programs ADD COLUMN IF NOT EXISTS subtitle TEXT;
+    ALTER TABLE epg_programs ADD COLUMN IF NOT EXISTS icon_url TEXT;
+    ALTER TABLE epg_programs ADD COLUMN IF NOT EXISTS category TEXT;
+    ALTER TABLE epg_programs ADD COLUMN IF NOT EXISTS description TEXT;
+    CREATE INDEX IF NOT EXISTS idx_epg_channel_start_title ON epg_programs (channel_node_id, start_time, title);
+    CREATE INDEX IF NOT EXISTS idx_epg_channel_time ON epg_programs (channel_node_id, start_time, end_time);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_confidence ON media_nodes (confidence_score);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_is_extra ON media_nodes (is_extra);
     CREATE INDEX IF NOT EXISTS idx_media_nodes_oshash ON media_nodes (oshash);

@@ -243,6 +243,15 @@ export default function UserScreen() {
                         Séries
                       </Text>
                     </Pressable>
+                    <Pressable
+                      focusable={true}
+                      onPress={() => setFavFilter('EPISODE')}
+                      style={[styles.favFilterPill, favFilter === 'EPISODE' && styles.favFilterPillActive]}
+                    >
+                      <Text style={[styles.favFilterPillTxt, favFilter === 'EPISODE' && styles.favFilterPillTxtActive]}>
+                        Épisodes
+                      </Text>
+                    </Pressable>
                   </View>
                 </View>
 

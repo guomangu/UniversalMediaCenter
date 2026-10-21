@@ -761,3 +761,54 @@ LIMIT 5;
 - **Affiches Assainies :** 293 affiches parasites de 217 213 octets éradiquées de la base PostgreSQL.
 - **Dressrosa Ordonnancement :** `26001` (Dressrosa 01), `26002` (Dressrosa 02), `26003` (Dressrosa 03), zéro collision.
 - **Suite de Tests de Régression :** **25 profils validés sur 25 (100 %)** via `npm run test:profiles`.
+
+---
+
+## 15. Audit Spécifique : NFO de Release Non-XML, Sagas « Hexalogie » & Découverte Fail-Open (Cas d'École Star Wars)
+
+### 🚨 Contexte et Constat du Dysfonctionnement
+
+Le dossier `/run/media/tele/My Passport/film/[ oxtorrent.com ] star.wars.hexalogie.1977-2005.multi.1080p.bluray.x264-lost/` contient les six films de la première hexalogie (1977-2005). Seuls deux films Star Wars provenant d'un autre disque étaient visibles dans la saga.
+
+### 🔬 Autopsie Détaillée des Causes Racines
+
+1. **NFO de release non-XML.** Chaque dossier contient un fichier `.nfo` qui est en réalité une bannière ASCII et du texte de release, sans aucune balise `<movie>`. `parseNfoXml` retournait `null`. Or `findMediaFilesRecursive` considérait qu'une vidéo avec un `.nfo` de même nom était déjà couverte : elle n'était donc jamais ajoutée à la liste des vidéos autonomes. Le NFO invalide bloquait toute l'indexation.
+2. **Watcher chokidar.** Le filtre `ignored` appliquait `path.extname()` à tous les chemins, y compris aux dossiers. Le dossier de release se terminait par `.multi.1080p.bluray.x264-lost`, interprété comme une extension inconnue : chokidar ignorait le dossier entier et tous ses futurs ajouts.
+3. **Détection de saga incomplète.** `detectSagaNameFromFolder` reconnaissait `saga`, `intégrale`, `trilogie`, `collection`, etc., mais pas `hexalogie` (ni `pentalogie`, `tétralogie`, `coffret`, `franchise`, `filmographie`, `univers`). De plus, les points du nom de release n'étaient pas normalisés avant l'extraction du nom de base.
+4. **Ordre des films autonomes.** `ingestMediaFile` ne renseignait `orderIndex` que pour les épisodes. Les films ingérés sans NFO recevaient tous `orderIndex = 0`, ce qui rendait l'ordre de la saga arbitraire.
+5. **Collections dupliquées.** Une collection créée par dossier (`Star Wars - Saga`) et une collection TMDb (`Star Wars Collection`) pouvaient coexister, fragmentant la franchise.
+
+### 🛡️ Remédiations Architecturales Déployées
+
+- **Fail-open NFO :** `processNfoFile` bascule automatiquement sur `ingestStandaloneVideoFile` si le NFO est illisible, non-XML ou sans racine Kodi. Le parseur isole le XML après une éventuelle bannière, supprime le BOM et se replie sur le nom de fichier pour le titre et l'année.
+- **Source d'extensions unique :** `mediaExtensions.ts` centralise les extensions vidéo (dont `.m2ts`, `.mts`, `.vob`, `.mpg`, `.mpeg`, `.ogv`, `.3gp`, `.rmvb`), les dossiers techniques et les fichiers incomplets.
+- **Découverte robuste :** liens symboliques suivis avec protection anti-boucle, sélection du film principal unique pour `BDMV/STREAM` et `VIDEO_TS`, et watcher qui ne filtre plus les dossiers sur leur extension apparente.
+- **Sagas :** mots-clés étendus (`hexalogie`, `pentalogie`, `tétralogie`, `trilogie`, `coffret`, `boxset`, `franchise`, `filmographie`, `univers`…), normalisation des points/underscores, et réutilisation d'une collection existante par nom normalisé (accents et suffixes `- Saga`/`Collection` retirés).
+- **Ordre :** `orderIndex = releaseYear` et `absoluteOrderIndex = releaseYear` pour tout `MOVIE`.
+- **Titres :** suppression du bloc `année + tags techniques + groupe de release` avant la suppression individuelle des tags, retrait des domaines de release et mise en forme des titres intégralement en minuscules (avec préservation des chiffres romains `I`…`X`).
+- **Intégrité des montages :** `isDiskAccessibleForPath` vérifie que le point de montage est lisible (`opendirSync`) et non simplement existant, empêchant la purge d'un disque en erreur `EIO`.
+
+### 📊 Validation des Métadonnées en Base de Données
+
+```sql
+SELECT m.title, m.release_year, m.order_index, c.title AS saga
+FROM media_nodes m
+LEFT JOIN media_nodes c ON c.id = m.parent_id
+WHERE m.video_file_path LIKE '%star.wars%'
+ORDER BY m.release_year ASC;
+```
+
+**Résultat extrait en production :**
+
+| Titre | Année | order_index | Saga |
+| :--- | ---: | ---: | :--- |
+| Star Wars Episode IV a New Hope | 1977 | 1977 | Star Wars - Saga |
+| Star Wars Episode V the Empire Strikes Back | 1980 | 1980 | Star Wars - Saga |
+| Star Wars Episode VI Return of the Jedi | 1983 | 1983 | Star Wars - Saga |
+| Star Wars Episode I the Phantom Menace | 1999 | 1999 | Star Wars - Saga |
+| Star Wars Episode II Attack of the Clones | 2002 | 2002 | Star Wars - Saga |
+| Star Wars Episode III Revenge of the Sith | 2005 | 2005 | Star Wars - Saga |
+
+- **Indexation :** les six NFO non-XML ont été détectés comme invalides puis les six vidéos ont été ingérées par le pipeline autonome (IDs `c2aaeff4…`, `4117b740…`, `f13ca258…`, `fba72aa7…`, `ec26bb10…`, `73c1b7d3…`).
+- **Saga :** les six films partagent la même collection `Star Wars - Saga`, sans doublon de collection.
+- **Tests :** `npm run test:profiles` : **27/27** (ajout des profils Star Wars « hexalogie » et « épisode V français »).

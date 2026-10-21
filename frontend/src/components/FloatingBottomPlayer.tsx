@@ -1723,6 +1723,8 @@ export const FloatingBottomPlayer: React.FC = () => {
           title: mediaTitle,
           streamUrl: activeMedia?.streamUrl || '',
           positionSeconds: localVideoRef.current?.currentTime || pos,
+          durationSeconds: dur || undefined,
+          isLive: activeMedia?.isLive,
           posterUrl: activeMedia?.posterUrl,
           activeSubtitle: activeMedia?.activeSubtitle || 'off',
           activeAudio: activeMedia?.activeAudio || 'auto',

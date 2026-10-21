@@ -5,18 +5,29 @@ import { Radius, Spacing } from '@/constants/theme';
 import { MediaRepostModal } from './MediaRepostModal';
 import { playerStore } from '@/services/playerStore';
 import { getApiBaseUrl } from '@/services/apiConfig';
+import { resolveImageUrl } from '@/services/api';
+import type { EpgProgram } from '@/services/api';
 import { getAuthToken } from '@/services/authStore';
 
 interface Props {
   channel: any;
+  nowProgram?: EpgProgram | null;
+  nextProgram?: EpgProgram | null;
 }
 
-export function TvChannelCard({ channel }: Props) {
+function formatTime(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+export function TvChannelCard({ channel, nowProgram, nextProgram }: Props) {
   const router = useRouter();
   const [imgError, setImgError] = useState(false);
   const [showRepost, setShowRepost] = useState(false);
   const title = channel.title || 'Chaîne Live';
-  const logo = channel.clearlogoPath;
+  const logo = resolveImageUrl(channel.clearlogoPath);
   const topicSlug = channel.slug || `tv-${channel.id}`;
 
   const isUnavailable = channel.state === 'ERROR' || channel.state === 'MISSING_FILE';
@@ -86,6 +97,21 @@ const handlePlay = () => {
         >
           {title}
         </Text>
+
+        {(nowProgram || nextProgram) && (
+          <View style={styles.epgBox}>
+            {nowProgram ? (
+              <Text style={styles.epgNow} numberOfLines={1}>
+                ▶ {nowProgram.title}
+              </Text>
+            ) : null}
+            {nextProgram ? (
+              <Text style={styles.epgNext} numberOfLines={1}>
+                {formatTime(nextProgram.startTime)} · {nextProgram.title}
+              </Text>
+            ) : null}
+          </View>
+        )}
       </Pressable>
 
       <View style={styles.actionRow}>
@@ -154,6 +180,16 @@ const styles = StyleSheet.create({
   fallbackTxt: { color: '#ffffff', fontWeight: '800', fontSize: 16 },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 13, minHeight: 34, lineHeight: 17, marginBottom: 8 },
   titleUnavailable: { color: '#94a3b8' },
+  epgBox: {
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    borderRadius: Radius.sm,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    marginBottom: 7,
+    gap: 2,
+  },
+  epgNow: { color: '#e2e8f0', fontSize: 10.5, fontWeight: '700' },
+  epgNext: { color: '#7c8aa0', fontSize: 9.5, fontWeight: '600' },
   actionRow: { flexDirection: 'row', gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(71, 85, 105, 0.25)' },
   btn: { flex: 1, paddingVertical: 6, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center', cursor: (Platform.OS === 'web' ? 'pointer' : 'auto') as any },
   playBtn: { backgroundColor: '#6366f1' },

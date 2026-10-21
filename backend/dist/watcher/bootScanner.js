@@ -5,12 +5,7 @@ import { ingestStandaloneVideoFile } from './mediaIngester.js';
 import { repairAllMediaHierarchy } from './hierarchyRepair.js';
 import { enrichLibraryMetadata } from './metadataEnricher.js';
 import { reconcileAndPruneLibrary } from './mediaReconciler.js';
-const VIDEO_EXTENSIONS = new Set([
-    '.mkv', '.mp4', '.avi', '.mov', '.m4v', '.webm', '.ts', '.wmv', '.flv',
-]);
-const EXCLUDED_FOLDERS = new Set([
-    '@eadir', '#recycle', '.git', 'lost+found', 'node_modules', '.cache',
-]);
+import { isVideoExtension, isIgnoredDirectoryName, isIgnoredMediaFileName, } from './mediaExtensions.js';
 const activeScanStatus = {
     isScanning: false,
     phase: 'IDLE',
@@ -24,15 +19,69 @@ const activeScanStatus = {
 export function getScanStatus() {
     return { ...activeScanStatus };
 }
-/**
- * Crawler récursif in-place découvrant :
- * 1. Tous les fichiers .nfo
- * 2. Toutes les vidéos isolées (standalone) sans .nfo associé
- */
+async function inspectDirent(fullPath, entry) {
+    if (entry.isDirectory())
+        return { isDirectory: true, isFile: false };
+    if (entry.isFile())
+        return { isDirectory: false, isFile: true };
+    if (entry.isSymbolicLink()) {
+        try {
+            const st = await fs.stat(fullPath);
+            return { isDirectory: st.isDirectory(), isFile: st.isFile() };
+        }
+        catch {
+            return { isDirectory: false, isFile: false };
+        }
+    }
+    return { isDirectory: false, isFile: false };
+}
+/** Sélectionne le fichier vidéo principal d'une structure DVD/Blu-ray sans indexer les fragments. */
+async function findMainDiscVideo(discDir, exts) {
+    let best = null;
+    async function scan(currentDir, depth) {
+        if (depth > 3)
+            return;
+        let entries;
+        try {
+            entries = await fs.readdir(currentDir, { withFileTypes: true });
+        }
+        catch {
+            return;
+        }
+        for (const entry of entries) {
+            const fullPath = path.join(currentDir, entry.name);
+            const info = await inspectDirent(fullPath, entry);
+            if (info.isDirectory) {
+                await scan(fullPath, depth + 1);
+            }
+            else if (info.isFile) {
+                const ext = path.extname(entry.name).toLowerCase();
+                if (!exts.has(ext))
+                    continue;
+                const stat = await fs.stat(fullPath).catch(() => null);
+                if (!stat || stat.size < 50 * 1024 * 1024)
+                    continue;
+                if (!best || stat.size > best.size)
+                    best = { filePath: fullPath, size: stat.size };
+            }
+        }
+    }
+    await scan(discDir, 0);
+    return best?.filePath || null;
+}
 export async function findMediaFilesRecursive(dir) {
     const nfoPaths = [];
     const standaloneVideoPaths = [];
+    const visitedDirs = new Set();
     async function crawl(currentDir) {
+        let realDir = currentDir;
+        try {
+            realDir = await fs.realpath(currentDir);
+        }
+        catch { }
+        if (visitedDirs.has(realDir))
+            return;
+        visitedDirs.add(realDir);
         let entries;
         try {
             entries = await fs.readdir(currentDir, { withFileTypes: true });
@@ -41,28 +90,46 @@ export async function findMediaFilesRecursive(dir) {
             console.warn(`Could not read directory ${currentDir}:`, err);
             return;
         }
-        const fileNames = new Set(entries.filter((e) => e.isFile()).map((e) => e.name));
+        const fileNames = new Set(entries.map((e) => e.name.toLowerCase()));
         for (const entry of entries) {
-            if (entry.name.startsWith('.') && entry.name !== '.nfo')
+            if (entry.name.startsWith('.'))
                 continue;
-            if (EXCLUDED_FOLDERS.has(entry.name.toLowerCase()))
+            if (isIgnoredMediaFileName(entry.name))
                 continue;
             const fullPath = path.join(currentDir, entry.name);
-            if (entry.isDirectory()) {
+            const info = await inspectDirent(fullPath, entry);
+            if (info.isDirectory) {
+                if (isIgnoredDirectoryName(entry.name))
+                    continue;
+                const lowerName = entry.name.toLowerCase();
+                // Un disque DVD/Blu-ray contient des dizaines de fragments (VOB/M2TS) :
+                // on n'indexe que le film principal, jamais chaque fragment comme un film distinct.
+                if (lowerName === 'bdmv') {
+                    const main = await findMainDiscVideo(fullPath, new Set(['.m2ts', '.mts']));
+                    if (main)
+                        standaloneVideoPaths.push(main);
+                    continue;
+                }
+                if (lowerName === 'video_ts') {
+                    const main = await findMainDiscVideo(fullPath, new Set(['.vob']));
+                    if (main)
+                        standaloneVideoPaths.push(main);
+                    continue;
+                }
                 await crawl(fullPath);
             }
-            else if (entry.isFile()) {
+            else if (info.isFile) {
                 const ext = path.extname(entry.name).toLowerCase();
                 if (ext === '.nfo') {
                     nfoPaths.push(fullPath);
                 }
-                else if (VIDEO_EXTENSIONS.has(ext)) {
+                else if (isVideoExtension(ext)) {
                     // Ignorer les dossiers ou fichiers de trickplay
                     if (fullPath.includes('/.trickplay/'))
                         continue;
-                    // Vérifier si un .nfo avec le même nom de base existe
-                    const baseName = path.basename(entry.name, ext);
-                    const hasMatchingNfo = fileNames.has(`${baseName}.nfo`) || fileNames.has(`${baseName}.NFO`);
+                    // Vérifier si un .nfo avec le même nom de base existe (insensible à la casse)
+                    const baseName = path.basename(entry.name, ext).toLowerCase();
+                    const hasMatchingNfo = fileNames.has(`${baseName}.nfo`);
                     if (!hasMatchingNfo) {
                         standaloneVideoPaths.push(fullPath);
                     }

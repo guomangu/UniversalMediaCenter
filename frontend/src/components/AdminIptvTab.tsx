@@ -4,6 +4,7 @@ import {
   fetchIptvSources,
   createIptvSource,
   syncIptvSource,
+  syncAllEpg,
   deleteIptvSource,
   updateIptvSource,
 } from '@/services/adminApi';
@@ -59,6 +60,24 @@ export function AdminIptvTab() {
     loadSources();
   };
 
+  const handleSyncEpg = async () => {
+    setActionLoading(true);
+    setStatusMsg('⏳ Téléchargement et indexation des guides EPG…');
+    const res = await syncAllEpg();
+    setActionLoading(false);
+    if (res.success) {
+      const failed = (res.results || []).filter((r: any) => r.error);
+      setStatusMsg(
+        `✅ ${res.totalPrograms ?? 0} programmes EPG synchronisés sur ${res.syncedSources ?? 0} source(s)` +
+          (failed.length > 0 ? ` • ${failed.map((f: any) => `${f.sourceName}: ${f.error}`).join(' ; ')}` : '')
+      );
+      purgeAllMediaCaches();
+      loadSources();
+    } else {
+      setStatusMsg(`❌ ${res.error || 'Échec de la synchronisation EPG'}`);
+    }
+  };
+
   const handleToggle = async (src: any) => {
     await updateIptvSource(src.id, { isActive: !src.isActive });
     loadSources();
@@ -85,6 +104,14 @@ export function AdminIptvTab() {
         <TextInput style={s.input} placeholder="URL Guide EPG (.xml / .xmltv optionnel)" placeholderTextColor="#64748b" value={epgUrl} onChangeText={setEpgUrl} />
         <Pressable focusable={true} style={[s.btn, s.btnPrimary]} onPress={handleAdd} disabled={actionLoading}>
           {actionLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>📡 Ajouter & Synchroniser</Text>}
+        </Pressable>
+        <Pressable
+          focusable={true}
+          style={[s.btn, { backgroundColor: '#0f766e' }]}
+          onPress={handleSyncEpg}
+          disabled={actionLoading}
+        >
+          <Text style={s.btnText}>🗓️ Synchroniser tous les guides EPG</Text>
         </Pressable>
         {statusMsg ? <Text style={s.status}>{statusMsg}</Text> : null}
       </View>

@@ -3,7 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, Platform } from 'react-native';
 import { useEffect } from 'react';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import { useTvNavigation } from '@/hooks/useTvNavigation';
+import { useTvNavigation, focusFirstTvElement } from '@/hooks/useTvNavigation';
 import { FloatingBottomPlayer } from '@/components/FloatingBottomPlayer';
 import { useActiveCastTarget } from '@/services/castState';
 import { playerStore } from '@/services/playerStore';
@@ -20,6 +20,7 @@ import { startDeviceHeartbeatLoop } from '@/services/userDeviceService';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { syncSessionWithServer, getCurrentUser } from '@/services/authStore';
 import { registerPwa } from '@/services/pwaRegistration';
+import { isTvEnvironment } from '@/services/deviceIdentity';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 
 if (Platform.OS !== 'web') {
@@ -49,6 +50,13 @@ export default function RootLayout() {
       if (activeEl && activeEl !== document.body) {
         (activeEl as HTMLElement).blur?.();
       }
+    }
+
+    // Sur TV, le focus doit être reposé sur le premier contrôle de la nouvelle
+    // page : sans cela la télécommande reste en mode pointeur et OK ne fait rien.
+    if (isTvEnvironment()) {
+      const timer = setTimeout(() => focusFirstTvElement(), 250);
+      return () => clearTimeout(timer);
     }
   }, [pathname]);
 

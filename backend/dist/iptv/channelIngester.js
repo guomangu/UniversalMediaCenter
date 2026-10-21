@@ -30,6 +30,7 @@ export async function ingestIptvChannels(channels, sourceId) {
                 streamUrl: ch.streamUrl,
                 clearlogoPath: ch.logoUrl || existing.clearlogoPath,
                 iptvSourceId: sourceId || existing.iptvSourceId,
+                tvgId: ch.tvgId || existing.tvgId,
                 searchVectorText: `${cleanTitle} ${ch.groupTitle || ''} ${ch.country || ''}`.trim(),
                 updatedAt: new Date(),
             })
@@ -46,6 +47,7 @@ export async function ingestIptvChannels(channels, sourceId) {
                 slug,
                 streamUrl: ch.streamUrl,
                 iptvSourceId: sourceId,
+                tvgId: ch.tvgId || null,
                 clearlogoPath: ch.logoUrl,
                 searchVectorText: `${ch.name} ${ch.groupTitle || ''} ${ch.country || ''}`.trim(),
             })

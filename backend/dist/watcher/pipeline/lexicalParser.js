@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { resolveAnimeAcronym } from './animeAcronyms.js';
+import { sanitizeReleaseTags } from '../titleCleaner.js';
 function cleanReleaseTags(str) {
     return str
         .replace(/^\s*\[.*?\]/g, '')
@@ -67,7 +68,7 @@ export function parseLexicalFilename(filePath) {
         const beforePart = cleanReleaseTags(fileName.slice(0, matchIdx)).replace(/[-–—]\s*$/, '').trim();
         if (beforePart.length > 0)
             showTitle = resolveAnimeAcronym(beforePart);
-        const afterPart = cleanReleaseTags(fileName.slice(matchIdx + doubleEpMatch[0].length)).replace(/^[-–—]\s*/, '').trim();
+        const afterPart = sanitizeReleaseTags(cleanReleaseTags(fileName.slice(matchIdx + doubleEpMatch[0].length)).replace(/^[-–—]\s*/, '')).trim();
         if (afterPart.length > 0)
             episodeTitle = afterPart;
     }
@@ -78,7 +79,7 @@ export function parseLexicalFilename(filePath) {
         const beforePart = cleanReleaseTags(fileName.slice(0, matchIdx)).replace(/[-–—]\s*$/, '').trim();
         if (beforePart.length > 0)
             showTitle = resolveAnimeAcronym(beforePart);
-        const afterPart = cleanReleaseTags(fileName.slice(matchIdx + singleEpMatch[0].length)).replace(/^[-–—]\s*/, '').trim();
+        const afterPart = sanitizeReleaseTags(cleanReleaseTags(fileName.slice(matchIdx + singleEpMatch[0].length)).replace(/^[-–—]\s*/, '')).trim();
         if (afterPart.length > 0)
             episodeTitle = afterPart;
     }
@@ -90,7 +91,7 @@ export function parseLexicalFilename(filePath) {
             const beforePart = cleanReleaseTags(fileName.slice(0, matchIdx)).replace(/[-–—]\s*$/, '').trim();
             if (beforePart.length > 0)
                 showTitle = resolveAnimeAcronym(beforePart);
-            const afterPart = cleanReleaseTags(fileName.slice(matchIdx + animeAbsoluteMatch[0].length)).replace(/^[-–—]\s*/, '').trim();
+            const afterPart = sanitizeReleaseTags(cleanReleaseTags(fileName.slice(matchIdx + animeAbsoluteMatch[0].length)).replace(/^[-–—]\s*/, '')).trim();
             if (afterPart.length > 0)
                 episodeTitle = afterPart;
         }
@@ -101,7 +102,9 @@ export function parseLexicalFilename(filePath) {
     if (yearMatch)
         year = parseInt(yearMatch[1], 10);
     // 7. Nettoyage du titre
-    let cleanTitle = cleanReleaseTags(fileName);
+    // sanitizeReleaseTags supprime le bloc « année + tags + groupe de release »
+    // (ex: 1999.multi.1080p.bluray.x264-LOST) qui polluait les titres de films.
+    let cleanTitle = sanitizeReleaseTags(fileName);
     cleanTitle = cleanTitle
         .replace(/\bS\d+E\d+(?:-E?\d+)?\b/gi, '')
         .replace(/\b\d+x\d+\b/g, '')
