@@ -10,6 +10,7 @@ import { Readable } from 'node:stream';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
 import type { UserSession } from '../middleware/access.js';
 import { proxyLiveStream } from '../iptv/liveProxyService.js';
+import { checkMediaFile } from '../utils/mediaFileStatus.js';
 
 const execFileAsync = promisify(execFile);
 export const streamRouter = new Hono();
@@ -238,8 +239,22 @@ streamRouter.get('/:id/hls/:file', async (c) => {
     return await proxyLiveStream(c, media.streamUrl);
   }
 
-  if (!media.videoFilePath || !fs.existsSync(media.videoFilePath)) {
+  if (!media.videoFilePath) {
     return c.json({ error: 'Fichier vidéo introuvable sur le disque', code: 'FILE_INACCESSIBLE' }, 404);
+  }
+
+  // Distingue un fichier supprimé d'un disque externe débranché ou en erreur E/S.
+  // Sans cela, une panne de volume était présentée comme une erreur de flux générique.
+  const hlsFileStatus = await checkMediaFile(media.videoFilePath);
+  if (!hlsFileStatus.ok) {
+    return c.json(
+      {
+        error: hlsFileStatus.reason || 'Fichier vidéo introuvable sur le disque',
+        code: hlsFileStatus.code,
+        diskName: hlsFileStatus.diskName,
+      },
+      hlsFileStatus.code === 'STORAGE_OFFLINE' ? 503 : 404
+    );
   }
 
   let probe: MediaProbeInfo;
@@ -417,8 +432,20 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
     return await proxyLiveStream(c, media.streamUrl);
   }
 
-  if (!media.videoFilePath || !fs.existsSync(media.videoFilePath)) {
+  if (!media.videoFilePath) {
     return c.json({ error: 'Fichier vidéo absent ou introuvable', code: 'FILE_INACCESSIBLE' }, 404);
+  }
+
+  const fileStatus = await checkMediaFile(media.videoFilePath);
+  if (!fileStatus.ok) {
+    return c.json(
+      {
+        error: fileStatus.reason || 'Fichier vidéo absent ou introuvable',
+        code: fileStatus.code,
+        diskName: fileStatus.diskName,
+      },
+      fileStatus.code === 'STORAGE_OFFLINE' ? 503 : 404
+    );
   }
 
   let activeFilePath = media.videoFilePath;
@@ -443,8 +470,16 @@ streamRouter.on(['GET', 'HEAD'], '/:id/stream', async (c) => {
         422
       );
     }
-  } catch {
-    return c.json({ error: 'Fichier vidéo inaccessible ou introuvable sur le disque', code: 'FILE_INACCESSIBLE' }, 404);
+  } catch (err: any) {
+    const readStatus = await checkMediaFile(activeFilePath);
+    return c.json(
+      {
+        error: readStatus.reason || 'Fichier vidéo inaccessible ou introuvable sur le disque',
+        code: readStatus.code === 'STORAGE_OFFLINE' ? 'STORAGE_OFFLINE' : 'FILE_INACCESSIBLE',
+        diskName: readStatus.diskName,
+      },
+      readStatus.code === 'STORAGE_OFFLINE' ? 503 : 404
+    );
   }
 
   // Sonde de compatibilité navigateur pour orienter vers HLS si nécessaire (.avi, HEVC, audio non-native)

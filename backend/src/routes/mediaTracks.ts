@@ -8,6 +8,7 @@ import { getSiteParams } from '../config/paramManager.js';
 import type { UserSession } from '../middleware/access.js';
 import { checkMediaAccess } from '../auth/mediaAccess.js';
 import { verifySessionToken } from '../auth/token.js';
+import { checkMediaFile } from '../utils/mediaFileStatus.js';
 
 const execFileAsync = promisify(execFile);
 export const tracksRouter = new Hono();
@@ -162,6 +163,24 @@ tracksRouter.get('/:id/tracks', async (c) => {
       configuredSubtitleLanguage: prefSub,
       subtitleMode: subMode,
     });
+  }
+
+  const fileStatus = await checkMediaFile(media.videoFilePath);
+  if (!fileStatus.ok) {
+    return c.json(
+      {
+        error: fileStatus.reason || 'Fichier vidéo introuvable sur le disque',
+        code: fileStatus.code,
+        diskName: fileStatus.diskName,
+        durationSeconds: 0,
+        audioTracks: [],
+        subtitleTracks: [],
+        qualities: [],
+        requiresHls: false,
+        streamType: 'direct',
+      },
+      fileStatus.code === 'STORAGE_OFFLINE' ? 503 : 404
+    );
   }
 
   const fileStat = await fsp.stat(media.videoFilePath).catch(() => null);

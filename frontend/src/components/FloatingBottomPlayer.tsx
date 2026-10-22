@@ -86,6 +86,7 @@ export const FloatingBottomPlayer: React.FC = () => {
   const currentUser = useCurrentUser();
 
   const [tracks, setTracks] = useState<MediaTracksData>({ audioTracks: [], subtitleTracks: [], qualities: [] });
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [showSubModal, setShowSubModal] = useState(false);
   const [showAudioModal, setShowAudioModal] = useState(false);
   const [showCastModal, setShowCastModal] = useState(false);
@@ -240,8 +241,18 @@ export const FloatingBottomPlayer: React.FC = () => {
   // Hook 1 : Chargement des métadonnées enrichies (pistes audio, sous-titres, chapitres intro, next épisode)
   useEffect(() => {
     if (activeMedia?.id) {
+      setSourceError(null);
       fetchMediaTracks(activeMedia.id, activeMedia.share).then((t) => {
         setTracks(t);
+        if (t.errorCode) {
+          setSourceError(
+            t.errorMessage ||
+              (t.errorCode === 'STORAGE_OFFLINE'
+                ? `Le support de stockage${t.diskName ? ` « ${t.diskName} »` : ''} est indisponible.`
+                : 'Le fichier vidéo est introuvable sur le disque.')
+          );
+          return;
+        }
         if (t?.requiresHls && activeMedia?.streamUrl && !activeMedia.streamUrl.includes('.m3u8') && !activeMedia.isLive) {
           const hlsUrl = getVideoStreamUrl(activeMedia.id, activeMedia.share, true);
           const curPos = localVideoRef.current?.currentTime || activeMedia.positionSeconds || 0;
@@ -1195,6 +1206,24 @@ export const FloatingBottomPlayer: React.FC = () => {
               }
             }}
           />
+        ) : null}
+
+        {/* Erreur de source explicite : évite l'écran noir silencieux quand un
+            disque externe est débranché ou qu'un fichier a disparu. */}
+        {sourceError && isExpanded && !isCasting ? (
+          <View style={styles.streamErrorOverlay}>
+            <Text style={styles.streamErrorIcon}>⚠️</Text>
+            <Text style={styles.streamErrorTitle}>Lecture impossible</Text>
+            <Text style={styles.streamErrorText}>{sourceError}</Text>
+            <Pressable
+              focusable={true}
+              accessibilityRole="button"
+              onPress={() => playerStore.closeMedia()}
+              style={styles.streamErrorBtn}
+            >
+              <Text style={styles.streamErrorBtnTxt}>Fermer le lecteur</Text>
+            </Pressable>
+          </View>
         ) : null}
 
         {/* Overlay tactile transparent en mode replié pour déplier la vidéo d'un clic */}

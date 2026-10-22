@@ -19,6 +19,9 @@ export interface MediaTracksData {
   configuredAudioLanguage?: string;
   configuredSubtitleLanguage?: string;
   subtitleMode?: string;
+  errorCode?: 'FILE_INACCESSIBLE' | 'STORAGE_OFFLINE' | string;
+  errorMessage?: string;
+  diskName?: string;
 }
 
 export async function fetchMediaTracks(id: string, shareToken?: string | null): Promise<MediaTracksData> {
@@ -42,7 +45,18 @@ export async function fetchMediaTracks(id: string, shareToken?: string | null): 
 
     if (!res.ok) {
       console.warn(`[fetchMediaTracks] HTTP ${res.status} on ${url}`);
-      return { audioTracks: [], subtitleTracks: [], qualities: [] };
+      let payload: any = null;
+      try {
+        payload = await res.json();
+      } catch {}
+      return {
+        audioTracks: [],
+        subtitleTracks: [],
+        qualities: [],
+        errorCode: payload?.code || 'TRACKS_ERROR',
+        errorMessage: payload?.error || `Impossible de charger les pistes du média (HTTP ${res.status}).`,
+        diskName: payload?.diskName,
+      };
     }
 
     const data = await res.json();

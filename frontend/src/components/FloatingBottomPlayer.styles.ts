@@ -729,4 +729,49 @@ export const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+
+  // Message explicite lorsqu'un fichier ou un disque source est indisponible.
+  streamErrorOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 30,
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  streamErrorIcon: {
+    fontSize: 44,
+    marginBottom: 12,
+  },
+  streamErrorTitle: {
+    color: '#f8fafc',
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  streamErrorText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+    maxWidth: 520,
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  streamErrorBtn: {
+    backgroundColor: '#4f46e5',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    cursor: 'pointer' as any,
+  },
+  streamErrorBtnTxt: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });

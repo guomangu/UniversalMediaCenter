@@ -1,3 +1,22 @@
+## 🛑 141. Écran Noir Silencieux sur Disque Externe Débranché, Montage Fantôme `gudbug` & Confusion entre Fichier Absent et Volume en Erreur E/S (`compose.yaml`, `mediaFileStatus.ts`, `mediaStream.ts`, `mediaTracks.ts`, `mediaTracksApi.ts`, `FloatingBottomPlayer.tsx`, `FloatingBottomPlayer.styles.ts`)
+
+* **Problème / Symptôme :**
+  1. La majorité des films ne démarraient pas, alors que les Disney étaient lisibles. *Mr. Robot* notamment restait sur un écran noir sans message.
+  2. Le lecteur ne distinguait pas un fichier supprimé d'un disque externe débranché : l'utilisateur ne pouvait pas savoir qu'il fallait rebrancher un support.
+
+* **Causes Racines :**
+  - **Montage fantôme :** le disque `gudbug` était monté par un bind dédié dans les conteneurs. Après son débranchement, le conteneur a conservé l'ancien montage : les 649 fichiers indexés répondaient `EIO` (I/O error) au lieu de `ENOENT`. Côté hôte, `/run/media/tele/gudbug` n'existait plus. Tous les fichiers des deux autres racines (`My Passport`, `Vidéos/drive`) étaient lisibles.
+  - **Erreur masquée :** `fs.existsSync()` renvoie `false` sur un `EIO`. Les routes retombaient donc sur un 404 « fichier introuvable », tandis que `/tracks` laissait remonter l'échec brut de `ffprobe` en 500. Le frontend, qui ignore les erreurs de `fetchMediaTracks`, ouvrait un lecteur noir sans diagnostic.
+  - **Test incomplet :** un simple `stat` ou une lecture de 16 octets ne suffit pas à conclure qu'un volume est sain ; il faut classifier l'erreur système et vérifier la lisibilité du point de montage.
+
+* **Bonnes Pratiques de Remédiation :**
+  - **Monter le parent, pas les disques nommés :** monter `/run/media/tele` avec `bind.propagation: rslave` (backend et gateway). Un disque rebranché est alors visible à chaud, et aucun bind orphelin ne subsiste.
+  - **Classifier avant de répondre :** centraliser la vérification dans `checkMediaFile()` et retourner `503 STORAGE_OFFLINE` + `diskName` pour `EIO`/`ENODEV`/`ETIMEDOUT`/`ESTALE`, `404 FILE_INACCESSIBLE` pour un vrai `ENOENT` sur un volume sain.
+  - **Ne jamais échouer silencieusement :** propager `errorCode`/`errorMessage` jusqu'au lecteur et afficher un panneau explicite avec le nom du disque et une action de fermeture.
+  - **Ne pas purger sur EIO :** conserver la protection du réconciliateur qui gèle la purge lorsque le volume est inaccessible (déjà en place depuis le correctif 139).
+
+* **Validation :** audit disque 3 294 chemins (`gudbug` 0/649 lisibles, autres 100 %) ; `tsc --noEmit` backend/frontend 0 erreur ; `docker-compose config` OK ; *Mr. Robot S02E01* → 503 `STORAGE_OFFLINE` (`gudbug`), *Toy Story* → tracks 200, stream 307, segment HLS 200.
+
 ## 🛑 140. Raccourcis d'Accueil Figés par Duplication d'Écrans, Chaînes TV Brutes Marquées Disponibles & Sagas Orphelines après Purge (`index.tsx`, `SiteHeader.tsx`, `admin.tsx`, `user.tsx`, `user/UserFeedTab.tsx`, `user/UserForumsTab.tsx`, `userDeviceService.ts`, `streamTester.ts`, `nfoParser.ts`, `mediaIngester.ts`, `metadataEnricher.ts`, `hierarchyRepair.ts`, `mediaReconciler.ts`)
 
 * **Problème / Symptôme :**

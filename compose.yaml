@@ -43,8 +43,15 @@ services:
       - ./media:/media:z
       - /var/home/tele/Vidéos/drive:/home/tele/Vidéos/drive:ro,z
       - /var/home/tele/Vidéos/drive:/var/home/tele/Vidéos/drive:ro,z
-      - /run/media/tele/My Passport:/run/media/tele/My Passport:ro
-      - /run/media/tele/gudbug:/run/media/tele/gudbug:ro
+      # Monter le dossier parent des volumes amovibles plutôt que chaque disque :
+      # un disque rebranché apparaît automatiquement (propagation rslave) au lieu
+      # de laisser un montage fantôme en erreur E/S dans le conteneur.
+      - type: bind
+        source: /run/media/tele
+        target: /run/media/tele
+        read_only: true
+        bind:
+          propagation: rslave
     ports:
       - "${API_PORT:-3000}:${API_PORT:-3000}"
     depends_on:
@@ -67,8 +74,14 @@ services:
       - ./media:/media:ro,z
       - /var/home/tele/Vidéos/drive:/home/tele/Vidéos/drive:ro,z
       - /var/home/tele/Vidéos/drive:/var/home/tele/Vidéos/drive:ro,z
-      - /run/media/tele/My Passport:/run/media/tele/My Passport:ro
-      - /run/media/tele/gudbug:/run/media/tele/gudbug:ro
+      # Voir le service backend : montage parent indispensable au rechargement
+      # à chaud des disques externes.
+      - type: bind
+        source: /run/media/tele
+        target: /run/media/tele
+        read_only: true
+        bind:
+          propagation: rslave
     depends_on:
       - backend
     networks:
