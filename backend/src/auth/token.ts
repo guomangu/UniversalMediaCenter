@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 
 const SECRET = process.env.AUTH_SECRET || 'ums_super_secret_session_key_2026';
-const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 jours
 
 const WEAK_SECRETS = new Set([
   'ums_super_secret_session_key_2026',
@@ -47,8 +46,11 @@ export function createSessionToken(userId: string, deviceId?: string): string {
 }
 
 /**
- * Vérifie l'intégrité et l'expiration d'un jeton de session.
- * Retourne l'utilisateur (et l'appareil éventuellement signé) si valide.
+ * Vérifie l'intégrité d'un jeton de session.
+ *
+ * Les jetons sont volontairement sans expiration : un jeton déjà émis reste
+ * valide tant que AUTH_SECRET ne change pas. La révocation reste possible via
+ * la déconnexion explicite ou la révocation d'appareil (userDeviceRegistry).
  */
 export function verifySessionTokenDetails(token: string): SessionTokenDetails | null {
   if (!token || typeof token !== 'string') return null;
@@ -60,7 +62,7 @@ export function verifySessionTokenDetails(token: string): SessionTokenDetails | 
     const [, userId, encodedDevice, timestampStr, sig] = parts;
 
     const timestamp = parseInt(timestampStr, 10);
-    if (isNaN(timestamp) || Date.now() - timestamp > TOKEN_TTL_MS) return null;
+    if (isNaN(timestamp)) return null;
 
     const payload = `v2:${userId}:${encodedDevice}:${timestampStr}`;
     const expectedSig = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
@@ -82,7 +84,7 @@ export function verifySessionTokenDetails(token: string): SessionTokenDetails | 
   const [userId, timestampStr, sig] = parts;
 
   const timestamp = parseInt(timestampStr, 10);
-  if (isNaN(timestamp) || Date.now() - timestamp > TOKEN_TTL_MS) return null;
+  if (isNaN(timestamp)) return null;
 
   const payload = `${userId}:${timestampStr}`;
   const expectedSig = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');

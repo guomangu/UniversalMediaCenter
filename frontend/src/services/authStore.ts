@@ -182,6 +182,11 @@ export async function syncSessionWithServer(): Promise<UserProfile | null> {
         }
         return null;
       }
+      // Jeton expiré, secret changé ou session révoquée : la session locale
+      // doit être purgée, sinon l'UI croit encore l'utilisateur connecté
+      // alors que tous les appels authentifiés renvoient 401.
+      logout();
+      return null;
     }
     if (res.ok) {
       const data = await res.json();
@@ -189,6 +194,13 @@ export async function syncSessionWithServer(): Promise<UserProfile | null> {
         memoryUser = data.user;
         notify();
         return memoryUser;
+      }
+      // /api/auth/me répond 200 avec authenticated=false quand le jeton
+      // n'est plus valide (expiration 30 jours, secret différent, etc.).
+      // Sans cette purge, le panneau admin affichait une liste vide.
+      if (data.authenticated === false) {
+        logout();
+        return null;
       }
     }
   } catch {}

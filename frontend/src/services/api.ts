@@ -1,6 +1,6 @@
 import { getApiBaseUrl } from './apiConfig';
 import { getAuthHeaders, getAuthToken, getCurrentUser } from './authStore';
-import { fetchWithCache } from './pwaDataCache';
+import { fetchWithCache, invalidateCache } from './pwaDataCache';
 import { prefetchImageToCache } from './pwaImageCache';
 
 export function resolveImageUrl(uri?: string | null): string {
@@ -133,7 +133,7 @@ export async function fetchHomeLayout(): Promise<any> {
 
 export async function fetchMediaDetail(id: string, shareToken?: string | null): Promise<any> {
   const cacheKey = `media_detail_${getUserCacheKey()}_${id}${shareToken ? `_${shareToken}` : ''}`;
-  return fetchWithCache(cacheKey, async () => {
+  const result = await fetchWithCache(cacheKey, async () => {
     try {
       const query = shareToken ? `?share=${encodeURIComponent(shareToken)}` : '';
       const res = await fetch(`${getApiBaseUrl()}/api/media/${id}${query}`, {
@@ -158,6 +158,12 @@ export async function fetchMediaDetail(id: string, shareToken?: string | null): 
       return null;
     }
   });
+
+  // Un refus d'accès n'est pas une donnée durable : le mettre en cache
+  // provoquerait un faux écran « contenu restreint » après un changement
+  // de droits ou de session. On le renvoie pour ce rendu, sans le persister.
+  if (result?.forbidden) invalidateCache(cacheKey);
+  return result;
 }
 
 export async function fetchNextMedia(id: string): Promise<any> {

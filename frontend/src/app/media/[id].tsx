@@ -37,7 +37,9 @@ export default function MediaDetailScreen() {
   const initialCached = id ? getCachedData<MediaDetailResponse>(cacheKey) : null;
   const [data, setData] = useState<MediaDetailResponse | null>(initialCached);
   const [loading, setLoading] = useState(!initialCached);
-  const [isForbidden, setIsForbidden] = useState(false);
+  // Un cache de refus (403) peut être présent au premier rendu : il faut le
+  // prendre en compte immédiatement, sinon `media` est absent et le rendu plante.
+  const [isForbidden, setIsForbidden] = useState(Boolean((initialCached as any)?.forbidden));
   const [showCast, setShowCast] = useState(false);
   const [showRepostModal, setShowRepostModal] = useState(false);
   const [showSessionModal, setShowSessionModal] = useState(false);
@@ -242,6 +244,32 @@ export default function MediaDetailScreen() {
       <View style={styles.loading}>
         <Text style={{ color: '#8a95a5' }}>Chargement du média...</Text>
       </View>
+    );
+  }
+
+  // Garde-fou : une réponse/cache sans `media` (404, cache obsolète, etc.) ne
+  // doit jamais provoquer un crash sur `media.fanartPath`.
+  if (!media) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <SiteHeader />
+        <View style={[styles.content, { paddingTop: headerPaddingTop + 30, alignItems: 'center' }]}>
+          <Pressable
+            focusable={true}
+            accessibilityRole="button"
+            onPress={() => goBackOrFallback(router, '/')}
+            style={styles.backBtn}>
+            <Text style={styles.backTxt}>← Retour à l'accueil</Text>
+          </Pressable>
+          <View style={styles.forbiddenCard}>
+            <Text style={styles.forbiddenIcon}>🎬</Text>
+            <Text style={styles.forbiddenTitle}>Média introuvable</Text>
+            <Text style={styles.forbiddenDesc}>
+              Cette œuvre n'existe plus ou n'est plus disponible dans la médiathèque.
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
     );
   }
 

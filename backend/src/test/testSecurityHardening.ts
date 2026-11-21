@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { createSessionToken, verifySessionTokenDetails } from '../auth/token.js';
 import { hashPassword, verifyPassword, verifyPin } from '../auth/password.js';
 import { isSafeOutboundUrl } from '../utils/safeUrl.js';
@@ -35,6 +36,15 @@ test('Tampered session token is rejected', () => {
   const token = createSessionToken('33333333-3333-3333-3333-333333333333', 'dev_x');
   const tampered = `${token.slice(0, -2)}zz`;
   assert.equal(verifySessionTokenDetails(tampered), null);
+});
+
+test('An old session token does not expire', () => {
+  const userId = '44444444-4444-4444-4444-444444444444';
+  const timestamp = (Date.now() - 400 * 24 * 60 * 60 * 1000).toString();
+  const secret = process.env.AUTH_SECRET || 'ums_super_secret_session_key_2026';
+  const sig = crypto.createHmac('sha256', secret).update(`${userId}:${timestamp}`).digest('base64url');
+  const details = verifySessionTokenDetails(`${userId}.${timestamp}.${sig}`);
+  assert.equal(details?.userId, userId);
 });
 
 test('Password hash verifies only the correct secret', () => {
